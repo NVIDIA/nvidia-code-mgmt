@@ -1,0 +1,9 @@
+
+[Unit]
+Description=Update FPGA nvidia-ap-fw-updater %I
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=nvidia-ap-fw-updater $ARGS

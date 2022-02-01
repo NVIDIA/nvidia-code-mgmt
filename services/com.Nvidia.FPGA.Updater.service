@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenBMC FPGA Code Manager
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u FPGA
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.FPGA.Updater
+
+[Install]
+WantedBy=multi-user.target
