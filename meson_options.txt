@@ -1,0 +1,78 @@
+
+option('PSU_SUPPORT',
+       type: 'feature',
+       value: 'enabled',
+       description: 'Enables PSU support')
+
+option('PSU_SUPPORTED_MODEL',
+       type: 'string',
+       value: 'Micron Technology:36ASF8G72PZ3G2B2:1244d2648d7d4718a030fc8a56587d5b|',
+       description: 'PSU supported models')
+
+option('FPGA_SUPPORT',
+       type: 'feature',
+       value: 'enabled',
+       description: 'Enables FPGA support')
+
+option('FPGA_SUPPORTED_MODEL',
+       type: 'string',
+       value: 'NVIDIAManufacture:CECModel:a244d2648d7d4718a030fc8a56587d5b|',
+       description: 'FPGA supported models')
+
+option('CPLD_SUPPORT',
+       type: 'feature',
+       value: 'enabled',
+       description: 'Enables CPLD support')
+
+option('CPLD_SUPPORTED_MODEL',
+       type: 'string',
+       value: 'NVIDIAManufacture:CECModel:a244d2648d7d4718a030fc8a56587d5b|',
+       description: 'CPLD supported models')
+
+option('RT_SUPPORT',
+       type: 'feature',
+       value: 'enabled',
+       description: 'Enables retimer support')
+
+option('RT_SUPPORTED_MODEL',
+       type: 'string',
+       value: 'Astr Technology:16ASF8G72PZ3G2B2:1244d2648d7d4718a030fc8a56587d5b|',
+       description: 'RT supported models')
+
+option('PEX_SUPPORT',
+       type: 'feature',
+       value: 'enabled',
+       description: 'Enables PEX SW support')
+
+option('PEX_SUPPORTED_MODEL',
+       type: 'string',
+       value: 'PEX Technology:16ASF8G72PZ3G2B2:1244d2648d7d4718a030fc8a56587daa|',
+       description: 'PEX supported models')
+
+option('INVENTORY_PATH_BASE',
+       type: 'string',
+       value: '/xyz/openbmc_project/inventory/system',
+       description: 'The base path for PSU inventory')
+
+option('IMG_DIR',
+       type: 'string',
+       value: '/tmp/images',
+       description: 'The directory where downloaded or uploaded PSU images are placed and extracted')
+
+
+option('IMG_DIR_PERSIST',
+       type: 'string',
+       value: '/var/lib/obmc/psu',
+       description: 'The writable directory to store updated PSU images persistently')
+
+option('IMG_DIR_BUILTIN',
+       type: 'string',
+       value: '/usr/share/obmc/psu',
+       description: 'The read-only directory where the built-in PSU images are stored')
+
+option(
+    'MOCK_UTILS',
+    type: 'boolean',
+    value: true,
+    description: 'Mock underlying hardware calls'
+)

@@ -1,0 +1,10 @@
+
+[Unit]
+Description=Update PEX %I
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+#TODO need to add here
+ExecStart=/bin/echo To update $ARGS

@@ -1,0 +1,9 @@
+
+[Unit]
+Description=Update RT %I
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/bin/echo To update $ARGS
