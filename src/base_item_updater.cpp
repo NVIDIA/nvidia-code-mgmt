@@ -181,7 +181,7 @@ void BaseItemUpdater::readDeviceDetails(std::string& p)
 
 void BaseItemUpdater::readExistingFirmWare()
 {
-    auto paths = getinventoryPath(inventoryIface);
+    auto paths = getItemUpdaterInventoryPaths();
     for (auto p : paths)
     {
         readDeviceDetails(p);

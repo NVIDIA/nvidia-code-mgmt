@@ -1,9 +1,9 @@
 
 [Unit]
-Description=Update RTs
+Description=Update RT %I
 
 [Service]
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=/usr/bin/updateRetimerFw $ARGS
+ExecStart=/usr/bin/aries-update $ARGS

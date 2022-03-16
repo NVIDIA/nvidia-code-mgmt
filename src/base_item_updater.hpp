@@ -187,7 +187,14 @@ class BaseItemUpdater : public DBUSUtils,
      */
     virtual std::vector<std::string> getItemUpdaterInventoryPaths()
     {
-        return getinventoryPath(inventoryIface);
+        auto paths = getinventoryPath(inventoryIface);
+        std::vector<std::string> ret;
+        for (auto p : paths) {
+            if (pathIsValidDevice(p)) {
+                ret.push_back(p);
+            }
+        }
+        return ret;
     }
 
     /**
@@ -399,6 +406,17 @@ class BaseItemUpdater : public DBUSUtils,
      */
     virtual void readDeviceDetails(std::string& p);
 
+    /**
+     * @brief Verifies that the path is a valid device
+     * 
+     * @param p path to validate
+     * @return true if valid
+     * @return false if not valid
+     */
+    virtual bool pathIsValidDevice(std::string &p) {
+        (void)p;
+        return true;
+    }
   protected:
     std::string _name;
 

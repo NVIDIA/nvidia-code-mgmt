@@ -56,6 +56,7 @@ if get_option('RT_SUPPORT').enabled()
   cdata.set_quoted('RT_BUSNAME_UPDATER', 'com.Nvidia.Software.RT.Updater')
   cdata.set_quoted('RT_BUSNAME_INVENTORY', 'com.Nvidia.Rt')
   cdata.set_quoted('RT_UPDATE_SERVICE', 'rt-update@.service')
+  cdata.set_quoted('RT_UPDATE_SINGLE_SERVICE', 'rt-update-direct@.service')
 endif
 
 if get_option('PEX_SUPPORT').enabled()
