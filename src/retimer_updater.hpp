@@ -25,7 +25,7 @@ class RTDevice : public rtcommonutils::Util
 
   public:
     RTDevice(const std::string& objPath, int busN, int address,
-              const std::string& name) :
+             const std::string& name) :
         name(name),
         inventoryPath(objPath)
     {
@@ -38,15 +38,16 @@ class RTDevice : public rtcommonutils::Util
         return inventoryPath;
     }
 
-    int getBus() const {
+    int getBus() const
+    {
         return b;
     }
 
-    int getAddress() const {
+    int getAddress() const
+    {
         return d;
     }
 };
-
 
 /**
  * @brief
@@ -56,16 +57,18 @@ class RTDevice : public rtcommonutils::Util
 class ReTimerItemUpdater : public BaseItemUpdater
 {
     std::vector<std::unique_ptr<RTDevice>> invs;
+
   public:
     /**
      * @brief Construct a new Re Timer Item Updater object
-     * 
+     *
      * @param bus dbus reference
      * @param together update everything together
      */
     ReTimerItemUpdater(sdbusplus::bus::bus& bus, bool together) :
         BaseItemUpdater(bus, RT_SUPPORTED_MODEL, RT_INVENTORY_IFACE, "RT",
-                            RT_BUSNAME_UPDATER, RT_UPDATE_SERVICE, together, RT_BUSNAME_INVENTORY)
+                        RT_BUSNAME_UPDATER, RT_UPDATE_SERVICE, together,
+                        RT_BUSNAME_INVENTORY)
     {
 
         nlohmann::json fruJson = rtcommonutils::loadJSONFile(
@@ -110,35 +113,35 @@ class ReTimerItemUpdater : public BaseItemUpdater
 
     /**
      * @brief Get the Version object
-     * 
-     * @param inventoryPath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @return std::string
      */
     std::string getVersion(const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Manufacturer object
-     * 
-     * @param inventoryPath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @return std::string
      */
     std::string
         getManufacturer(const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Model object
-     * 
-     * @param inventoryPath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @return std::string
      */
     std::string getModel(const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Service Args object
-     * 
-     * @param inventoryPath 
-     * @param imagePath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @param imagePath
+     * @return std::string
      */
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,
@@ -146,11 +149,13 @@ class ReTimerItemUpdater : public BaseItemUpdater
     {
 
         std::string args = "";
-        if (updateAllTogether()) {
+        if (updateAllTogether())
+        {
             args += "\\x20";
             args += std::to_string(invs[0]->getBus()); // pull first device bus
             args += "\\x20";
-            args += std::to_string(invs[0]->getAddress()); // pull first device addr
+            args +=
+                std::to_string(invs[0]->getAddress()); // pull first device addr
             args += "\\x20";
             args += std::to_string(invs.size()); // n devices
             args += "\\x20";
@@ -158,7 +163,8 @@ class ReTimerItemUpdater : public BaseItemUpdater
             args += "\\x20";
             args += "0"; // path
         }
-        else {
+        else
+        {
             for (auto& inv : invs)
             {
                 if (inv->getInventoryPath() == inventoryPath)
@@ -179,17 +185,22 @@ class ReTimerItemUpdater : public BaseItemUpdater
 
     std::string getServiceName() const
     {
-        if (updateAllTogether()) {
+        if (updateAllTogether())
+        {
             return BaseItemUpdater::getServiceName();
         }
-        else {
+        else
+        {
             return RT_UPDATE_SINGLE_SERVICE;
         }
     }
 
-    bool pathIsValidDevice(std::string &p) {
-        for (auto & inv : invs) {
-            if (inv->getInventoryPath() == p) {
+    bool pathIsValidDevice(std::string& p)
+    {
+        for (auto& inv : invs)
+        {
+            if (inv->getInventoryPath() == p)
+            {
                 return true;
             }
         }

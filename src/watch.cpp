@@ -7,11 +7,12 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <phosphor-logging/log.hpp>
+
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
-#include <phosphor-logging/log.hpp>
 #include <stdexcept>
 #include <string>
 namespace nvidia

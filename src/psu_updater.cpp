@@ -4,6 +4,7 @@
 #include "psu_updater.hpp"
 
 #include <boost/algorithm/string.hpp>
+
 #include <filesystem>
 
 namespace nvidia

@@ -4,6 +4,7 @@
 #include "retimer_updater.hpp"
 
 #include <boost/algorithm/string.hpp>
+
 #include <filesystem>
 
 namespace nvidia
@@ -50,7 +51,8 @@ std::string ReTimerItemUpdater::getModel(const std::string& inventoryPath) const
             ret = inv->getModel();
         }
     }
-    return ret;;
+    return ret;
+    ;
 }
 } // namespace updater
 } // namespace software

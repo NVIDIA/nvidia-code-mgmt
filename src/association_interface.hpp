@@ -3,45 +3,45 @@
 #include <string>
 
 /**
- * @brief 
- * @author 
+ * @brief
+ * @author
  * @since Wed Aug 04 2021
  */
 class AssociationInterface
 {
   public:
     /**
-     * @brief 
-     * @param 
-     * @return 
+     * @brief
+     * @param
+     * @return
      */
     virtual ~AssociationInterface() = default;
 
     /**
-     * @brief 
+     * @brief
      * @param path
-     * @return 
+     * @return
      */
     virtual void createActiveAssociation(const std::string& path) = 0;
 
     /**
-     * @brief 
+     * @brief
      * @param path
-     * @return 
+     * @return
      */
     virtual void addFunctionalAssociation(const std::string& path) = 0;
 
     /**
-     * @brief 
+     * @brief
      * @param path
-     * @return 
+     * @return
      */
     virtual void addUpdateableAssociation(const std::string& path) = 0;
 
     /**
-     * @brief 
+     * @brief
      * @param path
-     * @return 
+     * @return
      */
     virtual void removeAssociation(const std::string& path) = 0;
 };

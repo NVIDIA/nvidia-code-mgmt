@@ -33,21 +33,21 @@ class ItemUpdaterUtils
   public:
     /**
      * @brief Destroy the Item Updater Utils object
-     * 
+     *
      */
     virtual ~ItemUpdaterUtils() = default;
 
     /**
      * @brief Get the Item Updater Inventory Paths object
-     * 
-     * @return std::vector<std::string> 
+     *
+     * @return std::vector<std::string>
      */
     virtual std::vector<std::string> getItemUpdaterInventoryPaths() = 0;
 
     /**
      * @brief Get the Service Name object
-     * 
-     * @return std::string 
+     *
+     * @return std::string
      */
     virtual std::string getServiceName() const = 0;
 
@@ -61,10 +61,10 @@ class ItemUpdaterUtils
 
     /**
      * @brief Get the Update Service With Args object
-     * 
-     * @param inventoryPath 
-     * @param imagePath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @param imagePath
+     * @return std::string
      */
     virtual std::string
         getUpdateServiceWithArgs(const std::string& inventoryPath,
@@ -72,8 +72,8 @@ class ItemUpdaterUtils
 
     /**
      * @brief Get the Name object
-     * 
-     * @return std::string 
+     *
+     * @return std::string
      */
     virtual std::string getName() const = 0;
 

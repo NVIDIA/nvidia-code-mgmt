@@ -23,7 +23,7 @@ class CPLDDevice : public cpldcommonutils::Util
 
   public:
     CPLDDevice(const std::string& objPath, uint8_t busN, uint8_t address,
-              const std::string& name) :
+               const std::string& name) :
         name(name),
         inventoryPath(objPath)
     {
@@ -37,7 +37,7 @@ class CPLDDevice : public cpldcommonutils::Util
     }
 };
 /**
- * @brief CPLD concrete class for Item updater 
+ * @brief CPLD concrete class for Item updater
  * @author
  * @since Wed Sept 13 2021
  */
@@ -48,13 +48,13 @@ class CPLDItemUpdater : public BaseItemUpdater
   public:
     /**
      * @brief Construct a new CPLDItemUpdater object
-     * 
-     * @param bus 
+     *
+     * @param bus
      */
     CPLDItemUpdater(sdbusplus::bus::bus& bus) :
-        BaseItemUpdater(bus, CPLD_SUPPORTED_MODEL, CPLD_INVENTORY_IFACE,
-                            "CPLD", CPLD_BUSNAME_UPDATER, CPLD_UPDATE_SERVICE,
-                            false, CPLD_BUSNAME_INVENTORY)
+        BaseItemUpdater(bus, CPLD_SUPPORTED_MODEL, CPLD_INVENTORY_IFACE, "CPLD",
+                        CPLD_BUSNAME_UPDATER, CPLD_UPDATE_SERVICE, false,
+                        CPLD_BUSNAME_INVENTORY)
     {
         nlohmann::json fruJson = cpldcommonutils::loadJSONFile(
             "/usr/share/nvidia-power-manager/cpld_config.json");
@@ -99,35 +99,35 @@ class CPLDItemUpdater : public BaseItemUpdater
 
     /**
      * @brief Get the Version object
-     * 
-     * @param inventoryPath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @return std::string
      */
     std::string getVersion(const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Manufacturer object
-     * 
-     * @param inventoryPath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @return std::string
      */
     std::string
         getManufacturer(const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Model object
-     * 
-     * @param inventoryPath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @return std::string
      */
     std::string getModel(const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Service Args object
-     * 
-     * @param inventoryPath 
-     * @param imagePath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @param imagePath
+     * @return std::string
      */
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,

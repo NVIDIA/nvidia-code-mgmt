@@ -28,19 +28,16 @@ class BaseController
      * @brief constructor
      * @param abstractItemUpdater
      */
-    BaseController(
-        std::unique_ptr<BaseItemUpdater>& abstractItemUpdater) :
+    BaseController(std::unique_ptr<BaseItemUpdater>& abstractItemUpdater) :
         abstractItemUpdater_(std::move(abstractItemUpdater))
-    {
-    }
+    {}
 
     /**
      * @brief destructor
      * @return
      */
     virtual ~BaseController()
-    {
-    }
+    {}
 
     /**
      * @brief Get the Name item updater
@@ -71,8 +68,8 @@ class BaseController
 
     /**
      * @brief Updates devices using existing images
-     * 
-     * @return int 
+     *
+     * @return int
      */
     int processExistingImages();
 };

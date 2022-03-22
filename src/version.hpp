@@ -13,12 +13,8 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/split.hpp>
-#include <functional>
-#include <iostream>
-#include <queue>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/server.hpp>
-#include <string>
 #include <xyz/openbmc_project/Association/Definitions/server.hpp>
 #include <xyz/openbmc_project/Association/server.hpp>
 #include <xyz/openbmc_project/Common/FilePath/server.hpp>
@@ -26,6 +22,11 @@
 #include <xyz/openbmc_project/Software/ActivationBlocksTransition/server.hpp>
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
+
+#include <functional>
+#include <iostream>
+#include <queue>
+#include <string>
 
 namespace nvidia
 {
@@ -173,9 +174,10 @@ class Delete : public DeleteInherit
  * @author
  * @since Wed Aug 04 2021
  */
-class Version : public VersionInherit,
-                public DBUSUtils,
-                public AssociationInterface
+class Version :
+    public VersionInherit,
+    public DBUSUtils,
+    public AssociationInterface
 {
   public:
     using Status = Activations;
@@ -272,10 +274,11 @@ class Version : public VersionInherit,
     {
         auto assocs = associations();
 
-        assocs.emplace_back(std::make_tuple(ACTIVE_FWD_ASSOCIATION,
-                                            std::string(""), path));
+        assocs.emplace_back(
+            std::make_tuple(ACTIVE_FWD_ASSOCIATION, std::string(""), path));
         assocs.emplace_back(std::make_tuple(ACTIVE_REV_ASSOCIATION,
-                                            ACTIVE_FWD_ASSOCIATION, std::string(SOFTWARE_OBJPATH)));
+                                            ACTIVE_FWD_ASSOCIATION,
+                                            std::string(SOFTWARE_OBJPATH)));
         associations(assocs);
     }
 
@@ -287,10 +290,11 @@ class Version : public VersionInherit,
     void addFunctionalAssociation(const std::string& path)
     {
         auto assocs = associations();
-        assocs.emplace_back(std::make_tuple(FUNCTIONAL_FWD_ASSOCIATION,
-                                            std::string(""), path));
+        assocs.emplace_back(
+            std::make_tuple(FUNCTIONAL_FWD_ASSOCIATION, std::string(""), path));
         assocs.emplace_back(std::make_tuple(FUNCTIONAL_REV_ASSOCIATION,
-                                            FUNCTIONAL_FWD_ASSOCIATION, std::string(SOFTWARE_OBJPATH)));
+                                            FUNCTIONAL_FWD_ASSOCIATION,
+                                            std::string(SOFTWARE_OBJPATH)));
         associations(assocs);
     }
 
@@ -302,10 +306,11 @@ class Version : public VersionInherit,
     void addUpdateableAssociation(const std::string& path)
     {
         auto assocs = associations();
-        assocs.emplace_back(std::make_tuple(UPDATEABLE_FWD_ASSOCIATION,
-                                            std::string(""), path));
+        assocs.emplace_back(
+            std::make_tuple(UPDATEABLE_FWD_ASSOCIATION, std::string(""), path));
         assocs.emplace_back(std::make_tuple(UPDATEABLE_REV_ASSOCIATION,
-                                            UPDATEABLE_FWD_ASSOCIATION, std::string(SOFTWARE_OBJPATH)));
+                                            UPDATEABLE_FWD_ASSOCIATION,
+                                            std::string(SOFTWARE_OBJPATH)));
         associations(assocs);
     }
 
@@ -413,24 +418,24 @@ class Version : public VersionInherit,
 
     /**
      * @brief Checks image compatibility
-     * 
-     * @param inventoryPath 
-     * @return true 
-     * @return false 
+     *
+     * @param inventoryPath
+     * @return true
+     * @return false
      */
     bool isCompatible(const std::string& inventoryPath);
 
     /**
      * @brief Moves images to persistant path
-     * 
+     *
      */
     void storeImage();
 
     /**
      * @brief Get the Update Service object
-     * 
-     * @param inventoryPath 
-     * @return std::string 
+     *
+     * @param inventoryPath
+     * @return std::string
      */
     std::string getUpdateService(const std::string& inventoryPath);
 

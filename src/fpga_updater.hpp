@@ -64,9 +64,9 @@ class FPGAItemUpdater : public BaseItemUpdater
      * @param bus
      */
     FPGAItemUpdater(sdbusplus::bus::bus& bus) :
-        BaseItemUpdater(bus, FPGA_SUPPORTED_MODEL, FPGA_INVENTORY_IFACE,
-                            "FPGA", FPGA_BUSNAME_UPDATER, FPGA_UPDATE_SERVICE,
-                            false, FPGA_BUSNAME_INVENTORY)
+        BaseItemUpdater(bus, FPGA_SUPPORTED_MODEL, FPGA_INVENTORY_IFACE, "FPGA",
+                        FPGA_BUSNAME_UPDATER, FPGA_UPDATE_SERVICE, false,
+                        FPGA_BUSNAME_INVENTORY)
     {
         nlohmann::json fruJson = fpga_ceccommonutils::loadJSONFile(
             "/usr/share/nvidia-cec/cec_config.json");

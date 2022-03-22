@@ -20,10 +20,11 @@
 
 #include <getopt.h>
 
-#include <cstdlib>
-#include <exception>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/bus.hpp>
+
+#include <cstdlib>
+#include <exception>
 
 static struct option set_opts[] = {
     {"updater", required_argument, NULL, 'u'},
@@ -40,7 +41,7 @@ int main(int argc, char** argv)
     std::string updater = "";
     auto ret = 0;
     bool useFallback = false;
-    (void)useFallback; //if RT_SUPPORT is disabled this isn't used currently
+    (void)useFallback; // if RT_SUPPORT is disabled this isn't used currently
     while ((ret = getopt_long(argc, argv, "u:f", set_opts, NULL)) != -1)
     {
         switch (ret)
@@ -87,8 +88,8 @@ int main(int argc, char** argv)
 #if RT_SUPPORT
     if (updater == "Retimer")
     {
-        /* default option is to do update together, if fallback is specified then we
-           use the single updater */
+        /* default option is to do update together, if fallback is specified
+           then we use the single updater */
         itemUpdater = std::make_unique<ReTimerItemUpdater>(bus, !useFallback);
     }
 #endif
