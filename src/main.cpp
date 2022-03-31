@@ -20,14 +20,15 @@
 
 #include <getopt.h>
 
-#include <cstdlib>
-#include <exception>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/bus.hpp>
 
+#include <cstdlib>
+#include <exception>
+
 static struct option set_opts[] = {
     {"updater", required_argument, NULL, 'u'},
-    {},
+    {"fallback", no_argument, NULL, 'f'},
 };
 static void print_wrong_arg_exit(void)
 {
@@ -39,12 +40,17 @@ int main(int argc, char** argv)
 {
     std::string updater = "";
     auto ret = 0;
-    while ((ret = getopt_long(argc, argv, "u:", set_opts, NULL)) != -1)
+    bool useFallback = false;
+    (void)useFallback; // if RT_SUPPORT is disabled this isn't used currently
+    while ((ret = getopt_long(argc, argv, "u:f", set_opts, NULL)) != -1)
     {
         switch (ret)
         {
             case 'u':
                 updater = optarg;
+                break;
+            case 'f':
+                useFallback = true;
                 break;
             default:
                 print_wrong_arg_exit();
@@ -61,7 +67,6 @@ int main(int argc, char** argv)
 
     std::unique_ptr<BaseController> abstractController;
     std::unique_ptr<BaseItemUpdater> itemUpdater;
-
 #if PSU_SUPPORT
     if (updater == "PSU")
     {
@@ -83,7 +88,9 @@ int main(int argc, char** argv)
 #if RT_SUPPORT
     if (updater == "Retimer")
     {
-        itemUpdater = std::make_unique<ReTimerItemUpdater>(bus);
+        /* default option is to do update together, if fallback is specified
+           then we use the single updater */
+        itemUpdater = std::make_unique<ReTimerItemUpdater>(bus, !useFallback);
     }
 #endif
 #if PEX_SUPPORT

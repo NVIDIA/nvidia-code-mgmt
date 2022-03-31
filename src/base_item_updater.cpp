@@ -11,13 +11,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <phosphor-logging/elog.hpp>
+#include <phosphor-logging/log.hpp>
+
 #include <algorithm>
 #include <cstring>
 #include <experimental/any>
 #include <filesystem>
 #include <iostream>
-#include <phosphor-logging/elog.hpp>
-#include <phosphor-logging/log.hpp>
 #include <string>
 
 namespace nvidia
@@ -90,7 +91,7 @@ void BaseItemUpdater::removeObject(const std::string& inventoryPath)
 }
 
 void BaseItemUpdater::onUpdateDone(const std::string& versionId,
-                                       const std::string& inventoryPath)
+                                   const std::string& inventoryPath)
 {
 
     // After update is done, remove old activation objects
@@ -181,7 +182,7 @@ void BaseItemUpdater::readDeviceDetails(std::string& p)
 
 void BaseItemUpdater::readExistingFirmWare()
 {
-    auto paths = getinventoryPath(inventoryIface);
+    auto paths = getItemUpdaterInventoryPaths();
     for (auto p : paths)
     {
         readDeviceDetails(p);
@@ -208,7 +209,7 @@ void BaseItemUpdater::readExistingFirmWare()
 }
 
 void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
-                                               const std::string& deviceVersion)
+                                           const std::string& deviceVersion)
 {
     auto versionId = createVersionID(getName(), deviceVersion);
     auto model = getModel(inventoryPath);
@@ -268,8 +269,7 @@ void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
     }
 }
 
-void BaseItemUpdater::onInventoryChangedMsg(
-    sdbusplus::message::message& msg)
+void BaseItemUpdater::onInventoryChangedMsg(sdbusplus::message::message& msg)
 {
     using Interface = std::string;
     Interface interface;
@@ -281,7 +281,7 @@ void BaseItemUpdater::onInventoryChangedMsg(
 }
 
 void BaseItemUpdater::onInventoryChanged(const std::string& devicePath,
-                                             const Properties& properties)
+                                         const Properties& properties)
 {
     // Need to be checked
     std::optional<bool> present;
@@ -359,10 +359,11 @@ void BaseItemUpdater::invokeActivation(
     activation->requestedActivation(Version::RequestedActivations::Active);
 }
 
-int BaseItemUpdater::initiateUpdateImage(
-    const std::string& objPath, const std::string& filePath,
-    const std::string& versionStr, const std::string& versionId,
-    const std::string& uniqueIdentifier)
+int BaseItemUpdater::initiateUpdateImage(const std::string& objPath,
+                                         const std::string& filePath,
+                                         const std::string& versionStr,
+                                         const std::string& versionId,
+                                         const std::string& uniqueIdentifier)
 {
     bool forceUpdate = true; // TODO get this from settings
     auto it = versions.find(versionId);
@@ -414,7 +415,7 @@ void BaseItemUpdater::onReqActivationChangedMsg(
 }
 
 void BaseItemUpdater::onReqActivationChanged(const std::string& objPath,
-                                                 const Properties& properties)
+                                             const Properties& properties)
 {
 
     std::optional<std::string> reqActivation;
@@ -451,8 +452,8 @@ std::unique_ptr<Version> BaseItemUpdater::createVersion(
     auto versionPtr = std::make_unique<Version>(
         bus, versionString, objPath, uniqueIdentifier, versionId, filePath,
         assoc, activationStatus, model, manufacturer,
-        std::bind(&BaseItemUpdater::erase, this, std::placeholders::_1),
-        this, this);
+        std::bind(&BaseItemUpdater::erase, this, std::placeholders::_1), this,
+        this);
 
     return versionPtr;
 }
@@ -466,8 +467,7 @@ void BaseItemUpdater::newDeviceAdded(sdbusplus::message::message& msg)
         std::map<std::string, std::map<std::string, DbusVariant>> interfaces;
         msg.read(objPath, interfaces);
 
-        auto itIntf =
-            interfaces.find(inventoryIface);
+        auto itIntf = interfaces.find(inventoryIface);
         if (itIntf != interfaces.cend())
         {
             readDeviceDetails(objPath.str);

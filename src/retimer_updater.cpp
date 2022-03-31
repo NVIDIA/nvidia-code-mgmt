@@ -4,6 +4,7 @@
 #include "retimer_updater.hpp"
 
 #include <boost/algorithm/string.hpp>
+
 #include <filesystem>
 
 namespace nvidia
@@ -15,21 +16,43 @@ namespace updater
 std::string
     ReTimerItemUpdater::getVersion(const std::string& inventoryPath) const
 {
-    (void)inventoryPath;
-    return "2";
+    std::string ret = "";
+    for (auto& inv : invs)
+    {
+        if (inv->getInventoryPath() == inventoryPath)
+        {
+            ret = inv->getVersion();
+        }
+    }
+    return ret;
 }
 
 std::string
     ReTimerItemUpdater::getManufacturer(const std::string& inventoryPath) const
 {
-    (void)inventoryPath;
-    return "Micron_Technology";
+    std::string ret = "";
+    for (auto& inv : invs)
+    {
+        if (inv->getInventoryPath() == inventoryPath)
+        {
+            ret = inv->getManufacturer();
+        }
+    }
+    return ret;
 }
 
 std::string ReTimerItemUpdater::getModel(const std::string& inventoryPath) const
 {
-    (void)inventoryPath;
-    return "36ASF8G72PZ3G2B2";
+    std::string ret = "";
+    for (auto& inv : invs)
+    {
+        if (inv->getInventoryPath() == inventoryPath)
+        {
+            ret = inv->getModel();
+        }
+    }
+    return ret;
+    ;
 }
 } // namespace updater
 } // namespace software

@@ -9,12 +9,13 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <phosphor-logging/elog.hpp>
+#include <phosphor-logging/log.hpp>
+
 #include <algorithm>
 #include <cstring>
 #include <experimental/any>
 #include <filesystem>
-#include <phosphor-logging/elog.hpp>
-#include <phosphor-logging/log.hpp>
 #include <string>
 
 namespace nvidia

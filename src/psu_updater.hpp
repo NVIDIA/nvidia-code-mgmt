@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include "base_item_updater.hpp"
+
 #include <sstream>
 
 #ifndef MOCK_UTILS
@@ -22,13 +23,15 @@ class PowerSupplyDevice : public psucommonutils::PSShellIntf
 {
     std::string name, inventoryPath;
     uint8_t index;
+
   public:
-    PowerSupplyDevice(const std::string& objPath, const std::string& name, std::string id) :
+    PowerSupplyDevice(const std::string& objPath, const std::string& name,
+                      std::string id) :
         psucommonutils::PSShellIntf(id, "psui2ccmd.sh"),
-        name(name),
-        inventoryPath(objPath)
+        name(name), inventoryPath(objPath)
     {
-        index = std::stoi(id);;
+        index = std::stoi(id);
+        ;
     }
 
     const std::string& getInventoryPath() const
@@ -64,9 +67,9 @@ class PSUItemUpdater : public BaseItemUpdater
      * @param bus
      */
     PSUItemUpdater(sdbusplus::bus::bus& bus) :
-        BaseItemUpdater(bus, PSU_SUPPORTED_MODEL, PSU_INVENTORY_IFACE,
-                            "PSU", PSU_BUSNAME_UPDATER, PSU_UPDATE_SERVICE,
-                            false, PSU_BUSNAME_INVENTORY)
+        BaseItemUpdater(bus, PSU_SUPPORTED_MODEL, PSU_INVENTORY_IFACE, "PSU",
+                        PSU_BUSNAME_UPDATER, PSU_UPDATE_SERVICE, false,
+                        PSU_BUSNAME_INVENTORY)
     {
         nlohmann::json fruJson = psucommonutils::loadJSONFile(
             "/usr/share/nvidia-power-manager/psu_config.json");

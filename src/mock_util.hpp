@@ -1,11 +1,12 @@
 #pragma once
 
+#include <nlohmann/json.hpp>
+#include <phosphor-logging/log.hpp>
+
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
-#include <nlohmann/json.hpp>
-#include <phosphor-logging/log.hpp>
 
 using json = nlohmann::json;
 using namespace phosphor::logging;
@@ -16,14 +17,14 @@ namespace mock
 {
 namespace common
 {
-inline json loadJSONFile([[maybe_unused]]const char* path)
+inline json loadJSONFile([[maybe_unused]] const char* path)
 {
     json data;
     return data;
 }
 /**
- * @brief Mock class for Utility 
- * 
+ * @brief Mock class for Utility
+ *
  */
 class Util
 {

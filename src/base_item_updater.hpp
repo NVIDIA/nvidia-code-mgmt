@@ -6,8 +6,9 @@
 #include "dbusutils.hpp"
 #include "version.hpp"
 
-#include <filesystem>
 #include <sdbusplus/server.hpp>
+
+#include <filesystem>
 #include <string>
 
 namespace nvidia
@@ -25,9 +26,10 @@ using NSActivation = Server::Activation;
  *  2) Performs Updates
  *  3) Creates and updates dbus object for update
  */
-class BaseItemUpdater : public DBUSUtils,
-                            public ActivationListener,
-                            public ItemUpdaterUtils
+class BaseItemUpdater :
+    public DBUSUtils,
+    public ActivationListener,
+    public ItemUpdaterUtils
 {
   public:
     /**
@@ -41,11 +43,10 @@ class BaseItemUpdater : public DBUSUtils,
      * @param updateTogether
      */
     BaseItemUpdater(sdbusplus::bus::bus& bus,
-                        const std::string& supportedDevices,
-                        const std::string& inventoryIface,
-                        const std::string& name, const std::string& busName,
-                        const std::string& serviceName, bool updateTogether,
-                        const std::string& inventoryBusName) :
+                    const std::string& supportedDevices,
+                    const std::string& inventoryIface, const std::string& name,
+                    const std::string& busName, const std::string& serviceName,
+                    bool updateTogether, const std::string& inventoryBusName) :
         DBUSUtils(bus),
         _name(name), busName(busName), serviceName(serviceName),
         inventoryIface(inventoryIface), updateTogether(updateTogether),
@@ -74,8 +75,7 @@ class BaseItemUpdater : public DBUSUtils,
      * @brief Destructor
      */
     virtual ~BaseItemUpdater()
-    {
-    }
+    {}
 
     /**
      * @brief Get the Name object
@@ -187,7 +187,16 @@ class BaseItemUpdater : public DBUSUtils,
      */
     virtual std::vector<std::string> getItemUpdaterInventoryPaths()
     {
-        return getinventoryPath(inventoryIface);
+        auto paths = getinventoryPath(inventoryIface);
+        std::vector<std::string> ret;
+        for (auto p : paths)
+        {
+            if (pathIsValidDevice(p))
+            {
+                ret.push_back(p);
+            }
+        }
+        return ret;
     }
 
     /**
@@ -398,6 +407,19 @@ class BaseItemUpdater : public DBUSUtils,
      * @param p device dbus path
      */
     virtual void readDeviceDetails(std::string& p);
+
+    /**
+     * @brief Verifies that the path is a valid device
+     *
+     * @param p path to validate
+     * @return true if valid
+     * @return false if not valid
+     */
+    virtual bool pathIsValidDevice(std::string& p)
+    {
+        (void)p;
+        return true;
+    }
 
   protected:
     std::string _name;
