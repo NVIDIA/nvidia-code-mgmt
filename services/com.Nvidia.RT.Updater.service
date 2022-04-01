@@ -6,7 +6,7 @@ Wants=obmc-mapper.target
 After=obmc-mapper.target
 
 [Service]
-ExecStart=/usr/bin/code-manager -u RT
+ExecStart=/usr/bin/code-manager -f -u Retimer
 Restart=always
 Type=dbus
 BusName=com.Software.Nvidia.Software.RT.Updater
