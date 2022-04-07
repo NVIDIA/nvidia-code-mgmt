@@ -4,12 +4,14 @@ Wants=pldmd.service
 After=pldmd.service
 Wants=obmc-mapper.target
 After=obmc-mapper.target
+Wants=nvidia-retimer.service
+After=nvidia-retimer.service
 
 [Service]
 ExecStart=/usr/bin/code-manager -f -u Retimer
 Restart=always
 Type=dbus
-BusName=com.Software.Nvidia.Software.RT.Updater
+BusName=com.Nvidia.Software.RT.Updater
 
 [Install]
 WantedBy=multi-user.target
