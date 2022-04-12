@@ -470,7 +470,9 @@ void BaseItemUpdater::newDeviceAdded(sdbusplus::message::message& msg)
         auto itIntf = interfaces.find(inventoryIface);
         if (itIntf != interfaces.cend())
         {
-            readDeviceDetails(objPath.str);
+            if (pathIsValidDevice(objPath.str)) {
+                readDeviceDetails(objPath.str);
+            }
         }
     }
     catch (const std::exception& e)
