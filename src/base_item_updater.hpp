@@ -187,14 +187,18 @@ class BaseItemUpdater :
      */
     virtual std::vector<std::string> getItemUpdaterInventoryPaths()
     {
-        auto paths = getinventoryPath(inventoryIface);
         std::vector<std::string> ret;
-        for (auto p : paths)
-        {
-            if (pathIsValidDevice(p))
+        try {
+            auto paths = getinventoryPath(inventoryIface);
+            for (auto p : paths)
             {
-                ret.push_back(p);
+                if (pathIsValidDevice(p))
+                {
+                    ret.push_back(p);
+                }
             }
+        }
+        catch (...) {
         }
         return ret;
     }
