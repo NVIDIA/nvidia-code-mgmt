@@ -154,9 +154,6 @@ class ReTimerItemUpdater : public BaseItemUpdater
             args += "\\x20";
             args += std::to_string(invs[0]->getBus()); // pull first device bus
             args += "\\x20";
-            args +=
-                std::to_string(invs[0]->getAddress()); // pull first device addr
-            args += "\\x20";
             args += std::to_string(invs.size()); // n devices
             args += "\\x20";
             args += imagePath; // image

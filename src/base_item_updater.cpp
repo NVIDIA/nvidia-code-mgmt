@@ -307,6 +307,7 @@ void BaseItemUpdater::onInventoryChanged(const std::string& devicePath,
         inventoryObjectStatusMap[devicePath].manufacturer = *manufacturer;
     }
     if (!present.has_value() && !model.has_value() && !manufacturer.has_value())
+    //if (!present.has_value() && !model.has_value())
     {
         return;
     }
