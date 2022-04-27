@@ -194,50 +194,46 @@ Version::Status Version::startActivation()
         return activation(); // Return the previous activation status
     }
 
-    if (itemUpdaterUtils->updateAllTogether() == false)
+    auto devicePaths = itemUpdaterUtils->getItemUpdaterInventoryPaths();
+    if (devicePaths.empty())
     {
-		std::cerr << "At non-concurrent "<< __func__ <<":" << __LINE__ << std::endl;
-        auto devicePaths = itemUpdaterUtils->getItemUpdaterInventoryPaths();
-        if (devicePaths.empty())
+        log<level::WARNING>("No device inventory found");
+        return Status::Failed;
+    }
+    for (const auto& p : devicePaths)
+    {
+        if (isCompatible(p))
         {
-            log<level::WARNING>("No device inventory found");
-            return Status::Failed;
-        }
-        for (const auto& p : devicePaths)
-        {
-            if (isCompatible(p))
+            if (isAssociated(p, associations()))
             {
-                if (isAssociated(p, associations()))
-                {
-                    log<level::NOTICE>(
-                        "device already running the image, skipping",
-                        entry("device=%s", p.c_str()));
-                    continue;
-                }
-                deviceQueue.push(p);
+                log<level::NOTICE>(
+                    "device already running the image, skipping",
+                    entry("device=%s", p.c_str()));
+                continue;
             }
-            else
-            {
-                log<level::NOTICE>("device not compatible",
-                                   entry("device=%s", p.c_str()));
+            deviceQueue.push(p);
+            if (itemUpdaterUtils->updateAllTogether()) {
+                log<level::NOTICE>("Updating all devices under",
+                                entry("device=%s", p.c_str()));
+                break;
             }
-        }
-        if (deviceQueue.empty())
-        {
-            log<level::WARNING>("No device compatible with the software");
-            progressStep = 90;
         }
         else
         {
-            progressStep = 80 / deviceQueue.size();
+            log<level::NOTICE>("device not compatible",
+                                entry("device=%s", p.c_str()));
         }
+    }
+    if (deviceQueue.empty())
+    {
+        log<level::WARNING>("No device compatible with the software");
+        progressStep = 90;
     }
     else
     {
-		std::cerr << "At concurrent "<< __func__ <<":" << __LINE__ << std::endl;
-        deviceQueue.push("All"); // get this from itemUpdater
-        progressStep = 80;
+        progressStep = 80 / deviceQueue.size();
     }
+
     if (!activationProgress)
     {
         activationProgress = std::make_unique<ActivationProgress>(bus, objPath);
