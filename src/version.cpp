@@ -45,13 +45,11 @@ auto Version::activation(Activations value) -> Activations
     if (value == Status::Activating)
     {
         value = startActivation();
-		std::cerr << "At "<< __func__ <<":" << __LINE__ <<":" << std::endl;
     }
     else
     {
         activationBlocksTransition.reset();
         activationProgress.reset();
-		std::cerr << "At "<< __func__ <<":" << __LINE__ <<":" << std::endl;
     }
 
     return SoftwareActivation::activation(value);
@@ -82,19 +80,16 @@ void Version::unitStateChange(sdbusplus::message::message& msg)
 
     // Read the msg and populate each variable
     msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
-	std::cerr << "At " <<__func__ << ":" << __LINE__ << std::endl;
 
     if (newStateUnit == deviceUpdateUnit)
     {
         if (newStateResult == "done")
         {
-			std::cerr << "At " <<__func__<< ":" << __LINE__ << std::endl;
             onUpdateDone();
         }
         if (newStateResult == "failed" || newStateResult == "dependency")
         {
             onUpdateFailed();
-			std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
         }
     }
 }
@@ -109,14 +104,12 @@ bool Version::doUpdate(const std::string& inventoryPath)
 {
     currentUpdatingDevice = inventoryPath;
     deviceUpdateUnit = getUpdateService(currentUpdatingDevice);
-	std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     try
     {
         auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
                                           SYSTEMD_INTERFACE, "StartUnit");
         method.append(deviceUpdateUnit, "replace");
         bus.call_noreply(method);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
         return true;
     }
     catch (const SdBusError& e)
@@ -132,23 +125,18 @@ bool Version::doUpdate()
     // When the queue is empty, all updates are done
     if (deviceQueue.empty())
     {
-		std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
         finishActivation();
-		std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
         return true;
     }
 
-	std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
     // Do the update on a device
     const auto& device = deviceQueue.front();
-	std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
     return doUpdate(device);
 }
 
 void Version::onUpdateDone()
 {
     auto progress = activationProgress->progress() + progressStep;
-	std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
     activationProgress->progress(progress);
 
     // Update the activation association
@@ -164,12 +152,9 @@ void Version::onUpdateDone()
 
     activationListener->onUpdateDone(getVersionId(), currentUpdatingDevice);
     currentUpdatingDevice.clear();
-	std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
 
     deviceQueue.pop();
-	std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
     doUpdate(); // Update the next device
-	std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
 }
 
 void Version::onUpdateFailed()
@@ -237,18 +222,15 @@ Version::Status Version::startActivation()
     if (!activationProgress)
     {
         activationProgress = std::make_unique<ActivationProgress>(bus, objPath);
-		std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
     }
     if (!activationBlocksTransition)
     {
         activationBlocksTransition =
             std::make_unique<ActivationBlocksTransition>(bus, objPath);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     }
     if (doUpdate())
     {
         activationProgress->progress(10);
-		std::cerr << "At " <<__func__<< ":" << __LINE__ << std::endl;
         return Status::Activating;
     }
     else
@@ -259,24 +241,16 @@ Version::Status Version::startActivation()
 
 void Version::finishActivation()
 {
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     storeImage();
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     activationProgress->progress(100);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
 
     createActiveAssociation(objPath);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     addFunctionalAssociation(objPath);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     addUpdateableAssociation(objPath);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     // Reset RequestedActivations to none so that it could be activated in
     // future
     requestedActivation(SoftwareActivation::RequestedActivations::None);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     activation(Status::Active);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
 }
 bool Version::isCompatible(const std::string& inventoryPath)
 {
@@ -301,12 +275,10 @@ bool Version::isCompatible(const std::string& inventoryPath)
 
 void Version::storeImage()
 {
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     // Store image in persistent only store the latest one by removing old ones
     auto src = path();
     auto dst = std::filesystem::path(IMG_DIR_PERSIST) /
                itemUpdaterUtils->getName() / uuid();
-	std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     if (src == dst)
     {
         // This happens when updating an stored image, no need to store it again
@@ -314,17 +286,11 @@ void Version::storeImage()
     }
     try
     {
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
         std::filesystem::remove_all(dst);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
         std::filesystem::create_directories(dst);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ <<"SRC"<< src <<"DST " << dst << std::endl;
-        //std::filesystem::copy(src, dst);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
+        std::filesystem::copy(src, dst);
         dst += std::filesystem::path(src).filename();
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
         path(dst.string()); // Update the FilePath interface
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     }
     catch (const std::filesystem::filesystem_error& e)
     {
@@ -338,14 +304,11 @@ void Version::storeImage()
             "Error storing device image", entry("ERROR=%s", e.what()));
 	}
     // FIXME if not deleted then PLDM fail to extract image
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
     std::filesystem::remove(src);
-		std::cerr << "At "<< __func__ <<":" << __LINE__ << std::endl;
 }
 
 std::string Version::getUpdateService(const std::string& inventoryPath)
 {
-		std::cerr << "At " <<__func__ <<":" << __LINE__ << std::endl;
     return itemUpdaterUtils->getUpdateServiceWithArgs(inventoryPath, path());
 }
 
@@ -367,7 +330,7 @@ void ActivationBlocksTransition::disableRebootGuard()
     auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
                                       SYSTEMD_INTERFACE, "StartUnit");
     method.append("reboot-guard-disable.service", "replace");
-    //bus.call_noreply_noerror(method);
+    bus.call_noreply_noerror(method);
 }
 
 } // namespace updater
