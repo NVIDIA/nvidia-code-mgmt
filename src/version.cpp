@@ -179,48 +179,46 @@ Version::Status Version::startActivation()
         return activation(); // Return the previous activation status
     }
 
-    if (itemUpdaterUtils->updateAllTogether() == false)
+    auto devicePaths = itemUpdaterUtils->getItemUpdaterInventoryPaths();
+    if (devicePaths.empty())
     {
-        auto devicePaths = itemUpdaterUtils->getItemUpdaterInventoryPaths();
-        if (devicePaths.empty())
+        log<level::WARNING>("No device inventory found");
+        return Status::Failed;
+    }
+    for (const auto& p : devicePaths)
+    {
+        if (isCompatible(p))
         {
-            log<level::WARNING>("No device inventory found");
-            return Status::Failed;
-        }
-        for (const auto& p : devicePaths)
-        {
-            if (isCompatible(p))
+            if (isAssociated(p, associations()))
             {
-                if (isAssociated(p, associations()))
-                {
-                    log<level::NOTICE>(
-                        "device already running the image, skipping",
-                        entry("device=%s", p.c_str()));
-                    continue;
-                }
-                deviceQueue.push(p);
+                log<level::NOTICE>(
+                    "device already running the image, skipping",
+                    entry("device=%s", p.c_str()));
+                continue;
             }
-            else
-            {
-                log<level::NOTICE>("device not compatible",
-                                   entry("device=%s", p.c_str()));
+            deviceQueue.push(p);
+            if (itemUpdaterUtils->updateAllTogether()) {
+                log<level::NOTICE>("Updating all devices under",
+                                entry("device=%s", p.c_str()));
+                break;
             }
-        }
-        if (deviceQueue.empty())
-        {
-            log<level::WARNING>("No device compatible with the software");
-            progressStep = 90;
         }
         else
         {
-            progressStep = 80 / deviceQueue.size();
+            log<level::NOTICE>("device not compatible",
+                                entry("device=%s", p.c_str()));
         }
+    }
+    if (deviceQueue.empty())
+    {
+        log<level::WARNING>("No device compatible with the software");
+        progressStep = 90;
     }
     else
     {
-        deviceQueue.push("All"); // get this from itemUpdater
-        progressStep = 80;
+        progressStep = 80 / deviceQueue.size();
     }
+
     if (!activationProgress)
     {
         activationProgress = std::make_unique<ActivationProgress>(bus, objPath);
@@ -300,6 +298,11 @@ void Version::storeImage()
             "Error storing device image", entry("ERROR=%s", e.what()),
             entry("SRC=%s", src.c_str()), entry("DST=%s", dst.c_str()));
     }
+	catch (const std::exception& e) 
+	{
+        log<level::ERR>(
+            "Error storing device image", entry("ERROR=%s", e.what()));
+	}
     // FIXME if not deleted then PLDM fail to extract image
     std::filesystem::remove(src);
 }
