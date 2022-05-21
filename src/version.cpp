@@ -327,10 +327,17 @@ void ActivationBlocksTransition::disableRebootGuard()
     log<level::INFO>(
         "device activation has ended - BMC reboots are re-enabled.");
 
-    auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
-                                      SYSTEMD_INTERFACE, "StartUnit");
-    method.append("reboot-guard-disable.service", "replace");
-    bus.call_noreply_noerror(method);
+    try
+    {
+        auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+                                          SYSTEMD_INTERFACE, "StartUnit");
+        method.append("reboot-guard-disable.service", "replace");
+        bus.call_noreply_noerror(method);
+    }
+    catch (const SdBusError& e)
+    {
+        log<level::ERR>("Error staring service", entry("ERROR=%s", e.what()));
+    }
 }
 
 } // namespace updater

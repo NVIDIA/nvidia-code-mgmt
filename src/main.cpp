@@ -20,11 +20,14 @@
 
 #include <getopt.h>
 
+#include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/bus.hpp>
 
 #include <cstdlib>
 #include <exception>
+
+using namespace phosphor::logging;
 
 static struct option set_opts[] = {
     {"updater", required_argument, NULL, 'u'},
@@ -104,7 +107,16 @@ int main(int argc, char** argv)
         printf("UnSupported Updater \"%s\"\n", updater.c_str());
         exit(EXIT_FAILURE);
     }
-    bus.request_name(itemUpdater->getBusName().c_str());
+    try
+    {
+        bus.request_name(itemUpdater->getBusName().c_str());
+    }
+    catch (const sdbusplus::exception::SdBusError& e)
+    {
+        log<level::ERR>("Error while getting service name",
+            entry("ERROR=%s", e.what()));
+        return -1;
+    }
     abstractController = std::make_unique<BaseController>(itemUpdater);
 
     if (abstractController->processExistingImages())
