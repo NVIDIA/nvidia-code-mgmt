@@ -6,6 +6,4 @@ Description=Update PSU %I
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-#psuupdate.sh 215<I2C Bus> 0<PSU BusNumber> 01_ECD16010092_Pri_APP_v1_6_0_0.bin
-#ExecStart=/bin/echo To update psuupdate.sh $ARGS
-ExecStart=psuupdate.sh $ARGS
+ExecStart=psufwupgrade fwupgrade $ARGS
