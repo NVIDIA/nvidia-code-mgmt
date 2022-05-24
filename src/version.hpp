@@ -56,7 +56,6 @@ using VersionInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Association::server::Definitions,
     sdbusplus::xyz::openbmc_project::Common::server::UUID,
     sdbusplus::xyz::openbmc_project::Software::server::Activation,
-    sdbusplus::xyz::openbmc_project::Software::server::Version,
     sdbusplus::xyz::openbmc_project::Software::server::ExtendedVersion,
     sdbusplus::xyz::openbmc_project::server::Association,
     sdbusplus::xyz::openbmc_project::Common::server::FilePath>;
@@ -219,14 +218,11 @@ class Version :
         itemUpdaterUtils(itemUpdaterUtils)
     {
         // Set properties.
-        version(versionString);
         uuid(uniqueId);
         path(filePath);
-        extendedVersion(filePath);
+        extendedVersion(versionString);
         associations(assoc);
         activation(activationStatus);
-        purpose(sdbusplus::xyz::openbmc_project::Software::server::Version::
-                    VersionPurpose::Other);
 
         activationBlocksTransition = nullptr;
         activationProgress = nullptr;
