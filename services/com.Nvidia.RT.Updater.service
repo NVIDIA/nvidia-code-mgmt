@@ -1,14 +1,25 @@
 [Unit]
 Description=OpenBMC RT Code Manager
-Requires=nvidia-fpga-ready.target
-After=nvidia-fpga-ready.target
-Conflicts=nvidia-fpga-notready.target
 Wants=pldmd.service
 After=pldmd.service
 Wants=obmc-mapper.target
 After=obmc-mapper.target
-Wants=nvidia-retimer.service
-After=nvidia-retimer.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer0.service
+After=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer0.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer1.service
+After=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer1.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer2.service
+After=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer2.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer3.service
+After=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer3.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer4.service
+After=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer4.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer5.service
+After=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer5.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer6.service
+After=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer6.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer7.service
+After=mapper-wait@-xyz-openbmc_project-inventory-system-board-retimer7.service
 
 [Service]
 ExecStart=/usr/bin/code-manager -u Retimer
@@ -18,4 +29,4 @@ BusName=com.Nvidia.Software.RT.Updater
 
 [Install]
 WantedBy=multi-user.target
-WantedBy=nvidia-fpga-ready.target
+
