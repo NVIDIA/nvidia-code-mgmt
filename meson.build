@@ -52,11 +52,14 @@ endif
 if get_option('RT_SUPPORT').enabled()
   add_project_arguments('-DRT_SUPPORT', language : ['c','cpp'])
   cdata.set_quoted('RT_SUPPORTED_MODEL', get_option('RT_SUPPORTED_MODEL'))
-  cdata.set_quoted('RT_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Item.Chassis')
+  cdata.set_quoted('RT_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Item.PCIeDevice')
   cdata.set_quoted('RT_BUSNAME_UPDATER', 'com.Nvidia.Software.RT.Updater')
-  cdata.set_quoted('RT_BUSNAME_INVENTORY', 'com.Nvidia.Rt')
+  cdata.set_quoted('RT_BUSNAME_INVENTORY', 'xyz.openbmc_project.GpuMgr')
   cdata.set_quoted('RT_UPDATE_SERVICE', 'rt-update@.service')
   cdata.set_quoted('RT_UPDATE_SINGLE_SERVICE', 'rt-update-direct@.service')
+  cdata.set_quoted('RT_INVENTORY_PATH',
+    '/xyz/openbmc_project/inventory/system/chassis/Baseboard/PCIeDevices/PCIeRetimer')
+  cdata.set_quoted('RT_SW_VERSION_PATH', '/xyz/openbmc_project/software/PCIeRetimer%sFirmware')
 endif
 
 if get_option('PEX_SUPPORT').enabled()

@@ -95,6 +95,7 @@ std::string DBUSUtils::createVersionID(const std::string& updaterName,
 
 any DBUSUtils::getPropertyImpl(const char* service, const char* path,
                                const char* interface, const char* propertyName)
+                               const
 {
     auto method = bus.new_method_call(service, path,
                                       "org.freedesktop.DBus.Properties", "Get");

@@ -47,6 +47,11 @@ class RTDevice : public rtcommonutils::Util
     {
         return d;
     }
+
+    const std::string& getId()
+    {
+        return name;
+    }
 };
 
 /**
@@ -66,9 +71,9 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param together update everything together
      */
     ReTimerItemUpdater(sdbusplus::bus::bus& bus, bool together) :
-        BaseItemUpdater(bus, RT_SUPPORTED_MODEL, RT_INVENTORY_IFACE, "RT",
-                        RT_BUSNAME_UPDATER, RT_UPDATE_SERVICE, together,
-                        RT_BUSNAME_INVENTORY)
+        BaseItemUpdater(bus, RT_SUPPORTED_MODEL, RT_INVENTORY_IFACE,
+                        "PCIeRetimerFirmware", RT_BUSNAME_UPDATER,
+                        RT_UPDATE_SERVICE, together, RT_BUSNAME_INVENTORY)
     {
 
         nlohmann::json fruJson = rtcommonutils::loadJSONFile(
@@ -82,8 +87,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
         {
             try
             {
-                const auto baseinvInvPath =
-                    "/xyz/openbmc_project/inventory/system/board/retimer";
+                const auto baseinvInvPath = RT_INVENTORY_PATH;
                 std::string id = fru.at("Index");
                 std::string busN = fru.at("Bus");
                 std::string address = fru.at("Address");
@@ -202,6 +206,37 @@ class ReTimerItemUpdater : public BaseItemUpdater
             }
         }
         return false;
+    }
+
+    /**
+     * @brief This method overrides getItemUpdaterInventoryPaths.
+     *        Gets the inventory from RTDevice inventory and does not
+     *        rely on objects created by GpuMgr.
+     *
+     * @return std::vector<std::string>
+     */
+    std::vector<std::string> getItemUpdaterInventoryPaths() override
+    {
+        std::vector<std::string> ret;
+        for (auto& inv : invs)
+        {
+            ret.emplace_back(inv->getInventoryPath());
+        }
+        return ret;
+    }
+
+    /**
+     * @brief This method overrides GetServiceName and returns service name from
+     * config instead of looking at mapper
+     *
+     * @param path - object path
+     * @param interface - dbus interface
+     * @return std::string
+     */
+    std::string getDbusService(const std::string& /* path */,
+                    const std::string& /* interface */) override
+    {
+        return RT_BUSNAME_INVENTORY;
     }
 };
 

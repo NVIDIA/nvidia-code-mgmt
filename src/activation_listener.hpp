@@ -82,4 +82,14 @@ class ItemUpdaterUtils
      *
      */
     virtual void readExistingFirmWare() = 0;
+
+    /**
+     * @brief Get D-Bus service name
+     *
+     * @param const char* path - D-Bus object path
+     * @param const char* interface - D-Bus interface
+     * @return std::string
+     */
+    virtual std::string getDbusService(const std::string& path,
+                          const std::string& interface) = 0;
 };

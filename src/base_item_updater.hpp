@@ -229,15 +229,23 @@ class BaseItemUpdater :
     virtual std::string getUUID(const std::string& model,
                                 const std::string& manufacture)
     {
+        std::string uuid = "";
         for (auto& it : deviceIds)
         {
+            if(uuid.empty())
+            {
+                // use first uuid as default
+                // this is to allow update even if
+                // model mismatch from gpumgr occurs
+                uuid = it.first;
+            }
             auto& pair = it.second;
             if (pair.first == model && pair.second == manufacture)
             {
-                return it.first;
+                uuid = it.first;
             }
         }
-        return "";
+        return uuid;
     }
 
     /**
@@ -385,6 +393,19 @@ class BaseItemUpdater :
         return service;
     }
 
+    /**
+     * @brief Get Dbus service name from mapper. Override this
+     *        method if implementation knows the dbus service
+     *        name and read it from config file.
+     * @param path 
+     * @param interface 
+     * @return std::string 
+     */
+    std::string getDbusService(const std::string& path,
+                          const std::string& interface)
+    {
+        return getService(path.c_str(), interface.c_str());
+    }
     /**
      * @brief call back for new device add dbus signal
      *
