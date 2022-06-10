@@ -145,7 +145,8 @@ class ReTimerItemUpdater : public BaseItemUpdater
      */
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,
-                       const std::string& imagePath) const override
+                       const std::string& imagePath,
+                       const std::string& version) const override
     {
 
         std::string args = "";
@@ -159,6 +160,8 @@ class ReTimerItemUpdater : public BaseItemUpdater
             args += imagePath; // image
             args += "\\x20";
             args += "0"; // path
+            args += "\\x20";
+            args += version; // version string for message registry
         }
         else
         {

@@ -349,7 +349,8 @@ class BaseItemUpdater :
      * @return std::string
      */
     virtual std::string getServiceArgs(const std::string& inventoryPath,
-                                       const std::string& imagePath) const = 0;
+                                       const std::string& imagePath,
+                                       const std::string& version) const = 0;
     /**
      * @brief Call back method when dbus activation change signal is received
      *
@@ -375,9 +376,10 @@ class BaseItemUpdater :
      */
     virtual std::string
         getUpdateServiceWithArgs(const std::string& inventoryPath,
-                                 const std::string& imagePath) const
+                                 const std::string& imagePath,
+                                 const std::string& version) const
     {
-        auto args = getServiceArgs(inventoryPath, imagePath);
+        auto args = getServiceArgs(inventoryPath, imagePath, version);
         auto service = getServiceName();
         auto p = service.find('@');
         assert(p != std::string::npos);
