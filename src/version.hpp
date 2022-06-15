@@ -63,6 +63,8 @@ using VersionInherit = sdbusplus::server::object::object<
 using DeleteInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Object::server::Delete>;
 
+using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
+
 /**
  * @brief activation class for dbus
  * @author
@@ -434,6 +436,31 @@ class Version :
      * @return std::string
      */
     std::string getUpdateService(const std::string& inventoryPath);
+
+    /**
+     * @brief Create a Log entry for bmcweb to consume
+     * 
+     * @param messageID - redfish message id
+     * @param addData - redfish message data
+     * @param level - log level
+     * 
+     * @return void 
+     */
+    void createLog(const std::string& messageID,
+                std::map<std::string, std::string>& addData, Level& level);
+
+    /**
+     * @brief Log message indicating transfer failed. 
+     *        This message will be logged when image transfer fails
+     *        or item updater times out.
+     * 
+     * @param compName - component name
+     * @param compVersion - component version
+     * 
+     * @return void
+     */
+    void logTransferFailed(const std::string& compName,
+                          const std::string& compVersion);
 
   private:
     std::string versionId;

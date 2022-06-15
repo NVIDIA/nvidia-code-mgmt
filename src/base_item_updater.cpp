@@ -33,7 +33,7 @@ using namespace phosphor::logging;
 int BaseItemUpdater::processImage(std::filesystem::path& filePath)
 {
     // Compute id
-    auto id = createVersionID(getName(), filePath.stem());
+    auto id = getName();
 
     auto objPath = std::string{SOFTWARE_OBJPATH} + '/' + id;
 
@@ -161,14 +161,8 @@ void BaseItemUpdater::erase(const std::string& versionId)
 
 void BaseItemUpdater::readDeviceDetails(std::string& p)
 {
-    auto service = getService(p.c_str(), ITEM_IFACE);
-    auto present =
-        getProperty<bool>(service.c_str(), p.c_str(), ITEM_IFACE, PRESENT);
     auto version = getVersion(p);
-    if (present && !version.empty())
-    {
-        createSoftwareObject(p, version);
-    }
+    createSoftwareObject(p, version);
     // Add matches for Device Inventory's property changes
     deviceMatches.emplace_back(
         bus, MatchRules::propertiesChanged(p, ITEM_IFACE),
@@ -211,7 +205,7 @@ void BaseItemUpdater::readExistingFirmWare()
 void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
                                            const std::string& deviceVersion)
 {
-    auto versionId = createVersionID(getName(), deviceVersion);
+    auto versionId = getName();
     auto model = getModel(inventoryPath);
     auto manufacturer = getManufacturer(inventoryPath);
     auto objPath = std::string(SOFTWARE_OBJPATH) + "/" + versionId;

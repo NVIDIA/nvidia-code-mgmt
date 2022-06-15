@@ -24,6 +24,8 @@ namespace updater
 
 using namespace sdbusplus::xyz::openbmc_project::Common::Error;
 
+const std::string transferFailed{"Update.1.0.TransferFailed"};
+
 void Delete::delete_()
 {
     if (parent.eraseCallback)
@@ -35,7 +37,7 @@ void Delete::delete_()
 ////////////////////////////////Activation
 
 namespace softwareServer = sdbusplus::xyz::openbmc_project::Software::server;
-
+namespace LoggingServer = sdbusplus::xyz::openbmc_project::Logging::server;
 using namespace phosphor::logging;
 using sdbusplus::exception::SdBusError;
 using SoftwareActivation = softwareServer::Activation;
@@ -159,7 +161,8 @@ void Version::onUpdateDone()
 
 void Version::onUpdateFailed()
 {
-    // TODO: report an event
+    logTransferFailed(itemUpdaterUtils->getName(),
+                    extendedVersion());
     log<level::ERR>("Failed to udpate device",
                     entry("device=%s", deviceQueue.front().c_str()));
     std::queue<std::string>().swap(deviceQueue); // Clear the queue
@@ -241,7 +244,6 @@ Version::Status Version::startActivation()
 
 void Version::finishActivation()
 {
-    storeImage();
     activationProgress->progress(100);
 
     createActiveAssociation(objPath);
@@ -254,20 +256,41 @@ void Version::finishActivation()
 }
 bool Version::isCompatible(const std::string& inventoryPath)
 {
-    auto service = getService(inventoryPath.c_str(), ASSET_IFACE);
-    auto deviceManufacturer = getProperty<std::string>(
-        service.c_str(), inventoryPath.c_str(), ASSET_IFACE, MANUFACTURER);
-    auto deviceModel = getProperty<std::string>(
-        service.c_str(), inventoryPath.c_str(), ASSET_IFACE, MODEL);
+    std::string deviceManufacturer;
+    std::string deviceModel;
+    try
+    {
+        auto service = itemUpdaterUtils->getDbusService(inventoryPath,
+                        ASSET_IFACE);
+        deviceManufacturer = getProperty<std::string>(
+            service.c_str(), inventoryPath.c_str(), ASSET_IFACE, MANUFACTURER);
+        deviceModel = getProperty<std::string>(
+            service.c_str(), inventoryPath.c_str(), ASSET_IFACE, MODEL);
+    }
+    // For Retimer model is hardcoded by GpuMgr. Ignore for retimer
+    // For Retimer manufacturer is not populated by GpuMgr. Ignore for retimer
+    catch(const std::exception& e)
+    {
+        log<level::ERR>("Error while getting inventory properties",
+            entry("ERROR=%s", e.what()));
+        std::cerr << e.what() << '\n';
+    }
 
-    if (deviceModel != model)
+    // ignore if deviceModel is empty from GPU manager else it should match
+    if (!deviceModel.empty() && deviceModel != model)
     {
         // The model shall match
+        log<level::ERR>("Device model not matching",
+            entry("SYSMODEL=%s", deviceModel.c_str()),
+            entry("CFGMODEL=%s", model.c_str()));;
         return false;
     }
     if (!deviceManufacturer.empty())
     {
         // If device inventory has manufacturer property, it shall match
+        log<level::ERR>("Device manufacturer not matching",
+            entry("SYSMNFCTR=%s", deviceManufacturer.c_str()),
+            entry("CFGMNFCTR=%s", manufacturer.c_str()));;
         return deviceManufacturer == manufacturer;
     }
     return true;
@@ -341,6 +364,39 @@ void ActivationBlocksTransition::disableRebootGuard()
     }
 }
 
+void Version::createLog(const std::string& messageID,
+                std::map<std::string, std::string>& addData, Level& level)
+{
+    static constexpr auto logObjPath = "/xyz/openbmc_project/logging";
+    static constexpr auto logInterface =
+        "xyz.openbmc_project.Logging.Create";
+    static constexpr auto service = "xyz.openbmc_project.Logging";
+    try
+    {
+        auto severity = LoggingServer::convertForMessage(level);
+        auto method = bus.new_method_call(service, logObjPath,
+                                            logInterface, "Create");
+        method.append(messageID, severity, addData);
+        bus.call_noreply(method);
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr
+            << "Failed to create D-Bus log entry for message registry, ERROR="
+            << e.what() << "\n";
+    }
+}
+
+void Version::logTransferFailed(const std::string& compName,
+                                  const std::string& compVersion)
+{
+    std::map<std::string, std::string> addData;
+    addData["REDFISH_MESSAGE_ID"] = transferFailed;
+    addData["REDFISH_MESSAGE_ARGS"] = (compVersion + "," + compName);
+    Level level = Level::Critical;
+    createLog(transferFailed, addData, level);
+    return;
+}
 } // namespace updater
 } // namespace software
 } // namespace nvidia

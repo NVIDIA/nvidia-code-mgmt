@@ -86,7 +86,7 @@ class DBUSUtils
      * @return any
      */
     any getPropertyImpl(const char* service, const char* path,
-                        const char* interface, const char* propertyName);
+                        const char* interface, const char* propertyName) const;
 
     /**
      * @brief Get the Property object
@@ -100,7 +100,7 @@ class DBUSUtils
      */
     template <typename T>
     T getProperty(const char* service, const char* path, const char* interface,
-                  const char* propertyName)
+                  const char* propertyName) const
     {
         any result = getPropertyImpl(service, path, interface, propertyName);
         auto value = any_cast<PropertyType>(result);
