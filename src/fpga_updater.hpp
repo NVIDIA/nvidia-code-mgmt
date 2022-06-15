@@ -143,7 +143,8 @@ class FPGAItemUpdater : public BaseItemUpdater
      */
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,
-                       const std::string& imagePath) const override
+                       const std::string& imagePath,
+                       const std::string& version) const override
     {
 
         // The systemd unit shall be escaped

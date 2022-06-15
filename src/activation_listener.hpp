@@ -68,7 +68,8 @@ class ItemUpdaterUtils
      */
     virtual std::string
         getUpdateServiceWithArgs(const std::string& inventoryPath,
-                                 const std::string& imagePath) const = 0;
+                                 const std::string& imagePath,
+                                 const std::string& version) const = 0;
 
     /**
      * @brief Get the Name object

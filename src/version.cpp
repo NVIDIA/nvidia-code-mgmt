@@ -309,7 +309,8 @@ void Version::storeImage()
 
 std::string Version::getUpdateService(const std::string& inventoryPath)
 {
-    return itemUpdaterUtils->getUpdateServiceWithArgs(inventoryPath, path());
+    return itemUpdaterUtils->getUpdateServiceWithArgs(inventoryPath, path(),
+        extendedVersion());
 }
 
 void ActivationBlocksTransition::enableRebootGuard()
