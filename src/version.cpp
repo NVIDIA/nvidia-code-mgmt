@@ -393,6 +393,8 @@ void Version::logTransferFailed(const std::string& compName,
     std::map<std::string, std::string> addData;
     addData["REDFISH_MESSAGE_ID"] = transferFailed;
     addData["REDFISH_MESSAGE_ARGS"] = (compVersion + "," + compName);
+    // use separate container for fwupdate message registry
+    addData["namespace"] = "FWUpdate";
     Level level = Level::Critical;
     createLog(transferFailed, addData, level);
     return;
