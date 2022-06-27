@@ -60,6 +60,8 @@ if get_option('RT_SUPPORT').enabled()
   cdata.set_quoted('RT_INVENTORY_PATH',
     '/xyz/openbmc_project/inventory/system/chassis/Baseboard/PCIeDevices/PCIeRetimer')
   cdata.set_quoted('RT_SW_VERSION_PATH', '/xyz/openbmc_project/software/PCIeRetimer%sFirmware')
+  cdata.set_quoted('RT_SW_ID_FORMAT', 'PCIeRetimer%uFirmware')
+  cdata.set('SUPPORTED_RETIMERS', 8)
 endif
 
 if get_option('PEX_SUPPORT').enabled()

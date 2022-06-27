@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include "base_item_updater.hpp"
+#include <bitset>
 
 #ifndef MOCK_UTILS
 #include <rt_util.hpp> // part of nvidia-retimer
@@ -141,25 +142,57 @@ class ReTimerItemUpdater : public BaseItemUpdater
     std::string getModel(const std::string& inventoryPath) const override;
 
     /**
+     * @brief Get retimer the devices to update object based on target filters
+     * 
+     * @param targetFilter 
+     * @return std::string 
+     */
+    std::string getDevicesToUpdate(const TargetFilter& targetFilter) const
+    {
+        std::bitset<SUPPORTED_RETIMERS> devices;
+        if (targetFilter.type == TargetFilterType::UpdateAll)
+        {
+            devices.set();
+        }
+        else if(targetFilter.type == TargetFilterType::UpdateSelected)
+        {
+            for(auto& target : targetFilter.targets)
+            {
+                uint deviceId;
+                int ret = std::sscanf(target.c_str(), RT_SW_ID_FORMAT, &deviceId);
+                if (ret > 0 && deviceId < SUPPORTED_RETIMERS)
+                {
+                    devices[deviceId] = 1;
+                }
+            }
+        }
+        //else targetFilter type is UpdateNone, all bits are set to 0 by default
+        return std::to_string(devices.to_ulong());
+    }
+    /**
      * @brief Get the Service Args object
      *
      * @param inventoryPath
      * @param imagePath
+     * @param version
+     * @param targetFilter
      * @return std::string
      */
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,
                        const std::string& imagePath,
-                       const std::string& version) const override
+                       const std::string& version,
+                       const TargetFilter &targetFilter) const override
     {
 
         std::string args = "";
         if (updateAllTogether())
         {
+            std::string devicesBits = getDevicesToUpdate(targetFilter);
             args += "\\x20";
             args += std::to_string(invs[0]->getBus()); // pull first device bus
             args += "\\x20";
-            args += std::to_string(invs.size()); // n devices
+            args += devicesBits; // devices to update
             args += "\\x20";
             args += imagePath; // image
             args += "\\x20";
@@ -240,6 +273,21 @@ class ReTimerItemUpdater : public BaseItemUpdater
                     const std::string& /* interface */) override
     {
         return RT_BUSNAME_INVENTORY;
+    }
+
+    std::string validateTarget(const sdbusplus::message::object_path& target)
+    {
+        uint deviceId;
+        int ret = std::sscanf(target.filename().c_str(), RT_SW_ID_FORMAT, &deviceId);
+        if (ret > 0 && deviceId < SUPPORTED_RETIMERS)
+        {
+            std::string invPath = RT_INVENTORY_PATH + std::to_string(deviceId);
+            if(getModel(invPath) != "")
+            {
+                return target.filename();
+            }
+        }
+        return "";
     }
 };
 

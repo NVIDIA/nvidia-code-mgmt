@@ -22,6 +22,7 @@
 #include <xyz/openbmc_project/Software/ActivationBlocksTransition/server.hpp>
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
+#include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
 
 #include <functional>
 #include <iostream>
@@ -62,6 +63,9 @@ using VersionInherit = sdbusplus::server::object::object<
 
 using DeleteInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Object::server::Delete>;
+
+using UpdatePolicyInherit = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::Software::server::UpdatePolicy>;
 
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 
@@ -170,6 +174,26 @@ class Delete : public DeleteInherit
     Version& parent;
 };
 
+/**@class UpdatePolicy
+ * 
+ *  Concrete implementation of xyz.openbmc_project.Software.UpdatePolicy D-Bus
+ *  interface
+ *  
+ */
+class UpdatePolicy : public UpdatePolicyInherit
+{
+  public:
+    /** @brief Constructor
+     *
+     *  @param[in] bus - Bus to attach to
+     *  @param[in] objPath - D-Bus object path
+     */
+    UpdatePolicy(sdbusplus::bus::bus& bus, const std::string& objPath) :
+        UpdatePolicyInherit(bus, objPath.c_str(), action::emit_interface_added)
+
+    {}
+};
+
 /**
  * @brief Version dbus class
  * @author
@@ -228,6 +252,7 @@ class Version :
 
         activationBlocksTransition = nullptr;
         activationProgress = nullptr;
+        updatePolicy = std::make_unique<UpdatePolicy>(bus, objPath);
         deleteObject = std::make_unique<Delete>(bus, objPath, *this);
         // Emit deferred signal.
         emit_object_added();
@@ -487,9 +512,13 @@ class Version :
 
     std::unique_ptr<ActivationProgress> activationProgress;
 
+    std::unique_ptr<UpdatePolicy> updatePolicy;
+
     ActivationListener* activationListener;
 
     ItemUpdaterUtils* itemUpdaterUtils;
+
+    TargetFilter targetFilter;
 };
 
 } // namespace updater

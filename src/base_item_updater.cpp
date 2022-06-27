@@ -475,6 +475,28 @@ void BaseItemUpdater::newDeviceAdded(sdbusplus::message::message& msg)
     }
 }
 
+TargetFilter BaseItemUpdater::applyTargetFilters(
+    const std::vector<sdbusplus::message::object_path>& targets)
+{
+    TargetFilter targetFilter = {TargetFilterType::UpdateNone, {}};
+    if (targets.size() == 0)
+    {
+        // update all
+        targetFilter.type = TargetFilterType::UpdateAll;
+        return targetFilter;
+    }
+    for (auto& target : targets)
+    {
+        std::string path = validateTarget(target);
+        if (!path.empty())
+        {
+            targetFilter.type = TargetFilterType::UpdateSelected;
+            targetFilter.targets.emplace_back(path);
+        }
+    }
+    return targetFilter;
+}
+
 } // namespace updater
 } // namespace software
 } // namespace nvidia

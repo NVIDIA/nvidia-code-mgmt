@@ -358,7 +358,9 @@ class BaseItemUpdater :
      */
     virtual std::string getServiceArgs(const std::string& inventoryPath,
                                        const std::string& imagePath,
-                                       const std::string& version) const = 0;
+                                       const std::string& version,
+                                       const TargetFilter& targetFilter)
+                                       const = 0;
     /**
      * @brief Call back method when dbus activation change signal is received
      *
@@ -380,14 +382,16 @@ class BaseItemUpdater :
      *
      * @param inventoryPath
      * @param imagePath
+     * @param targetFilter
      * @return std::string
      */
     virtual std::string
         getUpdateServiceWithArgs(const std::string& inventoryPath,
                                  const std::string& imagePath,
-                                 const std::string& version) const
+                                 const std::string& version,
+                                 const TargetFilter& targetFilter) const
     {
-        auto args = getServiceArgs(inventoryPath, imagePath, version);
+        auto args = getServiceArgs(inventoryPath, imagePath, version, targetFilter);
         auto service = getServiceName();
         auto p = service.find('@');
         assert(p != std::string::npos);
@@ -447,6 +451,26 @@ class BaseItemUpdater :
         (void)p;
         return true;
     }
+
+    /**
+     * @brief validate non-pldm target object path
+     * 
+     * @param target 
+     * @return std::string 
+     */
+    virtual std::string validateTarget(const sdbusplus::message::object_path& target)
+    {
+        return target.filename();
+    }
+
+    /**
+     * @brief apply target filters for non-pldm devices
+     *
+     * @param targets
+     * @return TargetFilter
+     */
+    TargetFilter applyTargetFilters(
+        const std::vector<sdbusplus::message::object_path>& targets);
 
   protected:
     std::string _name;

@@ -2,6 +2,29 @@
 
 #include <string>
 #include <vector>
+#include <sdbusplus/bus.hpp>
+
+/**
+ * @brief Enumeration for target filter types
+ * 
+ */
+enum class TargetFilterType
+{
+    UpdateNone,
+    UpdateSelected,
+    UpdateAll
+};
+
+/**
+ * @brief Target filter struct contains type of target filter and targets to
+ * update.
+ *
+ */
+struct TargetFilter
+{
+    TargetFilterType type;
+    std::vector<std::string> targets;
+};
 
 class ActivationListener
 {
@@ -64,12 +87,15 @@ class ItemUpdaterUtils
      *
      * @param inventoryPath
      * @param imagePath
+     * @param version
+     * @param targetFilter
      * @return std::string
      */
     virtual std::string
         getUpdateServiceWithArgs(const std::string& inventoryPath,
                                  const std::string& imagePath,
-                                 const std::string& version) const = 0;
+                                 const std::string& version,
+                                 const TargetFilter& targetFilter) const = 0;
 
     /**
      * @brief Get the Name object
@@ -93,4 +119,13 @@ class ItemUpdaterUtils
      */
     virtual std::string getDbusService(const std::string& path,
                           const std::string& interface) = 0;
+    
+    /**
+     * @brief apply target filters for non-pldm devices
+     * 
+     * @param targets 
+     * @return TargetFilter 
+     */
+    virtual TargetFilter applyTargetFilters(
+        const std::vector<sdbusplus::message::object_path>& targets) = 0;
 };

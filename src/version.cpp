@@ -188,6 +188,8 @@ Version::Status Version::startActivation()
         log<level::WARNING>("No device inventory found");
         return Status::Failed;
     }
+    //apply target filtering
+    targetFilter = itemUpdaterUtils->applyTargetFilters(updatePolicy->targets());
     for (const auto& p : devicePaths)
     {
         if (isCompatible(p))
@@ -230,6 +232,11 @@ Version::Status Version::startActivation()
     {
         activationBlocksTransition =
             std::make_unique<ActivationBlocksTransition>(bus, objPath);
+    }
+    if(targetFilter.type == TargetFilterType::UpdateNone)
+    {
+        finishActivation();
+        return Status::Active;
     }
     if (doUpdate())
     {
@@ -333,7 +340,7 @@ void Version::storeImage()
 std::string Version::getUpdateService(const std::string& inventoryPath)
 {
     return itemUpdaterUtils->getUpdateServiceWithArgs(inventoryPath, path(),
-        extendedVersion());
+        extendedVersion(), targetFilter);
 }
 
 void ActivationBlocksTransition::enableRebootGuard()
