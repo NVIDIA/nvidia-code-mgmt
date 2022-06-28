@@ -6,4 +6,4 @@ Description=Update CPLD %I
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=/bin/echo To update $ARGS
+ExecStart=cpldupdate $ARGS

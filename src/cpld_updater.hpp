@@ -20,12 +20,14 @@ namespace updater
 class CPLDDevice : public cpldcommonutils::Util
 {
     std::string name, inventoryPath;
+    uint8_t i2cBus;
+    uint32_t imageSelect;
 
   public:
     CPLDDevice(const std::string& objPath, uint8_t busN, uint8_t address,
-               const std::string& name) :
+               uint32_t imageNo, const std::string& name) :
         name(name),
-        inventoryPath(objPath)
+        inventoryPath(objPath), i2cBus(busN), imageSelect(imageNo)
     {
         b = busN;
         d = address;
@@ -34,6 +36,22 @@ class CPLDDevice : public cpldcommonutils::Util
     const std::string& getInventoryPath() const
     {
         return inventoryPath;
+    }
+
+    const std::string getBusNum()
+    {
+        std::ostringstream convert;
+        convert << (int)i2cBus;
+        std::string ret = convert.str();
+        return ret;
+    }
+
+    const std::string getImageSelect()
+    {
+        std::ostringstream convert;
+        convert << (int)imageSelect;
+        std::string ret = convert.str();
+        return ret;
     }
 };
 /**
@@ -72,6 +90,7 @@ class CPLDItemUpdater : public BaseItemUpdater
                 std::string id = fru.at("Index");
                 std::string busN = fru.at("Bus");
                 std::string address = fru.at("Address");
+                uint32_t imageselect = fru.at("ImageSelect");
                 std::string invpath = baseinvInvPath + id;
 
                 uint8_t busId = std::stoi(busN);
@@ -85,8 +104,8 @@ class CPLDItemUpdater : public BaseItemUpdater
                 {
                     continue;
                 }
-                auto inv =
-                    std::make_unique<CPLDDevice>(invpath, busId, devAddr, id);
+                auto inv = std::make_unique<CPLDDevice>(invpath, busId, devAddr,
+                                                        imageselect, id);
                 invs.emplace_back(std::move(inv));
             }
             catch (const std::exception& e)
@@ -136,20 +155,28 @@ class CPLDItemUpdater : public BaseItemUpdater
     {
 
         // The systemd unit shall be escaped
-        (void)inventoryPath;
         std::string args = "";
-        args += "\\x20\\x2df"; // -f
-        args += "\\x20";
-        args += imagePath;
-        args += "\\x20\\x2dt"; // -t
-        args += "\\x20";
-        args += "1";
-        args += "\\x20\\x2db"; //-b
-        args += "\\x20";
-        args += "10";
-        args += "\\x20\\x2dd"; //-d
-        args += "\\x20";
-        args += "0x55";
+        for (auto& inv : invs)
+        {
+            if (inv->getInventoryPath() == inventoryPath)
+            {
+                args += "\\x20";
+                args += inv->getBusNum(); // <Bus-Number>
+                args += "\\x20";
+                args +=
+                    inv->getImageSelect(); /* <Image-Select> As per Nvidia
+                          Doc, Image-select = 2 : will flash image in
+                              CFM0(0xfbcfffff) backup,
+                          Image-select = 3 : will
+                              flash image in CFM1(0xfcbfffff) and
+                              CFM2(0xfcafffff) By default it was select as 3*/
+                args += "\\x20";
+                args += imagePath;
+                args += "\\x20";
+                break;
+            }
+        }
+
         std::replace(args.begin(), args.end(), '/', '-');
 
         return args;
