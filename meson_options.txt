@@ -76,3 +76,17 @@ option(
     value: true,
     description: 'Mock underlying hardware calls'
 )
+
+option(
+    'NON_PLDM_DEFAULT_TIMEOUT',
+    type: 'integer',
+    value: 1200,
+    description: 'Default update timeout in seconds for non PLDM devices.'
+)
+
+option(
+    'RT_UPDATE_TIMEOUT',
+    type: 'integer',
+    value: 180,
+    description: 'Retimer update timeout in seconds.'
+)

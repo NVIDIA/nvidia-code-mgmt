@@ -24,6 +24,10 @@
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
 
+#include <phosphor-logging/elog-errors.hpp>
+#include <phosphor-logging/log.hpp>
+#include <sdbusplus/timer.hpp>
+
 #include <functional>
 #include <iostream>
 #include <queue>
@@ -68,6 +72,7 @@ using UpdatePolicyInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Software::server::UpdatePolicy>;
 
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
+using namespace phosphor::logging;
 
 /**
  * @brief activation class for dbus
@@ -254,6 +259,7 @@ class Version :
         activationProgress = nullptr;
         updatePolicy = std::make_unique<UpdatePolicy>(bus, objPath);
         deleteObject = std::make_unique<Delete>(bus, objPath, *this);
+        timer = nullptr;
         // Emit deferred signal.
         emit_object_added();
     }
@@ -487,6 +493,25 @@ class Version :
     void logTransferFailed(const std::string& compName,
                           const std::string& compVersion);
 
+    /**
+     * @brief Timeout handler for non-pldm updates. This method
+     *        sets the status to failed if update did not complete
+     *        within specified time.
+     *
+     * @param timeout
+     */
+    inline void startTimer(uint32_t timeout)
+    {
+        timer = std::make_unique<phosphor::Timer>([this]() {
+            if (!deviceQueue.empty())
+            {
+                log<level::ERR>("Update timed out");
+                this->onUpdateFailed();
+            }
+        });
+        timer->start(std::chrono::seconds(timeout), false);
+    }
+
   private:
     std::string versionId;
 
@@ -519,6 +544,7 @@ class Version :
     ItemUpdaterUtils* itemUpdaterUtils;
 
     TargetFilter targetFilter;
+    std::unique_ptr<phosphor::Timer> timer;
 };
 
 } // namespace updater

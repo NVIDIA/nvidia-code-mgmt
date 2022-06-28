@@ -289,6 +289,15 @@ class ReTimerItemUpdater : public BaseItemUpdater
         }
         return "";
     }
+    /**
+     * @brief Get timeout from config file for retimer
+     *
+     * @return uint32_t
+     */
+    uint32_t getTimeout() override
+    {
+        return RT_UPDATE_TIMEOUT;
+    }
 };
 
 } // namespace updater

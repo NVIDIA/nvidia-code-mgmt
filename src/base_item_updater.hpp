@@ -472,6 +472,17 @@ class BaseItemUpdater :
     TargetFilter applyTargetFilters(
         const std::vector<sdbusplus::message::object_path>& targets);
 
+     /**
+     * @brief Get timeout in seconds. Device implmenetation should override this
+     *        value based on actual time required for the particular device.
+     *
+     * @return uint32_t
+     */
+    virtual uint32_t getTimeout()
+    {
+        return NON_PLDM_DEFAULT_TIMEOUT;
+    }
+
   protected:
     std::string _name;
 

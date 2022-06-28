@@ -6,9 +6,6 @@
 
 #include <openssl/sha.h>
 
-#include <phosphor-logging/elog-errors.hpp>
-#include <phosphor-logging/log.hpp>
-
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -38,7 +35,6 @@ void Delete::delete_()
 
 namespace softwareServer = sdbusplus::xyz::openbmc_project::Software::server;
 namespace LoggingServer = sdbusplus::xyz::openbmc_project::Logging::server;
-using namespace phosphor::logging;
 using sdbusplus::exception::SdBusError;
 using SoftwareActivation = softwareServer::Activation;
 
@@ -112,6 +108,7 @@ bool Version::doUpdate(const std::string& inventoryPath)
                                           SYSTEMD_INTERFACE, "StartUnit");
         method.append(deviceUpdateUnit, "replace");
         bus.call_noreply(method);
+        startTimer(itemUpdaterUtils->getTimeout());
         return true;
     }
     catch (const SdBusError& e)
@@ -138,25 +135,29 @@ bool Version::doUpdate()
 
 void Version::onUpdateDone()
 {
-    auto progress = activationProgress->progress() + progressStep;
-    activationProgress->progress(progress);
+    if (activationProgress)
+    {
+        auto progress = activationProgress->progress() + progressStep;
+        activationProgress->progress(progress);
 
-    // Update the activation association
-    auto assocs = associations();
-    assocs.emplace_back(ACTIVATION_FWD_ASSOCIATION, ACTIVATION_REV_ASSOCIATION,
-                        currentUpdatingDevice);
+        // Update the activation association
+        auto assocs = associations();
+        assocs.emplace_back(ACTIVATION_FWD_ASSOCIATION,
+                            ACTIVATION_REV_ASSOCIATION, currentUpdatingDevice);
 
-    associations(assocs);
+        associations(assocs);
 
-    auto eps = endpoints();
-    eps.emplace_back(sdbusplus::message::object_path(currentUpdatingDevice));
-    endpoints(eps);
+        auto eps = endpoints();
+        eps.emplace_back(
+            sdbusplus::message::object_path(currentUpdatingDevice));
+        endpoints(eps);
 
-    activationListener->onUpdateDone(getVersionId(), currentUpdatingDevice);
-    currentUpdatingDevice.clear();
+        activationListener->onUpdateDone(getVersionId(), currentUpdatingDevice);
+        currentUpdatingDevice.clear();
 
-    deviceQueue.pop();
-    doUpdate(); // Update the next device
+        deviceQueue.pop();
+        doUpdate(); // Update the next device
+    }
 }
 
 void Version::onUpdateFailed()

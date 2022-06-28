@@ -128,4 +128,11 @@ class ItemUpdaterUtils
      */
     virtual TargetFilter applyTargetFilters(
         const std::vector<sdbusplus::message::object_path>& targets) = 0;
+
+    /**
+     * @brief Get timeout for non-pldm devices
+     *
+     * @return uint32_t
+     */
+    virtual uint32_t getTimeout() = 0;
 };

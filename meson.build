@@ -62,6 +62,7 @@ if get_option('RT_SUPPORT').enabled()
   cdata.set_quoted('RT_SW_VERSION_PATH', '/xyz/openbmc_project/software/PCIeRetimer%sFirmware')
   cdata.set_quoted('RT_SW_ID_FORMAT', 'PCIeRetimer%uFirmware')
   cdata.set('SUPPORTED_RETIMERS', 8)
+  cdata.set('RT_UPDATE_TIMEOUT', get_option('RT_UPDATE_TIMEOUT'))
 endif
 
 if get_option('PEX_SUPPORT').enabled()
@@ -110,6 +111,7 @@ cdata.set_quoted('INVENTORY_PATH_BASE', get_option('INVENTORY_PATH_BASE'))
 cdata.set_quoted('IMG_DIR', get_option('IMG_DIR'))
 cdata.set_quoted('IMG_DIR_PERSIST', get_option('IMG_DIR_PERSIST'))
 cdata.set_quoted('IMG_DIR_BUILTIN', get_option('IMG_DIR_BUILTIN'))
+cdata.set('NON_PLDM_DEFAULT_TIMEOUT', get_option('NON_PLDM_DEFAULT_TIMEOUT'))
 
 phosphor_dbus_interfaces = dependency('phosphor-dbus-interfaces')
 phosphor_logging = dependency('phosphor-logging')
