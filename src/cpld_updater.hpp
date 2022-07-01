@@ -1,4 +1,3 @@
-
 #pragma once
 #include "config.h"
 
@@ -153,7 +152,7 @@ class CPLDItemUpdater : public BaseItemUpdater
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,
                        const std::string& imagePath,
-                       const std::string& version,
+                       const std::string /*&version*/,
                        const TargetFilter /* &targetFilter */) const override
     {
 
