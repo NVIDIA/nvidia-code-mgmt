@@ -159,11 +159,10 @@ class PSUItemUpdater : public BaseItemUpdater
      * @param targetFilter
      * @return std::string
      */
-    virtual std::string
-        getServiceArgs(const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       const std::string& version,
-                       const TargetFilter /* &targetFilter */) const override
+    virtual std::string getServiceArgs(
+        const std::string& inventoryPath, const std::string& imagePath,
+        [[maybe_unused]] const std::string& version,
+        [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
 
         // The systemd unit shall be escaped

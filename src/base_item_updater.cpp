@@ -33,13 +33,27 @@ using namespace phosphor::logging;
 int BaseItemUpdater::processImage(std::filesystem::path& filePath)
 {
     // Compute id
-    auto id = getName();
-
-    auto objPath = std::string{SOFTWARE_OBJPATH} + '/' + id;
-
     std::string uniqueIdentifier = filePath.parent_path().string();
     boost::replace_all(uniqueIdentifier, getImageUploadDir(), "");
+#if CPLD_SUPPORT
+    std::string deviceVersion;
+    for (auto& it : deviceIds)
+    {
+        auto& pair = it.second;
+        if (it.first == uniqueIdentifier)
+        {
+            deviceVersion = get<2>(pair);
+            break;
+        }
+    }
+    if (deviceVersion.empty())
+        return -1;
+    auto id = createVersionID(getName(), deviceVersion);
+#else
+    auto id = getName();
+#endif
 
+    auto objPath = std::string{SOFTWARE_OBJPATH} + '/' + id;
     return initiateUpdateImage(objPath, filePath.string(), filePath.stem(), id,
                                uniqueIdentifier);
 }
@@ -205,7 +219,11 @@ void BaseItemUpdater::readExistingFirmWare()
 void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
                                            const std::string& deviceVersion)
 {
+#if CPLD_SUPPORT
+    auto versionId = createVersionID(getName(), deviceVersion);
+#else
     auto versionId = getName();
+#endif
     auto model = getModel(inventoryPath);
     auto manufacturer = getManufacturer(inventoryPath);
     auto objPath = std::string(SOFTWARE_OBJPATH) + "/" + versionId;
@@ -441,8 +459,8 @@ std::unique_ptr<Version> BaseItemUpdater::createVersion(
     const Version::Status& activationStatus)
 {
     auto pair = deviceIds.find(uniqueIdentifier);
-    std::string model = (pair->second).first;
-    std::string manufacturer = (pair->second).second;
+    std::string model = get<0>(pair->second);
+    std::string manufacturer = get<1>(pair->second);
     auto versionPtr = std::make_unique<Version>(
         bus, versionString, objPath, uniqueIdentifier, versionId, filePath,
         assoc, activationStatus, model, manufacturer,

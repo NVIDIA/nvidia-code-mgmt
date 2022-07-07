@@ -215,7 +215,8 @@ class BaseItemUpdater :
                                  const std::string& manufacture)
     {
 
-        auto pair = std::make_pair(std::move(model), std::move(manufacture));
+        auto pair =
+            std::make_tuple(std::move(model), std::move(manufacture), "");
         auto npair = std::make_pair(std::move(uuid), pair);
         deviceIds.insert(npair);
     }
@@ -240,7 +241,7 @@ class BaseItemUpdater :
                 uuid = it.first;
             }
             auto& pair = it.second;
-            if (pair.first == model && pair.second == manufacture)
+            if (get<0>(pair) == model && get<1>(pair) == manufacture)
             {
                 uuid = it.first;
             }
@@ -499,7 +500,8 @@ class BaseItemUpdater :
 
     std::vector<sdbusplus::bus::match_t> deviceMatches;
 
-    std::map<std::string, std::pair<std::string, std::string>> deviceIds;
+    std::map<std::string, std::tuple<std::string, std::string, std::string>>
+        deviceIds;
 
     std::string imageUploadDir;
     std::string busName;

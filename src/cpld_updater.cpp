@@ -26,20 +26,31 @@ std::string CPLDItemUpdater::getVersion(const std::string& inventoryPath) const
         }
     }
     return "";
-    // return "01_30";
 }
 
 std::string
     CPLDItemUpdater::getManufacturer(const std::string& inventoryPath) const
 {
-    (void)inventoryPath;
-    return "NVIDIAManufacture";
+    for (auto& inv : invs)
+    {
+        if (inv->getInventoryPath() == inventoryPath)
+        {
+            return inv->getManufacturer();
+        }
+    }
+    return "";
 }
 
 std::string CPLDItemUpdater::getModel(const std::string& inventoryPath) const
 {
-    (void)inventoryPath;
-    return "CPLDModel";
+    for (auto& inv : invs)
+    {
+        if (inv->getInventoryPath() == inventoryPath)
+        {
+            return inv->getModel();
+        }
+    }
+    return "";
 }
 } // namespace updater
 } // namespace software
