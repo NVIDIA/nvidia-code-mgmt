@@ -46,7 +46,6 @@ auto Version::activation(Activations value) -> Activations
     }
     else
     {
-        activationBlocksTransition.reset();
         activationProgress.reset();
     }
 
@@ -229,11 +228,6 @@ Version::Status Version::startActivation()
     {
         activationProgress = std::make_unique<ActivationProgress>(bus, objPath);
     }
-    if (!activationBlocksTransition)
-    {
-        activationBlocksTransition =
-            std::make_unique<ActivationBlocksTransition>(bus, objPath);
-    }
     if(targetFilter.type == TargetFilterType::UpdateNone)
     {
         finishActivation();
@@ -342,34 +336,6 @@ std::string Version::getUpdateService(const std::string& inventoryPath)
 {
     return itemUpdaterUtils->getUpdateServiceWithArgs(inventoryPath, path(),
         extendedVersion(), targetFilter);
-}
-
-void ActivationBlocksTransition::enableRebootGuard()
-{
-    log<level::INFO>("device image activating - BMC reboots are disabled.");
-
-    auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
-                                      SYSTEMD_INTERFACE, "StartUnit");
-    method.append("reboot-guard-enable.service", "replace");
-    bus.call_noreply_noerror(method);
-}
-
-void ActivationBlocksTransition::disableRebootGuard()
-{
-    log<level::INFO>(
-        "device activation has ended - BMC reboots are re-enabled.");
-
-    try
-    {
-        auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
-                                          SYSTEMD_INTERFACE, "StartUnit");
-        method.append("reboot-guard-disable.service", "replace");
-        bus.call_noreply_noerror(method);
-    }
-    catch (const SdBusError& e)
-    {
-        log<level::ERR>("Error staring service", entry("ERROR=%s", e.what()));
-    }
 }
 
 void Version::createLog(const std::string& messageID,

@@ -19,7 +19,6 @@
 #include <xyz/openbmc_project/Association/server.hpp>
 #include <xyz/openbmc_project/Common/FilePath/server.hpp>
 #include <xyz/openbmc_project/Software/Activation/server.hpp>
-#include <xyz/openbmc_project/Software/ActivationBlocksTransition/server.hpp>
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
@@ -53,10 +52,6 @@ using Properties = std::map<std::string, PropertyType>;
 using ActivationProgressInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Software::server::ActivationProgress>;
 
-using ActivationBlocksTransitionInherit = sdbusplus::server::object::object<
-    sdbusplus::xyz::openbmc_project::Software::server::
-        ActivationBlocksTransition>;
-
 using VersionInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Association::server::Definitions,
     sdbusplus::xyz::openbmc_project::Common::server::UUID,
@@ -73,54 +68,6 @@ using UpdatePolicyInherit = sdbusplus::server::object::object<
 
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 using namespace phosphor::logging;
-
-/**
- * @brief activation class for dbus
- * @author
- * @since Wed Aug 04 2021
- */
-class ActivationBlocksTransition : public ActivationBlocksTransitionInherit
-{
-  public:
-    /**
-     * @brief Construct a new Activation Blocks Transition object
-     *
-     * @param bus
-     * @param path
-     */
-    ActivationBlocksTransition(sdbusplus::bus::bus& bus,
-                               const std::string& path) :
-        ActivationBlocksTransitionInherit(bus, path.c_str(),
-                                          action::emit_interface_added),
-        bus(bus)
-    {
-        enableRebootGuard();
-    }
-
-    /**
-     * @brief Destroy the Activation Blocks Transition object
-     *
-     */
-    ~ActivationBlocksTransition()
-    {
-        disableRebootGuard();
-    }
-
-  private:
-    sdbusplus::bus::bus& bus;
-
-    /**
-     * @brief Enable rebootguard
-     *
-     */
-    void enableRebootGuard();
-
-    /**
-     * @brief disable reboot guard
-     *
-     */
-    void disableRebootGuard();
-};
 
 /**
  * @brief ActivationProgress for dbus
@@ -255,7 +202,6 @@ class Version :
         associations(assoc);
         activation(activationStatus);
 
-        activationBlocksTransition = nullptr;
         activationProgress = nullptr;
         updatePolicy = std::make_unique<UpdatePolicy>(bus, objPath);
         deleteObject = std::make_unique<Delete>(bus, objPath, *this);
@@ -532,8 +478,6 @@ class Version :
     std::string deviceUpdateUnit;
 
     std::string currentUpdatingDevice;
-
-    std::unique_ptr<ActivationBlocksTransition> activationBlocksTransition;
 
     std::unique_ptr<ActivationProgress> activationProgress;
 
