@@ -73,7 +73,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
      */
     ReTimerItemUpdater(sdbusplus::bus::bus& bus, bool together) :
         BaseItemUpdater(bus, RT_SUPPORTED_MODEL, RT_INVENTORY_IFACE,
-                        "PCIeRetimerFirmware", RT_BUSNAME_UPDATER,
+                        RT_NAME, RT_BUSNAME_UPDATER,
                         RT_UPDATE_SERVICE, together, RT_BUSNAME_INVENTORY)
     {
 

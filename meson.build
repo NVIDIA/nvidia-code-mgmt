@@ -58,9 +58,10 @@ if get_option('RT_SUPPORT').enabled()
   cdata.set_quoted('RT_UPDATE_SERVICE', 'rt-update@.service')
   cdata.set_quoted('RT_UPDATE_SINGLE_SERVICE', 'rt-update-direct@.service')
   cdata.set_quoted('RT_INVENTORY_PATH',
-    '/xyz/openbmc_project/inventory/system/chassis/Baseboard/PCIeDevices/PCIeRetimer')
-  cdata.set_quoted('RT_SW_VERSION_PATH', '/xyz/openbmc_project/software/PCIeRetimer%sFirmware')
-  cdata.set_quoted('RT_SW_ID_FORMAT', 'PCIeRetimer%uFirmware')
+    '/xyz/openbmc_project/inventory/system/chassis/HGX_Baseboard_0/PCIeDevices/PCIeRetimer_')
+  cdata.set_quoted('RT_SW_VERSION_PATH', '/xyz/openbmc_project/software/HGX_FW_PCIeRetimer_%u')
+  cdata.set_quoted('RT_SW_ID_FORMAT', 'HGX_FW_PCIeRetimer_%u')
+  cdata.set_quoted('RT_NAME', 'HGX_FW_PCIeRetimer')
   cdata.set('SUPPORTED_RETIMERS', 8)
   cdata.set('RT_UPDATE_TIMEOUT', get_option('RT_UPDATE_TIMEOUT'))
 endif
