@@ -182,7 +182,8 @@ class Version :
             const std::string& model, const std::string& manufacturer,
             eraseFunc callback, ActivationListener* activationListener,
             ItemUpdaterUtils* itemUpdaterUtils) :
-        VersionInherit(bus, (objPath).c_str(), true),
+        VersionInherit(bus, (objPath).c_str(),
+            VersionInherit::action::defer_emit),
         DBUSUtils(bus), eraseCallback(callback), versionId(versionId),
         objPath(objPath), model(model), manufacturer(manufacturer),
         verstionStr(versionString),
