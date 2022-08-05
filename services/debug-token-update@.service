@@ -1,0 +1,9 @@
+
+[Unit]
+Description=Install or erase token
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/updateDebugToken $ARGS

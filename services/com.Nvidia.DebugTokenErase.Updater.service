@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenBMC Debug Token Erase Updater
+Wants=spdmd.service
+After=spdmd.service
+
+[Service]
+ExecStart=/usr/bin/code-manager -u DebugTokenErase
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.DebugTokenErase.Updater
+
+[Install]
+WantedBy=multi-user.target

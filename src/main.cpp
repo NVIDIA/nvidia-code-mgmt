@@ -16,6 +16,10 @@
 #ifdef PEX_SUPPORT
 #include "pex_updater.hpp"
 #endif
+#ifdef DEBUG_TOKEN_SUPPORT
+#include "debug_token_install.hpp"
+#include "debug_token_erase.hpp"
+#endif
 #include "watch.hpp"
 
 #include <getopt.h>
@@ -52,14 +56,11 @@ int main(int argc, char** argv)
             case 'u':
                 updater = optarg;
                 break;
-            case 'f':
-                useFallback = true;
-                break;
             default:
                 print_wrong_arg_exit();
         }
     }
-
+    
     using namespace nvidia::software::updater;
     auto bus = sdbusplus::bus::new_default();
 
@@ -100,6 +101,16 @@ int main(int argc, char** argv)
     if (updater == "PEX")
     {
         itemUpdater = std::make_unique<PEXItemUpdater>(bus);
+    }
+#endif
+#if DEBUG_TOKEN_SUPPORT
+    if (updater == "DebugTokenInstall")
+    {
+        itemUpdater = std::make_unique<DebugTokenInstallItemUpdater>(bus);
+    }
+    else if (updater == "DebugTokenErase")
+    {
+        itemUpdater = std::make_unique<DebugTokenEraseItemUpdater>(bus);
     }
 #endif
     if (itemUpdater == nullptr)

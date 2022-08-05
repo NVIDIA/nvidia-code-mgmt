@@ -33,6 +33,11 @@ if get_option('PEX_SUPPORT').enabled()
     source_files += 'pex_updater.cpp'
 endif
 
+if get_option('DEBUG_TOKEN_SUPPORT').enabled()
+    source_files += 'debug_token_install.cpp'
+    source_files += 'debug_token_erase.cpp'
+endif
+
 executable('code-manager',
             sources: source_files,
             include_directories: psu_inc,

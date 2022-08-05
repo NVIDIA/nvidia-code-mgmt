@@ -194,13 +194,6 @@ Version::Status Version::startActivation()
     {
         if (isCompatible(p))
         {
-            if (isAssociated(p, associations()))
-            {
-                log<level::NOTICE>(
-                    "device already running the image, skipping",
-                    entry("device=%s", p.c_str()));
-                continue;
-            }
             deviceQueue.push(p);
             if (itemUpdaterUtils->updateAllTogether()) {
                 log<level::NOTICE>("Updating all devices under",
@@ -255,9 +248,17 @@ void Version::finishActivation()
     // future
     requestedActivation(SoftwareActivation::RequestedActivations::None);
     activation(Status::Active);
+    //remove file
+    std::filesystem::remove(path());
 }
 bool Version::isCompatible(const std::string& inventoryPath)
 {
+    // few other device updater like debug token does not have inventory, skip
+    // compatibility check for those
+    if (!itemUpdaterUtils->inventorySupported())
+    {
+        return true;
+    }
     std::string deviceManufacturer;
     std::string deviceModel;
     // few other device updater like retimer, debug token does not have

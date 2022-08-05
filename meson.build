@@ -75,6 +75,20 @@ if get_option('PEX_SUPPORT').enabled()
   cdata.set_quoted('PEX_UPDATE_SERVICE', 'pex-update@.service')
 endif
 
+if get_option('DEBUG_TOKEN_SUPPORT').enabled()
+  add_project_arguments('-DDEBUG_TOKEN_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL', get_option('DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL'))
+  cdata.set_quoted('DEBUG_TOKEN_ERASE_SUPPORTED_MODEL', get_option('DEBUG_TOKEN_ERASE_SUPPORTED_MODEL'))
+  cdata.set_quoted('DEBUG_TOKEN_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('DEBUG_TOKEN_INSTALL_BUSNAME_UPDATER', 'com.Nvidia.Software.DebugTokenInstall.Updater')
+  cdata.set_quoted('DEBUG_TOKEN_ERASE_BUSNAME_UPDATER', 'com.Nvidia.Software.DebugTokenErase.Updater')
+  cdata.set_quoted('DEBUG_TOKEN_INSTALL_NAME', 'HGX_FW_Debug_Token_Install')
+  cdata.set_quoted('DEBUG_TOKEN_ERASE_NAME', 'HGX_FW_Debug_Token_Erase')
+  cdata.set_quoted('DEBUG_TOKEN_BUSNAME_INVENTORY', 'xyz.openbmc_project.PLDM')
+  cdata.set_quoted('DEBUG_TOKEN_INVENTORY_PATH', '/xyz/openbmc_project/PLDM')
+  cdata.set_quoted('DEBUG_TOKEN_UPDATE_SERVICE', 'debug-token-update@.service')
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 
@@ -122,5 +136,13 @@ ssl = dependency('openssl')
 add_project_link_arguments(['-lstdc++fs'], language: 'cpp')
 
 subdir('src')
+
+if get_option('DEBUG_TOKEN_SUPPORT').enabled()
+  subdir('debug_token')
+endif
+
+if get_option('tests').enabled()
+  subdir('test')
+endif
 
 

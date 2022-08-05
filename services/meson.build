@@ -26,6 +26,12 @@ if get_option('PEX_SUPPORT').enabled()
                                 'pex-update@.service']
 endif
 
+if get_option('DEBUG_TOKEN_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.DebugTokenInstall.Updater.service',
+                                'com.Nvidia.DebugTokenErase.Updater.service',
+                                'debug-token-update@.service']
+endif
+
 foreach unit : unit_files
 configure_file(input: unit,
                output: unit,

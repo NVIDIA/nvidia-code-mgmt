@@ -49,6 +49,21 @@ option('PEX_SUPPORTED_MODEL',
        value: '',
        description: 'PEX supported models')
 
+option('DEBUG_TOKEN_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables Debug Token support')
+
+option('DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'Debug Token supported models for install')
+
+option('DEBUG_TOKEN_ERASE_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'Debug Token supported models for erase')
+
 option('INVENTORY_PATH_BASE',
        type: 'string',
        value: '/xyz/openbmc_project/inventory/system',
@@ -89,4 +104,11 @@ option(
     type: 'integer',
     value: 180,
     description: 'Retimer update timeout in seconds.'
+)
+
+option(
+       'tests',
+       type: 'feature',
+       value: 'enabled',
+       description: 'Build tests.'
 )
