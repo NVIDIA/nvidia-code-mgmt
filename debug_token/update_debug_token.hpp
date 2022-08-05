@@ -76,8 +76,15 @@ enum BackgroundCopyErrorCodes
     BackgroundCopyFailed = 0x1
 };
 
+/* Debug token query error codes */
+enum DebugTokenQueryErrorCodes
+{
+    DebugTokenNotInstalled = 0x0,
+    DebugTokenInstalled = 0x1
+};
+
 /**
- * @brief implemementation of update debug token
+ * @brief implemementation of update debug token utility
  *
  */
 class UpdateDebugToken : public TokenUtility
@@ -184,6 +191,13 @@ class UpdateDebugToken : public TokenUtility
      * @return int
      */
     int eraseToken(const EID& eid);
+    /**
+     * @brief query debug token status
+     *
+     * @param[in] eid
+     * @return int - installation status
+     */
+    int queryDebugToken(const EID& eid);
     /**
      * @brief Create a Log entry
      *

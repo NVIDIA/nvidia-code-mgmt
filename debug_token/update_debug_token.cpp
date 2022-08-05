@@ -24,6 +24,15 @@ int UpdateDebugToken::installDebugToken(const std::string& debugTokenPath)
     {
         if (tokens.find(device.second) != tokens.end())
         {
+            if (queryDebugToken(device.first) != DebugTokenNotInstalled)
+            {
+                log<level::ERR>(("debug token already installed on EID " +
+                                 std::to_string(device.first))
+                                    .c_str());
+                // skip install token for this device since token is already
+                // installed
+                continue;
+            }
             if (disableBackgroundCopy(device.first) != 0)
             {
                 log<level::ERR>(("Disable BackgroundCopy failed for EID " +
@@ -68,6 +77,11 @@ int UpdateDebugToken::eraseDebugToken()
     }
     for (auto& device : mctpInfo)
     {
+        if (queryDebugToken(device.second) == DebugTokenNotInstalled)
+        {
+            // skip erase token for this device since token is not installed
+            continue;
+        }
         if (enableBackgroundCopy(device.second) != 0)
         {
             log<level::ERR>(("Enable BackgroundCopy failed for EID " +
@@ -438,6 +452,62 @@ int UpdateDebugToken::enableBackgroundCopy(const EID& eid)
         log<level::ERR>(
             ("Error while enabling background copy: " + commandOut).c_str());
         status = -1;
+    }
+    return status;
+}
+
+int UpdateDebugToken::queryDebugToken(const EID& eid)
+{
+    int status = 0;
+    std::string command = "";
+    // form erase command
+    command += mctpVdmUtilPath;
+    command += " -c debug_token_query ";
+    command += "-t " + std::to_string(eid);
+    auto [retCode, commandOut] = runMctpVdmUtilCommand(command);
+    if (retCode != 0)
+    {
+        log<level::ERR>("Error while running debug token query command");
+        status = DebugTokenNotInstalled;
+        return status;
+    }
+    auto rxBytes = parseCommandOutput(commandOut);
+    try
+    {
+        // 11 the byte from last is status code
+        status = std::stoi(rxBytes[rxBytes.size() - 11], nullptr, 16);
+    }
+    catch (const std::exception& e)
+    {
+        status = DebugTokenNotInstalled;
+        log<level::ERR>("Error while getting status code");
+    }
+    if (status != 0)
+    {
+        log<level::ERR>(
+            ("Error while parsing debug token query output: " + commandOut)
+                .c_str());
+        status = DebugTokenNotInstalled;
+        return status;
+    }
+    try
+    {
+        // 10 the byte from last is token installation status
+        auto tokenInstallStatus =
+            std::stoi(rxBytes[rxBytes.size() - 10], nullptr, 16);
+        if (tokenInstallStatus == DebugTokenInstalled)
+        {
+            status = DebugTokenInstalled;
+        }
+        else
+        {
+            status = DebugTokenNotInstalled;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        status = DebugTokenNotInstalled;
+        log<level::ERR>("Error while getting token installation status");
     }
     return status;
 }

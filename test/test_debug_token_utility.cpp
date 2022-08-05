@@ -52,3 +52,20 @@ TEST_F(TestDebugTokenUtility, DebugTokenInstallResponse)
     auto status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
     EXPECT_EQ(status, 0);
 }
+
+TEST_F(TestDebugTokenUtility, DebugTokenQueryResponse)
+{
+    std::string cmdResponse =
+        "Test command = debug_token_query\n"
+        "teid = 25\n"
+        "TX: 47 16 00 00 80 01 0F 01\n"
+        "RX: 47 16 00 00 00 01 0F 01 00 00 02 1E 05 06 16 0B 04 01 01";
+    auto rxBytes = parseCommandOutput(cmdResponse);
+    // 11 the byte from last is status code
+    auto status = std::stoi(rxBytes[rxBytes.size() - 11], nullptr, 16);
+    EXPECT_EQ(status, 0);
+    // 10 the byte from last is token installation status
+    auto tokenInstallStatus =
+        std::stoi(rxBytes[rxBytes.size() - 10], nullptr, 16);
+    EXPECT_EQ(tokenInstallStatus, 0);
+}
