@@ -35,24 +35,12 @@ int BaseItemUpdater::processImage(std::filesystem::path& filePath)
     // Compute id
     std::string uniqueIdentifier = filePath.parent_path().string();
     boost::replace_all(uniqueIdentifier, getImageUploadDir(), "");
-#if CPLD_SUPPORT
-    std::string deviceVersion;
-    for (auto& it : deviceIds)
+    auto id = getIdProperty(uniqueIdentifier);
+    if (id == "")
     {
-        auto& pair = it.second;
-        if (it.first == uniqueIdentifier)
-        {
-            deviceVersion = get<2>(pair);
-            break;
-        }
-    }
-    if (deviceVersion.empty())
+        std::cerr << "\n Version ID not found ";
         return -1;
-    auto id = createVersionID(getName(), deviceVersion);
-#else
-    auto id = getName();
-#endif
-
+    }
     auto objPath = std::string{SOFTWARE_OBJPATH} + '/' + id;
     return initiateUpdateImage(objPath, filePath.string(), filePath.stem(), id,
                                uniqueIdentifier);
@@ -219,11 +207,8 @@ void BaseItemUpdater::readExistingFirmWare()
 void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
                                            const std::string& deviceVersion)
 {
-#if CPLD_SUPPORT
-    auto versionId = createVersionID(getName(), deviceVersion);
-#else
-    auto versionId = getName();
-#endif
+    auto versionId = getIdProperty(deviceVersion);
+
     auto model = getModel(inventoryPath);
     auto manufacturer = getManufacturer(inventoryPath);
     auto objPath = std::string(SOFTWARE_OBJPATH) + "/" + versionId;

@@ -465,6 +465,17 @@ class BaseItemUpdater :
     }
 
     /**
+     * @brief to get propertyID
+     *
+     * @param string
+     * @return std::string
+     */
+    virtual std::string getIdProperty(const std::string&)
+    {
+        return getName();
+    }
+
+    /**
      * @brief apply target filters for non-pldm devices
      *
      * @param targets

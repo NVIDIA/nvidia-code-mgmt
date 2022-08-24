@@ -268,6 +268,29 @@ class CPLDItemUpdater : public BaseItemUpdater
         }
         return false;
     }
+
+    std::string getIdProperty(const std::string& identifier) override
+    {
+            std::string deviceVersion;
+            for (auto& it : deviceIds)
+            {
+                auto& pair = it.second;
+                if (it.first == identifier)
+                {
+                    deviceVersion = get<2>(pair);
+                    break;
+                }
+                if (get<2>(pair) == identifier)
+                {
+                    deviceVersion = identifier;
+                    break;
+                }
+            }
+
+            if (deviceVersion.empty())
+                return "";
+            return createVersionID(getName(), deviceVersion);
+    }
 };
 
 } // namespace updater
