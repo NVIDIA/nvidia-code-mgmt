@@ -131,8 +131,8 @@ class CPLDItemUpdater : public BaseItemUpdater
                         CPLD_BUSNAME_UPDATER, CPLD_UPDATE_SERVICE, false,
                         CPLD_BUSNAME_INVENTORY)
     {
-        nlohmann::json fruJson = cpldcommonutils::loadJSONFile(
-            "/usr/share/nvidia-power-manager/cpld_config.json");
+        nlohmann::json fruJson =
+            cpldcommonutils::loadJSONFile(configFile.c_str());
         if (fruJson == nullptr)
         {
             log<level::ERR>("InternalFailure when parsing the JSON file");
@@ -248,6 +248,7 @@ class CPLDItemUpdater : public BaseItemUpdater
                 args += "\\x20";
                 args += version; // for Message Registry
                 args += "\\x20";
+                args += configFile;
                 break;
             }
         }
@@ -291,6 +292,9 @@ class CPLDItemUpdater : public BaseItemUpdater
                 return "";
             return createVersionID(getName(), deviceVersion);
     }
+  private:
+    inline static const std::string configFile =
+        "/usr/share/nvidia-power-manager/cpld_config.json";
 };
 
 } // namespace updater
