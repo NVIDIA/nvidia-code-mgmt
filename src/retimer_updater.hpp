@@ -282,7 +282,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
         if (ret > 0 && deviceId < SUPPORTED_RETIMERS)
         {
             std::string invPath = RT_INVENTORY_PATH + std::to_string(deviceId);
-            if(getModel(invPath) != "")
+            if(getService(invPath.c_str(), ASSET_IFACE) != "")
             {
                 return target.filename();
             }
