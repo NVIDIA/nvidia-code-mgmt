@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
-#include <unistd.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <phosphor-logging/elog.hpp>
 #include <phosphor-logging/log.hpp>
@@ -49,14 +49,6 @@ std::vector<std::string> DBUSUtils::getinventoryPath(const std::string& iface)
     return paths;
 }
 
-bool DBUSUtils::isAssociated(const std::string& inventoryPath,
-                             const AssociationList& assocs)
-{
-    return std::find_if(assocs.begin(), assocs.end(),
-                        [&inventoryPath](const auto& assoc) {
-                            return inventoryPath == std::get<2>(assoc);
-                        }) != assocs.end();
-}
 std::string DBUSUtils::createVersionID(const std::string& updaterName,
                                        const std::string& version)
 {
@@ -94,8 +86,8 @@ std::string DBUSUtils::createVersionID(const std::string& updaterName,
 }
 
 any DBUSUtils::getPropertyImpl(const char* service, const char* path,
-                               const char* interface, const char* propertyName)
-                               const
+                               const char* interface,
+                               const char* propertyName) const
 {
     auto method = bus.new_method_call(service, path,
                                       "org.freedesktop.DBus.Properties", "Get");
@@ -123,8 +115,8 @@ std::vector<std::string> DBUSUtils::getServices(const char* path,
                                       MAPPER_INTERFACE, "GetObject");
 
     mapper.append(path, std::vector<std::string>({interface}));
-    const int maxRetry=10;
-    const int delay1sec=1000000;
+    const int maxRetry = 10;
+    const int delay1sec = 1000000;
     for (int retry = 0; retry < maxRetry; retry++)
     {
         try
@@ -149,15 +141,17 @@ std::vector<std::string> DBUSUtils::getServices(const char* path,
         catch (const sdbusplus::exception::SdBusError& ex)
         {
             log<level::ERR>("GetObject call failed", entry("PATH=%s", path),
-                        entry("INTERFACE=%s", interface));
-		    std::cerr << ex.what() << std::endl;
-		
-            if (retry == 9){
-                throw std::runtime_error("Retry attemped to 9,GetObject call failed");
+                            entry("INTERFACE=%s", interface));
+            std::cerr << ex.what() << std::endl;
+
+            if (retry == 9)
+            {
+                throw std::runtime_error(
+                    "Retry attemped to 9,GetObject call failed");
             }
         }
-		usleep(delay1sec);
-	}
+        usleep(delay1sec);
+    }
     return {};
 }
 

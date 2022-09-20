@@ -91,12 +91,6 @@ void Version::unitStateChange(sdbusplus::message::message& msg)
     }
 }
 
-void Version::removeAssociation(const std::string& path)
-{
-    // TODO remove this method later
-    (void)path;
-}
-
 bool Version::doUpdate(const std::string& inventoryPath)
 {
     currentUpdatingDevice = inventoryPath;
@@ -139,21 +133,6 @@ void Version::onUpdateDone()
         auto progress = activationProgress->progress() + progressStep;
         activationProgress->progress(progress);
 
-        // Update the activation association
-        auto assocs = associations();
-        assocs.emplace_back(ACTIVATION_FWD_ASSOCIATION,
-                            ACTIVATION_REV_ASSOCIATION, currentUpdatingDevice);
-
-        associations(assocs);
-
-        auto eps = endpoints();
-        eps.emplace_back(
-            sdbusplus::message::object_path(currentUpdatingDevice));
-        endpoints(eps);
-
-        activationListener->onUpdateDone(getVersionId(), currentUpdatingDevice);
-        currentUpdatingDevice.clear();
-
         deviceQueue.pop();
         doUpdate(); // Update the next device
     }
@@ -161,8 +140,7 @@ void Version::onUpdateDone()
 
 void Version::onUpdateFailed()
 {
-    logTransferFailed(itemUpdaterUtils->getName(),
-                    extendedVersion());
+    logTransferFailed(itemUpdaterUtils->getName(), extendedVersion());
     log<level::ERR>("Failed to udpate device",
                     entry("device=%s", deviceQueue.front().c_str()));
     std::queue<std::string>().swap(deviceQueue); // Clear the queue
@@ -188,23 +166,25 @@ Version::Status Version::startActivation()
         log<level::WARNING>("No device inventory found");
         return Status::Failed;
     }
-    //apply target filtering
-    targetFilter = itemUpdaterUtils->applyTargetFilters(updatePolicy->targets());
+    // apply target filtering
+    targetFilter =
+        itemUpdaterUtils->applyTargetFilters(updatePolicy->targets());
     for (const auto& p : devicePaths)
     {
         if (isCompatible(p))
         {
             deviceQueue.push(p);
-            if (itemUpdaterUtils->updateAllTogether()) {
+            if (itemUpdaterUtils->updateAllTogether())
+            {
                 log<level::NOTICE>("Updating all devices under",
-                                entry("device=%s", p.c_str()));
+                                   entry("device=%s", p.c_str()));
                 break;
             }
         }
         else
         {
             log<level::NOTICE>("device not compatible",
-                                entry("device=%s", p.c_str()));
+                               entry("device=%s", p.c_str()));
         }
     }
     if (deviceQueue.empty())
@@ -221,7 +201,7 @@ Version::Status Version::startActivation()
     {
         activationProgress = std::make_unique<ActivationProgress>(bus, objPath);
     }
-    if(targetFilter.type == TargetFilterType::UpdateNone)
+    if (targetFilter.type == TargetFilterType::UpdateNone)
     {
         finishActivation();
         return Status::Active;
@@ -240,10 +220,6 @@ Version::Status Version::startActivation()
 void Version::finishActivation()
 {
     activationProgress->progress(100);
-
-    createActiveAssociation(objPath);
-    addFunctionalAssociation(objPath);
-    addUpdateableAssociation(objPath);
     // Reset RequestedActivations to none so that it could be activated in
     // future
     requestedActivation(SoftwareActivation::RequestedActivations::None);
@@ -269,8 +245,8 @@ bool Version::isCompatible(const std::string& inventoryPath)
     }
     try
     {
-        auto service = itemUpdaterUtils->getDbusService(inventoryPath,
-                        ASSET_IFACE);
+        auto service =
+            itemUpdaterUtils->getDbusService(inventoryPath, ASSET_IFACE);
         deviceManufacturer = getProperty<std::string>(
             service.c_str(), inventoryPath.c_str(), ASSET_IFACE, MANUFACTURER);
         deviceModel = getProperty<std::string>(
@@ -278,10 +254,10 @@ bool Version::isCompatible(const std::string& inventoryPath)
     }
     // For Retimer model is hardcoded by GpuMgr. Ignore for retimer
     // For Retimer manufacturer is not populated by GpuMgr. Ignore for retimer
-    catch(const std::exception& e)
+    catch (const std::exception& e)
     {
-        log<level::ERR>("Error while getting inventory properties",
-            entry("ERROR=%s", e.what()));
+        log<level::INFO>("Error while getting inventory properties",
+                         entry("ERROR=%s", e.what()));
         std::cerr << e.what() << '\n';
     }
 
@@ -290,16 +266,18 @@ bool Version::isCompatible(const std::string& inventoryPath)
     {
         // The model shall match
         log<level::ERR>("Device model not matching",
-            entry("SYSMODEL=%s", deviceModel.c_str()),
-            entry("CFGMODEL=%s", model.c_str()));;
+                        entry("SYSMODEL=%s", deviceModel.c_str()),
+                        entry("CFGMODEL=%s", model.c_str()));
+        ;
         return false;
     }
     if (!deviceManufacturer.empty())
     {
         // If device inventory has manufacturer property, it shall match
         log<level::ERR>("Device manufacturer not matching",
-            entry("SYSMNFCTR=%s", deviceManufacturer.c_str()),
-            entry("CFGMNFCTR=%s", manufacturer.c_str()));;
+                        entry("SYSMNFCTR=%s", deviceManufacturer.c_str()),
+                        entry("CFGMNFCTR=%s", manufacturer.c_str()));
+        ;
         return deviceManufacturer == manufacturer;
     }
     return true;
@@ -330,33 +308,33 @@ void Version::storeImage()
             "Error storing device image", entry("ERROR=%s", e.what()),
             entry("SRC=%s", src.c_str()), entry("DST=%s", dst.c_str()));
     }
-	catch (const std::exception& e) 
-	{
-        log<level::ERR>(
-            "Error storing device image", entry("ERROR=%s", e.what()));
-	}
+    catch (const std::exception& e)
+    {
+        log<level::ERR>("Error storing device image",
+                        entry("ERROR=%s", e.what()));
+    }
     // FIXME if not deleted then PLDM fail to extract image
     std::filesystem::remove(src);
 }
 
 std::string Version::getUpdateService(const std::string& inventoryPath)
 {
-    return itemUpdaterUtils->getUpdateServiceWithArgs(inventoryPath, path(),
-        extendedVersion(), targetFilter);
+    return itemUpdaterUtils->getUpdateServiceWithArgs(
+        inventoryPath, path(), extendedVersion(), targetFilter);
 }
 
 void Version::createLog(const std::string& messageID,
-                std::map<std::string, std::string>& addData, Level& level)
+                        std::map<std::string, std::string>& addData,
+                        Level& level)
 {
     static constexpr auto logObjPath = "/xyz/openbmc_project/logging";
-    static constexpr auto logInterface =
-        "xyz.openbmc_project.Logging.Create";
+    static constexpr auto logInterface = "xyz.openbmc_project.Logging.Create";
     static constexpr auto service = "xyz.openbmc_project.Logging";
     try
     {
         auto severity = LoggingServer::convertForMessage(level);
-        auto method = bus.new_method_call(service, logObjPath,
-                                            logInterface, "Create");
+        auto method =
+            bus.new_method_call(service, logObjPath, logInterface, "Create");
         method.append(messageID, severity, addData);
         bus.call_noreply(method);
     }
@@ -369,7 +347,7 @@ void Version::createLog(const std::string& messageID,
 }
 
 void Version::logTransferFailed(const std::string& compName,
-                                  const std::string& compVersion)
+                                const std::string& compVersion)
 {
     std::map<std::string, std::string> addData;
     addData["REDFISH_MESSAGE_ID"] = transferFailed;

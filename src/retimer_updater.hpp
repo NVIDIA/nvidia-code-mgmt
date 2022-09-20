@@ -130,8 +130,8 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string
-        getManufacturer(const std::string& inventoryPath) const override;
+    std::string getManufacturer([
+        [maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Model object
@@ -139,7 +139,8 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getModel(const std::string& inventoryPath) const override;
+    std::string getModel([
+        [maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get retimer the devices to update object based on target filters

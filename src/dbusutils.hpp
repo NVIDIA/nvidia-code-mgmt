@@ -1,6 +1,5 @@
 
 #pragma once
-#include "types.hpp"
 #include "watch.hpp"
 
 #include <openssl/sha.h>
@@ -56,16 +55,6 @@ class DBUSUtils
      */
     std::vector<std::string> getinventoryPath(const std::string& iface);
 
-    /**
-     * @brief Change the path is associated
-     *
-     * @param inventoryPath
-     * @param assocs
-     * @return true
-     * @return false
-     */
-    bool isAssociated(const std::string& inventoryPath,
-                      const AssociationList& assocs);
     /**
      * @brief Create a Version ID object
      *

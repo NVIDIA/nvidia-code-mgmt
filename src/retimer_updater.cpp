@@ -22,72 +22,35 @@ std::string
     {
         if (inv->getInventoryPath() == inventoryPath)
         {
-            std::string swPath = (boost::format(RT_SW_VERSION_PATH)
-                % inv->getId()).str();
+            std::string swPath =
+                (boost::format(RT_SW_VERSION_PATH) % inv->getId()).str();
             try
             {
-                ret = getProperty<std::string>(
-                    RT_BUSNAME_INVENTORY,
-                    swPath.c_str(),
-                    VERSION_IFACE, VERSION);
+                ret = getProperty<std::string>(RT_BUSNAME_INVENTORY,
+                                               swPath.c_str(), VERSION_IFACE,
+                                               VERSION);
             }
-            catch(const std::exception& e)
+            catch (const std::exception& e)
             {
-                log<level::ERR>("GetVersion failed",
-                    entry("ERROR=%s", e.what()));
+                // ignore the exception for retimer
             }
         }
     }
     return ret;
 }
 
-std::string
-    ReTimerItemUpdater::getManufacturer(const std::string& inventoryPath) const
+std::string ReTimerItemUpdater::getManufacturer([
+    [maybe_unused]] const std::string& inventoryPath) const
 {
-    std::string ret = "";
-    for (auto& inv : invs)
-    {
-        if (inv->getInventoryPath() == inventoryPath)
-        {
-            try
-            {
-                ret = getProperty<std::string>(
-                    RT_BUSNAME_INVENTORY,
-                    (RT_INVENTORY_PATH + inv->getId()).c_str(),
-                    ASSET_IFACE, MANUFACTURER);
-            }
-            catch(const std::exception& e)
-            {
-                log<level::ERR>("GetManufacturer failed",
-                    entry("ERROR=%s", e.what()));
-            }
-        }
-    }
-    return ret;
+    // GPU manager inventory does not implement manufacturer, return empty value
+    return "";
 }
 
-std::string ReTimerItemUpdater::getModel(const std::string& inventoryPath) const
+std::string ReTimerItemUpdater::getModel([
+    [maybe_unused]] const std::string& inventoryPath) const
 {
-    std::string ret = "";
-    for (auto& inv : invs)
-    {
-        if (inv->getInventoryPath() == inventoryPath)
-        {
-            try
-            {
-                ret = getProperty<std::string>(
-                    RT_BUSNAME_INVENTORY,
-                    (RT_INVENTORY_PATH + inv->getId()).c_str(),
-                    ASSET_IFACE, MODEL);
-            }
-            catch(const std::exception& e)
-            {
-                log<level::ERR>("GetModel failed",
-                    entry("ERROR=%s", e.what()));
-            }
-        }
-    }
-    return ret;
+    // GPU manager inventory does not implement model, return empty value
+    return "";
 }
 } // namespace updater
 } // namespace software

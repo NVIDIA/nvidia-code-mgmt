@@ -36,15 +36,6 @@ class ActivationListener
      */
     virtual ~ActivationListener() = default;
 
-    /**
-     * @brief Call back called by Version object to update about update status
-     * to ItemUpdaters
-     *
-     * @param versionId
-     * @param inventoryPath
-     */
-    virtual void onUpdateDone(const std::string& versionId,
-                              const std::string& inventoryPath) = 0;
 };
 
 /**

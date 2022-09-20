@@ -1,9 +1,7 @@
 #pragma once
 
 #include "activation_listener.hpp"
-#include "association_interface.hpp"
 #include "dbusutils.hpp"
-#include "types.hpp"
 #include "version.hpp"
 #include "xyz/openbmc_project/Common/FilePath/server.hpp"
 #include "xyz/openbmc_project/Common/UUID/server.hpp"
@@ -13,19 +11,16 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <phosphor-logging/elog-errors.hpp>
+#include <phosphor-logging/log.hpp>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/server.hpp>
-#include <xyz/openbmc_project/Association/Definitions/server.hpp>
-#include <xyz/openbmc_project/Association/server.hpp>
+#include <sdbusplus/timer.hpp>
 #include <xyz/openbmc_project/Common/FilePath/server.hpp>
 #include <xyz/openbmc_project/Software/Activation/server.hpp>
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
-
-#include <phosphor-logging/elog-errors.hpp>
-#include <phosphor-logging/log.hpp>
-#include <sdbusplus/timer.hpp>
 
 #include <functional>
 #include <iostream>
@@ -53,11 +48,9 @@ using ActivationProgressInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Software::server::ActivationProgress>;
 
 using VersionInherit = sdbusplus::server::object::object<
-    sdbusplus::xyz::openbmc_project::Association::server::Definitions,
     sdbusplus::xyz::openbmc_project::Common::server::UUID,
     sdbusplus::xyz::openbmc_project::Software::server::Activation,
     sdbusplus::xyz::openbmc_project::Software::server::ExtendedVersion,
-    sdbusplus::xyz::openbmc_project::server::Association,
     sdbusplus::xyz::openbmc_project::Common::server::FilePath>;
 
 using DeleteInherit = sdbusplus::server::object::object<
@@ -157,10 +150,10 @@ class Delete : public DeleteInherit
 };
 
 /**@class UpdatePolicy
- * 
+ *
  *  Concrete implementation of xyz.openbmc_project.Software.UpdatePolicy D-Bus
  *  interface
- *  
+ *
  */
 class UpdatePolicy : public UpdatePolicyInherit
 {
@@ -181,10 +174,7 @@ class UpdatePolicy : public UpdatePolicyInherit
  * @author
  * @since Wed Aug 04 2021
  */
-class Version :
-    public VersionInherit,
-    public DBUSUtils,
-    public AssociationInterface
+class Version : public VersionInherit, public DBUSUtils
 {
   public:
     using Status = Activations;
@@ -197,7 +187,6 @@ class Version :
      * @param uniqueId
      * @param versionId
      * @param filePath
-     * @param assoc
      * @param activationStatus
      * @param model
      * @param manufacturer
@@ -208,12 +197,12 @@ class Version :
     Version(sdbusplus::bus::bus& bus, const std::string& versionString,
             const std::string& objPath, const std::string& uniqueId,
             const std::string& versionId, const std::string& filePath,
-            const AssociationList& assoc, const Status& activationStatus,
-            const std::string& model, const std::string& manufacturer,
-            eraseFunc callback, ActivationListener* activationListener,
+            const Status& activationStatus, const std::string& model,
+            const std::string& manufacturer, eraseFunc callback,
+            ActivationListener* activationListener,
             ItemUpdaterUtils* itemUpdaterUtils) :
         VersionInherit(bus, (objPath).c_str(),
-            VersionInherit::action::defer_emit),
+                       VersionInherit::action::defer_emit),
         DBUSUtils(bus), eraseCallback(callback), versionId(versionId),
         objPath(objPath), model(model), manufacturer(manufacturer),
         verstionStr(versionString),
@@ -230,7 +219,6 @@ class Version :
         uuid(uniqueId);
         path(filePath);
         extendedVersion(versionString);
-        associations(assoc);
         activation(activationStatus);
 
         activationProgress = nullptr;
@@ -271,55 +259,6 @@ class Version :
         return verstionStr;
     }
 
-    /**
-     * @brief Create a Active Association object
-     *
-     * @param path
-     */
-    void createActiveAssociation(const std::string& path)
-    {
-        auto assocs = associations();
-
-        assocs.emplace_back(
-            std::make_tuple(ACTIVE_FWD_ASSOCIATION, std::string(""), path));
-        assocs.emplace_back(std::make_tuple(ACTIVE_REV_ASSOCIATION,
-                                            ACTIVE_FWD_ASSOCIATION,
-                                            std::string(SOFTWARE_OBJPATH)));
-        associations(assocs);
-    }
-
-    /**
-     * @brief add function association to version
-     *
-     * @param path
-     */
-    void addFunctionalAssociation(const std::string& path)
-    {
-        auto assocs = associations();
-        assocs.emplace_back(
-            std::make_tuple(FUNCTIONAL_FWD_ASSOCIATION, std::string(""), path));
-        assocs.emplace_back(std::make_tuple(FUNCTIONAL_REV_ASSOCIATION,
-                                            FUNCTIONAL_FWD_ASSOCIATION,
-                                            std::string(SOFTWARE_OBJPATH)));
-        associations(assocs);
-    }
-
-    /**
-     * @brief Add updatable association to version
-     *
-     * @param path
-     */
-    void addUpdateableAssociation(const std::string& path)
-    {
-        auto assocs = associations();
-        assocs.emplace_back(
-            std::make_tuple(UPDATEABLE_FWD_ASSOCIATION, std::string(""), path));
-        assocs.emplace_back(std::make_tuple(UPDATEABLE_REV_ASSOCIATION,
-                                            UPDATEABLE_FWD_ASSOCIATION,
-                                            std::string(SOFTWARE_OBJPATH)));
-        associations(assocs);
-    }
-
     /** @brief Activation */
     using VersionInherit::activation;
 
@@ -349,13 +288,6 @@ class Version :
      * @return Status
      */
     Status activation(Status value) override;
-
-    /**
-     * @brief removes association from version
-     *
-     * @param path
-     */
-    void removeAssociation(const std::string& path) override;
 
     /**
      * @brief Get the Version Id object
@@ -447,28 +379,28 @@ class Version :
 
     /**
      * @brief Create a Log entry for bmcweb to consume
-     * 
+     *
      * @param messageID - redfish message id
      * @param addData - redfish message data
      * @param level - log level
-     * 
-     * @return void 
+     *
+     * @return void
      */
     void createLog(const std::string& messageID,
-                std::map<std::string, std::string>& addData, Level& level);
+                   std::map<std::string, std::string>& addData, Level& level);
 
     /**
-     * @brief Log message indicating transfer failed. 
+     * @brief Log message indicating transfer failed.
      *        This message will be logged when image transfer fails
      *        or item updater times out.
-     * 
+     *
      * @param compName - component name
      * @param compVersion - component version
-     * 
+     *
      * @return void
      */
     void logTransferFailed(const std::string& compName,
-                          const std::string& compVersion);
+                           const std::string& compVersion);
 
     /**
      * @brief Timeout handler for non-pldm updates. This method

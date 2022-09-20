@@ -46,103 +46,6 @@ int BaseItemUpdater::processImage(std::filesystem::path& filePath)
                                uniqueIdentifier);
 }
 
-void BaseItemUpdater::removeObject(const std::string& inventoryPath)
-{
-    for (auto it = versions.begin(); it != versions.end(); ++it)
-    {
-        const auto& versionPtr = it->second;
-
-        auto associations = versionPtr->associations();
-        for (auto iter = associations.begin(); iter != associations.end();)
-        {
-            if ((std::get<2>(*iter)).compare(inventoryPath) == 0)
-            {
-                iter = associations.erase(iter);
-            }
-            else
-            {
-                ++iter;
-            }
-        }
-        auto endpoints = versionPtr->endpoints();
-        for (auto iter = endpoints.begin(); iter != endpoints.end();)
-        {
-            if (*iter == inventoryPath)
-            {
-                iter = endpoints.erase(iter);
-            }
-            else
-            {
-                ++iter;
-            }
-        }
-
-        if (associations.empty() || endpoints.empty())
-        {
-            // Remove the activation
-            erase(versionPtr->getVersionId());
-        }
-        else
-        {
-            // Update association
-            versionPtr->associations(associations);
-            // Update endpoints
-            versionPtr->endpoints(endpoints);
-        }
-    }
-}
-
-void BaseItemUpdater::onUpdateDone(const std::string& versionId,
-                                   const std::string& inventoryPath)
-{
-
-    // After update is done, remove old activation objects
-    // Remove association from Old associations
-    for (auto it = versions.begin(); it != versions.end(); ++it)
-    {
-        if (it->second->getVersionId() != versionId &&
-            isAssociated(inventoryPath, it->second->associations()))
-        {
-            // remove Migrateed associations from other Versions
-            const auto& versionPtr = it->second;
-
-            auto associations = versionPtr->associations();
-            auto ignoreCout = 0;
-            for (auto iter = associations.begin(); iter != associations.end();)
-            {
-                if ((std::get<0>(*iter)).compare(ACTIVE_FWD_ASSOCIATION) == 0 ||
-                    (std::get<0>(*iter)).compare(FUNCTIONAL_FWD_ASSOCIATION) ==
-                        0 ||
-                    (std::get<0>(*iter)).compare(UPDATEABLE_FWD_ASSOCIATION) ==
-                        0)
-                {
-                    ignoreCout++;
-                }
-                if ((std::get<2>(*iter)).compare(inventoryPath) == 0)
-                {
-                    iter = associations.erase(iter);
-                }
-                else
-                {
-                    ++iter;
-                }
-            }
-            auto assocSize = static_cast<int>(associations.size());
-            if (associations.empty() || assocSize <= ignoreCout)
-            {
-                // Remove the activation
-                erase(it->second->getVersionId());
-            }
-            else
-            {
-                // Update association
-                versionPtr->associations(associations);
-            }
-            break;
-        }
-    }
-}
-
 void BaseItemUpdater::erase(const std::string& versionId)
 {
     auto it = versions.find(versionId);
@@ -216,16 +119,7 @@ void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
     auto it = versions.find(versionId);
     if (it != versions.end())
     {
-        // The versionId is already created, associate the path
-        auto associations = it->second->associations();
-        associations.emplace_back(std::make_tuple(ACTIVATION_FWD_ASSOCIATION,
-                                                  ACTIVATION_REV_ASSOCIATION,
-                                                  inventoryPath));
-        it->second->associations(associations);
-
-        auto eps = it->second->endpoints();
-        eps.emplace_back(sdbusplus::message::object_path(inventoryPath));
-        it->second->endpoints(eps);
+        // version object already present
     }
     else
     {
@@ -244,24 +138,10 @@ void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
         imageDirPath /= uuid;
         imageDirPath /= "na.img";
         auto status = Version::Status::Active;
-
-        AssociationList associations;
-        associations.emplace_back(std::make_tuple(ACTIVATION_FWD_ASSOCIATION,
-                                                  ACTIVATION_REV_ASSOCIATION,
-                                                  inventoryPath));
         // Create a new object for running Device inventory
-        auto versionPtr =
-            createVersion(objPath, versionId, deviceVersion, uuid,
-                          imageDirPath.string(), associations, status);
+        auto versionPtr = createVersion(objPath, versionId, deviceVersion, uuid,
+                                        imageDirPath.string(), status);
         createVersionInterface(bus, objPath, versionId);
-
-        versionPtr->createActiveAssociation(objPath);
-        versionPtr->addFunctionalAssociation(objPath);
-        versionPtr->addUpdateableAssociation(objPath);
-
-        auto eps = versionPtr->endpoints();
-        eps.emplace_back(sdbusplus::message::object_path(inventoryPath));
-        versionPtr->endpoints(eps);
         // Add to Version list
         versions.insert(std::make_pair(versionId, std::move(versionPtr)));
     }
@@ -328,13 +208,9 @@ void BaseItemUpdater::onInventoryChanged(const std::string& devicePath,
         if (!version.empty())
         {
             createSoftwareObject(devicePath, version);
-            // remove the association from other Versions
-            // Check if there is new  images to update
-            // New image ?
         }
         else
         {
-            // TODO: log an event
             log<level::ERR>("Failed to get Device version",
                             entry("Device=%s", devicePath.c_str()));
         }
@@ -346,8 +222,6 @@ void BaseItemUpdater::onInventoryChanged(const std::string& devicePath,
             // Property not read wait for Present Status available
             return;
         }
-        // Remove object or association
-        removeObject(devicePath);
     }
 }
 void BaseItemUpdater::invokeActivation(
@@ -363,9 +237,8 @@ int BaseItemUpdater::initiateUpdateImage(const std::string& objPath,
                                          const std::string& versionId,
                                          const std::string& uniqueIdentifier)
 {
-    bool forceUpdate = true; // TODO get this from settings
+    // bool forceUpdate = true; // TODO get this from settings
     auto it = versions.find(versionId);
-    AssociationList associations;
     if (it != versions.end())
     {
         if (it->second->activation() == Version::Status::Activating)
@@ -373,11 +246,6 @@ int BaseItemUpdater::initiateUpdateImage(const std::string& objPath,
             log<level::INFO>("Software activation is in progress",
                              entry("VERSION_ID=%s", versionId.c_str()));
             return -1;
-        }
-
-        if (forceUpdate == false)
-        {
-            associations = it->second->associations();
         }
         erase(versionId); // remove
     }
@@ -394,7 +262,7 @@ int BaseItemUpdater::initiateUpdateImage(const std::string& objPath,
     // Create Version
     auto versionPtr =
         createVersion(objPath, versionId, versionStr, uniqueIdentifier,
-                      filePath, associations, status);
+                      filePath, status);
 
     versions.insert(std::make_pair(versionId, std::move(versionPtr)));
     return 0;
@@ -441,15 +309,14 @@ void BaseItemUpdater::onReqActivationChanged(const std::string& objPath,
 std::unique_ptr<Version> BaseItemUpdater::createVersion(
     const std::string& objPath, const std::string& versionId,
     const std::string& versionString, const std::string& uniqueIdentifier,
-    const std::string& filePath, const AssociationList& assoc,
-    const Version::Status& activationStatus)
+    const std::string& filePath, const Version::Status& activationStatus)
 {
     auto pair = deviceIds.find(uniqueIdentifier);
     std::string model = get<0>(pair->second);
     std::string manufacturer = get<1>(pair->second);
     auto versionPtr = std::make_unique<Version>(
         bus, versionString, objPath, uniqueIdentifier, versionId, filePath,
-        assoc, activationStatus, model, manufacturer,
+        activationStatus, model, manufacturer,
         std::bind(&BaseItemUpdater::erase, this, std::placeholders::_1), this,
         this);
 

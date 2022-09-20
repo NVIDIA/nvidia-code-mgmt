@@ -2,7 +2,6 @@
 #include "config.h"
 
 #include "activation_listener.hpp"
-#include "association_interface.hpp"
 #include "dbusutils.hpp"
 #include "version.hpp"
 
@@ -111,16 +110,13 @@ class BaseItemUpdater :
      * @param versionString
      * @param uniqueIdentifier
      * @param filePath
-     * @param assoc
      * @param activationStatus
      * @return std::unique_ptr<Version>
      */
-    std::unique_ptr<Version>
-        createVersion(const std::string& objPath, const std::string& versionId,
-                      const std::string& versionString,
-                      const std::string& uniqueIdentifier,
-                      const std::string& filePath, const AssociationList& assoc,
-                      const Version::Status& activationStatus);
+    std::unique_ptr<Version> createVersion(
+        const std::string& objPath, const std::string& versionId,
+        const std::string& versionString, const std::string& uniqueIdentifier,
+        const std::string& filePath, const Version::Status& activationStatus);
 
     /**
      * @brief Get the Image Upload Dir object
@@ -188,7 +184,8 @@ class BaseItemUpdater :
     virtual std::vector<std::string> getItemUpdaterInventoryPaths()
     {
         std::vector<std::string> ret;
-        try {
+        try
+        {
             auto paths = getinventoryPath(inventoryIface);
             for (auto p : paths)
             {
@@ -198,8 +195,8 @@ class BaseItemUpdater :
                 }
             }
         }
-        catch (...) {
-        }
+        catch (...)
+        {}
         return ret;
     }
 
@@ -233,7 +230,7 @@ class BaseItemUpdater :
         std::string uuid = "";
         for (auto& it : deviceIds)
         {
-            if(uuid.empty())
+            if (uuid.empty())
             {
                 // use first uuid as default
                 // this is to allow update even if
@@ -265,15 +262,6 @@ class BaseItemUpdater :
      * @param inventoryPath
      */
     void removeObject(const std::string& inventoryPath);
-
-    /**
-     * @brief adds inventory association to new version and removes from the old
-     *
-     * @param versionId
-     * @param inventoryPath
-     */
-    void onUpdateDone(const std::string& versionId,
-                      const std::string& inventoryPath) override;
 
     /**
      * @brief Reads existing firmware and updates the devices
@@ -357,11 +345,10 @@ class BaseItemUpdater :
      * @param imagePath
      * @return std::string
      */
-    virtual std::string getServiceArgs(const std::string& inventoryPath,
-                                       const std::string& imagePath,
-                                       const std::string& version,
-                                       const TargetFilter& targetFilter)
-                                       const = 0;
+    virtual std::string
+        getServiceArgs(const std::string& inventoryPath,
+                       const std::string& imagePath, const std::string& version,
+                       const TargetFilter& targetFilter) const = 0;
     /**
      * @brief Call back method when dbus activation change signal is received
      *
@@ -386,13 +373,12 @@ class BaseItemUpdater :
      * @param targetFilter
      * @return std::string
      */
-    virtual std::string
-        getUpdateServiceWithArgs(const std::string& inventoryPath,
-                                 const std::string& imagePath,
-                                 const std::string& version,
-                                 const TargetFilter& targetFilter) const
+    virtual std::string getUpdateServiceWithArgs(
+        const std::string& inventoryPath, const std::string& imagePath,
+        const std::string& version, const TargetFilter& targetFilter) const
     {
-        auto args = getServiceArgs(inventoryPath, imagePath, version, targetFilter);
+        auto args =
+            getServiceArgs(inventoryPath, imagePath, version, targetFilter);
         auto service = getServiceName();
         auto p = service.find('@');
         assert(p != std::string::npos);
@@ -404,12 +390,12 @@ class BaseItemUpdater :
      * @brief Get Dbus service name from mapper. Override this
      *        method if implementation knows the dbus service
      *        name and read it from config file.
-     * @param path 
-     * @param interface 
-     * @return std::string 
+     * @param path
+     * @param interface
+     * @return std::string
      */
     std::string getDbusService(const std::string& path,
-                          const std::string& interface)
+                               const std::string& interface)
     {
         return getService(path.c_str(), interface.c_str());
     }
@@ -455,11 +441,12 @@ class BaseItemUpdater :
 
     /**
      * @brief validate non-pldm target object path
-     * 
-     * @param target 
-     * @return std::string 
+     *
+     * @param target
+     * @return std::string
      */
-    virtual std::string validateTarget(const sdbusplus::message::object_path& target)
+    virtual std::string
+        validateTarget(const sdbusplus::message::object_path& target)
     {
         return target.filename();
     }
@@ -484,7 +471,7 @@ class BaseItemUpdater :
     TargetFilter applyTargetFilters(
         const std::vector<sdbusplus::message::object_path>& targets);
 
-     /**
+    /**
      * @brief Get timeout in seconds. Device implmenetation should override this
      *        value based on actual time required for the particular device.
      *
