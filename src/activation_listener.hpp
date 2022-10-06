@@ -135,4 +135,12 @@ class ItemUpdaterUtils
      * @return uint32_t
      */
     virtual uint32_t getTimeout() = 0;
+
+    /**
+     * @brief method to check if inventory is supported, if inventory is not
+     * supported then D-Bus calls to check compatibility can be ignored
+     *
+     * @return true - if inventory is supported else false
+     */
+    virtual bool inventorySupported() = 0;
 };

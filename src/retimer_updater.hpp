@@ -298,6 +298,17 @@ class ReTimerItemUpdater : public BaseItemUpdater
     {
         return RT_UPDATE_TIMEOUT;
     }
+
+    /**
+     * @brief method to check if inventory is supported, if inventory is not
+     * supported then D-Bus calls to check compatibility can be ignored
+     *
+     * @return false - for retimer inventory check is not required
+     */
+    bool inventorySupported() override
+    {
+        return false; // default is supported
+    }
 };
 
 } // namespace updater
