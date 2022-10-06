@@ -70,6 +70,36 @@ using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 using namespace phosphor::logging;
 
 /**
+ * @brief For devices like retimer version interface is populated by gpu manager
+ * in case of HGX but for PSU and CPLD it needs to be populated from item
+ * updater hence handling it seperately.
+ */
+using softwareVersionInherit = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::Software::server::Version>;
+
+/**
+ * @brief xyz.openbmc_project.Software.Version Interface for dbus
+ */
+
+class SoftwareVersion : public softwareVersionInherit
+{
+  public:
+    /** @brief Constructor
+     *
+     *  @param[in] bus - Bus to attach to
+     *  @param[in] objPath - D-Bus object path
+     */
+    SoftwareVersion(sdbusplus::bus::bus& bus, const std::string& objPath) :
+        softwareVersionInherit(bus, objPath.c_str(),
+                               action::emit_interface_added)
+
+    {
+        purpose(sdbusplus::xyz::openbmc_project::Software::server::Version::
+                    VersionPurpose::Other);
+    }
+};
+
+/**
  * @brief ActivationProgress for dbus
  * @author
  * @since Wed Aug 04 2021

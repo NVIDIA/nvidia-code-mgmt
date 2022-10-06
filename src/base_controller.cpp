@@ -79,8 +79,8 @@ int BaseController::startWatching(sdbusplus::bus::bus& bus, sd_event* loop)
 }
 int BaseController::processExistingImages()
 {
-    abstractItemUpdater_->readExistingFirmWare();
     abstractItemUpdater_->watchNewlyAddedDevice();
+    abstractItemUpdater_->readExistingFirmWare();
     return 0;
 }
 } // namespace updater

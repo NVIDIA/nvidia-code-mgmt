@@ -253,6 +253,7 @@ void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
         auto versionPtr =
             createVersion(objPath, versionId, deviceVersion, uuid,
                           imageDirPath.string(), associations, status);
+        createVersionInterface(bus, objPath, versionId);
 
         versionPtr->createActiveAssociation(objPath);
         versionPtr->addFunctionalAssociation(objPath);
