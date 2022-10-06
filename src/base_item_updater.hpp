@@ -495,6 +495,17 @@ class BaseItemUpdater :
         return NON_PLDM_DEFAULT_TIMEOUT;
     }
 
+    /**
+     * @brief method to check if inventory is supported, if inventory is not
+     * supported then D-Bus calls to check compatibility can be ignored
+     *
+     * @return true - if inventory is supported else false
+     */
+    virtual bool inventorySupported()
+    {
+        return true; // default is supported
+    }
+
   protected:
     std::string _name;
 
