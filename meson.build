@@ -20,7 +20,7 @@ compiler_args = []
 if get_option('MOCK_UTILS')
     compiler_args = ['-DMOCK_UTILS', '-O3']
 endif
-cdata.set_quoted('IMG_UPLOAD_DIR_BASE', '/tmp/pldm/')
+cdata.set_quoted('IMG_UPLOAD_DIR_BASE', '/tmp/images/pldm/')
 
 if get_option('PSU_SUPPORT').enabled()
   add_project_arguments('-DPSU_SUPPORT', language : ['c','cpp'])
