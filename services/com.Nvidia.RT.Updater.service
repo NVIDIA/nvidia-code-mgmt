@@ -1,6 +1,5 @@
 [Unit]
 Description=OpenBMC RT Code Manager
-Requires=nvidia-fpga-ready.target
 After=nvidia-fpga-ready.target
 Conflicts=nvidia-fpga-notready.target
 Wants=pldmd.service
@@ -15,5 +14,4 @@ Type=dbus
 BusName=com.Nvidia.Software.RT.Updater
 
 [Install]
-WantedBy=multi-user.target
 WantedBy=nvidia-fpga-ready.target
