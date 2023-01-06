@@ -4,20 +4,22 @@
 
 #include <filesystem>
 
-int UpdateDebugToken::installDebugToken(const std::string& debugTokenPath)
+DebugTokenInstallStatus
+    UpdateDebugToken::installDebugToken(const std::string& debugTokenPath)
 {
-    int status = 0;
+    DebugTokenInstallStatus status =
+        DebugTokenInstallStatus::DebugTokenInstallNone;
     TokenMap tokens;
     if (updateEndPoints() != 0)
     {
         log<level::ERR>("discovery failed");
-        status = -1;
+        status = DebugTokenInstallStatus::DebugTokenInstallFailed;
         return status;
     }
     if (updateTokenMap(debugTokenPath, tokens) != 0)
     {
         log<level::ERR>("Error while parsing tokens");
-        status = -1;
+        status = DebugTokenInstallStatus::DebugTokenInstallFailed;
         return status;
     }
     for (auto& device : devices)
@@ -31,6 +33,10 @@ int UpdateDebugToken::installDebugToken(const std::string& debugTokenPath)
                                     .c_str());
                 // skip install token for this device since token is already
                 // installed
+                if (status != DebugTokenInstallStatus::DebugTokenInstallFailed)
+                {
+                    status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
+                }
                 continue;
             }
             if (disableBackgroundCopy(device.first) != 0)
@@ -38,7 +44,7 @@ int UpdateDebugToken::installDebugToken(const std::string& debugTokenPath)
                 log<level::ERR>(("Disable BackgroundCopy failed for EID " +
                                  std::to_string(device.first))
                                     .c_str());
-                status = -1;
+                status = DebugTokenInstallStatus::DebugTokenInstallFailed;
                 // abort install token for this device if disabling background
                 // copy is failed
                 continue;
@@ -54,13 +60,17 @@ int UpdateDebugToken::installDebugToken(const std::string& debugTokenPath)
                 log<level::ERR>(("DebugToken Install failed for EID " +
                                  std::to_string(device.first))
                                     .c_str());
-                status = -1;
+                status = DebugTokenInstallStatus::DebugTokenInstallFailed;
             }
             else
             {
                 log<level::INFO>(("DebugToken Install success for EID " +
                                   std::to_string(device.first))
                                      .c_str());
+                if (status != DebugTokenInstallStatus::DebugTokenInstallFailed)
+                {
+                    status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
+                }
             }
         }
     }

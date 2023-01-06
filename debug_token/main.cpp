@@ -58,9 +58,20 @@ int main(int argc, char** argv)
             auto bus = sdbusplus::bus::new_default();
             std::unique_ptr<UpdateDebugToken> updateDebugToken =
                 std::make_unique<UpdateDebugToken>(bus);
-            if (updateDebugToken->installDebugToken(debugTokenPath) != 0)
+            auto tokenInstallStatus =
+                updateDebugToken->installDebugToken(debugTokenPath);
+            if (tokenInstallStatus ==
+                DebugTokenInstallStatus::DebugTokenInstallFailed)
             {
                 log<level::ERR>("Debug Token: Install failed");
+                updateDebugToken->createMessageRegistry(
+                    transferFailed, DEBUG_TOKEN_INSTALL_NAME, version);
+            }
+            else if (tokenInstallStatus ==
+                     DebugTokenInstallStatus::DebugTokenInstallNone)
+            {
+                log<level::ERR>(
+                    "Debug Token: No matching serial numbers for install token");
                 updateDebugToken->createMessageRegistry(
                     transferFailed, DEBUG_TOKEN_INSTALL_NAME, version);
             }

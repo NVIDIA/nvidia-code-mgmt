@@ -83,6 +83,14 @@ enum DebugTokenQueryErrorCodes
     DebugTokenInstalled = 0x1
 };
 
+/* Debug Token Install Status Codes*/
+enum class DebugTokenInstallStatus
+{
+    DebugTokenInstallSuccess = 0,
+    DebugTokenInstallFailed = 1,
+    DebugTokenInstallNone = 2
+};
+
 /**
  * @brief implemementation of update debug token utility
  *
@@ -101,10 +109,11 @@ class UpdateDebugToken : public TokenUtility
      * @brief install debug token for all matching devices
      *
      * @param[in] debugTokenPath
-     * 
-     * @return int
+     *
+     * @return DebugTokenInstallStatus
      */
-    int installDebugToken(const std::string& debugTokenPath);
+    DebugTokenInstallStatus
+        installDebugToken(const std::string& debugTokenPath);
     /**
      * @brief erase debug token for all discovered devices
      *
