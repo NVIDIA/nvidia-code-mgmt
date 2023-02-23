@@ -14,19 +14,29 @@ DebugTokenInstallStatus
     {
         log<level::ERR>("discovery failed");
         status = DebugTokenInstallStatus::DebugTokenInstallFailed;
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
+            OperationType::Common,
+            static_cast<int>(CommonErrorCodes::MCTPDiscoveryFailed));
         return status;
     }
     if (updateTokenMap(debugTokenPath, tokens) != 0)
     {
         log<level::ERR>("Error while parsing tokens");
         status = DebugTokenInstallStatus::DebugTokenInstallFailed;
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
+            OperationType::Common,
+            static_cast<int>(CommonErrorCodes::TokenParseFailure));
         return status;
     }
     for (auto& device : devices)
     {
         if (tokens.find(device.second) != tokens.end())
         {
-            if (queryDebugToken(device.first) != DebugTokenNotInstalled)
+            if (queryDebugToken(device.first) !=
+                static_cast<int>(
+                    DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
             {
                 log<level::ERR>(("debug token already installed on EID " +
                                  std::to_string(device.first))
@@ -37,6 +47,11 @@ DebugTokenInstallStatus
                 {
                     status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
                 }
+                std::string deviceName;
+                if (deviceNameMap.contains(device.first))
+                {
+                    deviceName = deviceNameMap[device.first];
+                }
                 continue;
             }
             if (disableBackgroundCopy(device.first) != 0)
@@ -45,6 +60,17 @@ DebugTokenInstallStatus
                                  std::to_string(device.first))
                                     .c_str());
                 status = DebugTokenInstallStatus::DebugTokenInstallFailed;
+                std::string deviceName;
+                if (deviceNameMap.contains(device.first))
+                {
+                    deviceName = deviceNameMap[device.first];
+                }
+                createMessageRegistryResourceErrors(
+                    resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
+                    OperationType::BackgroundCopy,
+                    static_cast<int>(
+                        BackgroundCopyErrorCodes::BackgroundDisableFail),
+                    deviceName);
                 // abort install token for this device if disabling background
                 // copy is failed
                 continue;
@@ -55,7 +81,10 @@ DebugTokenInstallStatus
                                   std::to_string(device.first))
                                      .c_str());
             }
-            if (installToken(device.first, tokens[device.second]) != 0)
+            int installErrorCode =
+                installToken(device.first, tokens[device.second]);
+            if (static_cast<InstallErrorCodes>(installErrorCode) !=
+                InstallErrorCodes::InstallSuccess)
             {
                 log<level::ERR>(("DebugToken Install failed for EID " +
                                  std::to_string(device.first))
@@ -80,14 +109,21 @@ DebugTokenInstallStatus
 int UpdateDebugToken::eraseDebugToken()
 {
     int status = 0;
-    if (discoverMCTPDevices() != 0)
+
+    if (updateEndPoints() != 0)
     {
-        log<level::ERR>("Error while discovering MCTP devices");
+        log<level::ERR>("discovery failed");
         status = -1;
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+            OperationType::Common,
+            static_cast<int>(CommonErrorCodes::MCTPDiscoveryFailed));
+        return status;
     }
     for (auto& device : mctpInfo)
     {
-        if (queryDebugToken(device.second) == DebugTokenNotInstalled)
+        if (queryDebugToken(device.second) ==
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
         {
             // skip erase token for this device since token is not installed
             continue;
@@ -98,6 +134,17 @@ int UpdateDebugToken::eraseDebugToken()
                              std::to_string(device.second))
                                 .c_str());
             status = -1;
+            std::string deviceName;
+            if (deviceNameMap.contains(device.second))
+            {
+                deviceName = deviceNameMap[device.second];
+            }
+            createMessageRegistryResourceErrors(
+                resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+                OperationType::BackgroundCopy,
+                static_cast<int>(
+                    BackgroundCopyErrorCodes::BackgroundEnableFail),
+                deviceName);
             // proceed with erase token if enabling background copy has failed
         }
         else
@@ -160,7 +207,7 @@ int UpdateDebugToken::discoverMCTPDevices()
                     if (std::find(mctpTypes.begin(), mctpTypes.end(),
                                   mctpTypeSPDM) != mctpTypes.end())
                     {
-                        auto eid = std::get<EID>(properties.at("EID"));
+                        auto eid = std::get<size_t>(properties.at("EID"));
                         mctpInfo.emplace(uuid, eid);
                     }
                 }
@@ -175,7 +222,8 @@ int UpdateDebugToken::discoverMCTPDevices()
     return status;
 }
 
-void UpdateDebugToken::updateDeviceMap(const dbus::InterfaceMap& interfaces)
+void UpdateDebugToken::updateDeviceMap(const dbus::InterfaceMap& interfaces,
+                                       const std::string& deviceName)
 {
     UUID uuid{};
     if (interfaces.contains(uuidEndpointIntfName))
@@ -200,6 +248,7 @@ void UpdateDebugToken::updateDeviceMap(const dbus::InterfaceMap& interfaces)
             if (mctpInfo.find(uuid) != mctpInfo.end())
             {
                 devices.emplace(mctpInfo[uuid], serialNumber);
+                deviceNameMap.emplace(mctpInfo[uuid], deviceName);
             }
         }
     }
@@ -225,7 +274,8 @@ int UpdateDebugToken::updateEndPoints()
         reply.read(objects);
         for (const auto& [objectPath, interfaces] : objects)
         {
-            updateDeviceMap(interfaces);
+            std::string deviceName = objectPath.filename();
+            updateDeviceMap(interfaces, deviceName);
         }
     }
     catch (const std::exception& e)
@@ -311,25 +361,67 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
     if (retCode != 0)
     {
         log<level::ERR>("Error while running install token command");
-        status = -1;
+        status = static_cast<int>(CommonErrorCodes::MCTPCommandInstallFailure);
+        std::string deviceName;
+        if (deviceNameMap.contains(eid))
+        {
+            deviceName = deviceNameMap[eid];
+        }
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
+            OperationType::Common, status, deviceName);
         return status;
     }
     auto rxBytes = parseCommandOutput(commandOut);
     try
     {
-        // last byte is status code
-        status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
+        if (rxBytes.size() > 0)
+        {
+            // last byte is status code
+            status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
+        }
+        else
+        {
+            status =
+                static_cast<int>(CommonErrorCodes::MCTPResponseInstallFailure);
+            std::string deviceName;
+            if (deviceNameMap.contains(eid))
+            {
+                deviceName = deviceNameMap[eid];
+            }
+            createMessageRegistryResourceErrors(
+                resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
+                OperationType::Common, status, deviceName);
+            log<level::ERR>("Error while parsing mctp response");
+            return status;
+        }
     }
     catch (const std::exception& e)
     {
-        status = InstallInternalError;
+        status = static_cast<int>(CommonErrorCodes::MCTPResponseInstallFailure);
+        std::string deviceName;
+        if (deviceNameMap.contains(eid))
+        {
+            deviceName = deviceNameMap[eid];
+        }
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
+            OperationType::Common, status, deviceName);
         log<level::ERR>("Error while getting status code");
+        return status;
     }
-    if (status != InstallSuccess)
+    if (status != static_cast<int>(InstallErrorCodes::InstallSuccess))
     {
         log<level::ERR>(
             ("Error while installing token: " + commandOut).c_str());
-        status = -1;
+        std::string deviceName;
+        if (deviceNameMap.contains(eid))
+        {
+            deviceName = deviceNameMap[eid];
+        }
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
+            OperationType::TokenInstall, status, deviceName);
         // enable background copy since token installation is failed
         // which is the default setting
         if (enableBackgroundCopy(eid) != 0)
@@ -360,24 +452,68 @@ int UpdateDebugToken::eraseToken(const EID& eid)
     if (retCode != 0)
     {
         log<level::ERR>("Error while running erase token command");
-        status = -1;
+        status = static_cast<int>(CommonErrorCodes::MCTPCommandEraseFailure);
+        std::string deviceName;
+        if (deviceNameMap.contains(eid))
+        {
+            deviceName = deviceNameMap[eid];
+        }
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+            OperationType::Common, status, deviceName);
         return status;
     }
     auto rxBytes = parseCommandOutput(commandOut);
     try
     {
         // last byte is status code
-        status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
+        if (rxBytes.size() > 0)
+        {
+            status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
+        }
+        else
+        {
+            log<level::ERR>("Error while parsing MCTP response");
+            status =
+                static_cast<int>(CommonErrorCodes::MCTPResponseEraseFailure);
+            std::string deviceName;
+            if (deviceNameMap.contains(eid))
+            {
+                deviceName = deviceNameMap[eid];
+            }
+            createMessageRegistryResourceErrors(
+                resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+                OperationType::Common, status, deviceName);
+            return status;
+        }
     }
     catch (const std::exception& e)
     {
-        status = EraseInternalError;
+        status = static_cast<int>(CommonErrorCodes::MCTPResponseEraseFailure);
+        std::string deviceName;
+        if (deviceNameMap.contains(eid))
+        {
+            deviceName = deviceNameMap[eid];
+        }
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+            OperationType::Common, status, deviceName);
         log<level::ERR>("Error while getting status code");
+        return status;
     }
-    if (status != EraseSuccess)
+    if (status != static_cast<int>(EraseErrorCodes::EraseSuccess))
     {
         log<level::ERR>(("Error while erasing token: " + commandOut).c_str());
         status = -1;
+        std::string deviceName;
+        if (deviceNameMap.contains(eid))
+        {
+            deviceName = deviceNameMap[eid];
+        }
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+            OperationType::TokenErase,
+            static_cast<int>(EraseErrorCodes::EraseInternalError), deviceName);
         // disable background copy since token erase is failed
         // this will avoid debug image getting copied to both the partition
         if (disableBackgroundCopy(eid) != 0)
@@ -419,10 +555,12 @@ int UpdateDebugToken::disableBackgroundCopy(const EID& eid)
     }
     catch (const std::exception& e)
     {
-        status = BackgroundCopyFailed;
+        status =
+            static_cast<int>(BackgroundCopyErrorCodes::BackgroundCopyFailed);
         log<level::ERR>("Error while getting status code");
     }
-    if (status != BackgroundCopySuccess)
+    if (status !=
+        static_cast<int>(BackgroundCopyErrorCodes::BackgroundCopySuccess))
     {
         log<level::ERR>(
             ("Error while disabling background copy: " + commandOut).c_str());
@@ -454,10 +592,12 @@ int UpdateDebugToken::enableBackgroundCopy(const EID& eid)
     }
     catch (const std::exception& e)
     {
-        status = BackgroundCopyFailed;
+        status =
+            static_cast<int>(BackgroundCopyErrorCodes::BackgroundCopyFailed);
         log<level::ERR>("Error while getting status code");
     }
-    if (status != BackgroundCopySuccess)
+    if (status !=
+        static_cast<int>(BackgroundCopyErrorCodes::BackgroundCopySuccess))
     {
         log<level::ERR>(
             ("Error while enabling background copy: " + commandOut).c_str());
@@ -478,7 +618,8 @@ int UpdateDebugToken::queryDebugToken(const EID& eid)
     if (retCode != 0)
     {
         log<level::ERR>("Error while running debug token query command");
-        status = DebugTokenNotInstalled;
+        status =
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
         return status;
     }
     auto rxBytes = parseCommandOutput(commandOut);
@@ -489,7 +630,8 @@ int UpdateDebugToken::queryDebugToken(const EID& eid)
     }
     catch (const std::exception& e)
     {
-        status = DebugTokenNotInstalled;
+        status =
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
         log<level::ERR>("Error while getting status code");
     }
     if (status != 0)
@@ -497,7 +639,8 @@ int UpdateDebugToken::queryDebugToken(const EID& eid)
         log<level::ERR>(
             ("Error while parsing debug token query output: " + commandOut)
                 .c_str());
-        status = DebugTokenNotInstalled;
+        status =
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
         return status;
     }
     try
@@ -505,18 +648,22 @@ int UpdateDebugToken::queryDebugToken(const EID& eid)
         // 10 the byte from last is token installation status
         auto tokenInstallStatus =
             std::stoi(rxBytes[rxBytes.size() - 10], nullptr, 16);
-        if (tokenInstallStatus == DebugTokenInstalled)
+        if (tokenInstallStatus ==
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
         {
-            status = DebugTokenInstalled;
+            status = static_cast<int>(
+                DebugTokenQueryErrorCodes::DebugTokenInstalled);
         }
         else
         {
-            status = DebugTokenNotInstalled;
+            status = static_cast<int>(
+                DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
         }
     }
     catch (const std::exception& e)
     {
-        status = DebugTokenNotInstalled;
+        status =
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
         log<level::ERR>("Error while getting token installation status");
     }
     return status;
@@ -564,5 +711,107 @@ void UpdateDebugToken::createMessageRegistry(const std::string& messageID,
     // use separate container for fwupdate message registry
     addData["namespace"] = "FWUpdate";
     createLog(messageID, addData, level);
+    return;
+}
+
+std::optional<std::tuple<std::string, std::string>>
+    UpdateDebugToken::getMessage(const OperationType operationType,
+                                 const int errorCode,
+                                 const std::string deviceName)
+{
+    Message errorMessage;
+    Resolution resolution;
+    switch (operationType)
+    {
+        case OperationType::TokenInstall:
+            if (installErrorMapping.contains(
+                    static_cast<InstallErrorCodes>(errorCode)))
+            {
+                auto errorCodeSearch = installErrorMapping.find(
+                    static_cast<InstallErrorCodes>(errorCode));
+                errorMessage =
+                    formatMessage(errorCodeSearch->second.first, deviceName);
+                resolution = errorCodeSearch->second.second;
+                return {{errorMessage, resolution}};
+            }
+            break;
+        case OperationType::TokenErase:
+            if (eraseErrorMapping.contains(
+                    static_cast<EraseErrorCodes>(errorCode)))
+            {
+                auto errorCodeSearch = eraseErrorMapping.find(
+                    static_cast<EraseErrorCodes>(errorCode));
+                errorMessage =
+                    formatMessage(errorCodeSearch->second.first, deviceName);
+                resolution = errorCodeSearch->second.second;
+                return {{errorMessage, resolution}};
+            }
+            break;
+        case OperationType::BackgroundCopy:
+            if (backgroundCopyErrorMapping.contains(
+                    static_cast<BackgroundCopyErrorCodes>(errorCode)))
+            {
+                auto errorCodeSearch = backgroundCopyErrorMapping.find(
+                    static_cast<BackgroundCopyErrorCodes>(errorCode));
+                errorMessage =
+                    formatMessage(errorCodeSearch->second.first, deviceName);
+                resolution = errorCodeSearch->second.second;
+                return {{errorMessage, resolution}};
+            }
+            break;
+        case OperationType::Common:
+            if (debugTokenCommonErrorMapping.contains(
+                    static_cast<CommonErrorCodes>(errorCode)))
+            {
+                auto errorCodeSearch = debugTokenCommonErrorMapping.find(
+                    static_cast<CommonErrorCodes>(errorCode));
+                errorMessage =
+                    formatMessage(errorCodeSearch->second.first, deviceName);
+                resolution = errorCodeSearch->second.second;
+                return {{errorMessage, resolution}};
+            }
+            break;
+        default:
+            log<level::ERR>(
+                "No mapping found for command.",
+                entry("OPERATIONTYPE %ld", (unsigned)operationType));
+            break;
+    }
+    return {};
+}
+
+void UpdateDebugToken::createMessageRegistryResourceErrors(
+    const std::string& messageID, const std::string& componentName,
+    const OperationType& operationType, const int& errorCode,
+    const std::string deviceName)
+{
+    std::optional<std::tuple<std::string, std::string>> message =
+        getMessage(operationType, errorCode, deviceName);
+    if (message)
+    {
+        std::map<std::string, std::string> addData;
+        Level level = Level::Informational;
+        addData["REDFISH_MESSAGE_ID"] = messageID;
+        addData["REDFISH_MESSAGE_ARGS"] =
+            (componentName + "," + std::get<0>(*message));
+        if (messageID == resourceErrorsDetected)
+        {
+            level = Level::Critical;
+        }
+        // use separate container for fwupdate message registry
+        addData["namespace"] = "FWUpdate";
+        std::string resolution = std::get<1>(*message);
+        if (!resolution.empty())
+        {
+            addData["xyz.openbmc_project.Logging.Entry.Resolution"] =
+                resolution;
+        }
+        createLog(messageID, addData, level);
+    }
+    else
+    {
+        log<level::ERR>("Unable to log message registry.",
+                        entry("DeviceName: %s", deviceName.c_str()));
+    }
     return;
 }

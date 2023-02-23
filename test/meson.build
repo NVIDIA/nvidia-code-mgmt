@@ -29,7 +29,11 @@ test_dep = declare_dependency(
   link_with : test_lib
 )
 
-tests = ['test_debug_token_utility', 'test_update_debug_token']
+tests = []
+if get_option('DEBUG_TOKEN_SUPPORT').enabled()
+  tests += 'test_debug_token_utility'
+  tests += 'test_update_debug_token'
+endif
 
 foreach t : tests
   test(t, executable(t.underscorify(), t + '.cpp',
@@ -38,6 +42,7 @@ foreach t : tests
                       test_dep,
                       sdbusplus,
                       phosphor_dbus_interfaces,
-                      update_debug_token_test_src]),
+                      update_debug_token_test_src,
+                      fmt]),
                       workdir: meson.current_source_dir())
 endforeach

@@ -10,8 +10,12 @@
 class TestUpdateDebugToken : public testing::Test
 {
   public:
+    std::unique_ptr<UpdateDebugToken> updateDebugToken;
     TestUpdateDebugToken()
-    {}
+    {
+        auto bus = sdbusplus::bus::new_default();
+        updateDebugToken = std::make_unique<UpdateDebugToken>(bus);
+    }
 
     ~TestUpdateDebugToken()
     {}
@@ -19,9 +23,6 @@ class TestUpdateDebugToken : public testing::Test
 
 TEST_F(TestUpdateDebugToken, DebugTokenMapSingle)
 {
-    auto bus = sdbusplus::bus::new_default();
-    std::unique_ptr<UpdateDebugToken> updateDebugToken =
-        std::make_unique<UpdateDebugToken>(bus);
     SerialNumber expectedSerial = "0x011E020E160A1017";
     Token expectedToken = {
         0x45, 0x44, 0x54, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x00,
@@ -62,9 +63,6 @@ TEST_F(TestUpdateDebugToken, DebugTokenMapSingle)
 
 TEST_F(TestUpdateDebugToken, DebugTokenMapMultiple)
 {
-    auto bus = sdbusplus::bus::new_default();
-    std::unique_ptr<UpdateDebugToken> updateDebugToken =
-        std::make_unique<UpdateDebugToken>(bus);
     SerialNumber expectedSerial1 = "0x011E020E160A1017";
     SerialNumber expectedSerial2 = "0x011E020E160A1018";
     Token expectedToken1 = {
@@ -137,5 +135,107 @@ TEST_F(TestUpdateDebugToken, DebugTokenMapMultiple)
     else
     {
         EXPECT_EQ(tokensExpected.size(), tokensParsed.size());
+    }
+}
+
+TEST_F(TestUpdateDebugToken, TestFormatMessage)
+{
+    std::string errorMessageInput = "Invalid Debug Token for {}.";
+    std::string testDeviceName = "Test_Device_Name_0";
+    std::string errorMessageExpected =
+        "Invalid Debug Token for Test_Device_Name_0.";
+    auto errorMessageOutput =
+        updateDebugToken->formatMessage(errorMessageInput, testDeviceName);
+    EXPECT_EQ(errorMessageOutput, errorMessageExpected);
+}
+
+TEST_F(TestUpdateDebugToken, TestMessageTokenInstall)
+{
+    std::string testDeviceName = "Test_Device_Name_0";
+    OperationType testOperationType;
+    int testErrorCode;
+    bool expectedMessageStatus = true;
+    std::string expectedMessageError;
+    std::string expectedResolution;
+    std::optional<std::tuple<std::string, std::string>> outputMessage;
+
+    // Token Install
+    testOperationType = OperationType::TokenInstall;
+    testErrorCode = static_cast<int>(InstallErrorCodes::InvalidToken);
+    expectedMessageError =
+        installErrorMapping[InstallErrorCodes::InvalidToken].first;
+    expectedMessageError =
+        updateDebugToken->formatMessage(expectedMessageError, testDeviceName);
+    expectedResolution =
+        installErrorMapping[InstallErrorCodes::InvalidToken].second;
+
+    outputMessage = updateDebugToken->getMessage(testOperationType,
+                                                 testErrorCode, testDeviceName);
+    EXPECT_EQ(expectedMessageStatus, outputMessage.has_value());
+    if (outputMessage)
+    {
+        EXPECT_EQ(expectedMessageError, std::get<0>(*outputMessage));
+        EXPECT_EQ(expectedResolution, std::get<1>(*outputMessage));
+    }
+
+    // Token Erase
+    testOperationType = OperationType::TokenErase;
+    testErrorCode = static_cast<int>(EraseErrorCodes::EraseInternalError);
+    expectedMessageError =
+        eraseErrorMapping[EraseErrorCodes::EraseInternalError].first;
+    expectedMessageError =
+        updateDebugToken->formatMessage(expectedMessageError, testDeviceName);
+    expectedResolution =
+        eraseErrorMapping[EraseErrorCodes::EraseInternalError].second;
+
+    outputMessage = updateDebugToken->getMessage(testOperationType,
+                                                 testErrorCode, testDeviceName);
+    EXPECT_EQ(expectedMessageStatus, outputMessage.has_value());
+    if (outputMessage)
+    {
+        EXPECT_EQ(expectedMessageError, std::get<0>(*outputMessage));
+        EXPECT_EQ(expectedResolution, std::get<1>(*outputMessage));
+    }
+
+    // Background copy
+    testOperationType = OperationType::BackgroundCopy;
+    testErrorCode =
+        static_cast<int>(BackgroundCopyErrorCodes::BackgroundEnableFail);
+    expectedMessageError = backgroundCopyErrorMapping
+                               [BackgroundCopyErrorCodes::BackgroundEnableFail]
+                                   .first;
+    expectedMessageError =
+        updateDebugToken->formatMessage(expectedMessageError, testDeviceName);
+    expectedResolution = backgroundCopyErrorMapping
+                             [BackgroundCopyErrorCodes::BackgroundEnableFail]
+                                 .second;
+
+    outputMessage = updateDebugToken->getMessage(testOperationType,
+                                                 testErrorCode, testDeviceName);
+    EXPECT_EQ(expectedMessageStatus, outputMessage.has_value());
+    if (outputMessage)
+    {
+        EXPECT_EQ(expectedMessageError, std::get<0>(*outputMessage));
+        EXPECT_EQ(expectedResolution, std::get<1>(*outputMessage));
+    }
+
+    // Common error codes
+    testOperationType = OperationType::Common;
+    testErrorCode = static_cast<int>(CommonErrorCodes::TokenParseFailure);
+    expectedMessageError =
+        debugTokenCommonErrorMapping[CommonErrorCodes::TokenParseFailure].first;
+    expectedMessageError =
+        updateDebugToken->formatMessage(expectedMessageError, testDeviceName);
+    expectedResolution =
+        debugTokenCommonErrorMapping[CommonErrorCodes::TokenParseFailure]
+            .second;
+
+    outputMessage = updateDebugToken->getMessage(testOperationType,
+                                                 testErrorCode, testDeviceName);
+    EXPECT_EQ(expectedMessageStatus, outputMessage.has_value());
+    if (outputMessage)
+    {
+        EXPECT_EQ(expectedMessageError, std::get<0>(*outputMessage));
+        EXPECT_EQ(expectedResolution, std::get<1>(*outputMessage));
     }
 }
