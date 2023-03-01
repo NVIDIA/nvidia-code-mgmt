@@ -1,0 +1,8 @@
+[Unit]
+Description=Update mtd partition
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=mtdupdate.sh $ARGS

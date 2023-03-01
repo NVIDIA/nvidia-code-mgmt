@@ -20,6 +20,9 @@
 #include "debug_token_install.hpp"
 #include "debug_token_erase.hpp"
 #endif
+#if MTD_SUPPORT
+#include "mtd_updater.hpp"
+#endif
 #include "watch.hpp"
 
 #include <getopt.h>
@@ -49,12 +52,20 @@ int main(int argc, char** argv)
     auto ret = 0;
     bool useFallback = false;
     (void)useFallback; // if RT_SUPPORT is disabled this isn't used currently
-    while ((ret = getopt_long(argc, argv, "u:f", set_opts, NULL)) != -1)
+    std::string targetName = "";
+    std::string modelName = "";
+    while ((ret = getopt_long(argc, argv, "u:i:m:f", set_opts, NULL)) != -1)
     {
         switch (ret)
         {
             case 'u':
                 updater = optarg;
+                break;
+            case 'i':
+                targetName = optarg;
+                break;
+            case 'm':
+                modelName = optarg;
                 break;
             default:
                 print_wrong_arg_exit();
@@ -113,6 +124,19 @@ int main(int argc, char** argv)
         itemUpdater = std::make_unique<DebugTokenEraseItemUpdater>(bus);
     }
 #endif
+#if MTD_SUPPORT
+    if (updater == "MTD")
+    {
+        if (MTDItemUpdater::partitionExists(targetName))
+            itemUpdater = std::make_unique<MTDItemUpdater>(bus, targetName, modelName);
+        else
+        {
+            log<level::ERR>("MTD partion not present. MTD updater cannot work \n");
+            exit(EXIT_FAILURE);
+        }
+    }
+#endif
+
     if (itemUpdater == nullptr)
     {
         printf("UnSupported Updater \"%s\"\n", updater.c_str());

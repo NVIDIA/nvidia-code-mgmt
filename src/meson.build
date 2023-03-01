@@ -38,6 +38,10 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     source_files += 'debug_token_erase.cpp'
 endif
 
+if get_option('MTD_UPDATER_SUPPORT').enabled()
+    source_files += 'mtd_updater.cpp'
+endif
+
 executable('code-manager',
             sources: source_files,
             include_directories: psu_inc,

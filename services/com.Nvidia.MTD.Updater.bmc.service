@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenBMC bmc MTD Code Manager
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u MTD -i bmc -m BMC_MODEL 
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.MTD.Updater.bmc
+
+[Install]
+WantedBy=multi-user.target

@@ -32,6 +32,29 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
                                 'debug-token-update@.service']
 endif
 
+if get_option('MTD_UPDATER_SUPPORT').enabled()
+unit_files = unit_files + ['com.Nvidia.MTD.Updater.fpga1.service',
+						   'com.Nvidia.MTD.Updater.bmc.service',
+                           'mtd-update@.service']
+
+fpga_model = get_option('FPGA_SUPPORTED_MODEL')
+assert(fpga_model != '', 'FPGA model must be set when using MTD updater')
+
+bmc_model = get_option('BMC_SUPPORTED_MODEL')
+assert(bmc_model != '', 'BMC model must be set when using MTD updater')
+
+fpga_sed_arg = 's/FPGA_MODEL/'
+fpga_sed_arg += fpga_model
+fpga_sed_arg += '/g'
+
+bmc_sed_arg = 's/BMC_MODEL/'
+bmc_sed_arg +=bmc_model
+bmc_sed_arg += '/g'
+
+run_command('sed', '-i', fpga_sed_arg, 'com.Nvidia.MTD.Updater.fpga1.service', check: true)
+run_command('sed', '-i', bmc_sed_arg, 'com.Nvidia.MTD.Updater.bmc.service', check: true)
+endif
+
 foreach unit : unit_files
 configure_file(input: unit,
                output: unit,

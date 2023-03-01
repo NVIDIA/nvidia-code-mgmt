@@ -89,6 +89,15 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
   cdata.set_quoted('DEBUG_TOKEN_UPDATE_SERVICE', 'debug-token-update@.service')
 endif
 
+if get_option('MTD_UPDATER_SUPPORT').enabled()
+  add_project_arguments('-DMTD_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('MTD_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('MTD_BUSNAME_UPDATER_BASE', 'com.Nvidia.Software.MTD.Updater.')
+  cdata.set_quoted('MTD_BUSNAME_INVENTORY_BASE', 'com.Nvidia.MTD.')
+  cdata.set_quoted('MTD_UPDATE_SERVICE', 'mtd-update@.service')
+  cdata.set('MTD_UPDATE_TIMEOUT', get_option('MTD_UPDATE_TIMEOUT'))
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 

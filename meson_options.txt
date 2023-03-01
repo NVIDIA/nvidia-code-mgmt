@@ -19,6 +19,11 @@ option('FPGA_SUPPORTED_MODEL',
        value: '',
        description: 'FPGA supported models')
 
+option('BMC_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'BMC supported models')
+
 option('CPLD_SUPPORT',
        type: 'feature',
        value: 'disabled',
@@ -64,6 +69,11 @@ option('DEBUG_TOKEN_ERASE_SUPPORTED_MODEL',
        value: '',
        description: 'Debug Token supported models for erase')
 
+option('MTD_UPDATER_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables MTD update support. It takes 1 min to update fpga and 4 min to update BMC.')
+
 option('INVENTORY_PATH_BASE',
        type: 'string',
        value: '/xyz/openbmc_project/inventory/system',
@@ -104,6 +114,13 @@ option(
     type: 'integer',
     value: 180,
     description: 'Retimer update timeout in seconds.'
+)
+
+option(
+    'MTD_UPDATE_TIMEOUT',
+    type: 'integer',
+    value: 720,
+    description: 'MTD update timeout in seconds.'
 )
 
 option(
