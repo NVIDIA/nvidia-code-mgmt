@@ -87,9 +87,9 @@ static std::map<InstallErrorCodes, MessageMapping> installErrorMapping{
       "Check Debug Token is valid and signed by NVIDIA. Request the"
       " debug token again and retry with new debug signed firmware package."}},
     {InstallErrorCodes::TokenAuthFailed,
-     {"Debug Token Authentication for {}",
-      "Request the debug token again and retry with new debug signed"
-      " firmware package."}},
+     {"Debug Token Authentication failed for {}",
+      "Check Debug Token is valid and signed by NVIDIA. Request the"
+      " debug token again and retry with new debug signed firmware package."}},
     {InstallErrorCodes::TokenNonceInvalid,
      {"Debug Token Nonce invalid for {}",
       "Request the debug token again and retry with new debug signed"
