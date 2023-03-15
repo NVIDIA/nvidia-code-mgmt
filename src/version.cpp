@@ -229,12 +229,6 @@ void Version::finishActivation()
 }
 bool Version::isCompatible(const std::string& inventoryPath)
 {
-    // few other device updater like debug token does not have inventory, skip
-    // compatibility check for those
-    if (!itemUpdaterUtils->inventorySupported())
-    {
-        return true;
-    }
     std::string deviceManufacturer;
     std::string deviceModel;
     // few other device updater like retimer, debug token does not have
