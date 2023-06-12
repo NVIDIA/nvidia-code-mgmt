@@ -493,20 +493,6 @@ class BaseItemUpdater :
         return true; // default is supported
     }
 
-    /**
-     * @brief create version interface for required non-pldm devices
-     * this will be handled in respective non pldm device class.
-     *
-     * @param bus
-     * @param objpath
-     * @param versionId
-     */
-    virtual void
-        createVersionInterface([[maybe_unused]] sdbusplus::bus::bus& bus,
-                               [[maybe_unused]] const std::string& objPath,
-                               [[maybe_unused]] const std::string& versionI)
-    {}
-
   protected:
     std::string _name;
 

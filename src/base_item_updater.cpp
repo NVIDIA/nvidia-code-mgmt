@@ -141,7 +141,6 @@ void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
         // Create a new object for running Device inventory
         auto versionPtr = createVersion(objPath, versionId, deviceVersion, uuid,
                                         imageDirPath.string(), status);
-        createVersionInterface(bus, objPath, versionId);
         // Add to Version list
         versions.insert(std::make_pair(versionId, std::move(versionPtr)));
     }

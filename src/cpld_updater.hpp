@@ -294,22 +294,6 @@ class CPLDItemUpdater : public BaseItemUpdater
             return createVersionID(getName(), deviceVersion);
     }
 
-    /**
-     * @brief create version interface for required non-pldm devices
-     * @param bus
-     * @param objpath
-     * @param versionId
-     */
-    void createVersionInterface(sdbusplus::bus::bus& bus,
-                                const std::string& objPath,
-                                const std::string& versionId)
-    {
-        auto softwareVersionObj =
-            std::make_unique<SoftwareVersion>(bus, objPath);
-        softwareVersionIntf.insert(
-            std::make_pair(versionId, std::move(softwareVersionObj)));
-    }
-
   private:
     inline static const std::string configFile =
         "/usr/share/nvidia-power-manager/cpld_config.json";
