@@ -74,6 +74,16 @@ option('MTD_UPDATER_SUPPORT',
        value: 'disabled',
        description: 'Enables MTD update support. It takes 1 min to update fpga and 4 min to update BMC.')
 
+option('SWITCHTEC_FUSE_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables support to be able to set the fuses for switchtec device.')
+
+option('SWITCHTEC_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'SWITCHTEC supported models')
+
 option('INVENTORY_PATH_BASE',
        type: 'string',
        value: '/xyz/openbmc_project/inventory/system',
@@ -121,6 +131,13 @@ option(
     type: 'integer',
     value: 720,
     description: 'MTD update timeout in seconds.'
+)
+
+option(
+    'SWITCHTEC_FUSE_TIMEOUT',
+    type: 'integer',
+    value: 60,
+    description: 'Fusing timeout in seconds.'
 )
 
 option(

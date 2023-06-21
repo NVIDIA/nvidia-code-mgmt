@@ -98,6 +98,16 @@ if get_option('MTD_UPDATER_SUPPORT').enabled()
   cdata.set('MTD_UPDATE_TIMEOUT', get_option('MTD_UPDATE_TIMEOUT'))
 endif
 
+if get_option('SWITCHTEC_FUSE_SUPPORT').enabled()
+  add_project_arguments('-DSWITCHTEC_FUSE_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('SWITCHTEC_SUPPORTED_MODEL', get_option('SWITCHTEC_SUPPORTED_MODEL'))
+  cdata.set_quoted('SWITCHTEC_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('SWITCHTEC_BUSNAME_UPDATER', 'com.Nvidia.Software.Switchtec.Updater')
+  cdata.set_quoted('SWITCHTEC_BUSNAME_INVENTORY', 'com.Nvidia.Switchtec')
+  cdata.set_quoted('SWITCHTEC_FUSE_SERVICE', 'switchtec-fuser@.service')
+  cdata.set('SWITCHTEC_FUSE_TIMEOUT', get_option('SWITCHTEC_FUSE_TIMEOUT'))
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 

@@ -23,6 +23,10 @@
 #if MTD_SUPPORT
 #include "mtd_updater.hpp"
 #endif
+#if SWITCHTEC_FUSE_SUPPORT
+#include "switchtec_fuse.hpp"
+#endif
+
 #include "watch.hpp"
 
 #include <getopt.h>
@@ -143,6 +147,12 @@ int main(int argc, char** argv)
             log<level::ERR>("MTD partion not present. MTD updater cannot work \n");
             exit(EXIT_FAILURE);
         }
+    }
+#endif
+#if SWITCHTEC_FUSE_SUPPORT
+    if (updater == "SWITCHTEC")
+    {
+        itemUpdater = std::make_unique<SwitchtecFuse>(bus);
     }
 #endif
 

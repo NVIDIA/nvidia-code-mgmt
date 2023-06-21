@@ -42,6 +42,10 @@ if get_option('MTD_UPDATER_SUPPORT').enabled()
     source_files += 'mtd_updater.cpp'
 endif
 
+if get_option('SWITCHTEC_FUSE_SUPPORT').enabled()
+    source_files += 'switchtec_fuse.cpp'
+endif
+
 executable('code-manager',
             sources: source_files,
             include_directories: psu_inc,

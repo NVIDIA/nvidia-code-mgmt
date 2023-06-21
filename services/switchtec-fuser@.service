@@ -1,0 +1,8 @@
+[Unit]
+Description=Fuse Switchhtec switch
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=switchtec_fuser.sh $ARGS

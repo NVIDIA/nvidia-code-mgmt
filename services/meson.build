@@ -58,6 +58,11 @@ if get_option('MTD_UPDATER_SUPPORT').enabled()
     assert(bmc_model != '' or fpga_model !='', 'BMC or FPGA model must be set when using MTD updater')
 endif
 
+if get_option('SWITCHTEC_FUSE_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.Switchtec.Fuse.service',
+                                'switchtec-fuser@.service']
+endif
+
 foreach unit : unit_files
 configure_file(input: unit,
                output: unit,

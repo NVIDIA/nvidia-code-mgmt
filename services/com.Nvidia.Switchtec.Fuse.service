@@ -1,0 +1,15 @@
+[Unit]
+Description=Fuse switchtec pcie switch
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u SWITCHTEC
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.Switchtec.Updater
+
+[Install]
+WantedBy=multi-user.target
