@@ -115,13 +115,22 @@ int main(int argc, char** argv)
     }
 #endif
 #if DEBUG_TOKEN_SUPPORT
-    if (updater == "DebugTokenInstall")
+    try
     {
-        itemUpdater = std::make_unique<DebugTokenInstallItemUpdater>(bus);
+        if (updater == "DebugTokenInstall")
+        {
+            itemUpdater = std::make_unique<DebugTokenInstallItemUpdater>(bus);
+        }
+        else if (updater == "DebugTokenErase")
+        {
+            itemUpdater = std::make_unique<DebugTokenEraseItemUpdater>(bus);
+        }
     }
-    else if (updater == "DebugTokenErase")
+    catch (const std::exception& e)
     {
-        itemUpdater = std::make_unique<DebugTokenEraseItemUpdater>(bus);
+        log<level::ERR>("Debug token object exception",
+                        entry("TOKEN_EXCEPTION=%s", e.what()));
+        exit(EXIT_FAILURE);
     }
 #endif
 #if MTD_SUPPORT
