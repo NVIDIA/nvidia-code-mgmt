@@ -57,6 +57,8 @@ const std::string transferFailed{"Update.1.0.TransferFailed"};
 const std::string updateSuccessful{"Update.1.0.UpdateSuccessful"};
 const std::string resourceErrorsDetected{
     "ResourceEvent.1.0.ResourceErrorsDetected"};
+static constexpr size_t queryStatusCodeByte =
+    17; // 11 the byte from last is status code for debug token query
 
 enum class OperationType
 {

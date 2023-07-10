@@ -625,8 +625,18 @@ int UpdateDebugToken::queryDebugToken(const EID& eid)
     auto rxBytes = parseCommandOutput(commandOut);
     try
     {
-        // 11 the byte from last is status code
-        status = std::stoi(rxBytes[rxBytes.size() - 11], nullptr, 16);
+        if (rxBytes.size() > queryStatusCodeByte)
+        {
+            // 11 the byte from last is status code
+            status = std::stoi(rxBytes[rxBytes.size() - queryStatusCodeByte],
+                               nullptr, 16);
+        }
+        else
+        {
+            log<level::ERR>(
+                "Debug token query command response size is invalid.");
+            status = -1;
+        }
     }
     catch (const std::exception& e)
     {
