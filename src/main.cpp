@@ -26,6 +26,9 @@
 #if SWITCHTEC_FUSE_SUPPORT
 #include "switchtec_fuse.hpp"
 #endif
+#if JAMPLAYER_SUPPORT
+#include "jamplayer.hpp"
+#endif
 
 #include "watch.hpp"
 
@@ -153,6 +156,12 @@ int main(int argc, char** argv)
     if (updater == "SWITCHTEC")
     {
         itemUpdater = std::make_unique<SwitchtecFuse>(bus);
+    }
+#endif
+#if JAMPLAYER_SUPPORT
+    if (updater == "JAMPLAYER")
+    {
+        itemUpdater = std::make_unique<JamPlayer>(bus);
     }
 #endif
 

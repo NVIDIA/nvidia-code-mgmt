@@ -46,6 +46,11 @@ if get_option('SWITCHTEC_FUSE_SUPPORT').enabled()
     source_files += 'switchtec_fuse.cpp'
 endif
 
+if get_option('JAMPLAYER_SUPPORT').enabled()
+    source_files += 'jamplayer.cpp'
+endif
+
+
 executable('code-manager',
             sources: source_files,
             include_directories: psu_inc,

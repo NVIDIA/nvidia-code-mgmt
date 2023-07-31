@@ -63,6 +63,11 @@ if get_option('SWITCHTEC_FUSE_SUPPORT').enabled()
                                 'switchtec-fuser@.service']
 endif
 
+if get_option('JAMPLAYER_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.Jamplayer.service',
+                                'jamplayer-flash@.service']
+endif
+
 foreach unit : unit_files
 configure_file(input: unit,
                output: unit,

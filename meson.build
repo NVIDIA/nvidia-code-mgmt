@@ -108,6 +108,16 @@ if get_option('SWITCHTEC_FUSE_SUPPORT').enabled()
   cdata.set('SWITCHTEC_FUSE_TIMEOUT', get_option('SWITCHTEC_FUSE_TIMEOUT'))
 endif
 
+if get_option('JAMPLAYER_SUPPORT').enabled()
+  add_project_arguments('-DJAMPLAYER_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('JAMPLAYER_SUPPORTED_MODEL', get_option('JAMPLAYER_SUPPORTED_MODEL'))
+  cdata.set_quoted('JAMPLAYER_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('JAMPLAYER_BUSNAME_UPDATER', 'com.Nvidia.Software.Jamplayer.Updater')
+  cdata.set_quoted('JAMPLAYER_BUSNAME_INVENTORY', 'com.Nvidia.Jamplayer')
+  cdata.set_quoted('JAMPLAYER_SERVICE', 'jamplayer-flash@.service')
+  cdata.set('JAMPLAYER_TIMEOUT', get_option('JAMPLAYER_TIMEOUT'))
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 
