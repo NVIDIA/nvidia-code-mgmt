@@ -1,0 +1,8 @@
+[Unit]
+Description=Update FPGA over JTAG by using JAM player
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=jamplayer-update.sh $ARGS

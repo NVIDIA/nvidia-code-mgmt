@@ -1,0 +1,15 @@
+[Unit]
+Description=JamPlayer fpga update over JTAG
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u JAMPLAYER
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.Jamplayer.Updater
+
+[Install]
+WantedBy=multi-user.target
