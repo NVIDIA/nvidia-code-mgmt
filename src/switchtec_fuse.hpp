@@ -13,11 +13,14 @@ namespace updater
 
 class SwitchtecFuse : public BaseItemUpdater
 {   
+  std::unique_ptr<SoftwareVersion> softwareVersionObj;
   public:
     SwitchtecFuse(sdbusplus::bus::bus& bus) :
-		BaseItemUpdater(bus, SWITCHTEC_SUPPORTED_MODEL, SWITCHTEC_INVENTORY_IFACE, "SWITCHTEC_PCIE_SWITCH",
-						SWITCHTEC_BUSNAME_UPDATER, SWITCHTEC_FUSE_SERVICE, false, SWITCHTEC_BUSNAME_INVENTORY)
+        BaseItemUpdater(bus, SWITCHTEC_SUPPORTED_MODEL, SWITCHTEC_INVENTORY_IFACE, "PCIE_SWITCH_FUSE",
+                        SWITCHTEC_BUSNAME_UPDATER, SWITCHTEC_FUSE_SERVICE, false, SWITCHTEC_BUSNAME_INVENTORY)
     {
+        auto objPath = std::string(SOFTWARE_OBJPATH) + "/PCIE_SWITCH_FUSE";
+        createInventory(bus, objPath);
     }
 
     /**
@@ -27,7 +30,7 @@ class SwitchtecFuse : public BaseItemUpdater
      * @return std::string
      */
     std::string getVersion([
-		[maybe_unused]] const std::string& inventoryPath) const override;
+        [maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Manufacturer object
@@ -101,11 +104,23 @@ class SwitchtecFuse : public BaseItemUpdater
      * @brief method to check if inventory is supported, if inventory is not
      * supported then D-Bus calls to check compatibility can be ignored
      *
-     * @return false - for mtd inventory check is not required
-     */
+     * @return false */
     bool inventorySupported() override
     {
-        return false; // default is supported
+        return false;
+    }
+
+    /**
+     * @brief create version interface for required non-pldm devices
+     * @param bus
+     * @param objpath
+     * @param versionId
+     */
+    void createInventory(sdbusplus::bus::bus& bus,
+                                const std::string& objPath)
+    {
+        getVersion("");
+        softwareVersionObj = std::make_unique<SoftwareVersion>(bus, objPath);
     }
 };
 
