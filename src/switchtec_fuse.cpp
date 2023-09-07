@@ -29,8 +29,12 @@ std::string
         }
         pclose(pipe);
     }
+    if (result.empty()) {
+        result = "make sure platform is ON";
+    }
 	if (softwareVersionObj)
 		softwareVersionObj->version(result);
+
     return result;
 }
 

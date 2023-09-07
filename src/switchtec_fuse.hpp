@@ -3,6 +3,7 @@
 
 #include "base_item_updater.hpp"
 #include "fstream"
+#include <xyz/openbmc_project/State/Host/server.hpp>
 
 namespace nvidia
 {
@@ -11,13 +12,36 @@ namespace software
 namespace updater
 {
 
+namespace StateServer = sdbusplus::xyz::openbmc_project::State::server;
+
 class SwitchtecFuse : public BaseItemUpdater
 {   
   std::unique_ptr<SoftwareVersion> softwareVersionObj;
+  //sdbusplus::bus::match_t propertiesChangedSignalCurrentHostState;
+  sdbusplus::bus::match::match _match;
   public:
     SwitchtecFuse(sdbusplus::bus::bus& bus) :
-        BaseItemUpdater(bus, SWITCHTEC_SUPPORTED_MODEL, SWITCHTEC_INVENTORY_IFACE, "PCIE_SWITCH_FUSE",
-                        SWITCHTEC_BUSNAME_UPDATER, SWITCHTEC_FUSE_SERVICE, false, SWITCHTEC_BUSNAME_INVENTORY)
+             BaseItemUpdater(bus, SWITCHTEC_SUPPORTED_MODEL, SWITCHTEC_INVENTORY_IFACE, "PCIE_SWITCH_FUSE",
+                        SWITCHTEC_BUSNAME_UPDATER, SWITCHTEC_FUSE_SERVICE, false, SWITCHTEC_BUSNAME_INVENTORY),
+             _match(bus, sdbusplus::bus::match::rules::propertiesChanged("/xyz/openbmc_project/state/host0",
+                                                                         "xyz.openbmc_project.State.Host"),
+                    [this](auto& msg) {
+                      std::string intfName;
+                      std::map<std::string, std::variant<std::string>> msgData;
+                      msg.read(intfName, msgData);
+                      // Check if it was the Value property that changed.
+                      auto valPropMap = msgData.find("CurrentHostState");
+                      if (valPropMap != msgData.end())
+                      {
+                        StateServer::Host::HostState currentHostState =
+                        StateServer::Host::convertHostStateFromString(
+                        std::get<std::string>(valPropMap->second));
+                        if (currentHostState == StateServer::Host::HostState::Running)
+                        {
+                          getVersion("");
+                        }
+                      }
+                    })
     {
         auto objPath = std::string(SOFTWARE_OBJPATH) + "/PCIE_SWITCH_FUSE";
         createInventory(bus, objPath);
