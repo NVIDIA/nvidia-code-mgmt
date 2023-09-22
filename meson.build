@@ -12,6 +12,20 @@ fmt = dependency('fmt')
 servicedir = systemd.get_pkgconfig_variable('systemdsystemunitdir')
 subdir('services')
 
+cpp = meson.get_compiler('cpp')
+
+if cpp.has_header('CLI/CLI.hpp')
+  CLI11_dep = declare_dependency()
+else
+  CLI11_dep = dependency('CLI11')
+endif
+
+if cpp.has_header('nlohmann/json.hpp')
+    nlohmann_json = declare_dependency()
+  else
+    nlohmann_json = dependency('nlohmann_json')
+endif
+
 # Common configurations for src and test
 cdata = configuration_data()
 
@@ -169,6 +183,8 @@ subdir('src')
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
   subdir('debug_token')
 endif
+
+subdir('ocp_recovery_tool')
 
 if get_option('tests').enabled()
   subdir('test')
