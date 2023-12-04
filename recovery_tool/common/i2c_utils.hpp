@@ -23,14 +23,15 @@ namespace i2c_utils
  *
  * @param fd The file descriptor for the I2C bus communication.
  * @param slaveId The 16-bit address of the slave device on the I2C bus
- * @param registerData register Address from which data will be read.
+ * @param commandData command data written to the device before reading from the
+ * device.
  * @param readData Buffer to store the data read from the slave device.
  * @param verbose Flag indicating whether to display verbose logging or not.
  * @return true if the operation was successful, false otherwise.
  */
-bool sendI2cCmdForRead(int fd, uint16_t slaveId, uint8_t registerData,
+bool sendI2cCmdForRead(int fd, uint16_t slaveId,
+                       std::vector<uint8_t>& commandData,
                        std::vector<uint8_t>& readData, bool verbose);
-
 /**
  * @brief Sends an I2C write command to the specified slave device.
  *

@@ -4,13 +4,15 @@ configure_file(output: 'config.h',
 source_files = [
   'recoverytool_interface.cpp',
   'recoverytool_utils.cpp',
-  'i2c_utils.cpp',
+  '../common/i2c_utils.cpp',
   'recovery_commands.cpp',
 ]
 
+common_inc = include_directories('../common')
+
 executable( 'ocp-recovery-tool',
             sources: source_files,
-            implicit_include_directories: false,
+            include_directories: common_inc,
             dependencies: [
                 CLI11_dep,
                 nlohmann_json,

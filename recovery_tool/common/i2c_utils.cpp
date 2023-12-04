@@ -5,7 +5,7 @@ namespace recovery_tool
 
 namespace i2c_utils
 {
-bool sendI2cCmdForRead(int fd, uint16_t slaveId, uint8_t registerData,
+bool sendI2cCmdForRead(int fd, uint16_t slaveId, std::vector<uint8_t>& commandData,
                        std::vector<uint8_t>& readData, bool verbose)
 {
 
@@ -18,16 +18,24 @@ bool sendI2cCmdForRead(int fd, uint16_t slaveId, uint8_t registerData,
         return false;
     }
 
+    if (commandData.empty())
+    {
+        if (verbose)
+        {
+            std::cerr << "In sendI2cCmdForRead: commandData vector is empty \n";
+        }
+        return false;
+    }
+
     struct i2c_rdwr_ioctl_data rdwrMsg
     {};
     struct i2c_msg msg[2]{};
     int ret = -1;
-    constexpr uint16_t registerDataLen = 1;
 
     msg[0].addr = slaveId;
     msg[0].flags = 0;
-    msg[0].len = registerDataLen;
-    msg[0].buf = &registerData;
+    msg[0].len = static_cast<uint16_t>(commandData.size());
+    msg[0].buf = commandData.data();
 
     msg[1].addr = slaveId;
     msg[1].flags = I2C_M_RD;

@@ -159,13 +159,13 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
     std::string errorMsg = "";
     try
     {
-        uint8_t registerData =
-            static_cast<uint8_t>(RecoveryCommands::DeviceStatus);
+        std::vector<uint8_t> commandData = {
+            static_cast<uint8_t>(RecoveryCommands::DeviceStatus)};
         std::vector<uint8_t> readBuffer(
             static_cast<size_t>(ResponseLength::DeviceStatusResLen), 0);
 
         if (recovery_tool::i2c_utils::sendI2cCmdForRead(
-                i2cFile, static_cast<uint16_t>(slaveAddress), registerData,
+                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
             return {true, readBuffer, errorMsg};
@@ -190,11 +190,11 @@ std::tuple<bool, std::vector<unsigned char>, std::string>
         std::vector<uint8_t> readBuffer(
             static_cast<size_t>(ResponseLength::RecoveryStatusResLen),
             0); // Buffer to store read data
-        uint8_t registerData = static_cast<uint8_t>(
-            RecoveryCommands::RecoveryStatus); // Register address to write
+        std::vector<uint8_t> commandData = {
+            static_cast<uint8_t>(RecoveryCommands::RecoveryStatus)};
 
         if (recovery_tool::i2c_utils::sendI2cCmdForRead(
-                i2cFile, static_cast<uint16_t>(slaveAddress), registerData,
+                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
             return {true, readBuffer, errorMsg};
