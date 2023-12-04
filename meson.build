@@ -208,6 +208,7 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
 endif
 
 subdir('recovery_tool/ocp_recovery_tool')
+subdir('recovery_tool/glacier_recovery_tool')
 
 if get_option('tests').enabled()
   subdir('test')
