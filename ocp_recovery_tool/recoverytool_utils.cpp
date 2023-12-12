@@ -259,7 +259,7 @@ nlohmann::json OCPRecoveryTool::getRecoveryStatusJson()
 }
 
 nlohmann::json
-    OCPRecoveryTool::performRecovery(std::vector<std::string>& imagePaths)
+    OCPRecoveryTool::performRecovery(const std::vector<std::string>& imagePaths)
 {
     nlohmann::json jsonResponse;
     try

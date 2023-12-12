@@ -183,7 +183,7 @@ class OCPRecoveryTool
      * @param imagePaths A list of image paths to use for recovery.
      * @return A JSON object indicating the result of the recovery process.
      */
-    nlohmann::json performRecovery(std::vector<std::string>& imagePaths);
+    nlohmann::json performRecovery(const std::vector<std::string>& imagePaths);
 };
 
 } // namespace recovery_tool

@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
@@ -35,8 +36,8 @@ bool sendI2cCmdForRead(int fd, uint16_t slaveId, uint8_t registerData,
  *
  * @param fd The file descriptor for the I2C bus communication.
  * @param slaveId The 16-bit address of the slave device on the I2C bus.
- * @param writeData A vector containing the data bytes to be written to the slave
- *                  device.
+ * @param writeData A vector containing the data bytes to be written to the
+ * slave device.
  * @param verbose Flag indicating whether to display verbose logging or not.
  * @return true if the operation was successful, false otherwise.
  */
