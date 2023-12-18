@@ -1,0 +1,9 @@
+
+[Unit]
+Description=Update Orin
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/orin-flash.sh $ARGS

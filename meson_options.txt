@@ -44,6 +44,16 @@ option('RT_SUPPORTED_MODEL',
        value: '',
        description: 'RT supported models')
 
+option('ORIN_FLASH_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables ORIN flash support')
+
+option('ORIN_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'ORIN supported models')
+
 option('PEX_SUPPORT',
        type: 'feature',
        value: 'disabled',

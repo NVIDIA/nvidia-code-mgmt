@@ -26,6 +26,11 @@ if get_option('PEX_SUPPORT').enabled()
                                 'pex-update@.service']
 endif
 
+if get_option('ORIN_FLASH_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.ORIN.Updater.service',
+                                'orin-update@.service']
+endif
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     unit_files = unit_files + ['com.Nvidia.DebugTokenInstall.Updater.service',
                                 'com.Nvidia.DebugTokenErase.Updater.service',

@@ -16,6 +16,9 @@
 #ifdef PEX_SUPPORT
 #include "pex_updater.hpp"
 #endif
+#ifdef ORIN_FLASH_SUPPORT
+#include "orin_updater.hpp"
+#endif
 #ifdef DEBUG_TOKEN_SUPPORT
 #include "debug_token_install.hpp"
 #include "debug_token_erase.hpp"
@@ -119,6 +122,12 @@ int main(int argc, char** argv)
     if (updater == "PEX")
     {
         itemUpdater = std::make_unique<PEXItemUpdater>(bus);
+    }
+#endif
+#if ORIN_FLASH_SUPPORT
+    if (updater == "ORIN")
+    {
+        itemUpdater = std::make_unique<ORINItemUpdater>(bus);
     }
 #endif
 #if DEBUG_TOKEN_SUPPORT
