@@ -13,7 +13,7 @@ bool sendI2cCmdForRead(int fd, uint16_t slaveId, std::vector<uint8_t>& commandDa
     {
         if (verbose)
         {
-            std::cerr << "In sendI2cCmdForRead: readData vector is empty \n";
+            std::cerr << "sendI2cCmdForRead: readData is empty \n";
         }
         return false;
     }
@@ -22,7 +22,7 @@ bool sendI2cCmdForRead(int fd, uint16_t slaveId, std::vector<uint8_t>& commandDa
     {
         if (verbose)
         {
-            std::cerr << "In sendI2cCmdForRead: commandData vector is empty \n";
+            std::cerr << "sendI2cCmdForRead: commandData is empty \n";
         }
         return false;
     }
@@ -64,8 +64,7 @@ bool sendI2cCmdForWrite(int fd, uint16_t slaveId,
     {
         if (verbose)
         {
-            std::cerr
-                << "In sendI2cCmdForWrite write command, writeData vector is empty \n";
+            std::cerr << "sendI2cCmdForWrite, writeData is empty \n";
         }
         return false;
     }

@@ -165,17 +165,6 @@ nlohmann::json OCPRecoveryTool::getDeviceStatusJson()
             recoveryCommands.getDeviceStatusCommand();
         if (success)
         {
-            if (verbose)
-            {
-                std::cout << "Device Status Command Output:  ";
-                for (const auto& byte : hexData)
-                {
-                    std::cout << "0x" << std::hex << std::setw(2)
-                              << std::setfill('0') << static_cast<int>(byte)
-                              << " ";
-                }
-                std::cout << "\n";
-            }
             jsonResponse["Device Status"] =
                 deviceStatusToStr(static_cast<DeviceStatus>(hexData[1]));
             jsonResponse["Protocol Error"] =
@@ -227,18 +216,6 @@ nlohmann::json OCPRecoveryTool::getRecoveryStatusJson()
 
         if (success)
         {
-            if (verbose)
-            {
-                std::cout << "Recovery Status Command Output:  ";
-                for (const auto& byte : hexData)
-                {
-                    std::cout << "0x" << std::hex << std::setw(2)
-                              << std::setfill('0') << static_cast<int>(byte)
-                              << " ";
-                }
-                std::cout << "\n";
-            }
-
             jsonResponse["Device Recovery Status"] =
                 recoveryStatusToStr(static_cast<RecoveryStatus>(hexData[1]));
             jsonResponse["Vendor Specific Status"] = std::to_string(hexData[2]);

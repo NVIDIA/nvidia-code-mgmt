@@ -1,7 +1,5 @@
 #pragma once
-
 #include "i2c_utils.hpp"
-
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -14,6 +12,10 @@ namespace recovery_tool
 namespace recovery_commands
 {
 
+static constexpr uint8_t indirectStatusExpectedAck = 0x1;
+constexpr bool Tx = true;
+constexpr bool Rx = false;
+static constexpr uint8_t delay1sec = 1;
 /**
  * @enum RecoveryCommands
  * @brief Enumerates commands for OCP recovery.
@@ -24,6 +26,7 @@ enum class RecoveryCommands : uint8_t
     RecoveryCtrl = 0x26,
     RecoveryStatus = 0x27,
     IndirectCtrl = 0x29,
+    IndirectStatus = 0x2A,
     IndirectData = 0x2B,
 };
 
@@ -36,6 +39,7 @@ enum class ResponseLength : uint8_t
 {
     DeviceStatusResLen = 25,
     RecoveryStatusResLen = 3,
+    IndirectStatusResLen = 7,
 };
 
 /**
@@ -134,6 +138,28 @@ class OCPRecoveryCommands
      * @return A vector containing the image data.
      */
     std::vector<uint8_t> readFirmwareImage(const std::string& filePath);
+
+    /**
+     * @brief Retrieves the indirect status of the device.
+     * @return A tuple containing success flag, data read from the device
+     * and an error message if any.
+     */
+    std::tuple<bool, std::vector<uint8_t>, std::string>
+        getIndirectStatusCommand();
+
+    /**
+     * @brief Checks if device is ready to accept the next transaction.
+     * @return true if data is received, false otherwise.
+     */
+    bool isDeviceReadyForTx();
+
+    /** @brief Print the buffer
+     *
+     *  @param isTx - True if the buffer is the command data written to the
+     *device, false if the buffer is the data read from the device.
+     *  @param buffer - Buffer to print
+     */
+    void printBuffer(bool isTx, const std::vector<uint8_t>& buffer);
 
   public:
     /**

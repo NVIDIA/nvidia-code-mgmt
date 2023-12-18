@@ -1,5 +1,9 @@
 #include "recovery_commands.hpp"
 
+#include <fmt/format.h>
+
+#include <chrono>
+#include <thread>
 namespace recovery_tool
 {
 
@@ -19,6 +23,28 @@ void OCPRecoveryCommands::openI2CDevice()
     {
         throw std::runtime_error("Failed to open device.");
     }
+}
+
+void OCPRecoveryCommands::printBuffer(bool isTx,
+                                      const std::vector<uint8_t>& buffer)
+{
+    if (!verbose)
+    {
+        return;
+    }
+    std::string formattedMessage = isTx ? "Tx: " : "Rx: ";
+    // Reserve memory to minimize reallocations- buffer * 5 chars as each byte
+    // in the buffer is formatted as "0xXX " + 4 for prefix ("Tx: " or "Rx: ")
+    formattedMessage.reserve(buffer.size() * 5 + 4);
+    for (const auto& byte : buffer)
+    {
+        formattedMessage += fmt::format("0x{:02x} ", byte);
+    }
+    if (!formattedMessage.empty())
+    {
+        formattedMessage.pop_back();
+    }
+    std::cout << formattedMessage << "\n";
 }
 
 bool OCPRecoveryCommands::setRecoveryControlRegisterCommand(ImageType imageType,
@@ -42,6 +68,7 @@ bool OCPRecoveryCommands::setRecoveryControlRegisterCommand(ImageType imageType,
         writeData[4] =
             static_cast<uint8_t>(ActivateRecoveryImage::DoNotActivate);
     }
+    printBuffer(Tx, writeData);
     return recovery_tool::i2c_utils::sendI2cCmdForWrite(
         i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose);
 }
@@ -59,7 +86,7 @@ bool OCPRecoveryCommands::setIndirectControlRegisterCommand(ImageType imageType)
         0x0,                             // byte 2:5 -> 0 IMO
         0x0                              // byte 2:5 -> 0 IMO
     };
-
+    printBuffer(Tx, writeData);
     return recovery_tool::i2c_utils::sendI2cCmdForWrite(
         i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose);
 }
@@ -73,9 +100,80 @@ bool OCPRecoveryCommands::setIndirectDataCommand(
     writeData[0] = static_cast<uint8_t>(RecoveryCommands::IndirectData);
     writeData[1] = static_cast<uint8_t>(data.size());
     std::copy(data.begin(), data.end(), writeData.begin() + cmdHeaderSize);
-
+    printBuffer(Tx, writeData);
     return recovery_tool::i2c_utils::sendI2cCmdForWrite(
         i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose);
+}
+
+std::tuple<bool, std::vector<uint8_t>, std::string>
+    OCPRecoveryCommands::getIndirectStatusCommand()
+{
+    try
+    {
+        std::vector<uint8_t> commandData = {
+            static_cast<uint8_t>(RecoveryCommands::IndirectStatus)};
+        std::vector<uint8_t> readBuffer(
+            static_cast<size_t>(ResponseLength::IndirectStatusResLen), 0);
+        printBuffer(Tx, commandData);
+        if (recovery_tool::i2c_utils::sendI2cCmdForRead(
+                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
+                readBuffer, verbose))
+        {
+            printBuffer(Rx, readBuffer);
+            return {true, readBuffer, ""};
+        }
+        auto errorMsg = "Failed to read data from device.";
+        return {false, {}, errorMsg};
+    }
+    catch (const std::exception& e)
+    {
+        return {false, {}, std::string(e.what())};
+    }
+}
+
+bool OCPRecoveryCommands::isDeviceReadyForTx()
+{
+
+    if (emulation) // Added delay as GB100 emulation is slow so we are
+                   // seeing issues with reading the status just after writing the data
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
+    }
+    static constexpr size_t maxRetriesForWritingData = 5;
+    for (size_t i = 0; i < maxRetriesForWritingData; ++i)
+    {
+        if ((i > 0) && verbose)
+        {
+            std::cout
+                << "Retry #" << i
+                << ": Verifying ack from device in a polling address space.\n";
+        }
+        auto [success, hexResponse, errorMsg] = getIndirectStatusCommand();
+        if (!success)
+        {
+            if (verbose)
+            {
+                std::cerr << "Error in getIndirectStatusCommand: " << errorMsg
+                          << "\n";
+            }
+            return false;
+        }
+        constexpr uint8_t mask = 0x4;
+        constexpr uint8_t shift = 2;
+        // Extract the ACK from device bit (bit 2) from the second byte of hexResponse.
+        auto indirectStatusAck = (hexResponse[1] & mask) >> shift;
+        if (indirectStatusAck == indirectStatusExpectedAck)
+        {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
+    }
+    if (verbose)
+    {
+        std::cerr
+            << "TimeoutError: ACK not received from device in a polling address space.\n";
+    }
+    return false;
 }
 
 bool OCPRecoveryCommands::writeRecoveryImage(
@@ -83,6 +181,8 @@ bool OCPRecoveryCommands::writeRecoveryImage(
 {
     constexpr size_t chunkSize = 252;
     size_t imageSize = imageData.size();
+    uint8_t lastLoggedProgress = 0;
+    std::cout << "Initiating recovery image write process...\n";
     for (size_t offset = 0; offset < imageSize; offset += chunkSize)
     {
         size_t remainingSize = imageSize - offset;
@@ -91,36 +191,29 @@ bool OCPRecoveryCommands::writeRecoveryImage(
                                        imageData.begin() + offset +
                                            currentChunkSize);
 
-        // Logging payload in hex
-        if (verbose)
-        {
-            for (const auto& byte : dataChunk)
-            {
-                std::cout << std::hex << static_cast<int>(byte) << " ";
-            }
-            std::cout << "\n";
-        }
+        uint8_t progress =
+            static_cast<uint8_t>(((offset + currentChunkSize) * 100) / imageSize);
 
-        int progress =
-            static_cast<int>(((offset + currentChunkSize) * 100) / imageSize);
-
-        std::cout << "\rWriting Image (" << imageName
-                  << "), Progress: " << std::dec << progress << "% ("
-                  << (offset + currentChunkSize) << "/" << imageSize
-                  << " bytes) " << std::flush;
-        if (emulation) // Added delay as GB100 emulation is slow so we are
-                       // seeing issues with writing the data.
+        if ((progress / 10) > (lastLoggedProgress / 10))
         {
-            usleep(2000000);
+            lastLoggedProgress = progress;
+            std::string progressMessage = fmt::format(
+                "Writing Image ({}), Progress: {}% ({} / {} bytes)", imageName,
+                progress, (offset + currentChunkSize), imageSize);
+            std::cout << progressMessage << "\n";
         }
         if (!setIndirectDataCommand(dataChunk))
         {
             return false;
         }
+        if (!isDeviceReadyForTx())
+        {
+            return false;
+        }
     }
-    std::cout << "\n";
     return true;
 }
+
 std::vector<uint8_t>
     OCPRecoveryCommands::readFirmwareImage(const std::string& filePath)
 {
@@ -163,11 +256,12 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
             static_cast<uint8_t>(RecoveryCommands::DeviceStatus)};
         std::vector<uint8_t> readBuffer(
             static_cast<size_t>(ResponseLength::DeviceStatusResLen), 0);
-
+        printBuffer(Tx, commandData);
         if (recovery_tool::i2c_utils::sendI2cCmdForRead(
                 i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
+            printBuffer(Rx, readBuffer);
             return {true, readBuffer, errorMsg};
         }
         errorMsg = "Failed to read data from device.";
@@ -186,17 +280,17 @@ std::tuple<bool, std::vector<unsigned char>, std::string>
     std::string errorMsg = "";
     try
     {
-
         std::vector<uint8_t> readBuffer(
             static_cast<size_t>(ResponseLength::RecoveryStatusResLen),
             0); // Buffer to store read data
         std::vector<uint8_t> commandData = {
             static_cast<uint8_t>(RecoveryCommands::RecoveryStatus)};
-
+        printBuffer(Tx, commandData);
         if (recovery_tool::i2c_utils::sendI2cCmdForRead(
                 i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
+            printBuffer(Rx, readBuffer);
             return {true, readBuffer, errorMsg};
         }
         errorMsg = "Failed to read data from device.";
