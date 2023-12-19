@@ -128,6 +128,20 @@ int UpdateDebugToken::eraseDebugToken()
             // skip erase token for this device since token is not installed
             continue;
         }
+        if (eraseToken(device.second) != 0)
+        {
+            log<level::ERR>(("DebugToken Erase failed for EID=" +
+                             std::to_string(device.second))
+                                .c_str());
+            status = -1;
+            return status;
+        }
+        else
+        {
+            log<level::INFO>(("DebugToken Erase success for EID=" +
+                              std::to_string(device.second))
+                                 .c_str());
+        }
         if (enableBackgroundCopy(device.second) != 0)
         {
             log<level::ERR>(("Enable BackgroundCopy failed for EID " +
@@ -150,19 +164,6 @@ int UpdateDebugToken::eraseDebugToken()
         else
         {
             log<level::INFO>(("Enable BackgroundCopy success for EID " +
-                              std::to_string(device.second))
-                                 .c_str());
-        }
-        if (eraseToken(device.second) != 0)
-        {
-            log<level::ERR>(("DebugToken Erase failed for EID=" +
-                             std::to_string(device.second))
-                                .c_str());
-            status = -1;
-        }
-        else
-        {
-            log<level::INFO>(("DebugToken Erase success for EID=" +
                               std::to_string(device.second))
                                  .c_str());
         }
