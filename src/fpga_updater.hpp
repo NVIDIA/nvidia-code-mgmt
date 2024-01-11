@@ -144,14 +144,14 @@ class FPGAItemUpdater : public BaseItemUpdater
      * @return std::string
      */
     virtual std::string
-        getServiceArgs(const std::string& inventoryPath,
+        getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
                        const std::string& imagePath,
                        const std::string& version,
-                       const TargetFilter /* &targetFilter */) const override
+                       const TargetFilter /* &targetFilter */,
+                       [[maybe_unused]] const bool /* forceUpdate */) const override
     {
 
         // The systemd unit shall be escaped
-        (void)inventoryPath;
         std::string args = "";
         args += "\\x20\\x2df"; // -f
         args += "\\x20";

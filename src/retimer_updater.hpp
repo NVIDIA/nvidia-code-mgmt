@@ -4,6 +4,8 @@
 
 #include "base_item_updater.hpp"
 #include <bitset>
+#include <filesystem>
+#include "fmt/core.h"
 
 #ifndef MOCK_UTILS
 #include <rt_util.hpp> // part of nvidia-retimer
@@ -146,9 +148,11 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @brief Get retimer the devices to update object based on target filters
      * 
      * @param targetFilter 
-     * @return std::string 
+     * @return std::bitset representing which retimers to update. At any bit
+     *                     1 represents that the retimer is to be updated
+     *                     and 0 for skipping update to that retimer
      */
-    std::string getDevicesToUpdate(const TargetFilter& targetFilter) const
+    std::bitset<SUPPORTED_RETIMERS> applyTargetFilter(const TargetFilter& targetFilter) const
     {
         std::bitset<SUPPORTED_RETIMERS> devices;
         if (targetFilter.type == TargetFilterType::UpdateAll)
@@ -168,8 +172,72 @@ class ReTimerItemUpdater : public BaseItemUpdater
             }
         }
         //else targetFilter type is UpdateNone, all bits are set to 0 by default
+        return devices;
+    }
+
+    /**
+     * @brief Get retimer the devices to update object based on target firmware 
+     * version and current version
+     * 
+     * @param version 
+     * @param devices std::bitset representing which devices are currently 
+     *                not filtered out through target filtering
+     * @return std::bitset representing which retimers to update. At any bit
+     *                     1 represents that the retimer is to be updated
+     *                     and 0 for skipping update to that retimer
+     */
+    std::bitset<SUPPORTED_RETIMERS> filterDevicesBasedOnVersionCheck(const std::string& pkgVersion, std::bitset<SUPPORTED_RETIMERS>& devices) const
+    {
+        for (const auto& inv: invs)
+        {
+            const auto currTarget = std::filesystem::path(inv->getInventoryPath()).filename().string();
+            const auto currentVersion = getVersion(inv->getInventoryPath());
+            if (currentVersion.empty())
+            {
+                log<level::WARNING>(fmt::format("Unable to fetch the version from Inventory for {}", currTarget).c_str());
+                continue;
+            }
+            uint deviceId;
+            int ret = std::sscanf(std::filesystem::path(inv->getInventoryPath()).filename().string().c_str(), RT_INVENTORY_FORMAT, &deviceId);
+            if (ret < 0 || deviceId > SUPPORTED_RETIMERS)
+            {
+                continue;
+            }
+            if (devices[deviceId] != 1)
+            {
+                continue;
+            }
+            if (!currentVersion.empty() and pkgVersion.compare(currentVersion) == 0)
+            {
+                log<level::INFO>(fmt::format("Image Version is identical for {}, skipping update. "
+                        "Image version: {} Retimer Version: {}", currTarget, pkgVersion, currentVersion).c_str());
+                logIdenticalImageInfo(currTarget);
+                devices[deviceId] = 0;
+            }
+        }
+        return devices;
+    }
+
+    /**
+     * @brief Get retimer the devices to update object based on target filters,
+     * version check and force update
+     * 
+     * @param targetFilter 
+     * @param version 
+     * @return std::string representing which retimers to update. At any index
+     *                     1 represents that the retimer is to be updated
+     *                     and 0 for skipping update to that retimer
+     */
+    std::string getDevicesToUpdate(const TargetFilter& targetFilter, const std::string& version, bool forceUpdate) const
+    {
+        std::bitset<SUPPORTED_RETIMERS> devices = applyTargetFilter(targetFilter);
+        if (!forceUpdate) 
+        {
+            filterDevicesBasedOnVersionCheck(version, devices);
+        }
         return std::to_string(devices.to_ulong());
     }
+
     /**
      * @brief Get the Service Args object
      *
@@ -177,19 +245,21 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param imagePath
      * @param version
      * @param targetFilter
+     * @param forceUpdate
      * @return std::string
      */
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,
                        const std::string& imagePath,
                        const std::string& version,
-                       const TargetFilter &targetFilter) const override
+                       const TargetFilter &targetFilter,
+                       const bool forceUpdate) const override
     {
 
         std::string args = "";
         if (updateAllTogether())
         {
-            std::string devicesBits = getDevicesToUpdate(targetFilter);
+            std::string devicesBits = getDevicesToUpdate(targetFilter, version, forceUpdate);
             args += "\\x20";
             args += std::to_string(invs[0]->getBus()); // pull first device bus
             args += "\\x20";

@@ -314,7 +314,8 @@ void Version::storeImage()
 std::string Version::getUpdateService(const std::string& inventoryPath)
 {
     return itemUpdaterUtils->getUpdateServiceWithArgs(
-        inventoryPath, path(), extendedVersion(), targetFilter);
+        inventoryPath, path(), extendedVersion(),
+        targetFilter, updatePolicy->forceUpdate());
 }
 
 void Version::createLog(const std::string& messageID,

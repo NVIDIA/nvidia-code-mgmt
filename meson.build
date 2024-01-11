@@ -73,6 +73,7 @@ if get_option('RT_SUPPORT').enabled()
   cdata.set_quoted('RT_UPDATE_SINGLE_SERVICE', 'rt-update-direct@.service')
   cdata.set_quoted('RT_INVENTORY_PATH',
     '/xyz/openbmc_project/inventory/system/chassis/HGX_PCIeRetimer_')
+  cdata.set_quoted('RT_INVENTORY_FORMAT', 'HGX_PCIeRetimer_%u')
   cdata.set_quoted('RT_SW_VERSION_PATH', '/xyz/openbmc_project/software/HGX_FW_PCIeRetimer_%u')
   cdata.set_quoted('RT_SW_ID_FORMAT', 'HGX_FW_PCIeRetimer_%u')
   cdata.set_quoted('RT_NAME', 'HGX_FW_PCIeRetimer')

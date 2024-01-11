@@ -86,7 +86,8 @@ class ItemUpdaterUtils
         getUpdateServiceWithArgs(const std::string& inventoryPath,
                                  const std::string& imagePath,
                                  const std::string& version,
-                                 const TargetFilter& targetFilter) const = 0;
+                                 const TargetFilter& targetFilter,
+                                 const bool forceUpdate) const = 0;
 
     /**
      * @brief Get the Name object

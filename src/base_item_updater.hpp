@@ -348,7 +348,8 @@ class BaseItemUpdater :
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,
                        const std::string& imagePath, const std::string& version,
-                       const TargetFilter& targetFilter) const = 0;
+                       const TargetFilter& targetFilter,
+                       const bool forceUpdate) const = 0;
     /**
      * @brief Call back method when dbus activation change signal is received
      *
@@ -375,10 +376,11 @@ class BaseItemUpdater :
      */
     virtual std::string getUpdateServiceWithArgs(
         const std::string& inventoryPath, const std::string& imagePath,
-        const std::string& version, const TargetFilter& targetFilter) const
+        const std::string& version, const TargetFilter& targetFilter,
+        const bool forceUpdate) const
     {
         auto args =
-            getServiceArgs(inventoryPath, imagePath, version, targetFilter);
+            getServiceArgs(inventoryPath, imagePath, version, targetFilter, forceUpdate);
         auto service = getServiceName();
         auto p = service.find('@');
         assert(p != std::string::npos);
@@ -492,6 +494,31 @@ class BaseItemUpdater :
     {
         return true; // default is supported
     }
+
+    /**
+     * @brief Create a Log entry
+     *
+     * @param messageID - redfish message id
+     * @param addData - redfish message data
+     * @param level - log level
+     *
+     * @return void
+     */
+    void createLog(const std::string& messageID,
+                   const std::map<std::string, std::string>& addData,
+                   const Level& level) const;
+
+    /**
+     * @brief Log message indicating skipped firmware update.
+     *        This message will be logged when image version
+     *        matches the component version.
+     *
+     * @param imgVersion - Version of the image
+     * @param compVersion - component version
+     *
+     * @return void
+     */
+    void logIdenticalImageInfo(const std::string& target) const;
 
   protected:
     std::string _name;
