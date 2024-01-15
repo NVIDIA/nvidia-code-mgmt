@@ -89,6 +89,15 @@ if get_option('ORIN_FLASH_SUPPORT').enabled()
   cdata.set_quoted('ORIN_UPDATE_SERVICE', 'orin-update@.service')
 endif
 
+if get_option('SMCU_FLASH_SUPPORT').enabled()
+  add_project_arguments('-DSMCU_FLASH_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('SMCU_SUPPORTED_MODEL', get_option('SMCU_SUPPORTED_MODEL'))
+  cdata.set_quoted('SMCU_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('SMCU_BUSNAME_UPDATER', 'com.Nvidia.Software.SMCU.Updater')
+  cdata.set_quoted('SMCU_BUSNAME_INVENTORY', 'com.Nvidia.SMCU')
+  cdata.set_quoted('SMCU_UPDATE_SERVICE', 'smcu-update@.service')
+endif
+
 if get_option('PEX_SUPPORT').enabled()
   add_project_arguments('-DPEX_SUPPORT', language : ['c','cpp'])
   cdata.set_quoted('PEX_SUPPORTED_MODEL', get_option('PEX_SUPPORTED_MODEL'))

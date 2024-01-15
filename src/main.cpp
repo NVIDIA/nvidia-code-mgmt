@@ -19,6 +19,9 @@
 #ifdef ORIN_FLASH_SUPPORT
 #include "orin_updater.hpp"
 #endif
+#ifdef SMCU_FLASH_SUPPORT
+#include "smcu_updater.hpp"
+#endif
 #ifdef DEBUG_TOKEN_SUPPORT
 #include "debug_token_install.hpp"
 #include "debug_token_erase.hpp"
@@ -128,6 +131,12 @@ int main(int argc, char** argv)
     if (updater == "ORIN")
     {
         itemUpdater = std::make_unique<ORINItemUpdater>(bus);
+    }
+#endif
+#if SMCU_FLASH_SUPPORT
+    if (updater == "SMCU")
+    {
+        itemUpdater = std::make_unique<SMCUItemUpdater>(bus);
     }
 #endif
 #if DEBUG_TOKEN_SUPPORT

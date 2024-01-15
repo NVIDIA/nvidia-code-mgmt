@@ -54,6 +54,16 @@ option('ORIN_SUPPORTED_MODEL',
        value: '',
        description: 'ORIN supported models')
 
+option('SMCU_FLASH_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables SMCU flash support')
+
+option('SMCU_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'SMCU supported models')
+
 option('PEX_SUPPORT',
        type: 'feature',
        value: 'disabled',

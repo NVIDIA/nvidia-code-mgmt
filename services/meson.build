@@ -31,6 +31,11 @@ if get_option('ORIN_FLASH_SUPPORT').enabled()
                                 'orin-update@.service']
 endif
 
+if get_option('SMCU_FLASH_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.SMCU.Updater.service',
+                                'smcu-update@.service']
+endif
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     unit_files = unit_files + ['com.Nvidia.DebugTokenInstall.Updater.service',
                                 'com.Nvidia.DebugTokenErase.Updater.service',
