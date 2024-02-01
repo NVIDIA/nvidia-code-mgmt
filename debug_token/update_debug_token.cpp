@@ -127,9 +127,9 @@ int UpdateDebugToken::eraseDebugToken()
             static_cast<int>(CommonErrorCodes::MCTPDiscoveryFailed));
         return status;
     }
-    for (auto& device : mctpInfo)
+    for (auto& [uuid, mctpEidInfo] : mctpInfo)
     {
-        queryStatus = queryDebugToken(device.second);
+        queryStatus = queryDebugToken(mctpEidInfo.eid);
         if(queryStatus < 0 || queryStatus ==
             static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
         {
@@ -137,10 +137,10 @@ int UpdateDebugToken::eraseDebugToken()
             // there was an error with querying debug token status
             continue;
         }
-        if (eraseToken(device.second) != 0)
+        if (eraseToken(mctpEidInfo.eid) != 0)
         {
             log<level::ERR>(("DebugToken Erase failed for EID=" +
-                             std::to_string(device.second))
+                             std::to_string(mctpEidInfo.eid))
                                 .c_str());
             status = -1;
             return status;
@@ -148,19 +148,19 @@ int UpdateDebugToken::eraseDebugToken()
         else
         {
             log<level::INFO>(("DebugToken Erase success for EID=" +
-                              std::to_string(device.second))
+                              std::to_string(mctpEidInfo.eid))
                                  .c_str());
         }
-        if (enableBackgroundCopy(device.second) != 0)
+        if (enableBackgroundCopy(mctpEidInfo.eid) != 0)
         {
             log<level::ERR>(("Enable BackgroundCopy failed for EID " +
-                             std::to_string(device.second))
+                             std::to_string(mctpEidInfo.eid))
                                 .c_str());
             status = -1;
             std::string deviceName;
-            if (deviceNameMap.contains(device.second))
+            if (deviceNameMap.contains(mctpEidInfo.eid))
             {
-                deviceName = deviceNameMap[device.second];
+                deviceName = deviceNameMap[mctpEidInfo.eid];
             }
             createMessageRegistryResourceErrors(
                 resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
@@ -168,66 +168,165 @@ int UpdateDebugToken::eraseDebugToken()
                 static_cast<int>(
                     BackgroundCopyErrorCodes::BackgroundEnableFail),
                 deviceName);
-            // proceed with erase token if enabling background copy has failed
         }
         else
         {
             log<level::INFO>(("Enable BackgroundCopy success for EID " +
-                              std::to_string(device.second))
+                              std::to_string(mctpEidInfo.eid))
                                  .c_str());
         }
     }
     return status;
 }
 
-int UpdateDebugToken::discoverMCTPDevices()
+std::set<dbus::Service> UpdateDebugToken::getMCTPServiceList()
 {
-    int status = 0;
-    dbus::ObjectValueTree objects{};
+    dbus::GetSubTreeResponse getSubTreeResponse{};
+    std::set<dbus::Service> mctpServices{};
+    const dbus::Interfaces ifaceList{mctpEndpointIntfName};
     try
     {
-        auto method = bus.new_method_call(mctpService, mctpPath,
-                                          "org.freedesktop.DBus.ObjectManager",
-                                          "GetManagedObjects");
+        auto method = bus.new_method_call(objectMapperService, objectMapperPath,
+                                          objectMapperIntfName,
+                                          "GetSubTree");
+        method.append(mctpPath, 0, ifaceList);
         auto reply = bus.call(method);
-        reply.read(objects);
-        for (const auto& [objectPath, interfaces] : objects)
-        {
-            UUID uuid{};
-            if (interfaces.contains(uuidEndpointIntfName))
-            {
-                const auto& properties = interfaces.at(uuidEndpointIntfName);
-                if (properties.contains("UUID"))
-                {
-                    uuid = std::get<UUID>(properties.at("UUID"));
-                }
-            }
-            if (uuid.empty())
-            {
-                continue;
-            }
-            if (interfaces.contains(mctpEndpointIntfName))
-            {
-                const auto& properties = interfaces.at(mctpEndpointIntfName);
-                if (properties.contains("EID") &&
-                    properties.contains("SupportedMessageTypes"))
-                {
-                    auto mctpTypes = std::get<SupportedMessageTypes>(
-                        properties.at("SupportedMessageTypes"));
-                    if (std::find(mctpTypes.begin(), mctpTypes.end(),
-                                  mctpTypeSPDM) != mctpTypes.end())
-                    {
-                        auto eid = std::get<size_t>(properties.at("EID"));
-                        mctpInfo.emplace(uuid, eid);
-                    }
-                }
-            }
-        }
+        reply.read(getSubTreeResponse);
+
     }
     catch (const std::exception& e)
     {
-        log<level::ERR>("D-Bus error", entry("ERROR=%s", e.what()));
+        log<level::ERR>("D-Bus error calling GetSubTree on ObjectMapper: ",
+                entry("ERROR=%s", e.what()));
+    }
+
+    for (const auto& [objPath, mapperServiceMap] : getSubTreeResponse)
+    {
+        for (const auto& [service, interfaces] : mapperServiceMap)
+        {
+            mctpServices.insert(service);
+        }
+    }
+    return mctpServices;
+}
+
+dbus::ObjectValueTree UpdateDebugToken::getMCTPManagedObjects()
+{
+    auto mctpServices = getMCTPServiceList();
+    dbus::ObjectValueTree objects{};
+    dbus::ObjectValueTree tmpObjects{};
+    std::for_each(mctpServices.begin(), mctpServices.end(),
+        [&](const auto& service)
+        {
+            try
+            {
+                auto method = bus.new_method_call(service.c_str(), mctpPath,
+                        "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
+                auto reply = bus.call(method);
+                reply.read(tmpObjects);
+            }
+            catch (const std::exception& e)
+            {
+                log<level::ERR>("D-Bus error calling Subtrees method on ObjectMapper: ", entry("ERROR=%s", e.what()));
+            }
+            objects.insert(std::make_move_iterator(tmpObjects.begin()),
+                    std::make_move_iterator(tmpObjects.end()));
+            tmpObjects.clear();
+        });
+    return objects;
+
+}
+
+MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(const dbus::InterfaceMap& interfaces)
+{
+    EID eid{};
+    MctpMedium mctpMedium{};
+    MctpBinding mctpBinding{};
+    const auto& eidProperties = interfaces.at(mctpEndpointIntfName);
+    if (eidProperties.contains("EID") &&
+        eidProperties.contains("SupportedMessageTypes"))
+    {
+        auto mctpTypes = std::get<SupportedMessageTypes>(
+            eidProperties.at("SupportedMessageTypes"));
+        eid = std::get<size_t>(eidProperties.at("EID"));
+        if (std::find(mctpTypes.begin(), mctpTypes.end(),
+                      mctpTypeSPDM) == mctpTypes.end())
+        {
+            log<level::INFO>("SPDM not supported on EID={EID}, skipping.",
+                    entry("EID=%d", eid));
+            return {0, "", ""};
+        }
+    }
+
+    if (eidProperties.contains("MediumType"))
+    {
+        mctpMedium = std::get<MctpMedium>(eidProperties.at("MediumType"));
+    }
+
+    if (interfaces.contains(mctpBindingIntfName))
+    {
+        const auto& bindingProperties = interfaces.at(mctpBindingIntfName);
+
+        if (bindingProperties.contains("BindingType"))
+        {
+            mctpBinding = std::get<MctpBinding>(bindingProperties.at("BindingType"));
+        }
+    }
+    return {eid, mctpMedium, mctpBinding};
+
+}
+
+int UpdateDebugToken::discoverMCTPDevices()
+{
+    int status = 0;
+    const auto& objects = getMCTPManagedObjects();
+    if (objects.empty())
+    {
+        log<level::ERR>("Failed to fetch MCTP objects");
         status = -1;
+        return status;
+    }
+
+    for (const auto& [objectPath, interfaces] : objects)
+    {
+        UUID uuid{};
+        if (!interfaces.contains(mctpEndpointIntfName) or
+                !interfaces.contains(uuidEndpointIntfName))
+        {
+            continue;
+        }
+
+        const auto& properties = interfaces.at(uuidEndpointIntfName);
+        if (properties.contains("UUID"))
+        {
+            uuid = std::get<UUID>(properties.at("UUID"));
+        }
+        if (uuid.empty())
+        {
+            log<level::ERR>("MCTP EID object {PATH} has no UUID",
+                   entry("PATH=%s", std::string(objectPath).c_str()));
+            continue;
+        }
+
+        MctpEidInfo eidInfo = fetchEidInfoFromObject(interfaces);
+        if (eidInfo.medium.empty() and eidInfo.binding.empty())
+        {
+            continue;
+        }
+
+        // For devices having multiple EIDs only the faster medium is chosen for transfer
+        if (mctpInfo.find(uuid) == mctpInfo.end())
+        {
+            mctpInfo.emplace(uuid, eidInfo);
+        }
+        else
+        {
+            if (mctpInfo.at(uuid) < eidInfo)
+            {
+                mctpInfo[uuid] = eidInfo;
+            }
+        }
+
     }
     return status;
 }
@@ -257,8 +356,8 @@ void UpdateDebugToken::updateDeviceMap(const dbus::InterfaceMap& interfaces,
                 std::get<SerialNumber>(properties.at("SerialNumber"));
             if (mctpInfo.find(uuid) != mctpInfo.end())
             {
-                devices.emplace(mctpInfo[uuid], serialNumber);
-                deviceNameMap.emplace(mctpInfo[uuid], deviceName);
+                devices.emplace(mctpInfo[uuid].eid, serialNumber);
+                deviceNameMap.emplace(mctpInfo[uuid].eid, deviceName);
             }
         }
     }
@@ -272,8 +371,7 @@ int UpdateDebugToken::updateEndPoints()
     if (discoverMCTPDevices() != 0)
     {
         log<level::ERR>("Error while discovering MCTP devices");
-        status = -1;
-        return status;
+        return -1;
     }
     try
     {

@@ -23,31 +23,40 @@ using Value =
 using PropertyMap = std::map<Property, Value>;
 using InterfaceMap = std::map<Interface, PropertyMap>;
 using ObjectValueTree = std::map<sdbusplus::message::object_path, InterfaceMap>;
+using Service = std::string;
+using Interfaces = std::vector<Interface>;
+using MapperServiceMap = std::vector<std::pair<Service, Interfaces>>;
+using GetSubTreeResponse = std::vector<std::pair<ObjectPath, MapperServiceMap>>;
 } // namespace dbus
 
 using UUID = std::string;
 using EID = uint8_t;
 using SupportedMessageTypes = std::vector<uint8_t>;
 using DeviceName = std::string;
-using MctpInfo = std::map<UUID, EID>;
 using SerialNumber = std::string;
 using Token = std::vector<uint8_t>;
 using DeviceMap = std::map<EID, SerialNumber>;
 using TokenMap = std::map<SerialNumber, Token>;
 using DeviceNameMap = std::map<EID, DeviceName>;
 using MctpMedium = std::string;
+using MctpBinding = std::string;
 using Message = std::string;
 using Resolution = std::string;
 using MessageMapping = std::pair<Message, Resolution>;
+
 using namespace dbus;
 namespace LoggingServer = sdbusplus::xyz::openbmc_project::Logging::server;
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 
 static constexpr uint8_t mctpTypeSPDM = 0x5;
-constexpr auto mctpService = "xyz.openbmc_project.MCTP.Control.PCIe";
+constexpr auto mctpPCIeService = "xyz.openbmc_project.MCTP.Control.PCIe";
 constexpr auto mctpPath = "/xyz/openbmc_project/mctp";
+constexpr auto objectMapperService = "xyz.openbmc_project.ObjectMapper";
+constexpr auto objectMapperIntfName = "xyz.openbmc_project.ObjectMapper";
+constexpr auto objectMapperPath = "/xyz/openbmc_project/object_mapper";
 constexpr auto mctpEndpointIntfName = "xyz.openbmc_project.MCTP.Endpoint";
 constexpr auto uuidEndpointIntfName = "xyz.openbmc_project.Common.UUID";
+constexpr auto mctpBindingIntfName = "xyz.openbmc_project.MCTP.Binding";
 constexpr auto pldmService = "xyz.openbmc_project.PLDM";
 constexpr auto pldmPath = "/";
 constexpr auto pldmInventoryIntfName =
@@ -63,6 +72,38 @@ static constexpr size_t tokenInstallStatusByte =
     10; // 10 the byte from last is status code for debug token query
 static constexpr size_t mctpDebugTokenQueryResponseLength =
     19; // Total length of MCTP respose : Header (9) + Data (10)
+
+using Priority = int;
+static std::unordered_map<MctpMedium, Priority> mediumPriority{
+    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.PCIe", 0},
+    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.SPI", 1},
+    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.SMBus", 2},
+};
+static std::unordered_map<MctpBinding, Priority> bindingPriority{
+    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.PCIe", 0},
+    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.SPI", 1},
+    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.SMBus", 2},
+};
+
+
+struct MctpEidInfo
+{
+    EID eid;
+    MctpMedium medium;
+    MctpBinding binding;
+
+    friend bool operator<(MctpEidInfo const& lhs, MctpEidInfo const& rhs)
+    {
+        
+        if (mediumPriority.at(lhs.medium) == mediumPriority.at(rhs.medium))
+            return bindingPriority.at(lhs.binding) > bindingPriority.at(rhs.binding);
+        else
+            return mediumPriority.at(lhs.medium) > mediumPriority.at(rhs.medium);
+    }
+
+
+};
+using MctpInfo = std::map<UUID, MctpEidInfo>;
 
 enum class OperationType
 {
@@ -313,11 +354,32 @@ class UpdateDebugToken : public TokenUtility
     /* component name map for message registry */
     DeviceNameMap deviceNameMap;
     /**
+     * @brief Parses Eid info given an interface map
+     *
+     * @param interfaces - interface map
+     *
+     * @return MctpEidInfo - Eid info 
+     */
+    MctpEidInfo fetchEidInfoFromObject(const dbus::InterfaceMap& interfaces);
+    /**
+     * @brief retrieve MCTP managed objects
+     *
+     * @return dbus::OjectValueTree - map of objects to values
+     */
+    dbus::ObjectValueTree getMCTPManagedObjects();
+    /**
      * @brief discover MCTP end points
      *
      * @return int - status code
      */
     int discoverMCTPDevices();
+    /**
+     * @brief Retrieve Services that contain objects with
+     *        MCTP Endpoint Interface
+     *
+     * @return std::set<Service> - Set of services 
+     */
+    std::set<dbus::Service> getMCTPServiceList();
     /**
      * @brief update device map of eid->serial number
      *
