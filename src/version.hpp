@@ -22,6 +22,7 @@
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
 #include <xyz/openbmc_project/State/ServiceReady/server.hpp>
+#include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
 
 #include <functional>
 #include <iostream>
@@ -62,6 +63,8 @@ using UpdatePolicyInherit = sdbusplus::server::object::object<
 
 using ServiceReadyInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::State::server::ServiceReady>;
+using InventoryInherit = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::Inventory::Decorator::server::Asset>;
 
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 using namespace phosphor::logging;
@@ -173,9 +176,9 @@ class UpdatePolicy : public UpdatePolicyInherit
     {}
 };
 
-/**@class UpdatePolicy
+/**@class ServiceReady
  *
- *  Concrete implementation of xyz.openbmc_project.Software.UpdatePolicy D-Bus
+ *  Concrete implementation of xyz.openbmc_project.State.ServiceReady D-Bus
  *  interface
  *
  */
@@ -191,7 +194,26 @@ class ServiceReady : public ServiceReadyInherit
         ServiceReadyInherit(bus, objPath.c_str(), action::emit_interface_added)
 
     {}
+};
 
+/**@class DeviceSKU
+ *
+ *  Concrete implementation of xyz.openbmc_project.Inventory.Decorator.Asset D-Bus
+ *  interface
+ *
+ */
+class DeviceSKU : public InventoryInherit
+{
+  public:
+    /** @brief Constructor
+     *
+     *  @param[in] bus - Bus to attach t
+     *  @param[in] objPath - D-Bus object path
+     */
+    DeviceSKU(sdbusplus::bus::bus& bus, const std::string& objPath) :
+        InventoryInherit(bus, objPath.c_str(), action::emit_interface_added)
+
+    {}
 };
 
 /**

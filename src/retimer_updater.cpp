@@ -52,6 +52,27 @@ std::string ReTimerItemUpdater::getModel([
     // GPU manager inventory does not implement model, return empty value
     return "";
 }
+std::string ReTimerItemUpdater::getSKU() const
+{
+    if (invs.empty())
+    {
+        return {};
+    }
+
+    std::string swPath = std::string(RT_INVENTORY_PATH) + invs.at(0)->getId();
+    std::string ret{};
+    try
+    {
+        ret = getProperty<std::string>(RT_BUSNAME_INVENTORY,
+                                       swPath.c_str(), ASSET_IFACE,
+                                       "SKU");
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>(e.what());
+    }
+    return ret;
+}
 } // namespace updater
 } // namespace software
 } // namespace nvidia

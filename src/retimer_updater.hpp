@@ -68,6 +68,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
     std::vector<std::unique_ptr<RTDevice>> invs;
     std::unique_ptr<ServiceReady> serviceReadyObj;
     std::vector<sdbusplus::bus::match_t> updateMatchRules;
+    std::unique_ptr<DeviceSKU> deviceSKUInventoryObj;
     const std::string objPath = std::string(SOFTWARE_OBJPATH) + "/" + std::string(RT_NAME);
 
   public:
@@ -123,6 +124,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
         serviceReadyObj = std::make_unique<ServiceReady>(bus, objPath);
         serviceReadyObj->state(sdbusplus::xyz::openbmc_project::State
                 ::server::ServiceReady::States::Disabled);
+        createSKUInventory(bus, objPath);
     }
 
     /**
@@ -132,6 +134,15 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @return std::string
      */
     std::string getVersion(const std::string& inventoryPath) const override;
+
+    /**
+     * @brief Get retimer SKU from inventory object
+     *      Assumes that all retimers on the platform are from the same 
+     *      manufacturer with the same deviceID
+     *
+     * @return std::string
+     */
+    std::string getSKU() const;
 
     /**
      * @brief Get the Manufacturer object
@@ -527,6 +538,69 @@ class ReTimerItemUpdater : public BaseItemUpdater
                 "xyz.openbmc_project.State.FeatureReady"),
             std::bind(&ReTimerItemUpdater::createUpdateServiceMsg, this,
                       std::placeholders::_1, version, deviceUpdateUnit)); // For present
+    }
+
+    /**
+     * @brief callback method to update sku on the RT.Updater object
+     *
+     * @param msg - unused
+     * @return void
+     */
+    void onSWInventoryChangedMsg([[maybe_unused]] sdbusplus::message::message& msg)
+    {
+        updateSKU();
+    }
+
+    /**
+     * @brief sets the sku property on the inventory interface of the RT.Updater object
+     *
+     * @return void
+     */
+    void updateSKU()
+    {
+        deviceSKUInventoryObj->sku(getSKU());
+    }
+
+    /**
+     * @brief creates SKU inventory interface on the RT.Updater object
+     * and starts watching the inventory object
+     *
+     * @param bus - bus on which the object is present
+     * @param objPath - dbus path of the object
+     * @return void
+     */
+    void createSKUInventory(sdbusplus::bus::bus& bus,
+                                const std::string& objPath)
+    {
+
+        deviceSKUInventoryObj = std::make_unique<DeviceSKU>(bus, objPath);
+        updateSKU();
+
+        std::string inventoryObjPath = std::string(RT_INVENTORY_PATH) + invs.at(0)->getId();
+        startWatchingInventory(inventoryObjPath);
+    }
+
+    /**
+     * @brief creates match rules to update sku on interfaces added and 
+     * properties changed signals
+     *
+     * @param inventoryObjPath - dbus path of the inventory object to watch
+     * @return void
+     */
+    void startWatchingInventory(const std::string& inventoryObjPath)
+    {
+        // Subscribe to the Inventory Object's PropertiesChanged signal
+        deviceMatches.emplace_back(
+            bus, MatchRules::propertiesChanged(inventoryObjPath.c_str(), ASSET_IFACE),
+            std::bind(&ReTimerItemUpdater::onSWInventoryChangedMsg, this,
+                      std::placeholders::_1)); // For present
+        
+        // Subscribe to the Inventory Object's InterfacesAdded signal
+        // for when the object is created
+        deviceMatches.emplace_back(
+            bus, MatchRules::interfacesAdded(inventoryObjPath.c_str()),
+            std::bind(&ReTimerItemUpdater::onSWInventoryChangedMsg, this,
+                      std::placeholders::_1)); // For present
     }
 };
 

@@ -179,6 +179,7 @@ cdata.set_quoted('UPDATEABLE_REV_ASSOCIATION', 'software_version')
 cdata.set_quoted('VERSION', 'Version')
 cdata.set_quoted('PRESENT', 'Present')
 cdata.set_quoted('MANUFACTURER', 'Manufacturer')
+cdata.set_quoted('SKU', 'SKU')
 cdata.set_quoted('MODEL', 'Model')
 
 
