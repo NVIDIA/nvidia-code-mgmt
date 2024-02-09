@@ -21,6 +21,7 @@
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
+#include <xyz/openbmc_project/State/ServiceReady/server.hpp>
 
 #include <functional>
 #include <iostream>
@@ -58,6 +59,9 @@ using DeleteInherit = sdbusplus::server::object::object<
 
 using UpdatePolicyInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Software::server::UpdatePolicy>;
+
+using ServiceReadyInherit = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::State::server::ServiceReady>;
 
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 using namespace phosphor::logging;
@@ -167,6 +171,27 @@ class UpdatePolicy : public UpdatePolicyInherit
         UpdatePolicyInherit(bus, objPath.c_str(), action::emit_interface_added)
 
     {}
+};
+
+/**@class UpdatePolicy
+ *
+ *  Concrete implementation of xyz.openbmc_project.Software.UpdatePolicy D-Bus
+ *  interface
+ *
+ */
+class ServiceReady : public ServiceReadyInherit
+{
+  public:
+    /** @brief Constructor
+     *
+     *  @param[in] bus - Bus to attach to
+     *  @param[in] objPath - D-Bus object path
+     */
+    ServiceReady(sdbusplus::bus::bus& bus, const std::string& objPath) :
+        ServiceReadyInherit(bus, objPath.c_str(), action::emit_interface_added)
+
+    {}
+
 };
 
 /**
@@ -299,6 +324,31 @@ class Version : public VersionInherit, public DBUSUtils
         return versionId;
     }
 
+    /**
+     * @brief Timeout handler for non-pldm updates. This method
+     *        sets the status to failed if update did not complete
+     *        within specified time.
+     *
+     * @param timeout
+     */
+    inline void startTimer(uint32_t timeout)
+    {
+        timer = std::make_unique<phosphor::Timer>([this]() {
+            if (!deviceQueue.empty())
+            {
+                log<level::ERR>("Update timed out");
+                this->onUpdateFailed();
+            }
+        });
+        timer->start(std::chrono::seconds(timeout), false);
+    }
+
+    /**
+     * @brief Call back for systemd service fail
+     *
+     */
+    void onUpdateFailed();
+
   public:
     std::unique_ptr<Delete> deleteObject;
 
@@ -313,15 +363,6 @@ class Version : public VersionInherit, public DBUSUtils
     void unitStateChange(sdbusplus::message::message& msg);
 
     /**
-     * @brief calls update systemd service
-     *
-     * @param inventoryPath
-     * @return true
-     * @return false
-     */
-    bool doUpdate(const std::string& inventoryPath);
-
-    /**
      * @brief calls update services for all inventory paths
      *
      * @return true
@@ -334,12 +375,6 @@ class Version : public VersionInherit, public DBUSUtils
      *
      */
     void onUpdateDone();
-
-    /**
-     * @brief Call back for systemd service fail
-     *
-     */
-    void onUpdateFailed();
 
     /**
      * @brief Prepares for image update
@@ -402,24 +437,6 @@ class Version : public VersionInherit, public DBUSUtils
     void logTransferFailed(const std::string& compName,
                            const std::string& compVersion);
 
-    /**
-     * @brief Timeout handler for non-pldm updates. This method
-     *        sets the status to failed if update did not complete
-     *        within specified time.
-     *
-     * @param timeout
-     */
-    inline void startTimer(uint32_t timeout)
-    {
-        timer = std::make_unique<phosphor::Timer>([this]() {
-            if (!deviceQueue.empty())
-            {
-                log<level::ERR>("Update timed out");
-                this->onUpdateFailed();
-            }
-        });
-        timer->start(std::chrono::seconds(timeout), false);
-    }
 
   private:
     std::string versionId;

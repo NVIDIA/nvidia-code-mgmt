@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include "base_item_updater.hpp"
+#include "version.hpp"
 #include <bitset>
 #include <filesystem>
 #include "fmt/core.h"
@@ -65,6 +66,9 @@ class RTDevice : public rtcommonutils::Util
 class ReTimerItemUpdater : public BaseItemUpdater
 {
     std::vector<std::unique_ptr<RTDevice>> invs;
+    std::unique_ptr<ServiceReady> serviceReadyObj;
+    std::vector<sdbusplus::bus::match_t> updateMatchRules;
+    const std::string objPath = std::string(SOFTWARE_OBJPATH) + "/" + std::string(RT_NAME);
 
   public:
     /**
@@ -116,6 +120,9 @@ class ReTimerItemUpdater : public BaseItemUpdater
                 std::cerr << e.what() << std::endl;
             }
         }
+        serviceReadyObj = std::make_unique<ServiceReady>(bus, objPath);
+        serviceReadyObj->state(sdbusplus::xyz::openbmc_project::State
+                ::server::ServiceReady::States::Disabled);
     }
 
     /**
@@ -379,6 +386,147 @@ class ReTimerItemUpdater : public BaseItemUpdater
     bool inventorySupported() override
     {
         return false; // default is supported
+    }
+
+    /**
+     * @brief callback method for creating retimer update service when CSM's state
+     * changes to enabled
+     *
+     * @param msg - sdbusplus message 
+     * @param version - Version object corresponding to the ItemUpdater
+     * @param deviceUpdateUnit - systemd update service 
+     *
+     * @return 
+     */
+    void createUpdateServiceMsg(sdbusplus::message::message& msg,
+            Version* version, const std::string& deviceUpdateUnit)
+    {
+        std::string interface{};
+        Properties properties{};
+        std::string state{};
+        msg.read(interface, properties);
+
+        auto p = properties.find(STATE);
+        if (p == properties.end())
+        {
+            return;
+        }
+
+        state = std::get<std::string>(p->second);
+
+        if (state == "xyz.openbmc_project.State.FeatureReady.States.Enabled")
+        {
+            createUpdateService(version, deviceUpdateUnit);
+        }
+        startWatchingActivation();
+    }
+
+    /**
+     * @brief creates retimer updater systemd service
+     *
+     * @param version - Version object corresponding to the ItemUpdater
+     * @param deviceUpdateUnit - systemd update service 
+     *
+     * @return 
+     */
+    void createUpdateService(Version* version, const std::string& deviceUpdateUnit)
+    {
+        try
+        {
+            auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+                                              SYSTEMD_INTERFACE, "StartUnit");
+            method.append(deviceUpdateUnit, "replace");
+            bus.call_noreply(method);
+            version->startTimer(getTimeout());
+        }
+        catch (const sdbusplus::exception::SdBusError& e)
+        {
+            log<level::ERR>("Error starting service", entry("ERROR=%s", e.what()),
+                    entry("SERVICE=%s", deviceUpdateUnit.c_str()));
+            version->onUpdateFailed();
+        }
+    }
+
+    /**
+     * @brief callback method to modify ServiceReady properties based on Activation
+     * status of the ItemUpdater object
+     *
+     * @param msg - sdbusplus message 
+     *
+     * @return 
+     */
+    void onActivationChanged(sdbusplus::message::message& msg)
+    {
+        std::string interface;
+        Properties properties;
+        std::string activationState;
+        msg.read(interface, properties);
+
+        auto p = properties.find(ACTIVATION);
+        if (p == properties.end())
+        {
+            return;
+        }
+
+        activationState = std::get<std::string>(p->second);
+        if (activationState == "xyz.openbmc_project.Software.Activation.Activations.Failed" or 
+                activationState == "xyz.openbmc_project.Software.Activation.Activations.Active")
+        {
+            serviceReadyObj->state(sdbusplus::xyz::openbmc_project::State
+                    ::server::ServiceReady::States::Disabled);
+            updateMatchRules.clear();
+        }
+
+    }
+
+    /**
+     * @brief Triggers retimer update mechanism.
+     *
+     * @param version - Version object corresponding to the ItemUpdater
+     * @param deviceUpdateUnit - systemd update service 
+     *
+     * @return true if triggering the update is sucessful
+     */
+    bool doUpdate(Version* version,
+            const std::string& deviceUpdateUnit) override
+    {
+        serviceReadyObj->state(sdbusplus::xyz::openbmc_project::State
+                ::server::ServiceReady::States::Enabled);
+        startWatchingCSM(version, deviceUpdateUnit);
+        return true;
+    }
+    
+    /**
+     * @brief subscribes to the ItemUpdater D-Bus object's Activation interface
+     * to monitor success/failure of the update. Changes ServiceReady property on 
+     * update completion
+     *
+     * @return
+     */
+    void startWatchingActivation()
+    {
+        // Subscribe to the Item Updater's Activation changes
+        updateMatchRules.emplace_back(
+            bus, MatchRules::propertiesChanged(objPath.c_str(), ACTIVATE_INTERFACE),
+            std::bind(&ReTimerItemUpdater::onActivationChanged, this,
+                      std::placeholders::_1)); // For present
+    }
+
+    /**
+     * @brief subscribes to CSM's Feature Ready interface when update triggered
+     *
+     * @param deviceUpdateUnit - systemd update service 
+     *
+     * @return
+     */
+    void startWatchingCSM(Version* version, const std::string& deviceUpdateUnit)
+    {
+        // Subscribe to the CSM's ServiceReady interface
+        updateMatchRules.emplace_back(
+            bus, MatchRules::propertiesChanged(CSM_OBJ_PATH,
+                "xyz.openbmc_project.State.FeatureReady"),
+            std::bind(&ReTimerItemUpdater::createUpdateServiceMsg, this,
+                      std::placeholders::_1, version, deviceUpdateUnit)); // For present
     }
 };
 

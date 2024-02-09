@@ -91,26 +91,6 @@ void Version::unitStateChange(sdbusplus::message::message& msg)
     }
 }
 
-bool Version::doUpdate(const std::string& inventoryPath)
-{
-    currentUpdatingDevice = inventoryPath;
-    deviceUpdateUnit = getUpdateService(currentUpdatingDevice);
-    try
-    {
-        auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
-                                          SYSTEMD_INTERFACE, "StartUnit");
-        method.append(deviceUpdateUnit, "replace");
-        bus.call_noreply(method);
-        startTimer(itemUpdaterUtils->getTimeout());
-        return true;
-    }
-    catch (const SdBusError& e)
-    {
-        log<level::ERR>("Error staring service", entry("ERROR=%s", e.what()));
-        onUpdateFailed();
-        return false;
-    }
-}
 
 bool Version::doUpdate()
 {
@@ -123,7 +103,9 @@ bool Version::doUpdate()
 
     // Do the update on a device
     const auto& device = deviceQueue.front();
-    return doUpdate(device);
+    currentUpdatingDevice = device;
+    deviceUpdateUnit = getUpdateService(currentUpdatingDevice);
+    return itemUpdaterUtils->doUpdate(this, deviceUpdateUnit);
 }
 
 void Version::onUpdateDone()

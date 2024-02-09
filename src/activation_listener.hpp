@@ -1,12 +1,26 @@
 #pragma once
 
+#include <sdbusplus/bus.hpp>
+
 #include <string>
 #include <vector>
-#include <sdbusplus/bus.hpp>
+
+namespace nvidia
+{
+  namespace software
+  {
+    namespace updater
+    {
+      class Version;
+    }
+  } // namespace software
+}; // namespace nvidia
+
+using Version = nvidia::software::updater::Version;
 
 /**
  * @brief Enumeration for target filter types
- * 
+ *
  */
 enum class TargetFilterType
 {
@@ -35,7 +49,6 @@ class ActivationListener
      * @return
      */
     virtual ~ActivationListener() = default;
-
 };
 
 /**
@@ -82,12 +95,10 @@ class ItemUpdaterUtils
      * @param targetFilter
      * @return std::string
      */
-    virtual std::string
-        getUpdateServiceWithArgs(const std::string& inventoryPath,
-                                 const std::string& imagePath,
-                                 const std::string& version,
-                                 const TargetFilter& targetFilter,
-                                 const bool forceUpdate) const = 0;
+    virtual std::string getUpdateServiceWithArgs(
+        const std::string& inventoryPath, const std::string& imagePath,
+        const std::string& version, const TargetFilter& targetFilter,
+        const bool forceUpdate) const = 0;
 
     /**
      * @brief Get the Name object
@@ -110,13 +121,13 @@ class ItemUpdaterUtils
      * @return std::string
      */
     virtual std::string getDbusService(const std::string& path,
-                          const std::string& interface) = 0;
-    
+                                       const std::string& interface) = 0;
+
     /**
      * @brief apply target filters for non-pldm devices
-     * 
-     * @param targets 
-     * @return TargetFilter 
+     *
+     * @param targets
+     * @return TargetFilter
      */
     virtual TargetFilter applyTargetFilters(
         const std::vector<sdbusplus::message::object_path>& targets) = 0;
@@ -135,4 +146,13 @@ class ItemUpdaterUtils
      * @return true - if inventory is supported else false
      */
     virtual bool inventorySupported() = 0;
+
+    /**
+     * @brief calls update systemd service
+     *
+     * @param inventoryPath
+     * @return true
+     * @return false
+     */
+    virtual bool doUpdate(Version* version, const std::string&) = 0;
 };
