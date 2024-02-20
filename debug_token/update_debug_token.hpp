@@ -58,7 +58,11 @@ const std::string updateSuccessful{"Update.1.0.UpdateSuccessful"};
 const std::string resourceErrorsDetected{
     "ResourceEvent.1.0.ResourceErrorsDetected"};
 static constexpr size_t queryStatusCodeByte =
-    17; // 11 the byte from last is status code for debug token query
+    11; // 11 the byte from last is status code for debug token query
+static constexpr size_t tokenInstallStatusByte =
+    10; // 10 the byte from last is status code for debug token query
+static constexpr size_t mctpDebugTokenQueryResponseLength =
+    19; // Total length of MCTP respose : Header (9) + Data (10)
 
 enum class OperationType
 {
