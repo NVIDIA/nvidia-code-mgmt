@@ -1,0 +1,13 @@
+[Unit]
+Description=Glacier Recovery Updater
+Wants=pldmd.service
+After=pldmd.service
+
+[Service]
+ExecStart=/usr/bin/code-manager -u GlacierRecovery
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.GlacierRecovery.Updater
+
+[Install]
+WantedBy=multi-user.target

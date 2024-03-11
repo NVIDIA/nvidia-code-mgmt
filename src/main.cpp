@@ -58,6 +58,9 @@
 #if VMEPLAYER_SUPPORT
 #include "vmeplayer.hpp"
 #endif
+#ifdef GLACIER_RECOVERY_SUPPORT
+#include "glacier_crisis_recovery.hpp"
+#endif
 
 #include "watch.hpp"
 
@@ -166,6 +169,12 @@ int main(int argc, char** argv)
     if (updater == "SMCU")
     {
         itemUpdater = std::make_unique<SMCUItemUpdater>(bus);
+    }
+#endif
+#if GLACIER_RECOVERY_SUPPORT
+    if (updater == "GlacierRecovery")
+    {
+        itemUpdater = std::make_unique<GlacierRecovery>(bus);
     }
 #endif
 #if DEBUG_TOKEN_SUPPORT

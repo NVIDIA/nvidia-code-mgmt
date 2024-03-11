@@ -3,7 +3,6 @@
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/log.hpp>
 
-#include <fstream>
 #include <string>
 
 namespace LoggingServer = sdbusplus::xyz::openbmc_project::Logging::server;
@@ -24,6 +23,9 @@ using Resolution = std::string;
 using MessageMapping = std::pair<Message, Resolution>;
 using ErrorMapping = std::unordered_map<ErrorCode, MessageMapping>;
 
+ErrorCode constexpr deviceRecoveryFailed = 0x70;
+ErrorCode constexpr deviceNotResponding = 0x71;
+
 enum class RecoveryProtocol : uint8_t
 {
     GlacierRecovery = 0x0,
@@ -32,9 +34,7 @@ enum class RecoveryProtocol : uint8_t
     OCPRecovery = 0x3
 };
 
-using RecoveryErrorMapping =
-    std::unordered_map<RecoveryProtocol, ErrorMapping>;
-
+using RecoveryErrorMapping = std::unordered_map<RecoveryProtocol, ErrorMapping>;
 
 enum class GlacierRecoveryErrorCode : uint8_t
 {
@@ -58,7 +58,8 @@ enum class OCPRecoveryErrorCode : uint8_t
     BFKMMC = 0x5, // Missing/corrupt key manifest
     BFKMAF = 0x6, // Authentication Failure on key manifest
     BFKIAR = 0x7, // Anti-rollback failure on key manifest
-    BFFIMC = 0x8, // Missing/corrupt boot loader (first mutable code) firmware image
+    BFFIMC =
+        0x8, // Missing/corrupt boot loader (first mutable code) firmware image
     BFFIAF = 0x9,  // Authentication failure on boot loader (1st mutable code)
                    // firmware image
     BFFIAR = 0xA,  // Anti-rollback failure boot loader (1st mutable code)
@@ -97,111 +98,233 @@ enum class OCPRecoveryProtocolError : uint8_t
     GeneralProtocolError = 0xFF
 };
 
+/**
+ * @enum GalcierRecoveryCompletionCode
+ * @brief Enumerates different possible results or status for the operations
+ * used in Glacier recovery processes.
+ */
+enum class GalcierRecoveryCompletionCode : uint8_t
+{
+    Ok = 0x0,
+    IllegalPayloadLength = 0x1,
+    CRCFailure = 0x2,
+    ResponseCRCCompFailure = 0x3,
+    IllegalHeaderOffset = 0x4,
+    IllegalKeyHashBlobOffset = 0x5,
+    IllegalFWImageWriteAddress = 0x6,
+    InvalidCommandSignature = 0x7,
+    FirmwareNotInRecovery = 0x8,
+    InitResponseByteMismatch = 0x9,
+    BadResponse = 0xA,
+    InvalidCommand = 0xB,
+    Pending = 0xC,
+    FailedToReadData = 0xD,
+    InvalidRevision = 0xE,
+    SRAMCmdFailed = 0xF,
+    FileOpenFailure = 0x10,
+    FailedToReadVendorDetails = 0x11,
+    FailedToReadHeader = 0x12,
+    FailedToReadKHB = 0x13,
+    FailedToReadFWImage = 0x14
+};
+
+/**
+ * @brief Maps recovery-related error codes to their corresponding messages and
+ * resolutions.
+ */
 static ErrorMapping glacierRecoveryErrorMapping{
-    {static_cast<ErrorCode>(GlacierRecoveryErrorCode::IllegalPayloadLength),
-     {"IllegalPayloadLength", ""}},
-    {static_cast<ErrorCode>(GlacierRecoveryErrorCode::ResCrc),
-     {"CRC Validation failed", ""}},
-    {static_cast<ErrorCode>(GlacierRecoveryErrorCode::OtherError),
-     {"Command failed",
-      "Ensure device is in crisis recovery mode, and try the recovery again"}},
+    {static_cast<ErrorCode>(
+         GalcierRecoveryCompletionCode::IllegalPayloadLength),
+     {"Payload length exceeds the allocated space",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::CRCFailure),
+     {"CRC check failed on the command parameters",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(
+         GalcierRecoveryCompletionCode::ResponseCRCCompFailure),
+     {"CRC mismatch between the request and response",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::IllegalHeaderOffset),
+     {"Header offset exceeds the maximum allowed size",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(
+         GalcierRecoveryCompletionCode::IllegalKeyHashBlobOffset),
+     {"Key Hash Blob offset exceeds the maximum allowed limit",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(
+         GalcierRecoveryCompletionCode::IllegalFWImageWriteAddress),
+     {"Firmware image address exceeds the maximum allocated size",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(
+         GalcierRecoveryCompletionCode::InvalidCommandSignature),
+     {"Command signature failed the authentication check",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(
+         GalcierRecoveryCompletionCode::FirmwareNotInRecovery),
+     {"Device is not in Recovery",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(
+         GalcierRecoveryCompletionCode::InitResponseByteMismatch),
+     {"Initial response byte does not match expected value",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::InvalidCommand),
+     {"The command issued is invalid",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::Pending),
+     {"Command timed out",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::FailedToReadData),
+     {"Failed to read data from the device",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::SRAMCmdFailed),
+     {"Recovery image authentication failed",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::FileOpenFailure),
+     {"Unable to open the recovery image file",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(
+         GalcierRecoveryCompletionCode::FailedToReadVendorDetails),
+     {"Failed to read the vendor details",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::FailedToReadHeader),
+     {"Failed to read the image header",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::FailedToReadKHB),
+     {"Failed to read key hash blob",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(GalcierRecoveryCompletionCode::FailedToReadFWImage),
+     {"Failed to read the firmware image",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {deviceNotResponding,
+     {"Device is not responding",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {deviceRecoveryFailed,
+     {"Recovery failed due to unknown error",
+      "Check if firmware is in recovery, and try recovery again using the correct package."}},
 };
 
 static ErrorMapping ocpRecoveryErrorMapping{
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFNF),
-        {"No Boot Failure detected", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"No Boot Failure detected",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFGHWE),
-        {"Generic hardware error", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Generic hardware error",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFGSE),
-        {"Generic hardware soft error - soft error may be recoverable", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Generic hardware soft error - soft error may be recoverable",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFSTF),
-        {"Self-test failure (e.g., RSA self test failure, FIPs self test failure,, etc.)", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Self-test failure (e.g., RSA self test failure, FIPs self test failure,, etc.)",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFCD),
-        {"Corrupted/missing critical data", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Corrupted/missing critical data",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFKMMC),
-        {"Missing/corrupt key manifest", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Missing/corrupt key manifest",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFKMAF),
-        {"Authentication Failure on key manifest", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Authentication Failure on key manifest",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFKIAR),
-        {"Anti-rollback failure on key manifest", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Anti-rollback failure on key manifest",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFFIMC),
-        {"Missing/corrupt boot loader (first mutable code) firmware image", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Missing/corrupt boot loader (first mutable code) firmware image",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFFIAF),
-        {"Authentication failure on boot loader (1st mutable code) firmware image", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Authentication failure on boot loader (1st mutable code) firmware image",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFFIAR),
-        {"Anti-rollback failure boot loader (1st mutable code) firmware image", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Anti-rollback failure boot loader (1st mutable code) firmware image",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFMFMC),
-        {"Missing/corrupt main/management firmware image", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Missing/corrupt main/management firmware image",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFMFAF),
-        {"Authentication Failure main/management firmware image", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Authentication Failure main/management firmware image",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFMFAR),
-        {"Anti-rollback Failure main/management firmware image", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Anti-rollback Failure main/management firmware image",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFRFMC),
-        {"Missing/corrupt recovery firmware", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Missing/corrupt recovery firmware",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFRFAF),
-        {"Authentication Failure recovery firmware", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Authentication Failure recovery firmware",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::BFRFAR),
-        {"Anti-rollback Failure on recovery firmware", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}},
+     {"Anti-rollback Failure on recovery firmware",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryErrorCode::FR),
-        {"Forced Recovery", "Ensure device is in "
-            "recovery mode, and try recovery again using the correct package."}}
-};
+     {"Forced Recovery",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}}};
 
 static ErrorMapping ocpRecoveryStatusErrorMapping{
     {static_cast<ErrorCode>(OCPRecoveryStatus::RecoveryFailed),
-     {"Recovery Failed", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"Recovery Failed",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryStatus::RecoveryImgAuthFailed),
-     {"Recovery Image Authentication Failed", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"Recovery Image Authentication Failed",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryStatus::ErrorEnteringRecoveryMode),
-     {"Error Entering Recovery Mode", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"Error Entering Recovery Mode",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryStatus::InvalidCms),
-     {"Invalid CMS image provided", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"Invalid CMS image provided",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
 };
 
 static ErrorMapping ocpRecoveryProtocolErrorMapping{
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::UnsupportedWriteCommand),
-     {"Unsupported Write Command", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"Unsupported Write Command",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::UnsupportedParameter),
-     {"Unsupported Parameter", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"Unsupported Parameter",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::LengthWriteError),
-     {"Length Write Error", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"Length Write Error",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::CrcError),
-     {"Crc Error", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"Crc Error",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::GeneralProtocolError),
-     {"General Protocol Error. Error in communicating with device", "Ensure device is in "
-         "recovery mode, and try recovery again using the correct package."}},
+     {"General Protocol Error. Error in communicating with device",
+      "Ensure device is in "
+      "recovery mode, and try recovery again using the correct package."}},
 };
 
 static const RecoveryErrorMapping recoveryMappingTbl = {
     {RecoveryProtocol::GlacierRecovery, glacierRecoveryErrorMapping},
     {RecoveryProtocol::OCPRecovery, ocpRecoveryErrorMapping},
     {RecoveryProtocol::OCPRecoveryStatusError, ocpRecoveryStatusErrorMapping},
-    {RecoveryProtocol::OCPRecoveryProtocolError, ocpRecoveryProtocolErrorMapping},
+    {RecoveryProtocol::OCPRecoveryProtocolError,
+     ocpRecoveryProtocolErrorMapping},
 };
 
 class MessageRegistry
@@ -212,21 +335,19 @@ class MessageRegistry
     /**
      * @brief log message registry entry
      *
-     * @param[in] messageid - redfish message
-     * @param[in] compname - component name
-     * @param[in] compversion - component version
-     *
-     * @return void
+     * @param[in] messageID - redfish message
+     * @param[in] deviceName - device name
      */
-    void createMessageRegistry(const std::string& messageid,
-                               const std::string& devicename) const;
+    void createMessageRegistry(const std::string& messageID,
+                               const std::string& deviceName) const;
 
     /**
      * @brief Get the Message for firmware recovery message registry
      *
+     * @param[in] recoveryProtocol - An enum of type RecoveryProtocol
      * @param[in] errorCode - error code
-     * @param[in] deviceName - optional device name
-     * @return error and resolution - if error code mapping is present
+     * @return  A tuple containing an error and a resolution - if error code
+     * mapping is present
      */
     std::optional<std::tuple<std::string, std::string>>
         getMessage(const RecoveryProtocol& recoveryProtocol,
@@ -236,14 +357,13 @@ class MessageRegistry
      * @brief Create a Message Registry for Resource Event Errors
      *
      * @param[in] messageID - redfish message id
-     * @param[in] ComponentName - redfish
+     * @param[in] recoveryProtocol - An enum of type RecoveryProtocol
      * @param[in] errorCode - recovery error code
      * @param[in] deviceName - device name
      */
     void createMessageRegistryResourceErrors(
         const std::string& messageID, const RecoveryProtocol& recoveryProtocol,
-        const ErrorCode& errorCode,
-        const std::string& deviceName) const;
+        const ErrorCode& errorCode, const std::string& deviceName) const;
 
   private:
     sdbusplus::bus::bus& bus;
@@ -253,9 +373,8 @@ class MessageRegistry
      * @param[in] messageID
      * @param[in] addData
      * @param[in] level
-     *
-     * @return void
      */
     void createLog(const std::string& messageID,
-                   std::map<std::string, std::string>& addData, Level& level) const;
+                   std::map<std::string, std::string>& addData,
+                   Level& level) const;
 };

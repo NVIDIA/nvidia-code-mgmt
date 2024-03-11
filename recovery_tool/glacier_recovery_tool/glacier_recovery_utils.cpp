@@ -20,7 +20,7 @@ nlohmann::json GlacierRecoveryTool::getRecoveryStatusJson()
         {
             auto recResultStr = recoveryCommands.recoveryResultToStr(recResult);
             if (recResult ==
-                glacier_recovery_commands::RecoveryResult::DeviceNotInRecovery)
+                glacier_recovery_commands::RecoveryResult::FirmwareNotInRecovery)
             {
                 jsonResponse["Status"] = recResultStr;
             }

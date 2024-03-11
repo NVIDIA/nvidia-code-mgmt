@@ -73,7 +73,7 @@ enum class RecoveryResult : uint8_t
     IllegalKeyHashBlobOffset = 0x5,
     IllegalFWImageWriteAddress = 0x6,
     InvalidCommandSignature = 0x7,
-    DeviceNotInRecovery = 0x8,
+    FirmwareNotInRecovery = 0x8,
     InitResponseByteMismatch = 0x9,
     BadResponse = 0xA,
     InvalidCommand = 0xB,

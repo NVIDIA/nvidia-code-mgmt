@@ -89,6 +89,20 @@ option('PEX_SUPPORTED_MODEL',
        value: '',
        description: 'PEX supported models')
 
+option('GLACIER_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables Glacier Recovery support')
+
+option('GLACIER_RECOVERY_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'Glacier Recovery supported models')
+
+option('GLACIER_RECOVERY_TIMEOUT',
+       type: 'integer',
+       description: 'Glacier Recovery timeout in seconds.')
+
 option('DEBUG_TOKEN_SUPPORT',
        type: 'feature',
        value: 'disabled',

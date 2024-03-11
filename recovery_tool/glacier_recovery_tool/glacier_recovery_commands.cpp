@@ -102,7 +102,7 @@ std::string GlacierRecoveryCommands::recoveryResultToStr(RecoveryResult result)
             return "Firmware image address exceeds the maximum allocated address.";
         case RecoveryResult::InvalidCommandSignature:
             return "Command signature failed the authentication check using the Platform Command Key.";
-        case RecoveryResult::DeviceNotInRecovery:
+        case RecoveryResult::FirmwareNotInRecovery:
             return "Device is not in Recovery.";
         case RecoveryResult::InitResponseByteMismatch:
             return "Initial response byte does not match expected value.";
@@ -211,7 +211,7 @@ RecoveryResult GlacierRecoveryCommands::ValidateGetResponseCmd(
     }
     if (responseBytes[1] != static_cast<uint8_t>(command))
     {
-        return RecoveryResult::DeviceNotInRecovery;
+        return RecoveryResult::FirmwareNotInRecovery;
     }
 
     auto length = static_cast<size_t>(responseLen);

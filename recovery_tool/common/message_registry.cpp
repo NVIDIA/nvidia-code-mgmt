@@ -4,8 +4,8 @@
 #include <phosphor-logging/lg2.hpp>
 
 void MessageRegistry::createLog(const std::string& messageID,
-                                 std::map<std::string, std::string>& addData,
-                                 Level& level) const
+                                std::map<std::string, std::string>& addData,
+                                Level& level) const
 {
     static constexpr auto logObjPath = "/xyz/openbmc_project/logging";
     static constexpr auto logInterface = "xyz.openbmc_project.Logging.Create";
@@ -21,25 +21,27 @@ void MessageRegistry::createLog(const std::string& messageID,
     catch (const std::exception& e)
     {
         lg2::error("Failed to create D-Bus log entry for message registry",
-                        "ERROR", e.what());
+                   "ERROR", e.what());
     }
     return;
 }
 
 void MessageRegistry::createMessageRegistry(const std::string& messageID,
-                                             const std::string& deviceName) const
+                                            const std::string& deviceName) const
 {
     std::map<std::string, std::string> addData;
     Level level = Level::Informational;
     addData["REDFISH_MESSAGE_ID"] = messageID;
-    if ((messageID == recoveryStarted) || (messageID == firmwareNotInRecovery) || (messageID == recoverySuccessful))
+    if ((messageID == recoveryStarted) ||
+        (messageID == firmwareNotInRecovery) ||
+        (messageID == recoverySuccessful))
     {
         addData["REDFISH_MESSAGE_ARGS"] = deviceName;
     }
     else
     {
-        lg2::error("Message Registry messageID = {MESSAGEID} is not recognised", "MESSAGEID",
-                   messageID);
+        lg2::error("Message Registry messageID = {MESSAGEID} is not recognised",
+                   "MESSAGEID", messageID);
         return;
     }
     addData["namespace"] = "FWUpdate";
@@ -48,7 +50,8 @@ void MessageRegistry::createMessageRegistry(const std::string& messageID,
 }
 
 std::optional<std::tuple<std::string, std::string>>
-    MessageRegistry::getMessage(const RecoveryProtocol& recoveryProtocol, const ErrorCode& errorCode) const
+    MessageRegistry::getMessage(const RecoveryProtocol& recoveryProtocol,
+                                const ErrorCode& errorCode) const
 {
     Message errorMessage;
     Resolution resolution;
@@ -66,20 +69,21 @@ std::optional<std::tuple<std::string, std::string>>
         {
             lg2::error(
                 "Error Code: {ERRORCODE} not found for recovery protocol: {RECOVERYPROTOCOL}",
-                "ERRORCODE", unsigned(errorCode), "RECOVERYPROTOCOL", unsigned(recoveryProtocol));
+                "ERRORCODE", unsigned(errorCode), "RECOVERYPROTOCOL",
+                unsigned(recoveryProtocol));
         }
     }
     else
     {
-        lg2::error("No error code mapping found for recovery protocol : {RECOVERYPROTOCOL}", "RECOVERYPROTOCOL",
-                   unsigned(recoveryProtocol));
+        lg2::error(
+            "No error code mapping found for recovery protocol : {RECOVERYPROTOCOL}",
+            "RECOVERYPROTOCOL", unsigned(recoveryProtocol));
     }
     return {};
 }
 
 void MessageRegistry::createMessageRegistryResourceErrors(
-    const std::string& messageID,
-    const RecoveryProtocol& recoveryProtocol,
+    const std::string& messageID, const RecoveryProtocol& recoveryProtocol,
     const ErrorCode& errorCode, const std::string& deviceName) const
 {
     std::optional<std::tuple<std::string, std::string>> message =

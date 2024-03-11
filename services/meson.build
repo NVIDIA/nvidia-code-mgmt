@@ -116,7 +116,11 @@ if get_option('VMEPLAYER_SUPPORT').enabled()
     endif
 
     assert(cpld0_model != '' or cpld1_model !='', 'Lattice CPLD0 or CPLD1 model must be set when using VME updater')
+endif
 
+if get_option('GLACIER_RECOVERY_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.GlacierRecovery.Updater.service',
+                                'glacier-recovery@.service']
 endif
 
 foreach unit : unit_files

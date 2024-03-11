@@ -1,0 +1,9 @@
+
+[Unit]
+Description=Glacier Recovery Utility
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/glacier-recovery $ARGS

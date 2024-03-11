@@ -26,6 +26,8 @@ if cpp.has_header('nlohmann/json.hpp')
     nlohmann_json = dependency('nlohmann_json')
 endif
 
+phosphor_logging = dependency('phosphor-logging')
+
 # Common configurations for src and test
 cdata = configuration_data()
 
@@ -133,6 +135,17 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
   cdata.set_quoted('DEBUG_TOKEN_BUSNAME_INVENTORY', 'xyz.openbmc_project.PLDM')
   cdata.set_quoted('DEBUG_TOKEN_INVENTORY_PATH', '/xyz/openbmc_project/PLDM')
   cdata.set_quoted('DEBUG_TOKEN_UPDATE_SERVICE', 'debug-token-update@.service')
+endif
+
+if get_option('GLACIER_RECOVERY_SUPPORT').enabled()
+  add_project_arguments('-DGLACIER_RECOVERY_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('GLACIER_RECOVERY_SUPPORTED_MODEL', get_option('GLACIER_RECOVERY_SUPPORTED_MODEL'))
+  cdata.set_quoted('GLACIER_RECOVERY_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('GLACIER_RECOVERY_BUSNAME_UPDATER', 'com.Nvidia.Software.GlacierRecovery.Updater')
+  cdata.set_quoted('GLACIER_RECOVERY_BUSNAME_INVENTORY', 'xyz.openbmc_project.PLDM')
+  cdata.set_quoted('GLACIER_RECOVERY_UPDATE_SERVICE', 'glacier-recovery@.service')
+  cdata.set_quoted('GLACIER_RECOVERY_NAME', 'GlacierCrisisRecovery')
+  cdata.set('GLACIER_RECOVERY_TIMEOUT', get_option('GLACIER_RECOVERY_TIMEOUT'))
 endif
 
 if get_option('MTD_UPDATER_SUPPORT').enabled()
