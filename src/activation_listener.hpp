@@ -20,6 +20,20 @@
 #include <string>
 #include <vector>
 #include <sdbusplus/bus.hpp>
+#include <filesystem>
+
+namespace nvidia
+{
+  namespace software
+  {
+    namespace updater
+    {
+      class Version;
+    }
+  } // namespace software
+}; // namespace nvidia
+
+using Version = nvidia::software::updater::Version;
 
 /**
  * @brief Enumeration for target filter types
@@ -81,6 +95,13 @@ class ItemUpdaterUtils
      * @return std::string
      */
     virtual std::string getServiceName() const = 0;
+
+    /**
+     * @brief Get the Image Upload Dir object
+     *
+     * @return std::string
+     */
+    virtual void cleanupImageUploadDir(const std::filesystem::path& path, Version* version) const = 0;
 
     /**
      * @brief Indicates wheather to do update all together at once

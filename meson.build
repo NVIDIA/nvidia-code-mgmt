@@ -108,6 +108,19 @@ if get_option('PEX_SUPPORT').enabled()
   cdata.set_quoted('PEX_UPDATE_SERVICE', 'pex-update@.service')
 endif
 
+if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
+  add_project_arguments('-DGPU_OCP_RECOVERY_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('GPU_OCP_RECOVERY_SUPPORTED_MODEL', get_option('GPU_OCP_RECOVERY_SUPPORTED_MODEL'))
+  cdata.set_quoted('GPU_OCP_OOBHUB_COMP_ID', '49154')
+  cdata.set_quoted('GPU_OCP_FSP_COMP_ID', '49153')
+  cdata.set_quoted('GPU_OCP_RECOVERY_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('GPU_OCP_RECOVERY_BUSNAME_UPDATER', 'com.Nvidia.Software.OCP.GPU.Recovery')
+  cdata.set_quoted('GPU_OCP_RECOVERY_NAME', 'HGX_FW_GPU_OCP_Recovery')
+  cdata.set_quoted('GPU_OCP_RECOVERY_BUSNAME_INVENTORY', 'xyz.openbmc_project.PLDM')
+  cdata.set_quoted('GPU_OCP_RECOVERY_INVENTORY_PATH', '/xyz/openbmc_project/PLDM')
+  cdata.set_quoted('GPU_OCP_RECOVERY_UPDATE_SERVICE', 'ocp-recovery@.service')
+endif
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
   add_project_arguments('-DDEBUG_TOKEN_SUPPORT', language : ['c','cpp'])
   cdata.set_quoted('DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL', get_option('DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL'))

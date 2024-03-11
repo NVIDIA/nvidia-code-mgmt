@@ -29,6 +29,10 @@ if get_option('RT_SUPPORT').enabled()
     source_files += 'retimer_updater.cpp'
 endif
 
+if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
+    source_files += 'ocp_recovery.cpp'
+endif
+
 if get_option('PEX_SUPPORT').enabled()
     source_files += 'pex_updater.cpp'
 endif

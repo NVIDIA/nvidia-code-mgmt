@@ -44,6 +44,11 @@ option('RT_SUPPORT',
        value: 'disabled',
        description: 'Enables retimer support')
 
+option('GPU_OCP_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables ocp recovery support')
+
 option('RT_SUPPORTED_MODEL',
        type: 'string',
        value: '',
@@ -88,6 +93,11 @@ option('DEBUG_TOKEN_SUPPORT',
        type: 'feature',
        value: 'disabled',
        description: 'Enables Debug Token support')
+
+option('GPU_OCP_RECOVERY_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'OCP Recovery Supported Models')
 
 option('DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL',
        type: 'string',
@@ -179,6 +189,12 @@ option(
     type: 'integer',
     value: 600,
     description: 'Retimer update timeout in seconds. Default of 600s is computed by: (~1 minute per retimer update * 8 retimers) + (2 minutes for stopping in-progress retimer background hash computation)'
+)
+
+option(
+    'GPU_OCP_RECOVERY_TIMEOUT',
+    type: 'integer',
+    description: 'GPU OCP recovery timeout in seconds.'
 )
 
 option(

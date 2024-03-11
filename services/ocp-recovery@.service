@@ -1,0 +1,10 @@
+
+[Unit]
+Description=OCP Recovery Utility
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/ocp-commandline /usr/share/nvidia-code-mgmt/ocp_recovery_config.json $ARGS
+

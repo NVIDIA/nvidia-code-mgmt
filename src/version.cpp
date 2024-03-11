@@ -162,7 +162,7 @@ void Version::onUpdateFailed()
                     entry("device=%s", deviceQueue.front().c_str()));
     std::queue<std::string>().swap(deviceQueue); // Clear the queue
     activation(Status::Failed);
-    std::filesystem::remove(path());
+    itemUpdaterUtils->cleanupImageUploadDir(path(), this);
     itemUpdaterUtils->readExistingFirmWare();
     requestedActivation(SoftwareActivation::RequestedActivations::None);
 }
@@ -242,7 +242,7 @@ void Version::finishActivation()
     requestedActivation(SoftwareActivation::RequestedActivations::None);
     activation(Status::Active);
     //remove file
-    std::filesystem::remove(path());
+    itemUpdaterUtils->cleanupImageUploadDir(path(), this);
 }
 bool Version::isCompatible(const std::string& inventoryPath)
 {

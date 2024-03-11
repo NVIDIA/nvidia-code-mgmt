@@ -21,6 +21,11 @@ if get_option('RT_SUPPORT').enabled()
                                 'rt-update-direct@.service']
 endif
 
+if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.OCP.GPU.Recovery.service',
+                                'ocp-recovery@.service']
+endif
+
 if get_option('PEX_SUPPORT').enabled()
     unit_files = unit_files + ['com.Nvidia.PEX.Updater.service',
                                 'pex-update@.service']

@@ -145,6 +145,29 @@ class BaseItemUpdater :
         return IMG_UPLOAD_DIR_BASE + getName() + "/";
     }
     /**
+     * @brief Get the Image Upload Dir object
+     *
+     * @return std::string
+     */
+    void cleanupImageUploadDir(const std::filesystem::path& path, Version* version) const
+    {
+        if (std::filesystem::is_directory(path))
+        {
+            for (const auto& file : std::filesystem::directory_iterator(path)) 
+            {
+                if (!std::filesystem::is_directory(file.path()))
+                {
+                    std::filesystem::remove(file.path());
+                }
+            }
+            version->path(version->path() + "/na.img");
+        }
+        else
+        {
+            std::filesystem::remove(path);
+        }
+    }
+    /**
      * @brief Get the Bus Name object
      *
      * @return std::string
@@ -180,10 +203,10 @@ class BaseItemUpdater :
     virtual std::vector<std::filesystem::path> getPathsToMonitor() const
     {
         std::vector<std::filesystem::path> pathsToMonitor;
-        for (const auto& sm : deviceIds)
+        for (const auto& [uuid, _] : deviceIds)
         {
             std::filesystem::path pathToWatch(getImageUploadDir());
-            pathToWatch /= sm.first;
+            pathToWatch /= uuid;
             pathsToMonitor.push_back(pathToWatch);
         }
         if (pathsToMonitor.size() < 1)
@@ -242,7 +265,7 @@ class BaseItemUpdater :
      * @return std::string
      */
     virtual std::string getUUID(const std::string& model,
-                                const std::string& manufacture)
+                                const std::string& manufacture) const
     {
         std::string uuid = "";
         for (auto& it : deviceIds)

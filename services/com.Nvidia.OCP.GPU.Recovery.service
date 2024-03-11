@@ -1,0 +1,18 @@
+[Unit]
+Description=GPU OCP Code Manager
+After=nvidia-fpga-ready.target
+Conflicts=nvidia-fpga-notready.target
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u OCP
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.OCP.GPU.Recovery
+
+[Install]
+WantedBy=nvidia-fpga-ready.target
+
