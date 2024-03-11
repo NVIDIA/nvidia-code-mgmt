@@ -27,6 +27,22 @@ namespace recovery_tool
 static constexpr uint8_t delay1sec = 1;
 
 /**
+ * @enum DeviceId
+ * @brief Represents the device status of GetDeviceStatus command
+ */
+enum class DeviceId : int
+{
+    PCI_Vendor = 0x00, 
+    IANA = 0x1, 
+    UUID = 0x2, 
+    PnP_Vendor  = 0x3, 
+    ACPI_Vendor = 0x4, 
+    IANA_Enterprise_Type = 0x5, 
+    // Reserved = 0x6-0xFE, 
+    NVMe_MI  = 0xFF
+};
+
+/**
  * @enum DeviceStatus
  * @brief Represents the device status of GetDeviceStatus command
  */
@@ -136,6 +152,13 @@ class OCPRecoveryTool
     void logVerbose(const std::string& message) const;
 
     /**
+     * @brief Converts DeviceId enumeration to its string representation.
+     * @param status The DeviceId value.
+     * @return The string representation of DeviceId.
+     */
+    std::string deviceIDToStr(DeviceId id) const noexcept;
+
+    /**
      * @brief Converts DeviceStatus enumeration to its string representation.
      * @param status The DeviceStatus value.
      * @return The string representation of DeviceStatus.
@@ -186,6 +209,16 @@ class OCPRecoveryTool
     OCPRecoveryTool& operator=(const OCPRecoveryTool&) = delete;
     OCPRecoveryTool& operator=(OCPRecoveryTool&&) = delete;
     ~OCPRecoveryTool() = default;
+    /**
+     * @brief Retrieves the Device_ID in JSON format.
+     * @return A JSON object representing the Device ID
+     */
+    nlohmann::json getDeviceIDJson() noexcept;
+    /**
+     * @brief Sets the device into Force Recovery Mode
+     * @return A JSON object representing the command status
+     */
+    nlohmann::json setForceRecoveryMode() noexcept;
     /**
      * @brief Retrieves the device's status in JSON format.
      * @return A JSON object representing the device's status.

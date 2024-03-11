@@ -25,6 +25,35 @@ namespace interface
 
 std::vector<std::unique_ptr<CommandInterface>> commands;
 
+class GetDeviceID : public CommandInterface
+{
+  public:
+    ~GetDeviceID() = default;
+    GetDeviceID() = delete;
+    GetDeviceID(const GetDeviceID&) = delete;
+    GetDeviceID(GetDeviceID&&) = default;
+    GetDeviceID& operator=(const GetDeviceID&) = delete;
+    GetDeviceID& operator=(GetDeviceID&&) = default;
+
+    using CommandInterface::CommandInterface;
+
+    void exec() override
+    {
+        try
+        {
+            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
+                busAddress, slaveAddress, verbose, emulation);
+            nlohmann::json jsonResponse =
+                ocpRecoveryToolObj.getDeviceIDJson();
+            std::cout << jsonResponse.dump(4) << "\n";
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error in GetDeviceID: " << e.what() << "\n";
+        }
+    }
+};
+
 class GetDeviceStatus : public CommandInterface
 {
   public:
@@ -83,6 +112,35 @@ class GetRecoveryStatus : public CommandInterface
     }
 };
 
+class SetForceRecoveryMode : public CommandInterface
+{
+  public:
+    ~SetForceRecoveryMode() = default;
+    SetForceRecoveryMode() = delete;
+    SetForceRecoveryMode(const SetForceRecoveryMode&) = delete;
+    SetForceRecoveryMode(SetForceRecoveryMode&&) = default;
+    SetForceRecoveryMode& operator=(const SetForceRecoveryMode&) = delete;
+    SetForceRecoveryMode& operator=(SetForceRecoveryMode&&) = default;
+
+    using CommandInterface::CommandInterface;
+
+    void exec() override
+    {
+        try
+        {
+            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
+                busAddress, slaveAddress, verbose, emulation);
+            nlohmann::json jsonResponse =
+                ocpRecoveryToolObj.setForceRecoveryMode();
+            std::cout << jsonResponse.dump(4) << "\n";
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error in SetForceRecovery: " << e.what() << "\n";
+        }
+    }
+};
+
 class PerformRecovery : public CommandInterface
 {
   private:
@@ -128,10 +186,20 @@ void registerCommand(CLI::App& app)
     int busAddress;
     int slaveAddress;
 
+    auto getDeviceIDCmd =
+        app.add_subcommand("GetDeviceID", "Get the device status");
+    commands.push_back(std::make_unique<GetDeviceID>(
+        busAddress, slaveAddress, getDeviceIDCmd));
+
     auto getDeviceStatusCmd =
         app.add_subcommand("GetDeviceStatus", "Get the device status");
     commands.push_back(std::make_unique<GetDeviceStatus>(
         busAddress, slaveAddress, getDeviceStatusCmd));
+
+    auto setForceRecoveryCmd =
+        app.add_subcommand("SetForceRecovery", "Put the device in Recovery ");
+    commands.push_back(std::make_unique<SetForceRecoveryMode>(
+        busAddress, slaveAddress, setForceRecoveryCmd));
 
     auto getRecoveryStatusCmd =
         app.add_subcommand("GetRecoveryStatus", "Get the recovery status");

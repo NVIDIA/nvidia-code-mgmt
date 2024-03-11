@@ -295,6 +295,62 @@ OCPRecoveryCommands::~OCPRecoveryCommands()
 }
 
 std::tuple<bool, std::vector<uint8_t>, std::string>
+    OCPRecoveryCommands::getDeviceIDCommand()
+{
+    std::string errorMsg = "";
+    try
+    {
+        std::vector<uint8_t> commandData = {
+            static_cast<uint8_t>(RecoveryCommands::DeviceID)};
+        std::vector<uint8_t> readBuffer(
+            static_cast<size_t>(ResponseLength::DeviceIDResLen), 0);
+        printBuffer(Tx, commandData);
+        if (recovery_tool::i2c_utils::sendI2cCmdForRead(
+                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
+                readBuffer, verbose))
+        {
+            printBuffer(Rx, readBuffer);
+            return {true, readBuffer, errorMsg};
+        }
+        errorMsg = "Failed to read data from device.";
+        return {false, {}, errorMsg};
+    }
+    catch (const std::exception& e)
+    {
+        errorMsg = "Error in GetDeviceId: " + std::string(e.what());
+        return {false, {}, errorMsg};
+    }
+}
+
+std::pair<bool, std::string> OCPRecoveryCommands::setForceRecoveryMode()
+{
+    std::string errorMsg = "";
+    std::vector<uint8_t> writeData(commandCodeLen + commandBytesWrittenLen + resetCommandDataLen);
+    writeData[0] = static_cast<uint8_t>(RecoveryCommands::Reset);
+    writeData[1] = resetCommandDataLen;
+    writeData[2] = static_cast<uint8_t>(0x01); // Reset Device
+    writeData[3] = static_cast<uint8_t>(0x0F); // Enter Recovery Mode on Reset
+    writeData[4] = static_cast<uint8_t>(0x01); // Enable Interface Mastering
+    printBuffer(Tx, writeData);
+    try
+    {
+       if (!recovery_tool::i2c_utils::sendI2cCmdForWrite(
+                i2cFile, static_cast<uint16_t>(slaveAddress), writeData,
+                verbose))
+       {
+           return {false, "Failed to set device into recovery mode"};
+       }
+    }
+    catch (const std::exception& e)
+    {
+        errorMsg = "Failed to set device into recovery mode : " +
+            std::string(e.what());
+        return {false, errorMsg};
+    }
+    return {true, ""};
+}
+
+std::tuple<bool, std::vector<uint8_t>, std::string>
     OCPRecoveryCommands::getDeviceStatusCommand()
 {
     std::string errorMsg = "";

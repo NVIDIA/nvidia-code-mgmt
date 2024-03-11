@@ -33,13 +33,18 @@ static constexpr uint8_t indirectStatusExpectedAck = 0x1;
 constexpr bool Tx = true;
 constexpr bool Rx = false;
 static constexpr uint8_t delay1sec = 1;
+static constexpr uint8_t resetCommandDataLen = 3;
+static constexpr uint8_t commandCodeLen = 1;
+static constexpr uint8_t commandBytesWrittenLen = 1;
 /**
  * @enum RecoveryCommands
  * @brief Enumerates commands for OCP recovery.
  */
 enum class RecoveryCommands : uint8_t
 {
+    DeviceID = 0x23,
     DeviceStatus = 0x24,
+    Reset = 0x25,
     RecoveryCtrl = 0x26,
     RecoveryStatus = 0x27,
     IndirectCtrl = 0x29,
@@ -54,6 +59,7 @@ enum class RecoveryCommands : uint8_t
  */
 enum class ResponseLength : uint8_t
 {
+    DeviceIDResLen = 25,
     DeviceStatusResLen = 25,
     RecoveryStatusResLen = 3,
     IndirectStatusResLen = 7,
@@ -204,6 +210,17 @@ class OCPRecoveryCommands
     OCPRecoveryCommands& operator=(const OCPRecoveryCommands&) = delete;
     OCPRecoveryCommands& operator=(OCPRecoveryCommands&&) = delete;
 
+    /**
+     * @brief Retrieves the device's id
+     * @return A tuple containing success flag, device id data as a byte vector,
+     * and an error message if any.
+     */
+    std::tuple<bool, std::vector<uint8_t>, std::string> getDeviceIDCommand();
+    /**
+     * @brief Sets the device into recovery mode 
+     * @return Pair containing success flag, and an error message if any
+     */
+    std::pair<bool, std::string> setForceRecoveryMode();
     /**
      * @brief Retrieves the device's status.
      * @return A tuple containing success flag, status data as a byte vector,

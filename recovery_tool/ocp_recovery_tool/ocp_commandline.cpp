@@ -54,11 +54,6 @@ bool performRecovery(const CommandOptions& opts)
         const auto slaveAddr = addressMap.at("Slave Address");
         ocp_recovery_commandline::OCPRecoveryCommandLine ocpRecoveryCommandlineObj(device,
             busAddr, slaveAddr, opts.verbose, opts.emulation);
-        // TODO: Enable when force recovery is in place
-        // if (opts.forceRecovery)
-        // {
-        //     ocpRecoveryCommandlineObj.setForceRecovery();
-        // }
         auto status = ocpRecoveryCommandlineObj.performRecovery({opts.fspImagePath, opts.oobhubImagePath});
         if (status == RecoveryReturnCode::FAILURE)
         {

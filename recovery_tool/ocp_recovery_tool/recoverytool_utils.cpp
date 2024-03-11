@@ -37,6 +37,29 @@ void OCPRecoveryTool::logVerbose(const std::string& message) const
     }
 }
 
+std::string OCPRecoveryTool::deviceIDToStr(DeviceId id) const noexcept
+{
+    switch (id)
+    {
+        case DeviceId::PCI_Vendor:
+             return "PCI Vendor";
+        case DeviceId::IANA:
+             return "IANA";
+        case DeviceId::UUID:
+             return "UUID";
+        case DeviceId::PnP_Vendor :
+             return "PnP Vendor";
+        case DeviceId::ACPI_Vendor:
+             return "ACPI Vendor";
+        case DeviceId::IANA_Enterprise_Type:
+             return "IANA Enterprise Type";
+        case DeviceId::NVMe_MI :
+            return "NVMe MI";
+        default:
+            return "Reserved/Unknown";
+    }
+}
+
 std::string OCPRecoveryTool::deviceStatusToStr(DeviceStatus status)
 {
     switch (status)
@@ -173,6 +196,55 @@ nlohmann::json
     response["Error"] = errorMsg;
     response["Status"] = "Failed";
     return response;
+}
+
+nlohmann::json OCPRecoveryTool::getDeviceIDJson() noexcept
+{
+    nlohmann::json jsonResponse;
+    logVerbose("Getting Device ID");
+    auto [success, hexData, errorMsg] =
+        recoveryCommands.getDeviceIDCommand();
+
+    if (!success)
+    {
+        logVerbose("Error while getting Device Id: " + errorMsg);
+        jsonResponse["Error"] = errorMsg;
+        return jsonResponse;
+    }
+
+    const auto descriptorType = static_cast<DeviceId>(hexData[1]);
+    if (descriptorType != DeviceId::PCI_Vendor)
+    {
+        jsonResponse["Error"] = "Found unknown Descriptor Type";
+        return jsonResponse;
+    }
+    jsonResponse["Initial Descriptor Type"] =
+        deviceIDToStr(descriptorType);
+    jsonResponse["PCI Vendor ID"] = hexData[3] << 8 | hexData[4];
+    jsonResponse["PCI DeviceId"] = hexData[5] << 8 | hexData[6];
+    jsonResponse["PCI Subsystem Vendor ID"] = hexData[7] << 8 | hexData[8];
+    jsonResponse["PCI Subsytem ID"] = hexData[9] << 8 | hexData[10];
+    jsonResponse["PCI Revision ID"] = hexData[11];
+
+    return jsonResponse;
+}
+
+
+nlohmann::json OCPRecoveryTool::setForceRecoveryMode() noexcept
+{
+    nlohmann::json jsonResponse;
+    logVerbose("Setting device into force recovery");
+
+    const auto [setForceRecoveryStatus, errorMsg] = recoveryCommands.setForceRecoveryMode();
+    if (setForceRecoveryStatus == true)
+    {
+        jsonResponse["Status"] = "Success";
+    }
+    else
+    {
+        jsonResponse["Error"] = errorMsg;
+    }
+    return jsonResponse;
 }
 
 nlohmann::json OCPRecoveryTool::getDeviceStatusJson()
