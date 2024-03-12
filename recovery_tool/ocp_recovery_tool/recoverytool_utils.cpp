@@ -1,4 +1,6 @@
 #include "recoverytool_utils.hpp"
+#include <chrono>
+#include <thread>
 
 namespace recovery_tool
 {
@@ -6,6 +8,7 @@ namespace recovery_tool
 OCPRecoveryTool::OCPRecoveryTool(int busAddr, int slaveAddr, bool verb,
                                  bool emul) :
     verbose(verb),
+    emul(emul),
     recoveryCommands(busAddr, slaveAddr, verb, emul)
 {}
 
@@ -249,6 +252,11 @@ nlohmann::json
             return assignPerformRecoveryError("Image paths are empty");
         }
         auto response = getDeviceStatusJson();
+        if (emul)
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
+        }
+
         if (!response.contains("Device Status"))
         {
             logVerbose(
@@ -264,6 +272,10 @@ nlohmann::json
         }
 
         response = getRecoveryStatusJson();
+        if (emul)
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
+        }
 
         if (!response.contains("Device Recovery Status"))
         {

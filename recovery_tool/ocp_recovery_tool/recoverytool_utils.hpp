@@ -7,6 +7,8 @@
 namespace recovery_tool
 {
 
+static constexpr uint8_t delay1sec = 1;
+
 /**
  * @enum DeviceStatus
  * @brief Represents the device status of GetDeviceStatus command
@@ -107,6 +109,7 @@ class OCPRecoveryTool
 
   private:
     bool verbose;
+    bool emul;
     recovery_commands::OCPRecoveryCommands recoveryCommands;
 
     /**
