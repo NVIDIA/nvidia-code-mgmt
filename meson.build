@@ -84,7 +84,7 @@ endif
 if get_option('ORIN_FLASH_SUPPORT').enabled()
   add_project_arguments('-DORIN_FLASH_SUPPORT', language : ['c','cpp'])
   cdata.set_quoted('ORIN_SUPPORTED_MODEL', get_option('ORIN_SUPPORTED_MODEL'))
-  cdata.set_quoted('ORIN_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('ORIN_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Item.Chassis')
   cdata.set_quoted('ORIN_BUSNAME_UPDATER', 'com.Nvidia.Software.ORIN.Updater')
   cdata.set_quoted('ORIN_BUSNAME_INVENTORY', 'com.Nvidia.ORIN')
   cdata.set_quoted('ORIN_UPDATE_SERVICE', 'orin-update@.service')
@@ -224,6 +224,10 @@ subdir('src')
 
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
   subdir('debug_token')
+endif
+
+if get_option('ORIN_FLASH_SUPPORT').enabled()
+  subdir('nvidia_igx')
 endif
 
 subdir('recovery_tool/ocp_recovery_tool')

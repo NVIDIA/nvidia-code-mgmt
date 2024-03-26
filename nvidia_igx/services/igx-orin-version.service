@@ -1,0 +1,12 @@
+[Unit]
+Description=NVIDIA IGX Orin QSPI version
+[Service]
+Restart=always
+Type=dbus
+ExecStart=/usr/bin/env igx-orin-version
+SyslogIdentifier=igx-orin-version
+BusName=com.Nvidia.ORIN
+
+[Install]
+WantedBy=multi-user.target
+
