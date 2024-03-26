@@ -52,6 +52,9 @@
 #if JAMPLAYER_SUPPORT
 #include "jamplayer.hpp"
 #endif
+#if VMEPLAYER_SUPPORT
+#include "vmeplayer.hpp"
+#endif
 
 #include "watch.hpp"
 
@@ -191,6 +194,12 @@ int main(int argc, char** argv)
     if (updater == "JAMPLAYER")
     {
         itemUpdater = std::make_unique<JamPlayer>(bus);
+    }
+#endif
+#if VMEPLAYER_SUPPORT
+    if (updater == "VMEPLAYER")
+    {
+        itemUpdater = std::make_unique<VmePlayer>(bus);
     }
 #endif
 

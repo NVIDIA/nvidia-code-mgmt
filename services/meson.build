@@ -88,6 +88,11 @@ if get_option('JAMPLAYER_SUPPORT').enabled()
                                 'jamplayer-flash@.service']
 endif
 
+if get_option('VMEPLAYER_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.Vmeplayer.service',
+                                'vmeplayer-flash@.service']
+endif
+
 foreach unit : unit_files
 configure_file(input: unit,
                output: unit,

@@ -58,6 +58,10 @@ if get_option('JAMPLAYER_SUPPORT').enabled()
     source_files += 'jamplayer.cpp'
 endif
 
+if get_option('VMEPLAYER_SUPPORT').enabled()
+    source_files += 'vmeplayer.cpp'
+endif
+
 
 executable('code-manager',
             sources: source_files,
