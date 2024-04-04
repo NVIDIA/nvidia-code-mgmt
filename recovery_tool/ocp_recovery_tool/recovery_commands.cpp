@@ -69,6 +69,12 @@ bool OCPRecoveryCommands::setRecoveryControlRegisterCommand(ImageType imageType,
             static_cast<uint8_t>(ActivateRecoveryImage::DoNotActivate);
     }
     printBuffer(Tx, writeData);
+
+    if (emulation)
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
+    }
+
     return recovery_tool::i2c_utils::sendI2cCmdForWrite(
         i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose);
 }
