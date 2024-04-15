@@ -259,20 +259,14 @@ MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(const dbus::InterfaceMap& i
     EID eid{};
     MctpMedium mctpMedium{};
     MctpBinding mctpBinding{};
+    SupportedMessageTypes supportedMsgTypes;
     const auto& eidProperties = interfaces.at(mctpEndpointIntfName);
     if (eidProperties.contains("EID") &&
         eidProperties.contains("SupportedMessageTypes"))
     {
-        auto mctpTypes = std::get<SupportedMessageTypes>(
+        supportedMsgTypes = std::get<SupportedMessageTypes>(
             eidProperties.at("SupportedMessageTypes"));
         eid = std::get<size_t>(eidProperties.at("EID"));
-        if (std::find(mctpTypes.begin(), mctpTypes.end(),
-                      mctpTypeSPDM) == mctpTypes.end())
-        {
-            log<level::INFO>("SPDM not supported on EID={EID}, skipping.",
-                    entry("EID=%d", eid));
-            return {0, "", ""};
-        }
     }
 
     if (eidProperties.contains("MediumType"))
@@ -289,8 +283,29 @@ MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(const dbus::InterfaceMap& i
             mctpBinding = std::get<MctpBinding>(bindingProperties.at("BindingType"));
         }
     }
-    return {eid, mctpMedium, mctpBinding};
+    return {eid, mctpMedium, mctpBinding, supportedMsgTypes};
 
+}
+
+bool UpdateDebugToken::checkSupportForSPDMandMCTPVDM(
+    const SupportedMessageTypes& supportedMsgTypes, EID eid)
+{
+    if (std::find(supportedMsgTypes.begin(), supportedMsgTypes.end(),
+                  mctpTypeSPDM) == supportedMsgTypes.end())
+    {
+        log<level::INFO>("SPDM not supported on EID={EID}, skipping.",
+                         entry("EID=%d", eid));
+        return false;
+    }
+    if (std::find(supportedMsgTypes.begin(), supportedMsgTypes.end(),
+                  mctpTypeVDMIANA) == supportedMsgTypes.end())
+    {
+        log<level::INFO>(("MCTP VDM is not supported on EID=" +
+                          std::to_string(eid) + ", skipping.")
+                             .c_str());
+        return false;
+    }
+    return true;
 }
 
 int UpdateDebugToken::discoverMCTPDevices()
@@ -326,7 +341,9 @@ int UpdateDebugToken::discoverMCTPDevices()
         }
 
         MctpEidInfo eidInfo = fetchEidInfoFromObject(interfaces);
-        if (eidInfo.medium.empty() and eidInfo.binding.empty())
+        if ((eidInfo.medium.empty() and eidInfo.binding.empty()) ||
+            !checkSupportForSPDMandMCTPVDM(eidInfo.supportedMsgTypes,
+                                           eidInfo.eid))
         {
             continue;
         }

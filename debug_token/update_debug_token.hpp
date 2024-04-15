@@ -66,6 +66,7 @@ namespace LoggingServer = sdbusplus::xyz::openbmc_project::Logging::server;
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 
 static constexpr uint8_t mctpTypeSPDM = 0x5;
+static constexpr uint8_t mctpTypeVDMIANA = 0x7f;
 constexpr auto mctpPCIeService = "xyz.openbmc_project.MCTP.Control.PCIe";
 constexpr auto mctpPath = "/xyz/openbmc_project/mctp";
 constexpr auto objectMapperService = "xyz.openbmc_project.ObjectMapper";
@@ -117,6 +118,7 @@ struct MctpEidInfo
     EID eid;
     MctpMedium medium;
     MctpBinding binding;
+    SupportedMessageTypes supportedMsgTypes;
 
     friend bool operator<(MctpEidInfo const& lhs, MctpEidInfo const& rhs)
     {
@@ -393,6 +395,18 @@ class UpdateDebugToken : public TokenUtility
      * @return dbus::OjectValueTree - map of objects to values
      */
     dbus::ObjectValueTree getMCTPManagedObjects();
+
+    /**
+     * @brief Method to check supported message types to perform debug token
+     * erase/install operation
+     *
+     * @param[in] supportedMsgTypes - mctp supported message types
+     * @param[in] eid - eid for logging
+     * @return true
+     * @return false
+     */
+    bool checkSupportForSPDMandMCTPVDM(const SupportedMessageTypes& supportedMsgTypes,
+                                EID eid);
     /**
      * @brief discover MCTP end points
      *
