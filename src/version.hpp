@@ -372,7 +372,7 @@ class Version : public VersionInherit, public DBUSUtils
      */
     inline void startTimer(uint32_t timeout)
     {
-        timer = std::make_unique<phosphor::Timer>([this]() {
+        timer = std::make_unique<sdbusplus::Timer>([this]() {
             if (!deviceQueue.empty())
             {
                 log<level::ERR>("Update timed out");
@@ -507,7 +507,7 @@ class Version : public VersionInherit, public DBUSUtils
     ItemUpdaterUtils* itemUpdaterUtils;
 
     TargetFilter targetFilter;
-    std::unique_ptr<phosphor::Timer> timer;
+    std::unique_ptr<sdbusplus::Timer> timer;
 };
 
 } // namespace updater
