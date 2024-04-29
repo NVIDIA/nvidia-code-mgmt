@@ -91,16 +91,25 @@ static constexpr size_t mctpDebugTokenQueryResponseLength =
     19; // Total length of MCTP respose : Header (9) + Data (10)
 
 using Priority = int;
-static std::unordered_map<MctpMedium, Priority> mediumPriority{
+
+static std::unordered_map<MctpMedium, Priority> mediumPriority = {
     {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.PCIe", 0},
-    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.SPI", 1},
-    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.SMBus", 2},
+    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.USB", 1},
+    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.SPI", 2},
+    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.KCS", 3},
+    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.Serial", 4},
+    {"xyz.openbmc_project.MCTP.Endpoint.MediaTypes.SMBus", 5},
 };
-static std::unordered_map<MctpBinding, Priority> bindingPriority{
+
+static std::unordered_map<MctpBinding, Priority> bindingPriority = {
     {"xyz.openbmc_project.MCTP.Binding.BindingTypes.PCIe", 0},
-    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.SPI", 1},
-    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.SMBus", 2},
+    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.USB", 1},
+    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.SPI", 2},
+    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.KCS", 3},
+    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.Serial", 4},
+    {"xyz.openbmc_project.MCTP.Binding.BindingTypes.SMBus", 5},
 };
+
 
 
 struct MctpEidInfo
