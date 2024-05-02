@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,12 +34,12 @@
 #include <sdbusplus/server.hpp>
 #include <sdbusplus/timer.hpp>
 #include <xyz/openbmc_project/Common/FilePath/server.hpp>
+#include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
 #include <xyz/openbmc_project/Software/Activation/server.hpp>
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
 #include <xyz/openbmc_project/State/ServiceReady/server.hpp>
-#include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
 
 #include <functional>
 #include <iostream>
@@ -215,8 +215,8 @@ class ServiceReady : public ServiceReadyInherit
 
 /**@class DeviceSKU
  *
- *  Concrete implementation of xyz.openbmc_project.Inventory.Decorator.Asset D-Bus
- *  interface
+ *  Concrete implementation of xyz.openbmc_project.Inventory.Decorator.Asset
+ * D-Bus interface
  *
  */
 class DeviceSKU : public InventoryInherit
@@ -372,7 +372,7 @@ class Version : public VersionInherit, public DBUSUtils
      */
     inline void startTimer(uint32_t timeout)
     {
-        timer = std::make_unique<phosphor::Timer>([this]() {
+        timer = std::make_unique<sdbusplus::Timer>([this]() {
             if (!deviceQueue.empty())
             {
                 log<level::ERR>("Update timed out");
@@ -476,7 +476,6 @@ class Version : public VersionInherit, public DBUSUtils
     void logTransferFailed(const std::string& compName,
                            const std::string& compVersion);
 
-
   private:
     std::string versionId;
 
@@ -507,7 +506,7 @@ class Version : public VersionInherit, public DBUSUtils
     ItemUpdaterUtils* itemUpdaterUtils;
 
     TargetFilter targetFilter;
-    std::unique_ptr<phosphor::Timer> timer;
+    std::unique_ptr<sdbusplus::Timer> timer;
 };
 
 } // namespace updater
