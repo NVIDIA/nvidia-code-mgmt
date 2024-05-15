@@ -152,7 +152,7 @@ option(
 option(
     'RT_UPDATE_TIMEOUT',
     type: 'integer',
-    value: 180,
+    value: 600,
     description: 'Retimer update timeout in seconds.'
 )
 
