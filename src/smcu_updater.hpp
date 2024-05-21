@@ -83,8 +83,7 @@ class SMCUItemUpdater : public BaseItemUpdater
         getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
                        const std::string& imagePath,
                        [[maybe_unused]] const std::string& version,
-                       [[maybe_unused]] const TargetFilter &targetFilter,
-                       [[maybe_unused]] const bool forceUpdate) const override
+                       [[maybe_unused]] const TargetFilter &targetFilter) const override
     {
 
         // The systemd unit shall be escaped

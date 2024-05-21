@@ -404,42 +404,6 @@ TargetFilter BaseItemUpdater::applyTargetFilters(
     }
     return targetFilter;
 }
-
-void BaseItemUpdater::createLog(const std::string& messageID,
-                        const std::map<std::string, std::string>& addData,
-                        const Level& level) const
-{
-    static constexpr auto logObjPath = "/xyz/openbmc_project/logging";
-    static constexpr auto logInterface = "xyz.openbmc_project.Logging.Create";
-    static constexpr auto service = "xyz.openbmc_project.Logging";
-    try
-    {
-        auto severity = LoggingServer::convertForMessage(level);
-        auto method =
-            bus.new_method_call(service, logObjPath, logInterface, "Create");
-        method.append(messageID, severity, addData);
-        bus.call_noreply(method);
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr
-            << "Failed to create D-Bus log entry for message registry, ERROR="
-            << e.what() << "\n";
-    }
-}
-
-void BaseItemUpdater::logIdenticalImageInfo(const std::string& target) const
-{
-    std::map<std::string, std::string> addData;
-    addData["REDFISH_MESSAGE_ID"] = "OpenBMC.0.4.ComponentUpdateSkipped";
-    addData["REDFISH_MESSAGE_ARGS"] = (target + "," + "Component image version is identical");
-    addData["xyz.openbmc_project.Logging.Entry.Resolution"] = "Retry firmware update operation with the force flag";
-    // use separate container for fwupdate message registry
-    addData["namespace"] = "FWUpdate";
-    Level level = Level::Informational;
-    createLog("OpenBMC.0.4.ComponentUpdateSkipped", addData, level);
-    return;
-}
 } // namespace updater
 } // namespace software
 } // namespace nvidia

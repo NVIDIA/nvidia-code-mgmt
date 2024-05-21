@@ -287,6 +287,7 @@ class Version : public VersionInherit, public DBUSUtils
 
         activationProgress = nullptr;
         updatePolicy = std::make_unique<UpdatePolicy>(bus, objPath);
+        updatePolicy->forceUpdate(true);
         deleteObject = std::make_unique<Delete>(bus, objPath, *this);
         timer = nullptr;
         // Emit deferred signal.
