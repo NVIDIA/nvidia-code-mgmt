@@ -42,26 +42,6 @@ class MTDItemUpdater : public BaseItemUpdater
     {
     }
 
-	static bool partitionExists(const std::string mtdName)
-    {
-        std::ifstream f("/proc/mtd");
-        if (!f)
-          return false;
-        std::string line;
-        std::string name = "\"";
-        name.append(mtdName);
-        name.append("\"");
-        while (std::getline(f, line))
-        {
-            if (line.find(name) != std::string::npos) {
-                f.close();
-                return true;
-            }
-        }
-        f.close();
-        return false;
-    }
-
     /**
      * @brief Get the Version object
      *

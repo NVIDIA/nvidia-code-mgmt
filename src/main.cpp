@@ -178,13 +178,7 @@ int main(int argc, char** argv)
 #if MTD_SUPPORT
     if (updater == "MTD")
     {
-        if (MTDItemUpdater::partitionExists(targetName))
-            itemUpdater = std::make_unique<MTDItemUpdater>(bus, targetName, modelName);
-        else
-        {
-            log<level::ERR>("MTD partion not present. MTD updater cannot work \n");
-            exit(EXIT_FAILURE);
-        }
+        itemUpdater = std::make_unique<MTDItemUpdater>(bus, targetName, modelName);
     }
 #endif
 #if SWITCHTEC_FUSE_SUPPORT

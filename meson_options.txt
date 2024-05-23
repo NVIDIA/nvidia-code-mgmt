@@ -24,6 +24,11 @@ option('BMC_SUPPORTED_MODEL',
        value: '',
        description: 'BMC supported models')
 
+option('PCIECHIP_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'PCIE SPI chip supported models')
+
 option('CPLD_SUPPORT',
        type: 'feature',
        value: 'disabled',

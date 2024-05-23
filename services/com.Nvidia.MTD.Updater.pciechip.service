@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenBMC pciechip MTD Code Manager
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u MTD -i pciechip -m PCIECHIP_MODEL 
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.MTD.Updater.pciechip
+
+[Install]
+WantedBy=multi-user.target

@@ -65,7 +65,17 @@ if get_option('MTD_UPDATER_SUPPORT').enabled()
         run_command('sed', '-i', bmc_sed_arg, 'com.Nvidia.MTD.Updater.bmc.service', check: true)
     endif
 
-    assert(bmc_model != '' or fpga_model !='', 'BMC or FPGA model must be set when using MTD updater')
+    pciechip_model = get_option('PCIECHIP_SUPPORTED_MODEL')
+
+    if (pciechip_model != '')
+        unit_files = unit_files + ['com.Nvidia.MTD.Updater.pciechip.service']
+        pciechip_sed_arg = 's/PCIECHIP_MODEL/'
+        pciechip_sed_arg +=pciechip_model
+        pciechip_sed_arg += '/g'
+        run_command('sed', '-i', pciechip_sed_arg, 'com.Nvidia.MTD.Updater.pciechip.service', check: true)
+    endif
+
+    assert(bmc_model != '' or fpga_model !='' or pciechip_model !='' ,  'BMC, FPGA, or PCIECHIP model must be set when using MTD updater')
 endif
 
 if get_option('SWITCHTEC_FUSE_SUPPORT').enabled()
