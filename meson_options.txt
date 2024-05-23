@@ -158,7 +158,7 @@ option(
     'RT_UPDATE_TIMEOUT',
     type: 'integer',
     value: 600,
-    description: 'Retimer update timeout in seconds.'
+    description: 'Retimer update timeout in seconds. Default of 600s is computed by: (~1 minute per retimer update * 8 retimers) + (2 minutes for stopping in-progress retimer background hash computation)'
 )
 
 option(
