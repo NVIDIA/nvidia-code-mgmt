@@ -44,6 +44,11 @@ option('RT_SUPPORTED_MODEL',
        value: '',
        description: 'RT supported models')
 
+option('RT_BUSNAME_INVENTORY',
+       type: 'string',
+       value: '',
+       description: 'Service name for RT Inventory Objects')
+
 option('ORIN_FLASH_SUPPORT',
        type: 'feature',
        value: 'disabled',

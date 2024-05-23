@@ -68,7 +68,7 @@ if get_option('RT_SUPPORT').enabled()
   cdata.set_quoted('RT_SUPPORTED_MODEL', get_option('RT_SUPPORTED_MODEL'))
   cdata.set_quoted('RT_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Item.PCIeDevice')
   cdata.set_quoted('RT_BUSNAME_UPDATER', 'com.Nvidia.Software.RT.Updater')
-  cdata.set_quoted('RT_BUSNAME_INVENTORY', 'xyz.openbmc_project.GpuMgr')
+  cdata.set_quoted('RT_BUSNAME_INVENTORY', get_option('RT_BUSNAME_INVENTORY'))
   cdata.set_quoted('RT_UPDATE_SERVICE', 'rt-update@.service')
   cdata.set_quoted('RT_UPDATE_SINGLE_SERVICE', 'rt-update-direct@.service')
   cdata.set_quoted('RT_INVENTORY_PATH',
