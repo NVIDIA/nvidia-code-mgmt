@@ -248,26 +248,6 @@ void BaseItemUpdater::invokeActivation(
     activation->requestedActivation(Version::RequestedActivations::Active);
 }
 
-bool BaseItemUpdater::doUpdate(Version* version,
-        const std::string& deviceUpdateUnit)
-{
-    try
-    {
-        auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
-                                          SYSTEMD_INTERFACE, "StartUnit");
-        method.append(deviceUpdateUnit, "replace");
-        bus.call_noreply(method);
-        version->startTimer(getTimeout());
-        return true;
-    }
-    catch (const sdbusplus::exception::SdBusError& e)
-    {
-        log<level::ERR>("Error starting service", entry("ERROR=%s", e.what()));
-        version->onUpdateFailed();
-        return false;
-    }
-}
-
 int BaseItemUpdater::initiateUpdateImage(const std::string& objPath,
                                          const std::string& filePath,
                                          const std::string& versionStr,

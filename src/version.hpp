@@ -39,7 +39,6 @@
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
-#include <xyz/openbmc_project/State/ServiceReady/server.hpp>
 
 #include <functional>
 #include <iostream>
@@ -78,8 +77,6 @@ using DeleteInherit = sdbusplus::server::object::object<
 using UpdatePolicyInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Software::server::UpdatePolicy>;
 
-using ServiceReadyInherit = sdbusplus::server::object::object<
-    sdbusplus::xyz::openbmc_project::State::server::ServiceReady>;
 using InventoryInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Inventory::Decorator::server::Asset>;
 
@@ -189,26 +186,6 @@ class UpdatePolicy : public UpdatePolicyInherit
      */
     UpdatePolicy(sdbusplus::bus::bus& bus, const std::string& objPath) :
         UpdatePolicyInherit(bus, objPath.c_str(), action::emit_interface_added)
-
-    {}
-};
-
-/**@class ServiceReady
- *
- *  Concrete implementation of xyz.openbmc_project.State.ServiceReady D-Bus
- *  interface
- *
- */
-class ServiceReady : public ServiceReadyInherit
-{
-  public:
-    /** @brief Constructor
-     *
-     *  @param[in] bus - Bus to attach to
-     *  @param[in] objPath - D-Bus object path
-     */
-    ServiceReady(sdbusplus::bus::bus& bus, const std::string& objPath) :
-        ServiceReadyInherit(bus, objPath.c_str(), action::emit_interface_added)
 
     {}
 };
@@ -364,6 +341,28 @@ class Version : public VersionInherit, public DBUSUtils
         return versionId;
     }
 
+  public:
+    std::unique_ptr<Delete> deleteObject;
+
+    eraseFunc eraseCallback;
+
+  private:
+    /**
+     * @brief unit state change callback
+     *
+     * @param msg
+     */
+    void unitStateChange(sdbusplus::message::message& msg);
+
+    /**
+     * @brief calls update systemd service
+     *
+     * @param inventoryPath
+     * @return true
+     * @return false
+     */
+    bool doUpdate(const std::string& inventoryPath);
+
     /**
      * @brief Timeout handler for non-pldm updates. This method
      *        sets the status to failed if update did not complete
@@ -384,25 +383,6 @@ class Version : public VersionInherit, public DBUSUtils
     }
 
     /**
-     * @brief Call back for systemd service fail
-     *
-     */
-    void onUpdateFailed();
-
-  public:
-    std::unique_ptr<Delete> deleteObject;
-
-    eraseFunc eraseCallback;
-
-  private:
-    /**
-     * @brief unit state change callback
-     *
-     * @param msg
-     */
-    void unitStateChange(sdbusplus::message::message& msg);
-
-    /**
      * @brief calls update services for all inventory paths
      *
      * @return true
@@ -415,6 +395,12 @@ class Version : public VersionInherit, public DBUSUtils
      *
      */
     void onUpdateDone();
+
+    /**
+     * @brief Call back for systemd service fail
+     *
+     */
+    void onUpdateFailed();
 
     /**
      * @brief Prepares for image update

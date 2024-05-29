@@ -45,7 +45,7 @@ using NSActivation = Server::Activation;
 class BaseItemUpdater :
     public DBUSUtils,
     public ActivationListener,
-    virtual public ItemUpdaterUtils
+    public ItemUpdaterUtils
 {
   public:
     /**
@@ -102,17 +102,6 @@ class BaseItemUpdater :
     {
         return _name;
     }
-
-    /**
-     * @brief calls update systemd service
-     *
-     * @param version
-     * @param deviceUpdateUnit
-     * @return true
-     * @return false
-     */
-    bool doUpdate(Version* version,
-            const std::string& deviceUpdateUnit);
 
     /**
      * @brief Intiates the image update
