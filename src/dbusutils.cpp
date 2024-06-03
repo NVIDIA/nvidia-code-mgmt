@@ -111,7 +111,7 @@ any DBUSUtils::getPropertyImpl(const char* service, const char* path,
     method.append(interface, propertyName);
     try
     {
-        PropertyType value{};
+        Value value{};
         auto reply = bus.call(method);
         reply.read(value);
         return any(value);

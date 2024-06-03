@@ -46,7 +46,19 @@ namespace updater
 // See details in https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90415
 using std::experimental::any;
 using std::experimental::any_cast;
+using Value =
+    std::variant<bool, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t,
+                 uint64_t, double, std::string, std::vector<uint8_t>>;
+using Interface = std::string;
+using Property = std::string;
 using PropertyType = std::variant<std::string, bool>;
+using ObjectPath = std::string;
+using Interfaces = std::vector<std::string>;
+using PropertyMap = std::map<Property, Value>;
+using InterfaceMap = std::map<Interface, PropertyMap>;
+using ObjectValueTree = std::map<sdbusplus::message::object_path, InterfaceMap>;
+using MapperServiceMap = std::vector<std::pair<std::string, Interfaces>>;
+using GetSubTreeResponse = std::vector<std::pair<ObjectPath, MapperServiceMap>>;
 
 /**
  * @brief
@@ -109,7 +121,7 @@ class DBUSUtils
                   const char* propertyName) const
     {
         any result = getPropertyImpl(service, path, interface, propertyName);
-        auto value = any_cast<PropertyType>(result);
+        auto value = any_cast<Value>(result);
         return std::get<T>(value);
     }
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=Nvidia FW Status service
+Requires=xyz.openbmc_project.EntityManager
+After=xyz.openbmc_project.EntityManager
+Wants=xyz.openbmc_project.EntityManager
+
+[Service]
+Type=dbus
+BusName=com.Nvidia.FWStatus
+Restart=always
+ExecStart=/usr/bin/fw-status
+
+[Install]
+WantedBy=multi-user.target

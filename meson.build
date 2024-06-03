@@ -234,6 +234,7 @@ ssl = dependency('openssl')
 add_project_link_arguments(['-lstdc++fs'], language: 'cpp')
 
 subdir('src')
+subdir('fw-status')
 
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
   subdir('debug_token')
