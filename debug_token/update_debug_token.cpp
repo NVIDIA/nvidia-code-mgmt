@@ -293,8 +293,9 @@ bool UpdateDebugToken::checkSupportForSPDMandMCTPVDM(
     if (std::find(supportedMsgTypes.begin(), supportedMsgTypes.end(),
                   mctpTypeSPDM) == supportedMsgTypes.end())
     {
-        log<level::INFO>("SPDM not supported on EID={EID}, skipping.",
-                         entry("EID=%d", eid));
+        log<level::INFO>(("SPDM is not supported on EID=" +
+                          std::to_string(eid) + ", skipping.")
+                             .c_str());
         return false;
     }
     if (std::find(supportedMsgTypes.begin(), supportedMsgTypes.end(),
