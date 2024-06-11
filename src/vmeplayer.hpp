@@ -62,8 +62,7 @@ class VmePlayer : public BaseItemUpdater
         getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
                        const std::string& imagePath,
                        const std::string& version,
-                       [[maybe_unused]] const TargetFilter &targetFilter,
-                       [[maybe_unused]] const bool forceUpdate) const override
+                       [[maybe_unused]] const TargetFilter &targetFilter) const override
     {
         std::string args = "";
         args += "\\x20";
@@ -85,7 +84,7 @@ class VmePlayer : public BaseItemUpdater
     {
         std::vector<std::string> ret;
         std::string invPath =
-            std::string(SOFTWARE_OBJPATH) + "/vmeName";
+            std::string(SOFTWARE_OBJPATH) + "/" + vmeName;
         ret.emplace_back(invPath);
         return ret;
     }
