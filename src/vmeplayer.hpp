@@ -13,10 +13,12 @@ namespace updater
 
 class VmePlayer : public BaseItemUpdater
 {   
+  std::string vmeName;  
   public:
-    VmePlayer(sdbusplus::bus::bus& bus) :
-		BaseItemUpdater(bus, VMEPLAYER_SUPPORTED_MODEL, VMEPLAYER_INVENTORY_IFACE, "VMEPLAYER",
-						VMEPLAYER_BUSNAME_UPDATER, VMEPLAYER_SERVICE, false, VMEPLAYER_BUSNAME_INVENTORY)
+    VmePlayer(sdbusplus::bus::bus& bus, std::string vmeN, std::string modelName) :
+		BaseItemUpdater(bus, modelName, VMEPLAYER_INVENTORY_IFACE, "VMEPLAYER_" + vmeN,
+						VMEPLAYER_BUSNAME_UPDATER + vmeN, VMEPLAYER_SERVICE, false, VMEPLAYER_BUSNAME_INVENTORY + vmeN),
+                        vmeName(vmeN)
     {
     }
 
@@ -69,7 +71,7 @@ class VmePlayer : public BaseItemUpdater
         args += "\\x20";
         args += version;
         args += "\\x20";
-        args += "VMEPLAYER";
+        args += vmeName;
         std::replace(args.begin(), args.end(), '/', '-');
         return args;
     }
@@ -83,7 +85,7 @@ class VmePlayer : public BaseItemUpdater
     {
         std::vector<std::string> ret;
         std::string invPath =
-            std::string(SOFTWARE_OBJPATH) + "/VmePlayer";
+            std::string(SOFTWARE_OBJPATH) + "/vmeName";
         ret.emplace_back(invPath);
         return ret;
     }

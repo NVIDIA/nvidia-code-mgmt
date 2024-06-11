@@ -199,7 +199,7 @@ int main(int argc, char** argv)
 #if VMEPLAYER_SUPPORT
     if (updater == "VMEPLAYER")
     {
-        itemUpdater = std::make_unique<VmePlayer>(bus);
+        itemUpdater = std::make_unique<VmePlayer>(bus, targetName, modelName);
     }
 #endif
 

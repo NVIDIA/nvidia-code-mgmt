@@ -1,0 +1,15 @@
+[Unit]
+Description=VMEPlayer CPLD_0 update over JTAG
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u VMEPLAYER -i vme0 -m Nvidia:LATTICE_CPLD_0:0b8e8c7922a44b9ca22cdcc1f14a20eb
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.Vmeplayer.Updater.vme0
+
+[Install]
+WantedBy=multi-user.target

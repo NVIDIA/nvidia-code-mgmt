@@ -89,8 +89,29 @@ if get_option('JAMPLAYER_SUPPORT').enabled()
 endif
 
 if get_option('VMEPLAYER_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.Vmeplayer.service',
-                                'vmeplayer-flash@.service']
+    unit_files = unit_files + ['vmeplayer-flash@.service']
+
+    cpld0_model = get_option('VMEPLAYER0_SUPPORTED_MODEL')
+    if (cpld0_model != '')
+        unit_files = unit_files + ['com.Nvidia.Vmeplayer0.service']
+        cpld0_sed_arg = 's/CPLD0_MODEL/'
+        cpld0_sed_arg += cpld0_model
+        cpld0_sed_arg += '/g'
+        run_command('sed', '-i', cpld0_sed_arg, 'com.Nvidia.Vmeplayer0.service', check: true)
+    endif
+
+    cpld1_model = get_option('VMEPLAYER1_SUPPORTED_MODEL')
+
+    if (cpld1_model != '')
+        unit_files = unit_files + ['com.Nvidia.Vmeplayer1.service']
+        cpld1_sed_arg = 's/CPLD1_MODEL/'
+        cpld1_sed_arg +=cpld1_model
+        cpld1_sed_arg += '/g'
+        run_command('sed', '-i', cpld1_sed_arg, 'com.Nvidia.Vmeplayer1.service', check: true)
+    endif
+
+    assert(cpld0_model != '' or cpld1_model !='', 'Lattice CPLD0 or CPLD1 model must be set when using VME updater')
+
 endif
 
 foreach unit : unit_files

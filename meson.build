@@ -153,10 +153,9 @@ endif
 
 if get_option('VMEPLAYER_SUPPORT').enabled()
   add_project_arguments('-DVMEPLAYER_SUPPORT', language : ['c','cpp'])
-  cdata.set_quoted('VMEPLAYER_SUPPORTED_MODEL', get_option('VMEPLAYER_SUPPORTED_MODEL'))
   cdata.set_quoted('VMEPLAYER_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
-  cdata.set_quoted('VMEPLAYER_BUSNAME_UPDATER', 'com.Nvidia.Software.Vmeplayer.Updater')
-  cdata.set_quoted('VMEPLAYER_BUSNAME_INVENTORY', 'com.Nvidia.Vmeplayer')
+  cdata.set_quoted('VMEPLAYER_BUSNAME_UPDATER', 'com.Nvidia.Software.Vmeplayer.Updater.')
+  cdata.set_quoted('VMEPLAYER_BUSNAME_INVENTORY', 'com.Nvidia.Vmeplayer.')
   cdata.set_quoted('VMEPLAYER_SERVICE', 'vmeplayer-flash@.service')
   cdata.set('VMEPLAYER_TIMEOUT', get_option('VMEPLAYER_TIMEOUT'))
 endif

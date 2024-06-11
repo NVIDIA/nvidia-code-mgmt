@@ -1,5 +1,5 @@
 [Unit]
-Description=Update FPGA over JTAG by using JAM player
+Description=Update FPGA over JTAG by using VME player
 
 [Service]
 Type=oneshot

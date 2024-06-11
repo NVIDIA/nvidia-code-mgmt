@@ -129,7 +129,12 @@ option('VMEPLAYER_SUPPORT',
        value: 'disabled',
        description: 'Enables support to update Lattice CPLD over JTAG.')
 
-option('VMEPLAYER_SUPPORTED_MODEL',
+option('VMEPLAYER0_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'Lattice supported models')
+
+option('VMEPLAYER1_SUPPORTED_MODEL',
        type: 'string',
        value: '',
        description: 'Lattice supported models')
