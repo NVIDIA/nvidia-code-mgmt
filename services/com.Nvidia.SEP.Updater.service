@@ -1,0 +1,15 @@
+[Unit]
+Description=IGX Code Manager for Safety Extension Packages Flash
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u SEP
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.SEP.Updater
+
+[Install]
+WantedBy=multi-user.target

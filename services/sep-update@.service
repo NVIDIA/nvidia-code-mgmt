@@ -1,0 +1,9 @@
+
+[Unit]
+Description=Flash Safety Extension Package on IGX
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/sep-flash.sh $ARGS

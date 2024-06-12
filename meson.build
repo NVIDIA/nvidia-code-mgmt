@@ -101,6 +101,16 @@ if get_option('SMCU_FLASH_SUPPORT').enabled()
   cdata.set_quoted('SMCU_UPDATE_SERVICE', 'smcu-update@.service')
 endif
 
+if get_option('SEP_FLASH_SUPPORT').enabled()
+  add_project_arguments('-DSEP_FLASH_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('SEP_SUPPORTED_MODEL', get_option('SEP_SUPPORTED_MODEL'))
+  cdata.set_quoted('SEP_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('SEP_BUSNAME_UPDATER', 'com.Nvidia.Software.SEP.Updater')
+  cdata.set_quoted('SEP_BUSNAME_INVENTORY', 'com.Nvidia.SEP')
+  cdata.set_quoted('SEP_UPDATE_SERVICE', 'sep-update@.service')
+  cdata.set('SEP_TIMEOUT', get_option('SEP_TIMEOUT'))
+endif
+
 if get_option('PEX_SUPPORT').enabled()
   add_project_arguments('-DPEX_SUPPORT', language : ['c','cpp'])
   cdata.set_quoted('PEX_SUPPORTED_MODEL', get_option('PEX_SUPPORTED_MODEL'))

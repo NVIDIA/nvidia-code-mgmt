@@ -84,6 +84,21 @@ option('SMCU_SUPPORTED_MODEL',
        value: '',
        description: 'SMCU supported models')
 
+option('SEP_FLASH_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables IGX Safety Extension Package flash support.')
+
+option('SEP_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'IGX Safety Extension Package supported models.')
+
+option('SEP_TIMEOUT',
+       type: 'integer',
+       value: 1800,
+       description: 'IGX Safety Extension Package timeout in seconds.')
+
 option('PEX_SUPPORT',
        type: 'feature',
        value: 'disabled',

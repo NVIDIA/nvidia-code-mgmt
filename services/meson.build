@@ -45,6 +45,11 @@ if get_option('SMCU_FLASH_SUPPORT').enabled()
                                 'smcu-update@.service']
 endif
 
+if get_option('SEP_FLASH_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.SEP.Updater.service',
+                                'sep-update@.service']
+endif
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     unit_files = unit_files + ['com.Nvidia.DebugTokenInstall.Updater.service',
                                 'com.Nvidia.DebugTokenErase.Updater.service',

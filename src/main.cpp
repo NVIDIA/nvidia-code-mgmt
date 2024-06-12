@@ -42,6 +42,9 @@
 #ifdef SMCU_FLASH_SUPPORT
 #include "smcu_updater.hpp"
 #endif
+#ifdef SEP_FLASH_SUPPORT
+#include "sep_updater.hpp"
+#endif
 #ifdef DEBUG_TOKEN_SUPPORT
 #include "debug_token_install.hpp"
 #include "debug_token_erase.hpp"
@@ -169,6 +172,12 @@ int main(int argc, char** argv)
     if (updater == "SMCU")
     {
         itemUpdater = std::make_unique<SMCUItemUpdater>(bus);
+    }
+#endif
+#if SEP_FLASH_SUPPORT
+    if (updater == "SEP")
+    {
+        itemUpdater = std::make_unique<SEPItemUpdater>(bus);
     }
 #endif
 #if GLACIER_RECOVERY_SUPPORT
