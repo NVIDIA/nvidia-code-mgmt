@@ -10,9 +10,9 @@ using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 
 using namespace phosphor::logging;
 
-const std::string firmwareNotInRecovery{"OpenBMC.0.4.FirmwareNotInRecovery"};
-const std::string recoverySuccessful{"OpenBMC.0.4.RecoverySuccessful"};
-const std::string recoveryStarted{"OpenBMC.0.4.RecoveryStarted"};
+const std::string firmwareNotInRecovery{"NvidiaUpdate.1.0.FirmwareNotInRecovery"};
+const std::string recoverySuccessful{"NvidiaUpdate.1.0.RecoverySuccessful"};
+const std::string recoveryStarted{"NvidiaUpdate.1.0.RecoveryStarted"};
 const std::string resourceErrorsDetected{
     "ResourceEvent.1.0.ResourceErrorsDetected"};
 
