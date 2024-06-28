@@ -6,7 +6,7 @@ Wants=obmc-mapper.target
 After=obmc-mapper.target
 
 [Service]
-ExecStart=/usr/bin/code-manager -u VMEPLAYER -i vme1 -m Nvidia:LATTICE_CPLD_1:cef4dcOf18e94423b83d572ffecc9408
+ExecStart=/usr/bin/code-manager -u VMEPLAYER -i vme1 -m CPLD1_MODEL
 Restart=always
 Type=dbus
 BusName=com.Nvidia.Software.Vmeplayer.Updater.vme1
