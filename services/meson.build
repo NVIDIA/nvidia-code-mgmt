@@ -1,6 +1,8 @@
 unit_files = []
 
-unit_files = unit_files + ['com.Nvidia.FWStatus.service']
+if get_option('FWSTATUS_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.FWStatus.service']
+endif
 
 if get_option('PSU_SUPPORT').enabled()
     unit_files = unit_files + ['com.Nvidia.PSU.Updater.service',

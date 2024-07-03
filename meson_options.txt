@@ -1,4 +1,9 @@
 
+option('FWSTATUS_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables firmware status support')
+
 option('PSU_SUPPORT',
        type: 'feature',
        value: 'disabled',
