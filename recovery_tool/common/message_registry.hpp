@@ -31,6 +31,7 @@ enum class RecoveryProtocol : uint8_t
     GlacierRecovery = 0x0,
     OCPRecoveryStatusError = 0x1,
     OCPRecoveryProtocolError = 0x2,
+    OCPDeviceStatusCode = 0x2,
     OCPRecovery = 0x3
 };
 
@@ -87,6 +88,12 @@ enum class OCPRecoveryStatus : uint8_t
     RecoveryImgAuthFailed = 0xD,
     ErrorEnteringRecoveryMode = 0xE,
     InvalidCms = 0xF
+};
+
+enum class OCPDeviceStatusCode : int
+{
+    DeviceError = 0x2,
+    FatalError = 0xF
 };
 
 enum class OCPRecoveryProtocolError : uint8_t
@@ -296,6 +303,15 @@ static ErrorMapping ocpRecoveryStatusErrorMapping{
       "recovery mode, and try recovery again using the correct package."}},
 };
 
+static ErrorMapping ocpDeviceStatusErrorMapping{
+    {static_cast<ErrorCode>(OCPDeviceStatusCode::DeviceError),
+     {"Device Error",
+      "Try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(OCPDeviceStatusCode::FatalError),
+     {"Fatal Error detected",
+      "Try recovery again using the correct package."}},
+};
+
 static ErrorMapping ocpRecoveryProtocolErrorMapping{
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::UnsupportedWriteCommand),
      {"Unsupported Write Command",
@@ -323,6 +339,7 @@ static const RecoveryErrorMapping recoveryMappingTbl = {
     {RecoveryProtocol::GlacierRecovery, glacierRecoveryErrorMapping},
     {RecoveryProtocol::OCPRecovery, ocpRecoveryErrorMapping},
     {RecoveryProtocol::OCPRecoveryStatusError, ocpRecoveryStatusErrorMapping},
+    {RecoveryProtocol::OCPDeviceStatusCode, ocpDeviceStatusErrorMapping},
     {RecoveryProtocol::OCPRecoveryProtocolError,
      ocpRecoveryProtocolErrorMapping},
 };

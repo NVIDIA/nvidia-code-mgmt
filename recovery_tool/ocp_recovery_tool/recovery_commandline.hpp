@@ -3,6 +3,7 @@
 #include "message_registry.hpp"
 #include <nlohmann/json.hpp>
 #include <sdbusplus/server.hpp>
+#include <tuple>
 #include <xyz/openbmc_project/Logging/Entry/server.hpp>
 
 namespace recovery_tool
@@ -10,8 +11,11 @@ namespace recovery_tool
     namespace recovery_commands
     {
         class OCPRecoveryCommands;
+        enum class OperationalStatus : uint8_t;
     }
 }
+
+using OperationalStatus = recovery_tool::recovery_commands::OperationalStatus;
 
 namespace ocp_recovery_commandline
 {
@@ -187,11 +191,42 @@ class OCPRecoveryCommandLine
     RecoveryReturnCode performRecovery(const std::vector<std::string>& imagePaths) const noexcept;
 
   private:
+    /**
+     * @brief Check whether the GPU is operational state
+     * @return A JSON object representing the recovery status.
+     */
+    std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError, RecoveryStatus> getOperationalStatus() const noexcept;
+
+    /**
+     * @brief Converts DeviceStatus enumeration to its string representation.
+     * @param status The DeviceStatus value.
+     * @return The string representation of DeviceStatus.
+     */
+    std::string deviceStatusToStr(DeviceStatusCode status) const noexcept;
+
+    /**
+     * @brief Converts ProtocolError enumeration to its string representation.
+     * @param error The ProtocolError value.
+     * @return The string representation of ProtocolError.
+     */
+    std::string protocolErrorToStr(ProtocolError error) const noexcept;
+
+    /**
+     * @brief Converts RecoveryReasonCode enumeration to its string
+     * representation.
+     * @param code The RecoveryReasonCode value.
+     * @return The string representation of RecoveryReasonCode.
+     */
+    std::string recoveryReasonCodeToStr(RecoveryReasonCode code) const noexcept;
+
+
+  private:
     bool verbose;
     std::string device;
     std::unique_ptr<recovery_tool::recovery_commands::OCPRecoveryCommands> recoveryCommands;
     sdbusplus::bus::bus bus = sdbusplus::bus::new_default();
     MessageRegistry registry;
+
 };
 
 } // namespace ocp_recovery_commandline

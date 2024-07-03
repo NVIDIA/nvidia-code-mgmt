@@ -99,6 +99,17 @@ enum class ActivateRecoveryImage : uint8_t
     // Values from 0x10 to 0xFF are reserved
 };
 /**
+ * @enum OperationalStatus
+ * @brief Enumerates operational status for the gpu
+ */
+enum class OperationalStatus : uint8_t
+{
+    Operational = 0x0,
+    RecoveryMode = 0x1,
+    UnknownState = 0x2,
+    Unreachable = 0x3
+};
+/**
  * @class OCPRecoveryCommands
  * @brief Utility for executing recovery commands on OCP devices.
  */
