@@ -104,6 +104,7 @@ class OCPRecoveryCommands
     bool verbose;
     bool emulation;
     int i2cFile;
+    static constexpr size_t chunkSize = 252;
 
     /**
      * @brief Constructs the path to the I2C device.
@@ -138,7 +139,17 @@ class OCPRecoveryCommands
      * @param data A vector containing the chunk of recovery image data to be sent.
      * @return true if successful, false otherwise.
      */
-    bool setIndirectDataCommand(const std::vector<uint8_t>& data);
+    bool sendIndirectDataCommand(const std::vector<uint8_t>& data);
+
+    /**
+     * @brief Writes a chunk of recovery image to the device
+     * @param imageName The type of image.
+     * @param imageData The data of the recovery image.
+     * @param offset The offset indicating the beginning of chunk
+     * @return true if successful, false otherwise.
+     */
+    bool writeRecoveryChunk(const std::string_view imageName, const std::vector<uint8_t>& imageData,
+                            const size_t offset);
 
     /**
      * @brief Writes the recovery image to the device.

@@ -114,7 +114,7 @@ bool OCPRecoveryCommands::setIndirectControlRegisterCommand(ImageType imageType)
         i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose);
 }
 
-bool OCPRecoveryCommands::setIndirectDataCommand(
+bool OCPRecoveryCommands::sendIndirectDataCommand(
     const std::vector<uint8_t>& data)
 {
     constexpr size_t cmdHeaderSize = 2; // 2 for cmd_id and length of payload
@@ -199,40 +199,65 @@ bool OCPRecoveryCommands::isDeviceReadyForTx()
     return false;
 }
 
-bool OCPRecoveryCommands::writeRecoveryImage(
-    const std::string& imageName, const std::vector<uint8_t>& imageData)
+bool OCPRecoveryCommands::writeRecoveryChunk(const std::string_view imageName, const std::vector<uint8_t>& imageData,
+        const size_t offset)
 {
-    constexpr size_t chunkSize = 252;
+    static uint8_t lastLoggedProgress = 0;
     size_t imageSize = imageData.size();
-    uint8_t lastLoggedProgress = 0;
-    std::cout << "Initiating recovery image write process...\n";
-    for (size_t offset = 0; offset < imageSize; offset += chunkSize)
+    size_t remainingSize = imageSize - offset;
+    size_t currentChunkSize = std::min(chunkSize, remainingSize);
+    std::vector<uint8_t> dataChunk(imageData.begin() + offset,
+                                   imageData.begin() + offset +
+                                       currentChunkSize);
+
+    if (offset == 0)
     {
-        size_t remainingSize = imageSize - offset;
-        size_t currentChunkSize = std::min(chunkSize, remainingSize);
-        std::vector<uint8_t> dataChunk(imageData.begin() + offset,
-                                       imageData.begin() + offset +
-                                           currentChunkSize);
+        lastLoggedProgress = 0;
+    }
 
-        uint8_t progress =
-            static_cast<uint8_t>(((offset + currentChunkSize) * 100) / imageSize);
+    uint8_t progress =
+        static_cast<uint8_t>(((offset + currentChunkSize) * 100) / imageSize);
 
-        if ((progress / 10) > (lastLoggedProgress / 10))
+    if ((progress / 10) > (lastLoggedProgress / 10))
+    {
+        lastLoggedProgress = progress;
+        std::string progressMessage = fmt::format(
+            "Writing Image ({}), Progress: {}% ({} / {} bytes)", imageName,
+            progress, (offset + currentChunkSize), imageSize);
+        std::cout << progressMessage << "\n";
+    }
+
+    static constexpr size_t retryAttemptsPerChunk = 3;
+    bool writeStatus = false;
+    for (size_t attempt = 0; attempt < retryAttemptsPerChunk; ++attempt)
+    {
+        if (!sendIndirectDataCommand(dataChunk))
         {
-            lastLoggedProgress = progress;
-            std::string progressMessage = fmt::format(
-                "Writing Image ({}), Progress: {}% ({} / {} bytes)", imageName,
-                progress, (offset + currentChunkSize), imageSize);
-            std::cout << progressMessage << "\n";
-        }
-        if (!setIndirectDataCommand(dataChunk))
-        {
-            return false;
+            continue;
         }
         if (!isDeviceReadyForTx())
         {
+            continue;
+        }
+        writeStatus = true;
+        break;
+    }
+    return writeStatus;
+}
+
+bool OCPRecoveryCommands::writeRecoveryImage(
+    const std::string& imageName, const std::vector<uint8_t>& imageData)
+{
+    size_t imageSize = imageData.size();
+    std::cout << "Initiating recovery image write process...\n";
+
+    for (size_t offset = 0; offset < imageSize; offset += chunkSize)
+    {
+        if (!writeRecoveryChunk(imageName, imageData, offset))
+        {
             return false;
         }
+
     }
     return true;
 }
