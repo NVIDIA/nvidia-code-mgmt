@@ -37,21 +37,8 @@ std::unordered_map<std::string, std::string> MCTPDiscoveryResource::getMCTPObjec
     const auto& mctpCtrlServices = getMctpServices();
     for (const auto& serviceName : mctpCtrlServices)
     {
-        nvidia::software::updater::ObjectValueTree objects{};
-        try
-        {
-            nvidia::software::updater::ObjectValueTree tmpObjects{};
-            auto method = bus.new_method_call(serviceName.c_str(), "/xyz/openbmc_project/mctp",
-                    "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
-            auto reply = bus.call(method);
-            reply.read(tmpObjects);
-            objects.insert(tmpObjects.begin(), tmpObjects.end());
-        }
-        catch (const std::exception& e)
-        {
-            lg2::error("D-Bus error while fetching managed objects for {SERVICE}: {ERROR} ",
-                    "SERVICE", serviceName, "ERROR", e.what());
-        }
+        auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+        const auto objects = dbusUtil.getManagedObjects(serviceName.c_str(),  "/xyz/openbmc_project/mctp");
 
         for (const auto& [objectPath, interfaces] : objects)
         {

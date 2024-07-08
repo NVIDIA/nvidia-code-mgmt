@@ -207,6 +207,29 @@ bool DBUSUtils::findSoftwareObject(std::string& objPath)
     }
     return true;
 }
+
+ObjectValueTree DBUSUtils::getManagedObjects(const char* service,
+                                      const char* objManagerPath) const noexcept
+{
+    ObjectValueTree managedObjects{};
+    try
+    {
+        ObjectValueTree tmpObjects{};
+        auto method = bus.new_method_call(service, objManagerPath,
+                "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
+        auto reply = bus.call(method);
+        reply.read(tmpObjects);
+        managedObjects.insert(tmpObjects.begin(), tmpObjects.end());
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "D-Bus error while fetching managed objects for "<< service
+                  << ": " << e.what()  << std::endl;
+    }
+
+    return managedObjects;
+}
+
 } // namespace updater
 } // namespace software
 } // namespace nvidia

@@ -151,6 +151,16 @@ class DBUSUtils
     std::vector<std::string> getSoftwareObjects();
 
     /**
+     * @brief Get the Managed Objects from an object manager
+     *
+     * @param service
+     * @param objManagerPath
+     * @return std::vector<std::string>
+     */
+    ObjectValueTree getManagedObjects(const char* service,
+                                      const char* objManagerPath) const noexcept;
+
+    /**
      * @brief
      *
      * @param objPath

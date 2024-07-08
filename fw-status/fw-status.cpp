@@ -63,21 +63,8 @@ int main()
 
     bus.request_name(fwStatusService);
 
-    nvidia::software::updater::ObjectValueTree managedObjects{};
-    try
-    {
-        nvidia::software::updater::ObjectValueTree tmpObjects{};
-        auto method = bus.new_method_call(entityManagerService, entityManagerObjManager,
-                "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
-        auto reply = bus.call(method);
-        reply.read(tmpObjects);
-        managedObjects.insert(tmpObjects.begin(), tmpObjects.end());
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error("D-Bus error while fetching managed objects for {SERVICE}: {ERROR} ",
-                "SERVICE", entityManagerService, "ERROR", e.what());
-    }
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
+    const auto managedObjects = dbusUtil.getManagedObjects(entityManagerService, entityManagerObjManager);
 
     std::vector<std::unique_ptr<BaseResource>> resources;
 
