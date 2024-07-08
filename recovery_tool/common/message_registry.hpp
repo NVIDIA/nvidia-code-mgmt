@@ -25,6 +25,7 @@ using ErrorMapping = std::unordered_map<ErrorCode, MessageMapping>;
 
 ErrorCode constexpr deviceRecoveryFailed = 0x70;
 ErrorCode constexpr deviceNotResponding = 0x71;
+ErrorCode constexpr noDevicesFound = 0x72;
 
 enum class RecoveryProtocol : uint8_t
 {
@@ -133,7 +134,8 @@ enum class GalcierRecoveryCompletionCode : uint8_t
     FailedToReadVendorDetails = 0x11,
     FailedToReadHeader = 0x12,
     FailedToReadKHB = 0x13,
-    FailedToReadFWImage = 0x14
+    FailedToReadFWImage = 0x14,
+    NoDevicesFound = 0xFF
 };
 
 /**
@@ -209,6 +211,9 @@ static ErrorMapping glacierRecoveryErrorMapping{
     {deviceRecoveryFailed,
      {"Recovery failed due to unknown error",
       "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {noDevicesFound,
+     {"No Devices found to recover",
+      ""}},
 };
 
 static ErrorMapping ocpRecoveryErrorMapping{
@@ -310,6 +315,9 @@ static ErrorMapping ocpRecoveryProtocolErrorMapping{
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::GeneralProtocolError),
      {"General Protocol Error. Error in communicating with device",
       "Check if firmware is in recovery, and try recovery again using the correct package."}},
+    {noDevicesFound,
+     {"No Devices found to recover",
+      ""}},
 };
 
 static const RecoveryErrorMapping recoveryMappingTbl = {

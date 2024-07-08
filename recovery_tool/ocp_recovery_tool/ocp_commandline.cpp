@@ -1,15 +1,17 @@
 #include "recoverytool_utils.hpp"
 #include "recovery_commandline.hpp"
+#include "message_registry.hpp"
+#include "dbusutils.hpp"
 
 #include <CLI/CLI.hpp>
-#include <nlohmann/json.hpp>
-using json = nlohmann::json;
-using BusAddr = int;
-using SlaveAddr = int;
-using Address = int;
-using Device = std::string;
-using DeviceAddressConfig = std::map<Device, std::map<std::string, Address>>;
+#include <phosphor-logging/lg2.hpp>
+
 using RecoveryReturnCode = ocp_recovery_commandline::RecoveryReturnCode ;
+using namespace phosphor::logging;
+
+constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
+constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
+constexpr auto ocpObjInterface = "xyz.openbmc_project.Configuration.OCPRecovery";
 
 struct CommandOptions
 {
@@ -22,36 +24,51 @@ struct CommandOptions
     bool emulation;
 };
 
-DeviceAddressConfig parseConfig(const std::string& configPath)
+auto& getBus()
 {
-    std::ifstream fp(configPath);
-    if (!fp.is_open())
-    {
-        std::cerr << "Failed to open JSON file." << std::endl;
-        return {};
-    }
-    json data{};
-    try
-    {
-        data = json::parse(fp);
-    }
-    catch (json::parse_error& ex)
-    {
-        std::cerr << "Failed to parse config json due to error at byte "
-                  << ex.what() << std::endl;
-    }
-    return data.get<DeviceAddressConfig>();
+    static auto bus = sdbusplus::bus::new_default();
+    return bus;
+}
+
+std::pair<uint32_t, uint32_t> getI2CBusAndAddress(const std::string& objPath, const std::string& interface)
+{
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
+    auto i2cBus = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
+            interface.c_str(), "I2CBus");
+    auto i2cAddress = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
+            interface.c_str(), "I2CAddress");
+
+    return {i2cBus, i2cAddress};
 }
 
 bool performRecovery(const CommandOptions& opts)
 {
-    const auto& configData = parseConfig(opts.configPath);
+    auto& bus = getBus();
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+    const auto managedObjects = dbusUtil.getManagedObjects(entityManagerService, entityManagerObjManager);
     bool retCode = false;
+    std::unique_ptr<MessageRegistry> messageRegistry =
+        std::make_unique<MessageRegistry>(bus);
 
-    for (const auto& [device, addressMap] : configData)
+    if (managedObjects.empty())
     {
-        const auto busAddr = addressMap.at("Bus Address");
-        const auto slaveAddr = addressMap.at("Slave Address");
+        lg2::error("No Devices found to recover");
+        messageRegistry->createMessageRegistryResourceErrors(
+            resourceErrorsDetected, RecoveryProtocol::OCPRecoveryProtocolError,
+            static_cast<ErrorCode>(noDevicesFound), "OCPRecovery");
+        retCode = true;
+    }
+
+    for (const auto& [emObjectPath, interfaces] : managedObjects)
+    {
+        if (!interfaces.contains(ocpObjInterface))
+        {
+            continue;
+        }
+
+        lg2::info("Found OCP recovery config Object: {PATH}", "PATH", emObjectPath);
+        const auto [busAddr, slaveAddr] = getI2CBusAndAddress(emObjectPath, ocpObjInterface);
+        const auto& device = emObjectPath.filename();
         ocp_recovery_commandline::OCPRecoveryCommandLine ocpRecoveryCommandlineObj(device,
             busAddr, slaveAddr, opts.verbose, opts.emulation);
         auto status = ocpRecoveryCommandlineObj.performRecovery({opts.fspImagePath, opts.oobhubImagePath});
@@ -68,9 +85,6 @@ int main(int argc, char** argv)
     CLI::App app{"Command line interface for OCP recovery"};
     CommandOptions opts{};
 
-    app.add_option("config", opts.configPath, "Path to config file")
-        ->required()
-        ->check(CLI::ExistingFile);
     app.add_option("oobhub_image", opts.oobhubImagePath, "Path to oobhub Image")
         ->required()
         ->check(CLI::ExistingFile);

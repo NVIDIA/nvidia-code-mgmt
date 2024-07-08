@@ -3,7 +3,10 @@ configure_file(output: 'config.h',
 )
 
 common_dir = '../common'
-common_inc = include_directories(common_dir)
+dbus_utils_dir = '../../src'
+inc_dirs = include_directories(['.', '../../src/',
+    '../common',
+    ])
 
 recovery_tool_source_files = [
   'recoverytool_interface.cpp',
@@ -14,7 +17,7 @@ recovery_tool_source_files = [
 
 executable( 'ocp-recovery-tool',
             sources: recovery_tool_source_files,
-            include_directories: common_inc,
+            include_directories: inc_dirs,
             dependencies: [
                 fmt,
                 CLI11_dep,
@@ -30,12 +33,13 @@ commandline_source_files = [
   'recoverytool_utils.cpp',
   join_paths(common_dir, 'i2c_utils.cpp'),
   join_paths(common_dir, 'message_registry.cpp'),
+  join_paths(dbus_utils_dir, 'dbusutils.cpp'),
   'recovery_commands.cpp',
 ]
 
 executable( 'ocp-commandline',
             sources: commandline_source_files,
-            include_directories: common_inc,
+            include_directories: inc_dirs,
             dependencies: [
                 fmt,
                 CLI11_dep,

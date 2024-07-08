@@ -29,6 +29,7 @@
 
 #include <phosphor-logging/elog.hpp>
 #include <phosphor-logging/log.hpp>
+#include <phosphor-logging/lg2.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -223,8 +224,7 @@ ObjectValueTree DBUSUtils::getManagedObjects(const char* service,
     }
     catch (const std::exception& e)
     {
-        std::cerr << "D-Bus error while fetching managed objects for "<< service
-                  << ": " << e.what()  << std::endl;
+        lg2::error("GetManagedObjects call failed for {PATH}",  "PATH", objManagerPath);
     }
 
     return managedObjects;

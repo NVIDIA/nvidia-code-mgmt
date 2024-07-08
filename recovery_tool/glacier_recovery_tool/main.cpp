@@ -3,38 +3,38 @@
 #include "glacier_recovery_commands.hpp"
 #include "message_registry.hpp"
 
-#include <nlohmann/json.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
+#include "dbusutils.hpp"
 
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 
-using json = nlohmann::json;
 using namespace phosphor::logging;
 using RecoveryResult =
     glacier_recovery_tool::glacier_recovery_commands::RecoveryResult;
+constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
+constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
+constexpr auto glacierCrisisObjInterface = "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
 
 static constexpr uint8_t delay1sec = 1;
 
-json loadJSONFile(const std::filesystem::path& path)
+auto& getBus()
 {
-    std::ifstream ifs(path);
+    static auto bus = sdbusplus::bus::new_default();
+    return bus;
+}
 
-    if (!ifs)
-    {
-        throw std::runtime_error("Unable to open file PATH=" + path.string());
-    }
-    try
-    {
-        return nlohmann::json::parse(ifs);
-    }
-    catch (const std::exception& e)
-    {
-        throw std::runtime_error("Failed to parse JSON PATH=" + path.string() +
-                                 ", REASON: " + e.what());
-    }
+std::pair<uint32_t, uint32_t> getI2CBusAndAddress(const std::string& objPath, const std::string& interface)
+{
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
+    auto i2cBus = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
+            interface.c_str(), "I2CBus");
+    auto i2cAddress = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
+            interface.c_str(), "I2CAddress");
+
+    return {i2cBus, i2cAddress};
 }
 
 int main(int argc, char** argv)
@@ -44,29 +44,33 @@ int main(int argc, char** argv)
         lg2::error("Invalid number of arguments");
         return -1;
     }
-    json configData = {};
-    try
-    {
-        std::filesystem::path configJsonPath =
-            "/usr/share/nvidia-code-mgmt/glacier_recovery_config.json";
-        configData = loadJSONFile(configJsonPath);
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error(e.what());
-        return -1;
-    }
-    int recoveryTaskState = 0;
-    auto bus = sdbusplus::bus::new_default();
+    auto& bus = getBus();
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
+    const auto managedObjects = dbusUtil.getManagedObjects(entityManagerService, entityManagerObjManager);
     std::unique_ptr<MessageRegistry> messageRegistry =
         std::make_unique<MessageRegistry>(bus);
-    for (const auto& [device, i2cAddMap] : configData.items())
+    if (managedObjects.empty())
     {
+        lg2::error("No Devices found to recover");
+        messageRegistry->createMessageRegistryResourceErrors(
+            resourceErrorsDetected, RecoveryProtocol::GlacierRecovery,
+            static_cast<ErrorCode>(noDevicesFound), "GlacierCrisisRecovery");
+        return -1;
+    }
+
+    int recoveryTaskState = 0;
+    for (const auto& [emObjectPath, interfaces] : managedObjects)
+    {
+        if (!interfaces.contains(glacierCrisisObjInterface))
+        {
+            continue;
+        }
+
+        lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
+        const auto [busAdd, slaveAdd] = getI2CBusAndAddress(emObjectPath, glacierCrisisObjInterface);
+        const auto& device = emObjectPath.filename();
         try
         {
-            const auto busAdd = i2cAddMap.at("busAddr").get<int>();
-            const auto slaveAdd = i2cAddMap.at("slaveAddr").get<int>();
-
             auto glacierRecoveryObj = std::make_unique<
                 glacier_recovery_tool::glacier_recovery_commands::
                     GlacierRecoveryCommands>(busAdd, slaveAdd, false);

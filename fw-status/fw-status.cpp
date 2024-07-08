@@ -68,22 +68,22 @@ int main()
 
     std::vector<std::unique_ptr<BaseResource>> resources;
 
-    for (const auto& [emmObjectPath, interfaces] : managedObjects)
+    for (const auto& [emObjectPath, interfaces] : managedObjects)
     {
         if (interfaces.contains(ocpObjInterface))
         {
-            lg2::info("Found OCP recovery config Object: {PATH}", "PATH", emmObjectPath);
-            const auto [i2cBus, i2cAddress] = getI2CBusAndAddress(emmObjectPath, ocpObjInterface);
-            const auto uuid = getUUID(emmObjectPath, ocpObjInterface);
-            const auto objPath = getSoftwareDBusObjectPath(emmObjectPath);
+            lg2::info("Found OCP recovery config Object: {PATH}", "PATH", emObjectPath);
+            const auto [i2cBus, i2cAddress] = getI2CBusAndAddress(emObjectPath, ocpObjInterface);
+            const auto uuid = getUUID(emObjectPath, ocpObjInterface);
+            const auto objPath = getSoftwareDBusObjectPath(emObjectPath);
             resources.push_back(std::make_unique<GpuResource>(bus, objPath, i2cBus, i2cAddress, uuid));
         }
         else if (interfaces.contains(glacierCrisisObjInterface))
         {
-            lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH", emmObjectPath);
-            const auto [i2cBus, i2cAddress] = getI2CBusAndAddress(emmObjectPath, glacierCrisisObjInterface);
-            const auto uuid = getUUID(emmObjectPath, glacierCrisisObjInterface);
-            const auto objPath = getSoftwareDBusObjectPath(emmObjectPath);
+            lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
+            const auto [i2cBus, i2cAddress] = getI2CBusAndAddress(emObjectPath, glacierCrisisObjInterface);
+            const auto uuid = getUUID(emObjectPath, glacierCrisisObjInterface);
+            const auto objPath = getSoftwareDBusObjectPath(emObjectPath);
             resources.push_back(std::make_unique<ERoTResource>(bus, objPath, i2cBus, i2cAddress, uuid));
         }
     }

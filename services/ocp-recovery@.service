@@ -6,5 +6,5 @@ Description=OCP Recovery Utility
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=/usr/bin/ocp-commandline /usr/share/nvidia-code-mgmt/ocp_recovery_config.json $ARGS
+ExecStart=/usr/bin/ocp-commandline $ARGS
 
