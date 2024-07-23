@@ -47,7 +47,7 @@ std::unordered_map<std::string, std::string> MCTPDiscoveryResource::getMCTPObjec
                 continue;
             }
             const auto& mctpUUID = std::get<std::string>(interfaces.at(uuidIntfName).at("UUID"));
-            if (mctpUUID.c_str() != uuid())
+            if (mctpUUID.c_str() != uuid)
             {
                 continue;
             }
@@ -85,7 +85,7 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects()
     }
 }
 
-bool MCTPDiscoveryResource::checkForEnabledMCTPEids()
+bool MCTPDiscoveryResource::checkForEnabledMCTPEids() const noexcept
 {
     auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
     bool ret = false;
