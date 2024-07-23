@@ -23,7 +23,7 @@ DeviceStatus OCPRecoveryCommandLine::getDeviceStatus() const noexcept
     if (!success)
     {
         lg2::error(std::string("Error while getting Device Status: " + errorMsg).c_str());
-        return {DeviceStatusCode::CommandFailure, RecoveryReasonCode::BFNF, ProtocolError::GeneralProtocolError};
+        return {DeviceStatusCode::CommandFailure, RecoveryReasonCode::BFNF, ProtocolError::DeviceNotResponding};
     }
     return {static_cast<DeviceStatusCode>(hexData[1]), static_cast<RecoveryReasonCode>(hexData[4] << 8 | hexData[3]),
         static_cast<ProtocolError>(hexData[2])};
@@ -83,6 +83,8 @@ std::string OCPRecoveryCommandLine::protocolErrorToStr(ProtocolError error) cons
             return "CRC Error";
         case ProtocolError::GeneralProtocolError:
             return "General Protocol Error";
+        case ProtocolError::DeviceNotResponding:
+            return "Device Not Responding";
         default:
             return "Reserved/Unknown";
     }
@@ -158,7 +160,7 @@ std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError, RecoveryStatus> O
     auto recoveryStatus = getRecoveryStatus();
     if (recoveryStatus == RecoveryStatus::CommandFailure)
     {
-        return {OperationalStatus::Unreachable, deviceStatus.statusCode, ProtocolError::GeneralProtocolError,
+        return {OperationalStatus::Unreachable, deviceStatus.statusCode, ProtocolError::DeviceNotResponding,
             RecoveryStatus::NotInRecoveryMode};
     }
 
@@ -210,7 +212,7 @@ RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
            RecoveryProtocol::OCPRecoveryProtocolError,
            static_cast<ErrorCode>(protocolError),
            device);
-        return RecoveryReturnCode::SKIPPED;
+        return RecoveryReturnCode::FAILURE;
     }
 
     if (operationalStatus == OperationalStatus::UnknownState)

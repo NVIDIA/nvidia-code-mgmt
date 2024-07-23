@@ -77,6 +77,7 @@ enum class ProtocolError : int
     UnsupportedParameter = 0x2,
     LengthWriteError = 0x3, // Length of write command is incorrect
     CrcError = 0x4,         // If supported
+    DeviceNotResponding = 0x5,
     // Reserved values range from 0x5 to 0xFE
     GeneralProtocolError = 0xFF // Catch all unclassified errors
 };
