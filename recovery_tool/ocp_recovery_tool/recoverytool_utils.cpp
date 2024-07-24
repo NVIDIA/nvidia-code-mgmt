@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  */
 
 #include "recoverytool_utils.hpp"
+
 #include <chrono>
 #include <thread>
 
@@ -25,8 +26,7 @@ namespace recovery_tool
 OCPRecoveryTool::OCPRecoveryTool(int busAddr, int slaveAddr, bool verb,
                                  bool emul) :
     verbose(verb),
-    emul(emul),
-    recoveryCommands(busAddr, slaveAddr, verb, emul)
+    emul(emul), recoveryCommands(busAddr, slaveAddr, verb, emul)
 {}
 
 void OCPRecoveryTool::logVerbose(const std::string& message) const
@@ -42,18 +42,18 @@ std::string OCPRecoveryTool::deviceIDToStr(DeviceId id) const noexcept
     switch (id)
     {
         case DeviceId::PCI_Vendor:
-             return "PCI Vendor";
+            return "PCI Vendor";
         case DeviceId::IANA:
-             return "IANA";
+            return "IANA";
         case DeviceId::UUID:
-             return "UUID";
-        case DeviceId::PnP_Vendor :
-             return "PnP Vendor";
+            return "UUID";
+        case DeviceId::PnP_Vendor:
+            return "PnP Vendor";
         case DeviceId::ACPI_Vendor:
-             return "ACPI Vendor";
+            return "ACPI Vendor";
         case DeviceId::IANA_Enterprise_Type:
-             return "IANA Enterprise Type";
-        case DeviceId::NVMe_MI :
+            return "IANA Enterprise Type";
+        case DeviceId::NVMe_MI:
             return "NVMe MI";
         default:
             return "Reserved/Unknown";
@@ -202,8 +202,7 @@ nlohmann::json OCPRecoveryTool::getDeviceIDJson() noexcept
 {
     nlohmann::json jsonResponse;
     logVerbose("Getting Device ID");
-    auto [success, hexData, errorMsg] =
-        recoveryCommands.getDeviceIDCommand();
+    auto [success, hexData, errorMsg] = recoveryCommands.getDeviceIDCommand();
 
     if (!success)
     {
@@ -218,8 +217,7 @@ nlohmann::json OCPRecoveryTool::getDeviceIDJson() noexcept
         jsonResponse["Error"] = "Found unknown Descriptor Type";
         return jsonResponse;
     }
-    jsonResponse["Initial Descriptor Type"] =
-        deviceIDToStr(descriptorType);
+    jsonResponse["Initial Descriptor Type"] = deviceIDToStr(descriptorType);
     jsonResponse["PCI Vendor ID"] = hexData[3] << 8 | hexData[4];
     jsonResponse["PCI DeviceId"] = hexData[5] << 8 | hexData[6];
     jsonResponse["PCI Subsystem Vendor ID"] = hexData[7] << 8 | hexData[8];
@@ -229,13 +227,13 @@ nlohmann::json OCPRecoveryTool::getDeviceIDJson() noexcept
     return jsonResponse;
 }
 
-
 nlohmann::json OCPRecoveryTool::setForceRecoveryMode() noexcept
 {
     nlohmann::json jsonResponse;
     logVerbose("Setting device into force recovery");
 
-    const auto [setForceRecoveryStatus, errorMsg] = recoveryCommands.setForceRecoveryMode();
+    const auto [setForceRecoveryStatus, errorMsg] =
+        recoveryCommands.setForceRecoveryMode();
     if (setForceRecoveryStatus == true)
     {
         jsonResponse["Status"] = "Success";
@@ -400,4 +398,46 @@ nlohmann::json
     }
 }
 
+nlohmann::json OCPRecoveryTool::processCMSLogs(const std::string& logFilePath,
+                                               const uint8_t window)
+{
+    nlohmann::json jsonResponse;
+
+    try
+    {
+        auto [success, hexData, errMsg] = recoveryCommands.getCMSLogs(window);
+
+        if (success)
+        {
+            logVerbose("Writing " + logFilePath);
+            auto [status, errorMsg] =
+                recoveryCommands.saveToLogFile(hexData, logFilePath);
+            if (!status)
+            {
+                jsonResponse["Status"] = "Failed";
+                jsonResponse["Error"] = errorMsg;
+            }
+            else
+            {
+                jsonResponse["Status"] = "Successful";
+            }
+        }
+        else
+        {
+            logVerbose("Error while getting CMS logs: " + errMsg);
+            jsonResponse["Error"] = errMsg;
+            jsonResponse["Status"] = "Failed";
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::string errorMsg =
+            "Exception while fetching CMS logs: " + std::string(e.what());
+        logVerbose(errorMsg);
+        jsonResponse["Error"] = errorMsg;
+        jsonResponse["Status"] = "Failed";
+    }
+
+    return jsonResponse;
+}
 } // namespace recovery_tool

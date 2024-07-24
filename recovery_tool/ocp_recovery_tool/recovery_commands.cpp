@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -158,7 +158,8 @@ bool OCPRecoveryCommands::isDeviceReadyForTx()
 {
 
     if (emulation) // Added delay as GB100 emulation is slow so we are
-                   // seeing issues with reading the status just after writing the data
+                   // seeing issues with reading the status just after writing
+                   // the data
     {
         std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
     }
@@ -183,7 +184,8 @@ bool OCPRecoveryCommands::isDeviceReadyForTx()
         }
         constexpr uint8_t mask = 0x4;
         constexpr uint8_t shift = 2;
-        // Extract the ACK from device bit (bit 2) from the second byte of hexResponse.
+        // Extract the ACK from device bit (bit 2) from the second byte of
+        // hexResponse.
         auto indirectStatusAck = (hexResponse[1] & mask) >> shift;
         if (indirectStatusAck == indirectStatusExpectedAck)
         {
@@ -199,8 +201,9 @@ bool OCPRecoveryCommands::isDeviceReadyForTx()
     return false;
 }
 
-bool OCPRecoveryCommands::writeRecoveryChunk(const std::string_view imageName, const std::vector<uint8_t>& imageData,
-        const size_t offset)
+bool OCPRecoveryCommands::writeRecoveryChunk(
+    const std::string_view imageName, const std::vector<uint8_t>& imageData,
+    const size_t offset)
 {
     static uint8_t lastLoggedProgress = 0;
     size_t imageSize = imageData.size();
@@ -257,7 +260,6 @@ bool OCPRecoveryCommands::writeRecoveryImage(
         {
             return false;
         }
-
     }
     return true;
 }
@@ -325,7 +327,8 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
 std::pair<bool, std::string> OCPRecoveryCommands::setForceRecoveryMode()
 {
     std::string errorMsg = "";
-    std::vector<uint8_t> writeData(commandCodeLen + commandBytesWrittenLen + resetCommandDataLen);
+    std::vector<uint8_t> writeData(commandCodeLen + commandBytesWrittenLen +
+                                   resetCommandDataLen);
     writeData[0] = static_cast<uint8_t>(RecoveryCommands::Reset);
     writeData[1] = resetCommandDataLen;
     writeData[2] = static_cast<uint8_t>(0x01); // Reset Device
@@ -334,17 +337,17 @@ std::pair<bool, std::string> OCPRecoveryCommands::setForceRecoveryMode()
     printBuffer(Tx, writeData);
     try
     {
-       if (!recovery_tool::i2c_utils::sendI2cCmdForWrite(
+        if (!recovery_tool::i2c_utils::sendI2cCmdForWrite(
                 i2cFile, static_cast<uint16_t>(slaveAddress), writeData,
                 verbose))
-       {
-           return {false, "Failed to set device into recovery mode"};
-       }
+        {
+            return {false, "Failed to set device into recovery mode"};
+        }
     }
     catch (const std::exception& e)
     {
         errorMsg = "Failed to set device into recovery mode : " +
-            std::string(e.what());
+                   std::string(e.what());
         return {false, errorMsg};
     }
     return {true, ""};
@@ -464,6 +467,69 @@ std::tuple<bool, std::string> OCPRecoveryCommands::performRecoveryCommand(
         errorMsg = "Error in Performing Recovery: " + std::string(e.what());
         return {false, errorMsg};
     }
+}
+
+std::pair<bool, std::string>
+    OCPRecoveryCommands::saveToLogFile(const std::vector<uint8_t>& hexData,
+                                       const std::string& filePath)
+{
+    std::string errorMsg = "";
+    std::ofstream outFile(filePath);
+    if (outFile.is_open())
+    {
+        std::stringstream ss;
+        for (const auto& byte : hexData)
+        {
+            ss << "0x" << std::hex << std::setw(2) << std::setfill('0')
+               << static_cast<int>(byte) << " ";
+        }
+        outFile << ss.str();
+        outFile.close();
+    }
+    else
+    {
+        errorMsg = "Failed to open " + filePath + " for writing.";
+        return {false, errorMsg};
+    }
+    return {true, errorMsg};
+}
+
+std::tuple<bool, std::vector<uint8_t>, std::string>
+    OCPRecoveryCommands::getCMSLogs(const uint8_t window)
+{
+
+    std::string errorMsg = "";
+
+    if (!setIndirectControlRegisterCommand(static_cast<ImageType>(window)))
+    {
+        errorMsg = "Failed to set cms2 in the INDIRECT_CTRL register";
+        return {false, {}, errorMsg};
+    }
+
+    std::vector<uint8_t> combinedLogs{};
+    std::vector<uint8_t> readBuffer(
+        static_cast<size_t>(
+            recovery_tool::recovery_commands::ResponseLength::CMSLogsChunkSize),
+        0);
+    std::vector<uint8_t> commandData = {
+        static_cast<uint8_t>(RecoveryCommands::IndirectData)};
+    for (int i = 0; i < numOfReadsForCMSLogs; ++i)
+    {
+        if (!recovery_tool::i2c_utils::sendI2cCmdForRead(
+                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
+                readBuffer, verbose))
+        {
+            std::string errorMsg = "Failed to read " + std::to_string(i + 1) +
+                                   "/3 chunk of CMS2 logs";
+            return {false, {}, errorMsg};
+        }
+        combinedLogs.insert(combinedLogs.end(), readBuffer.begin(),
+                            readBuffer.end());
+        // Clear contents by filling with zeros
+        std::fill(readBuffer.begin(), readBuffer.end(), 0);
+    }
+
+    return {true, combinedLogs, ""};
 }
 
 } // namespace recovery_commands

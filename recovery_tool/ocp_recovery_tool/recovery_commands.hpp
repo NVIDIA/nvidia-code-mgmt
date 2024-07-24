@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 
 #pragma once
 #include "i2c_utils.hpp"
+
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -36,6 +37,9 @@ static constexpr uint8_t delay1sec = 1;
 static constexpr uint8_t resetCommandDataLen = 3;
 static constexpr uint8_t commandCodeLen = 1;
 static constexpr uint8_t commandBytesWrittenLen = 1;
+static constexpr uint8_t indirectCtrlCommandDataLen = 6;
+static constexpr uint8_t numOfReadsForCMSLogs = 3;
+
 /**
  * @enum RecoveryCommands
  * @brief Enumerates commands for OCP recovery.
@@ -63,6 +67,7 @@ enum class ResponseLength : uint8_t
     DeviceStatusResLen = 25,
     RecoveryStatusResLen = 3,
     IndirectStatusResLen = 7,
+    CMSLogsChunkSize = 252,
 };
 
 /**
@@ -153,7 +158,8 @@ class OCPRecoveryCommands
 
     /**
      * @brief Writes indirect data to the device.
-     * @param data A vector containing the chunk of recovery image data to be sent.
+     * @param data A vector containing the chunk of recovery image data to be
+     * sent.
      * @return true if successful, false otherwise.
      */
     bool sendIndirectDataCommand(const std::vector<uint8_t>& data);
@@ -165,7 +171,8 @@ class OCPRecoveryCommands
      * @param offset The offset indicating the beginning of chunk
      * @return true if successful, false otherwise.
      */
-    bool writeRecoveryChunk(const std::string_view imageName, const std::vector<uint8_t>& imageData,
+    bool writeRecoveryChunk(const std::string_view imageName,
+                            const std::vector<uint8_t>& imageData,
                             const size_t offset);
 
     /**
@@ -228,7 +235,7 @@ class OCPRecoveryCommands
      */
     std::tuple<bool, std::vector<uint8_t>, std::string> getDeviceIDCommand();
     /**
-     * @brief Sets the device into recovery mode 
+     * @brief Sets the device into recovery mode
      * @return Pair containing success flag, and an error message if any
      */
     std::pair<bool, std::string> setForceRecoveryMode();
@@ -255,6 +262,30 @@ class OCPRecoveryCommands
      */
     std::tuple<bool, std::string>
         performRecoveryCommand(const std::vector<std::string>& imagePaths);
+
+    /**
+     * @brief Retrieves CMS logs.
+     *
+     * @return A tuple containing:
+     * - A boolean indicating success or failure.
+     * - A vector of bytes representing the CMS log data.
+     * - A string containing an error message if any.
+     */
+    std::tuple<bool, std::vector<uint8_t>, std::string>
+        getCMSLogs(const uint8_t window);
+
+    /**
+     * @brief Saves data to a log file.
+     *
+     * @param hexData The data to be written to the file.
+     * @param filePath The path to the log file.
+     * @return A pair containing a boolean and a string. The boolean indicates
+     * success (true) or failure (false), and the string contains an error
+     * message in case of failure, or an empty string if successful.
+     */
+    std::pair<bool, std::string>
+        saveToLogFile(const std::vector<uint8_t>& hexData,
+                      const std::string& filePath);
 
     ~OCPRecoveryCommands();
 };

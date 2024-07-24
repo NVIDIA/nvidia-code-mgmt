@@ -181,6 +181,53 @@ class PerformRecovery : public CommandInterface
     }
 };
 
+class GetCMSLogs : public CommandInterface
+{
+  private:
+    std::string outFile;
+    uint8_t window;
+
+  public:
+    ~GetCMSLogs() = default;
+    GetCMSLogs() = delete;
+    GetCMSLogs(const GetCMSLogs&) = delete;
+    GetCMSLogs(GetCMSLogs&&) = default;
+    GetCMSLogs& operator=(const GetCMSLogs&) = delete;
+    GetCMSLogs& operator=(GetCMSLogs&&) = default;
+
+    using CommandInterface::CommandInterface;
+
+    explicit GetCMSLogs(int busAddress, int slaveAddress, CLI::App* app) :
+        CommandInterface(busAddress, slaveAddress, app),
+        outFile("/var/cms2_log.bin") // Default file path
+    {
+        app->add_option(
+            "-o,--outfile", outFile,
+            "Output file to store the CMS logs (default: /var/cms2_log.bin)");
+        app->add_option(
+            "-w,--window", window,
+            "Specify the CMS window to retrieve the log from")
+            ->required();
+    }
+
+    void exec() override
+    {
+        try
+        {
+            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
+                busAddress, slaveAddress, verbose, emulation);
+            nlohmann::json jsonResponse =
+                ocpRecoveryToolObj.processCMSLogs(outFile, window);
+
+            std::cout << jsonResponse.dump(4) << "\n";
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error in GetCMSLogs: " << e.what() << "\n";
+        }
+    }
+};
+
 void registerCommand(CLI::App& app)
 {
     int busAddress;
@@ -210,6 +257,10 @@ void registerCommand(CLI::App& app)
         app.add_subcommand("PerformOCPRecovery", "Perform OCP recovery");
     commands.push_back(std::make_unique<PerformRecovery>(
         busAddress, slaveAddress, performRecoveryCmd));
+
+    auto getCMSLogsCmd = app.add_subcommand("GetCMSLogs", "Retrieve CMS logs");
+    commands.push_back(
+        std::make_unique<GetCMSLogs>(busAddress, slaveAddress, getCMSLogsCmd));
 }
 
 } // namespace interface

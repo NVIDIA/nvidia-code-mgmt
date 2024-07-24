@@ -237,6 +237,14 @@ class OCPRecoveryTool
      * @return A JSON object indicating the result of the recovery process.
      */
     nlohmann::json performRecovery(const std::vector<std::string>& imagePaths);
+
+    /**
+     * @brief Fetches CMS logs and returns them as a JSON object.
+     *
+     * @param logFilePath The path to the log file where the CMS logs will be stored.
+     * @return A JSON object containing the CMS logs.
+     */
+    nlohmann::json processCMSLogs(const std::string& logFilePath, uint8_t window) ;
 };
 
 } // namespace recovery_tool
