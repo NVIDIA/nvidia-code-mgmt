@@ -20,6 +20,7 @@
 
 #include "base_item_updater.hpp"
 #include "fstream"
+#include <nlohmann/json.hpp>
 
 namespace nvidia
 {
@@ -31,7 +32,11 @@ namespace updater
 class MTDItemUpdater : public BaseItemUpdater
 {
     std::string mtdName;
-    
+    std::string copyPath;
+    std::streamoff versionOffset;
+    std::size_t versionSize;
+    std::unique_ptr<SoftwareVersion> softwareVersionObj;
+
   public:
     MTDItemUpdater(sdbusplus::bus::bus& bus, std::string mtdN, std::string modelName) :
 		BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE, "MTD_FW_" + mtdN,
@@ -40,6 +45,36 @@ class MTDItemUpdater : public BaseItemUpdater
 		mtdName(mtdN)
 
     {
+        std::string jsonPath = "/usr/share/mtd_targets/" + mtdName + ".json";
+
+        try {
+            if (std::filesystem::exists(jsonPath)) {
+                std::ifstream jsonFile(jsonPath);
+
+                if (!jsonFile.is_open()) {
+                    std::cerr << "Could not open the file:" << jsonPath << std::endl;
+                    return;
+                }
+
+                nlohmann::json mtdConfig;
+                jsonFile >> mtdConfig;
+                jsonFile.close();
+                std::string inventory = mtdConfig["Inventory"];
+                copyPath = mtdConfig["Path"];
+                std::string off = mtdConfig["Offset"];
+                versionOffset = static_cast<std::streamoff>(std::stoll(off, nullptr, 0));
+                versionSize = mtdConfig["VersionSize"];
+                auto objPath = std::string(SOFTWARE_OBJPATH) + "/" + inventory;
+                softwareVersionObj = std::make_unique<SoftwareVersion>(bus, objPath);
+                getVersion("");
+            }
+            else {
+                std::cerr << "Json file:" << jsonPath << " not found. Will not host fw inventory object" << std::endl;
+            }
+        } catch (const std::exception &e) {
+            std::cerr << e.what() << std::endl;
+            std::cerr << "Failed to process the file:" << jsonPath << std::endl;
+        }
     }
 
     /**
@@ -126,6 +161,15 @@ class MTDItemUpdater : public BaseItemUpdater
     bool inventorySupported() override
     {
         return false; // default is supported
+    }
+
+    /**
+    * @brief method to clean up image dirs. Use this method to update
+    * fw inventory version
+    */
+    void cleanupImageUploadDir(const std::filesystem::path& path, Version* version) const override {
+        BaseItemUpdater::cleanupImageUploadDir(path, version);
+        getVersion("");
     }
 };
 

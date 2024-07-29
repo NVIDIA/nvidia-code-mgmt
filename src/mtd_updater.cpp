@@ -35,7 +35,41 @@ std::string
     MTDItemUpdater::getVersion([
 	[maybe_unused]] const std::string& inventoryPath) const
 {
-    return "";
+    std::string ret="";
+    if (softwareVersionObj)
+    {
+        std::ifstream file(copyPath, std::ios::binary);
+        if (!file.is_open()) {
+            std::cerr << "Error: Could not open image file to pick up the version" << copyPath << std::endl;
+            return "";
+        }
+
+        file.seekg(versionOffset, std::ios::beg);
+        if (!file.good()) {
+            std::cerr << "Error: Could not seek to offset on the image file to grab the version" << std::hex << versionOffset << std::endl;
+            file.close();
+            return "";
+        }
+
+        std::vector<char> buffer(versionSize);
+        file.read(buffer.data(), versionSize);
+        if (!file.good()) {
+            std::cerr << "Error: Could not read data at offset " << std::hex << versionOffset << " to pick up the version" << std::endl;
+            file.close();
+            return "";
+        }
+
+        file.close();
+
+        std::stringstream ss;
+        for (const auto& byte : buffer) {
+            ss << std::hex << std::setw(2) << std::setfill('0') << (static_cast<unsigned>(byte) & 0xFF);
+        }
+
+        softwareVersionObj->version(ss.str());
+        ret = ss.str();
+    }
+    return ret;
 }
 
 std::string MTDItemUpdater::getManufacturer([
