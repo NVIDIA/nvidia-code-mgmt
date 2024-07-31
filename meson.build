@@ -253,7 +253,11 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
 endif
 
 if get_option('ORIN_FLASH_SUPPORT').enabled()
-  subdir('nvidia_igx')
+  subdir('nvidia_igx/orin')
+endif
+
+if get_option('SMCU_FLASH_SUPPORT').enabled()
+  subdir('nvidia_igx/smcu')
 endif
 
 subdir('recovery_tool/ocp_recovery_tool')

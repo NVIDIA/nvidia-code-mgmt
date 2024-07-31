@@ -1,8 +1,7 @@
 configure_file(output: 'config.h',
-              configuration : cdata_igx,
+              configuration : cdata_igx_smcu,
               )
-executable('igx-orin-version', 'main.cpp', 'orin_manager.cpp',
-                'orin.cpp',
+executable('igx-smcu-version', 'main.cpp', 'smcu_manager.cpp',
                dependencies:
                             [
                               sdbusplus,
@@ -13,5 +12,5 @@ executable('igx-orin-version', 'main.cpp', 'orin_manager.cpp',
                             ],
                install : true,
                install_dir : get_option('bindir'))
-install_headers('orin_util.hpp')
+install_headers('smcu_util.hpp')
 

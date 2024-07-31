@@ -1,0 +1,12 @@
+[Unit]
+Description=NVIDIA IGX SMCU Firmware Version
+[Service]
+Restart=always
+Type=dbus
+ExecStart=/usr/bin/env igx-smcu-version
+SyslogIdentifier=igx-smcu-version
+BusName=com.Nvidia.SMCU
+
+[Install]
+WantedBy=multi-user.target
+
