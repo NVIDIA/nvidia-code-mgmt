@@ -46,11 +46,8 @@ struct DebugTokenHeader
     uint8_t reserved[6];
 } __attribute__((packed));
 
-/**
- * @brief structure for each debug token
- *
- */
-struct DebugToken
+
+struct TokenHeader
 {
     char identifier[4];
     uint32_t version;
@@ -58,12 +55,10 @@ struct DebugToken
     uint16_t tokenAttributes;
     uint32_t tokenType;
     uint32_t ecFWVersion;
-    uint8_t noOnce[16];
+    uint8_t nonce[16];
     uint8_t serialNumber[8];
-    uint8_t reserved[20];
-    uint8_t publicKey[96];
-    uint8_t signature[96];
 } __attribute__((packed));
+
 
 struct TokenUtility
 {
@@ -97,18 +92,46 @@ struct TokenUtility
      * @param[in] tokenOffset
      * @param[in] debugTokenPackage
      *
-     * @return DebugToken
+     * @return TokenHeader
      */
-    auto gextNextDebugToken(std::vector<uint8_t>& tokenData,
+    auto getNextDebugToken(std::vector<uint8_t>& tokenData,
                             const uint32_t& tokenOffset,
                             std::ifstream& debugTokenPackage)
     {
-        const DebugToken* debugTokenInfo = nullptr;
+        const TokenHeader *tokenHeaderInfo = nullptr;
+        uint16_t tokenSize = 0;
+        
+        // Read tokenSize from the token
+        tokenData.resize(sizeof(TokenHeader), 0);
         debugTokenPackage.seekg(tokenOffset);
         debugTokenPackage.read(reinterpret_cast<char*>(tokenData.data()),
-                            sizeof(DebugToken));
-        debugTokenInfo = reinterpret_cast<const DebugToken*>(tokenData.data());
-        return debugTokenInfo;
+                            sizeof(TokenHeader));
+        if(debugTokenPackage.gcount() != sizeof(TokenHeader))
+        {
+            log<level::ERR>(
+                "Token offset out of range - unable to read token header.");
+            tokenData.clear();
+            tokenHeaderInfo = nullptr;
+            return tokenHeaderInfo;
+        }
+        tokenHeaderInfo = reinterpret_cast<const TokenHeader*>(tokenData.data());
+        tokenSize = tokenHeaderInfo->structSize;
+             
+        // Read tokenSize bytes from offset to fetch the entire token
+        tokenData.resize(tokenSize, 0);
+        debugTokenPackage.seekg(tokenOffset);
+        debugTokenPackage.read(reinterpret_cast<char*>(tokenData.data()),
+                            tokenSize);
+        tokenHeaderInfo = reinterpret_cast<const TokenHeader*>(tokenData.data());
+        if(debugTokenPackage.gcount() != tokenSize)
+        {
+            log<level::ERR>(
+                "Token offset out of range - unable to read token bytes.");
+            tokenData.clear();
+            tokenHeaderInfo = nullptr;
+            return tokenHeaderInfo;
+        }
+        return tokenHeaderInfo;
     }
 
     /**

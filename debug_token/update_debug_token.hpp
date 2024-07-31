@@ -87,9 +87,9 @@ const std::string resourceErrorsDetected{
 static constexpr size_t queryStatusCodeByte =
     11; // 11 the byte from last is status code for debug token query
 static constexpr size_t tokenInstallStatusByte =
-    10; // 10 the byte from last is status code for debug token query
+    10; // 10 the byte from last is install status in debug token query
 static constexpr size_t mctpDebugTokenQueryResponseLength =
-    19; // Total length of MCTP respose : Header (9) + Data (10)
+    19; // Total length of MCTP response : Header (9) + Data (10)
 
 using Priority = int;
 

@@ -436,7 +436,6 @@ int UpdateDebugToken::updateTokenMap(const std::string& debugTokenPath,
     int status = 0;
     std::ifstream debugTokenPackage(
         debugTokenPath, std::ios::binary | std::ios::in | std::ios::ate);
-    uint32_t packageSize = debugTokenPackage.tellg();
     if (!debugTokenPackage.is_open())
     {
         log<level::ERR>("Error while opening the file");
@@ -454,16 +453,18 @@ int UpdateDebugToken::updateTokenMap(const std::string& debugTokenPath,
     uint32_t tokenOffset = headerInfo->offsetToListOfStructs;
     for (uint16_t i = 0; i < headerInfo->numberOfRecords; i++)
     {
-        Token token(sizeof(DebugToken));
-        if ((tokenOffset + sizeof(DebugToken)) > packageSize)
-        {
-            log<level::ERR>("Token offset out of range");
-            break;
-        }
+        Token token;
         auto debugTokenInfo =
-            gextNextDebugToken(token, tokenOffset, debugTokenPackage);
+            getNextDebugToken(token, tokenOffset, debugTokenPackage);
         if (debugTokenInfo)
         {
+            if(debugTokenInfo->structSize != token.size())
+            {
+                log<level::ERR>(
+                    "Invalid token size");
+                status = -1;
+                return status;
+            }
             std::stringstream serialNumber;
             serialNumber << std::hex;
             for (size_t x = 0; x < sizeof(debugTokenInfo->serialNumber); x++)
@@ -473,13 +474,15 @@ int UpdateDebugToken::updateTokenMap(const std::string& debugTokenPath,
                              << (int)debugTokenInfo->serialNumber[x];
             }
             tokens.emplace(("0x" + serialNumber.str()), token);
+            tokenOffset += debugTokenInfo->structSize;
         }
         else
         {
             log<level::ERR>(
-                "Invalid debug token"); // skip and move to next token
+                "Invalid debug token"); 
+            status = -1;
+            return status;
         }
-        tokenOffset += sizeof(DebugToken);
     }
     return status;
 }
