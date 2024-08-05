@@ -1,5 +1,5 @@
 configure_file(output: 'config.h',
-              configuration : cdata,
+              configuration : cdata_igx,
               )
 executable('igx-orin-version', 'main.cpp', 'orin_manager.cpp',
                 'orin.cpp',

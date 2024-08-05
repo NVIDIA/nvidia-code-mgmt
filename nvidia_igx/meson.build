@@ -1,14 +1,14 @@
 systemd = dependency('systemd')
 servicedir = systemd.get_variable(pkgconfig : 'systemdsystemunitdir')
 
-cdata = configuration_data()
+cdata_igx = configuration_data()
 
-cdata.set_quoted(
+cdata_igx.set_quoted(
     'BUSNAME', 'com.Nvidia.ORIN')
 
-cdata.set_quoted(
+cdata_igx.set_quoted(
     'BASE_INV_PATH', '/xyz/openbmc_project/inventory/system/board')
-cdata.set_quoted(
+cdata_igx.set_quoted(
     'SW_INV_PATH', '/xyz/openbmc_project/software')
 
 sdbusplus = dependency('sdbusplus')
