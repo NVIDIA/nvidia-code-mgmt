@@ -17,7 +17,7 @@
 
 #include <stdlib.h>
 #include <cstdint>
-#include "../debug_token/token_utility.hpp"
+#include "../debug_token/update_debug_token.hpp"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

@@ -256,3 +256,95 @@ TEST_F(TestUpdateDebugToken, TestMessageTokenInstall)
         EXPECT_EQ(expectedResolution, std::get<1>(*outputMessage));
     }
 }
+
+TEST_F(TestUpdateDebugToken, DebugTokenQueryV2InvalidResponse)
+{
+   std::string cmdResponse =
+        "teid = 31\n"
+        "Test command = debug_token_query_v2\n"
+        "TX: 00 00 16 47 80 01 0F 02\n"
+        "RX: 00 00 16 05\n";
+    auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
+    int tokenInstallStatus, installedTokenType;
+    int status = updateDebugToken->parseQueryV2Response(rxBytes,
+                                    tokenInstallStatus,
+                                    installedTokenType);
+    EXPECT_EQ(status, -1);
+}
+
+TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseCommandNotSupported)
+{
+   std::string cmdResponse =
+        "teid = 31\n"
+        "Test command = debug_token_query_v2\n"
+        "TX: 00 00 16 47 80 01 0F 02\n"
+        "RX: 00 00 16 47 00 01 0F 02 05\n";
+    auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
+    int tokenInstallStatus, installedTokenType;
+    int status = updateDebugToken->parseQueryV2Response(rxBytes,
+                                    tokenInstallStatus,
+                                    installedTokenType);
+    EXPECT_EQ(status, 5);   // ERR_UNSUPPORTED_CMD
+}
+
+TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseInvalidData)
+{
+   std::string cmdResponse =
+        "teid = 31\n"
+        "Test command = debug_token_query_v2\n"
+        "TX: 00 00 16 47 80 01 0F 02\n"
+        "RX: 00 00 16 47 00 01 0F 02 02\n";
+    auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
+    int tokenInstallStatus, installedTokenType;
+    int status = updateDebugToken->parseQueryV2Response(rxBytes,
+                                    tokenInstallStatus,
+                                    installedTokenType);
+    EXPECT_EQ(status, 2);   // ERR_INVALID_DATA
+}
+
+TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseTokenNotInstalled)
+{
+   std::string cmdResponse =
+        "teid = 31\n"
+        "Test command = debug_token_query_v2\n"
+        "TX: 00 00 16 47 80 01 0F 02\n"
+        "RX: 00 00 16 47 00 01 0F 02 00 00 43 37 66 B5 22 FD E2 BF 02 00 00 00 00 10 00 14 00 00 00 00 00 00 00 00 00 00 00\n";
+    auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
+    int tokenInstallStatus, installedTokenType;
+    updateDebugToken->parseQueryV2Response(rxBytes,
+                                    tokenInstallStatus,
+                                    installedTokenType);
+    EXPECT_EQ(tokenInstallStatus, 0);
+}
+
+TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseTokenInstalled)
+{
+    std::string cmdResponse =
+        "teid = 31\n"
+        "Test command = debug_token_query_v2\n"
+        "TX: 00 00 16 47 80 01 0F 02\n"
+        "RX: 00 00 16 47 00 01 0F 02 00 01 43 37 66 B5 22 FD E2 BF 02 01 00 00 00 10 00 14 00 00 00 00 00 00 00 00 00 00 00\n";
+    auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
+    int tokenInstallStatus, installedTokenType;
+    updateDebugToken->parseQueryV2Response(rxBytes,
+                                    tokenInstallStatus,
+                                    installedTokenType);
+    EXPECT_EQ(tokenInstallStatus, 1);
+    EXPECT_EQ(installedTokenType, 1);
+}
+
+TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseHwUnlockTokenInstalled)
+{
+    std::string cmdResponse =
+        "teid = 31\n"
+        "Test command = debug_token_query_v2\n"
+        "TX: 00 00 16 47 80 01 0F 02\n"
+        "RX: 00 00 16 47 00 01 0F 02 00 01 43 37 66 B5 22 FD E2 BF 02 04 00 00 00 10 00 14 00 00 00 00 00 00 00 00 00 00 00\n";
+    auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
+    int tokenInstallStatus, installedTokenType;
+    updateDebugToken->parseQueryV2Response(rxBytes,
+                                    tokenInstallStatus,
+                                    installedTokenType);
+    EXPECT_EQ(tokenInstallStatus, 1);
+    EXPECT_EQ(installedTokenType, 4);
+}
