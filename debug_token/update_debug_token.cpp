@@ -18,6 +18,7 @@
 #include "config.h"
 
 #include "update_debug_token.hpp"
+#include <boost/container/flat_map.hpp>
 
 #include <filesystem>
 
@@ -70,11 +71,6 @@ DebugTokenInstallStatus
                 {
                     status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
                 }
-                std::string deviceName;
-                if (deviceNameMap.contains(device.first))
-                {
-                    deviceName = deviceNameMap[device.first];
-                }
                 continue;
             }
             if (disableBackgroundCopy(device.first) != 0)
@@ -124,6 +120,19 @@ DebugTokenInstallStatus
                     status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
                 }
             }
+        }
+    }
+    if (nsmTokenInstall(tokens) != 0)
+    {
+        log<level::ERR>("NSM token installed failed");
+        status = DebugTokenInstallStatus::DebugTokenInstallFailed;
+        return status;
+    }
+    else
+    {
+        if(status == DebugTokenInstallStatus::DebugTokenInstallNone)
+        {
+            status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
         }
     }
     return status;
@@ -194,6 +203,12 @@ int UpdateDebugToken::eraseDebugToken()
                               std::to_string(mctpEidInfo.eid))
                                  .c_str());
         }
+    }
+    if ((status = nsmTokenErase()) != 0)
+    {
+        log<level::ERR>("NSM token erase failed");
+        status = -1;
+        return status;
     }
     return status;
 }
@@ -520,6 +535,11 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
             OperationType::Common, status, deviceName);
         return status;
     }
+    std::string deviceName;
+        if (deviceNameMap.contains(eid))
+        {
+            deviceName = deviceNameMap[eid];
+        }
     auto rxBytes = parseCommandOutput(commandOut);
     try
     {
@@ -532,11 +552,6 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
         {
             status =
                 static_cast<int>(CommonErrorCodes::MCTPResponseInstallFailure);
-            std::string deviceName;
-            if (deviceNameMap.contains(eid))
-            {
-                deviceName = deviceNameMap[eid];
-            }
             createMessageRegistryResourceErrors(
                 resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
                 OperationType::Common, status, deviceName);
@@ -547,11 +562,6 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
     catch (const std::exception& e)
     {
         status = static_cast<int>(CommonErrorCodes::MCTPResponseInstallFailure);
-        std::string deviceName;
-        if (deviceNameMap.contains(eid))
-        {
-            deviceName = deviceNameMap[eid];
-        }
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
             OperationType::Common, status, deviceName);
@@ -562,11 +572,7 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
     {
         log<level::ERR>(
             ("Error while installing token: " + commandOut).c_str());
-        std::string deviceName;
-        if (deviceNameMap.contains(eid))
-        {
-            deviceName = deviceNameMap[eid];
-        }
+        
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
             OperationType::TokenInstall, status, deviceName);
@@ -597,15 +603,15 @@ int UpdateDebugToken::eraseToken(const EID& eid)
     command += " -c debug_token_erase ";
     command += "-t " + std::to_string(eid);
     auto [retCode, commandOut] = runMctpVdmUtilCommand(command);
+    std::string deviceName;
+    if (deviceNameMap.contains(eid))
+    {
+        deviceName = deviceNameMap[eid];
+    }
     if (retCode != 0)
     {
         log<level::ERR>("Error while running erase token command");
         status = static_cast<int>(CommonErrorCodes::MCTPCommandEraseFailure);
-        std::string deviceName;
-        if (deviceNameMap.contains(eid))
-        {
-            deviceName = deviceNameMap[eid];
-        }
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
             OperationType::Common, status, deviceName);
@@ -638,11 +644,6 @@ int UpdateDebugToken::eraseToken(const EID& eid)
     catch (const std::exception& e)
     {
         status = static_cast<int>(CommonErrorCodes::MCTPResponseEraseFailure);
-        std::string deviceName;
-        if (deviceNameMap.contains(eid))
-        {
-            deviceName = deviceNameMap[eid];
-        }
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
             OperationType::Common, status, deviceName);
@@ -653,11 +654,6 @@ int UpdateDebugToken::eraseToken(const EID& eid)
     {
         log<level::ERR>(("Error while erasing token: " + commandOut).c_str());
         status = -1;
-        std::string deviceName;
-        if (deviceNameMap.contains(eid))
-        {
-            deviceName = deviceNameMap[eid];
-        }
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
             OperationType::TokenErase,

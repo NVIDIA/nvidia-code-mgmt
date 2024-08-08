@@ -22,6 +22,8 @@
 
 #include <fmt/format.h>
 
+#include <mutex>
+#include <condition_variable>
 #include <fstream>
 #include <map>
 
@@ -55,11 +57,13 @@ using Token = std::vector<uint8_t>;
 using DeviceMap = std::map<EID, SerialNumber>;
 using TokenMap = std::map<SerialNumber, Token>;
 using DeviceNameMap = std::map<EID, DeviceName>;
+using NSMStatusMap = std::map<DeviceName, int>;
 using MctpMedium = std::string;
 using MctpBinding = std::string;
 using Message = std::string;
 using Resolution = std::string;
 using MessageMapping = std::pair<Message, Resolution>;
+using NSMEndpoints = std::vector<std::string>;
 
 using namespace dbus;
 namespace LoggingServer = sdbusplus::xyz::openbmc_project::Logging::server;
@@ -78,7 +82,15 @@ constexpr auto mctpBindingIntfName = "xyz.openbmc_project.MCTP.Binding";
 constexpr auto pldmService = "xyz.openbmc_project.PLDM";
 constexpr auto pldmPath = "/";
 constexpr auto pldmInventoryIntfName =
-    "xyz.openbmc_project.Inventory.Decorator.Asset";
+    "xyz.openbmc_project.Inventory.Decorator.Asset";    
+constexpr auto nsmService = "xyz.openbmc_project.NSM";
+constexpr auto nsmDebugTokenIntfName = "com.nvidia.DebugToken";
+constexpr auto nsmProgressIntfName = "xyz.openbmc_project.Common.Progress";
+constexpr auto nsmDebugTokenPath = "/";
+constexpr auto nsmCompletedStatus = 
+    "xyz.openbmc_project.Common.Progress.OperationStatus.Completed";
+constexpr auto propertiesPath = "org.freedesktop.DBus.Properties";
+
 const std::string mctpVdmUtilPath = "/usr/bin/mctp-vdm-util";
 const std::string transferFailed{"Update.1.0.TransferFailed"};
 const std::string updateSuccessful{"Update.1.0.UpdateSuccessful"};
@@ -87,11 +99,13 @@ const std::string resourceErrorsDetected{
 static constexpr size_t mctpCompletionCodeByte =
     8; // 8'th byte from beginning is the MCTP Completion code for debug token query
 static constexpr size_t tokenInstallStatusByte =
-    9; // 10 the byte from beginning is token status code for debug token query
+    9; // 9th byte from beginning is token status code for debug token query
 static constexpr size_t mctpDebugTokenQueryResponseLengthV1 =
     19; // Total length of MCTP respose : Header (9) + Data (10)
 static constexpr size_t mctpDebugTokenQueryResponseLengthV2 =
     37; // Total length of MCTP respose : Header (9) + Data (28)
+static constexpr uint8_t nsmTokenTypeCRDT = 6;
+static constexpr uint64_t propertyChangeSignalTimeout = 5;
 
 // Tokken Type bytes in v2 query command are from bytes 19-22
 static constexpr int tokenTypeByteStart = 19; 
@@ -160,7 +174,29 @@ enum class InstallErrorCodes
     TokenSerialNumberInvalid,
     TokenECFWVersionInvalid,
     DisableBackgroundCopyCheckFailed,
-    InstallInternalError
+    InstallInternalError,
+    NsmInstallError
+};
+
+enum class NSMTokenStatus
+{
+    Error = 0x0,
+    DebugSessionActive = 0x2,
+    NoTokenApplied = 0x3,
+    ChallengeProvided = 0x4,
+    TokenInstallTimeout = 0x5,
+    TokenTimeout = 0x6
+};
+
+
+enum class MCTPCompletionCodes
+{
+    Success = 0x0,
+    Error,
+    ErrorInvalidData,
+    ErrorInvalidLength,
+    ErrorNotReady,
+    ErrorUnsupportedCmd
 };
 
 
@@ -253,10 +289,16 @@ enum class CommonErrorCodes
 {
     MCTPDiscoveryFailed = 0x1,
     TokenParseFailure,
+    MCTPCommandInstallSuccess,
     MCTPCommandInstallFailure,
+    MCTPCommandEraseSuccess,
     MCTPCommandEraseFailure,
     MCTPResponseInstallFailure,
-    MCTPResponseEraseFailure
+    MCTPResponseEraseFailure,
+    NSMCommandInstallSuccess,
+    NSMCommandInstallFailure,
+    NSMCommandEraseSuccess,
+    NSMCommandEraseFailure
 };
 
 /* debug token common error code mapping for message registry */
@@ -273,10 +315,14 @@ static std::map<CommonErrorCodes, MessageMapping> debugTokenCommonErrorMapping{
      {"Transferring Debug Token to ERoT failed for {}",
       "Retry the firmware update operation and if issue still persists reset"
       " the baseboard."}},
+    {CommonErrorCodes::MCTPCommandInstallSuccess,
+     {"Debug token installed on {}.", ""}},
     {CommonErrorCodes::MCTPCommandEraseFailure,
      {"Request to Erase Debug Token failed for {}",
       "Retry the firmware update operation and if issue still persists reset"
       " the baseboard."}},
+    {CommonErrorCodes::MCTPCommandEraseSuccess,
+     {"Debug Token erased on {}.", ""}},
     {CommonErrorCodes::MCTPResponseInstallFailure,
      {"Debug Token Install response is invalid for {}",
       "Retry the firmware update operation and if issue still persists reset"
@@ -284,7 +330,20 @@ static std::map<CommonErrorCodes, MessageMapping> debugTokenCommonErrorMapping{
     {CommonErrorCodes::MCTPResponseEraseFailure,
      {"Debug Token Erase response is invalid for {}",
       "Retry the firmware update operation and if issue still persists reset"
-      " the baseboard."}}};
+      " the baseboard."}},
+    {CommonErrorCodes::NSMCommandInstallFailure,
+     {"Debug Token Install failure for {}",
+      "Retry the firmware update operation and if issue still persists reset"
+      " the baseboard."}},
+    {CommonErrorCodes::NSMCommandInstallSuccess,
+     {"Debug Token installed on {}", ""}},
+    {CommonErrorCodes::NSMCommandEraseFailure,
+     {"Debug Token Erase failure for {}",
+      "Retry the firmware update operation and if issue still persists reset"
+      " the baseboard."}},
+    {CommonErrorCodes::NSMCommandEraseSuccess,
+     {"Debug Token erased on {}", ""}},
+    };
 
 /* Debug Token Install Status Codes*/
 enum class DebugTokenInstallStatus
@@ -466,12 +525,46 @@ class UpdateDebugToken : public TokenUtility
         return status;
     }
 
+    /**
+     * @brief Create a Message Registry for Install Errors
+     *
+     * @param[in] path
+     */
+    void createTokenInstallErrorMessage(std::string path)
+    {
+        this->createMessageRegistryResourceErrors(
+            transferFailed, DEBUG_TOKEN_INSTALL_NAME, 
+            OperationType::Common, 
+            static_cast<int>(CommonErrorCodes::NSMCommandInstallFailure),
+            path);
+    }
+
+    /**
+     * @brief Create a Message Registry for Erase Errors
+     *
+     * @param[in] path
+     */
+    void createTokenEraseErrorMessage(std::string path)
+    {
+        this->createMessageRegistryResourceErrors(
+            transferFailed, DEBUG_TOKEN_ERASE_NAME, 
+            OperationType::Common,
+            static_cast<int>(CommonErrorCodes::NSMCommandInstallSuccess),
+            path);
+    }
+
   private:
     sdbusplus::bus::bus& bus;
     /* device map of EID to serial number */
     DeviceMap devices;
     /* map of UUID to EID */
     MctpInfo mctpInfo;
+    /* Conditional Variable to wait till propertyChange signal is received. 
+       Used only for debug token NSM operations. */
+    std::condition_variable cv;
+    /* Variable to communicate the operation status between 
+       propertyChange signal callback and main thread. */
+    std::string nsmOperationStatus;
 
     /* component name map for message registry */
     DeviceNameMap deviceNameMap;
@@ -596,4 +689,37 @@ class UpdateDebugToken : public TokenUtility
      */
     void createLog(const std::string& messageID,
                    std::map<std::string, std::string>& addData, Level& level);
+     /**
+     * @brief debug token install for NSM endpoints.
+     *
+     *
+     * @return int
+     */
+    int nsmTokenInstall(TokenMap& tokens);
+
+    /**
+     * @brief debug token erase for NSM endpoints.
+     *
+     *
+     * @return int
+     */
+    int nsmTokenErase();
+
+    /**
+     * @brief Callback for NSM debug token operations.
+     *
+     * @param[in] msg
+     *
+     * @return int
+     */
+    int progressStatusPropertyChange(sdbusplus::message_t &msg);
+
+    /**
+     * @brief Enumerate endpoints that support debug token over NSM.
+     *
+     * @param[in] nsmEndpoint - paths to be added by the function.
+     *
+     * @return int
+     */
+    int enumerateNsmDebugTokenEndpoints(NSMEndpoints &nsmEndpoint);
 };

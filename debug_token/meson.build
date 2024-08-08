@@ -5,7 +5,8 @@ debug_token_inc = include_directories('.')
 
 source_files = [
     'main.cpp',
-    'update_debug_token.cpp'
+    'update_debug_token.cpp',
+    'nsm_debug_token.cpp'
 ]
 
 executable('updateDebugToken',
