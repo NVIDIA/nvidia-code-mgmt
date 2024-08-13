@@ -38,25 +38,6 @@ class ERoTResource : public MCTPDiscoveryResource
 {
     public:
         /**@brief Constructor for the ERoTResource Class
-         * Updates Health and Status of the D-Bus object on startup
-         *
-         * @param bus - SystemD bus to publish the object
-         * @param objPath - Path of D-Bus object to publish
-         * @param i2cBus - I2C Bus where the resource is present
-         * @param i2cAddress - I2C Address of the resource
-         * @param uuid - UUID of the Resource
-         *
-         */
-        ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                const uint64_t i2cBus, const uint64_t i2cAddress, const std::string& uuid) :
-            MCTPDiscoveryResource(bus, objPath, uuid)
-        {
-            glacierRecoveryObj = std::make_unique<glacier_recovery_tool::glacier_recovery_commands::GlacierRecoveryCommands>(i2cBus, i2cAddress, false);
-
-            updateHealth();
-        }
-
-        /**@brief Constructor for the ERoTResource Class
          * when AP FW configuration is provided
          *
          * @param bus - SystemD bus to publish the object
@@ -83,6 +64,36 @@ class ERoTResource : public MCTPDiscoveryResource
             bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
             bootStatus->bootStatusType(BootStatusServer::BootStatusTypes::ERoTBootStatus);
             apResource = std::make_unique<APResource>(bus, apObjPath, apEid, this);
+            
+            health(HealthServer::HealthType::OK);
+            state(OperationalStatusServer::StateType::Enabled);
+
+            updateHealth();
+        }
+
+        /**@brief Constructor for the ERoTResource Class
+         * when the resource is not recoverable but publishes BootStatus
+         *
+         * @param bus - SystemD bus to publish the object
+         * @param objPath - Path of D-Bus object to publish
+         * @param uuid - UUID of the Resource
+         * @param mctpVdmHelper - MCTP VDM helper object 
+         * @param isRecoverable - Indicates whether recovery can be performed on the Resource
+         *
+         */
+        ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+                const std::string& uuid, const std::string chassisObjPath,
+                const bool isRecoverable,
+                std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
+            MCTPDiscoveryResource(bus, objPath, uuid),
+            mctpVdmHelper(mctpVdmHelper),
+            isRecoverable(isRecoverable)
+        {
+            bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+            bootStatus->bootStatusType(BootStatusServer::BootStatusTypes::ERoTBootStatus);
+
+            health(HealthServer::HealthType::OK);
+            state(OperationalStatusServer::StateType::Enabled);
 
             updateHealth();
         }

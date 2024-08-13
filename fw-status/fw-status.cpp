@@ -95,7 +95,7 @@ uint8_t getEid(const std::string& objPath, const std::string& interface)
 {
     auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
     auto eid = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "APEID");
+                interface.c_str(), "APEID");
 
     return eid;
 }
@@ -183,24 +183,31 @@ int main()
         else if (interfaces.contains(glacierCrisisObjInterface))
         {
             lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
-            const auto [i2cBus, i2cAddress] = getI2CBusAndAddress(emObjectPath, glacierCrisisObjInterface);
+            const auto isRecoverable = isFwRecoverable(emObjectPath, glacierCrisisObjInterface);
+            uint32_t i2cBus, i2cAddress;
+            if (isRecoverable)
+            {
+                std::tie(i2cBus, i2cAddress) = getI2CBusAndAddress(emObjectPath, glacierCrisisObjInterface);
+            }
             const auto uuid = getUUID(emObjectPath, glacierCrisisObjInterface);
             const auto objPath = getSoftwareDBusObjectPath(std::string(emObjectPath));
             const auto apBootStatusType = getBootStatusType(emObjectPath, glacierCrisisObjInterface);
+            const auto chassisName = getChassisName(emObjectPath, glacierCrisisObjInterface);
+            const auto chassisObjPath = getChassisObjPath(chassisName);
             if (!apBootStatusType.empty())
             {
                 lg2::info("Found AP config on Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
-                const auto apEid = getEid(emObjectPath, glacierCrisisObjInterface);
-                const auto apName = getApName(emObjectPath, glacierCrisisObjInterface);
-                const auto chassisName = getChassisName(emObjectPath, glacierCrisisObjInterface);
-                const auto chassisObjPath = getChassisObjPath(chassisName);
-                const auto apObjPath = getSoftwareDBusObjectPath(apName);
-                const auto isRecoverable = isFwRecoverable(emObjectPath, glacierCrisisObjInterface);
-                resources.push_back(std::make_unique<ERoTResource>(bus, objPath, i2cBus, i2cAddress, uuid, apEid, chassisObjPath, apObjPath, isRecoverable, mctpVdmHelper));
-            }
-            else
-            {
-                resources.push_back(std::make_unique<ERoTResource>(bus, objPath, i2cBus, i2cAddress, uuid));
+                if (isRecoverable)
+                {
+                    const auto apEid = getEid(emObjectPath, glacierCrisisObjInterface);
+                    const auto apName = getApName(emObjectPath, glacierCrisisObjInterface);
+                    const auto apObjPath = getSoftwareDBusObjectPath(apName);
+                    resources.push_back(std::make_unique<ERoTResource>(bus, objPath, i2cBus, i2cAddress, uuid, apEid, chassisObjPath, apObjPath, isRecoverable, mctpVdmHelper));
+                }
+                else
+                {
+                    resources.push_back(std::make_unique<ERoTResource>(bus, objPath, uuid, chassisObjPath, isRecoverable, mctpVdmHelper));
+                }
             }
         }
     }

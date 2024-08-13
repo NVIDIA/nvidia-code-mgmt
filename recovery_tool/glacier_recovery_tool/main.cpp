@@ -67,6 +67,17 @@ int main(int argc, char** argv)
         }
 
         lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
+        bool isRecoverable{true};
+        if (interfaces.at(glacierCrisisObjInterface).find("isRecoverable") != interfaces.at(glacierCrisisObjInterface).end())
+        {
+            isRecoverable = std::get<bool>(interfaces.at(glacierCrisisObjInterface).at("isRecoverable"));
+        }
+
+        if (!isRecoverable)
+        {
+            continue;
+        }
+
         const auto [busAdd, slaveAdd] = getI2CBusAndAddress(emObjectPath, glacierCrisisObjInterface);
         const auto& device = emObjectPath.filename();
         try
