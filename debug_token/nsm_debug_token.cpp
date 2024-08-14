@@ -247,11 +247,6 @@ int UpdateDebugToken::nsmTokenErase()
             createTokenEraseErrorMessage(path);
             continue;
         }
-        this->createMessageRegistryResourceErrors(
-            updateSuccessful, DEBUG_TOKEN_ERASE_NAME, 
-            OperationType::Common, 
-            static_cast<int>(CommonErrorCodes::NSMCommandEraseSuccess),
-            path);
     }
     // Send exit signal to thread and wait for it to terminate.
     exitSignal.set_value();
@@ -379,11 +374,6 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             createTokenInstallErrorMessage(path);
             continue;
         }
-        this->createMessageRegistryResourceErrors(
-            updateSuccessful, DEBUG_TOKEN_INSTALL_NAME, 
-            OperationType::Common, 
-            static_cast<int>(CommonErrorCodes::NSMCommandInstallSuccess),
-            path);
     }
     // Send exit signal to thread and wait for it to terminate.
     exitSignal.set_value();

@@ -60,8 +60,8 @@ int main(int argc, char** argv)
             else
             {
                 log<level::INFO>("Debug Token: Erase Success");
-                updateDebugToken->createMessageRegistry(
-                    updateSuccessful, DEBUG_TOKEN_ERASE_NAME, version);
+                // for erase token log entry not required since it will clutter
+                // the message registry for all updates
             }
         }
         else if (operation == InstallToken)

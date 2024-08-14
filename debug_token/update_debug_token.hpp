@@ -199,17 +199,6 @@ enum class MCTPCompletionCodes
     ErrorUnsupportedCmd
 };
 
-
-enum class MCTPCompletionCodes
-{
-    Success = 0x0,
-    Error,
-    ErrorInvalidData,
-    ErrorInvalidLength,
-    ErrorNotReady,
-    ErrorUnsupportedCmd
-};
-
 /* Debug token install error code mapping for message registry */
 static std::map<InstallErrorCodes, MessageMapping> installErrorMapping{
     {InstallErrorCodes::InvalidToken,
