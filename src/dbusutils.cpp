@@ -119,9 +119,8 @@ any DBUSUtils::getPropertyImpl(const char* service, const char* path,
     }
     catch (const sdbusplus::exception::SdBusError& ex)
     {
-        log<level::ERR>("GetProperty call failed", entry("PATH=%s", path),
-                        entry("INTERFACE=%s", interface),
-                        entry("PROPERTY=%s", propertyName));
+        lg2::error("GetPropertyCall failed. Could not find property {PROPERTY} on {INTERFACE} for the object {PATH}",
+                "PATH", path, "INTERFACE", interface, "PROPERTY", propertyName);
         throw std::runtime_error("GetProperty call failed");
     }
 }
@@ -158,8 +157,8 @@ std::vector<std::string> DBUSUtils::getServices(const char* path,
         }
         catch (const sdbusplus::exception::SdBusError& ex)
         {
-            log<level::ERR>("GetObject call failed", entry("PATH=%s", path),
-                            entry("INTERFACE=%s", interface));
+            lg2::error("GetObject call failed. Could not find {PATH} with interface {INTERFACE}",
+                    "PATH", path, "INTERFACE", interface);
             std::cerr << ex.what() << std::endl;
 
             if (retry == 9)
