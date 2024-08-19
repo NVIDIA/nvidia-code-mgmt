@@ -229,6 +229,26 @@ ObjectValueTree DBUSUtils::getManagedObjects(const char* service,
     return managedObjects;
 }
 
+void DBUSUtils::controlSystemUnit(const std::string& systemUnit,
+                                const std::string& action) const noexcept
+{
+    try
+    {
+        auto msg = bus.new_method_call(
+                "org.freedesktop.systemd1",
+                "/org/freedesktop/systemd1",
+                "org.freedesktop.systemd1.Manager",
+                action.c_str());
+        msg.append(systemUnit.c_str(), "replace");
+        bus.call_noreply(msg);
+    }
+    catch (const sdbusplus::exception::SdBusError& e)
+    {
+        lg2::error("Failed to send {ACTION} request to {UNIT}",
+                   "ACTION", action, "UNIT", systemUnit);
+    }
+}
+
 } // namespace updater
 } // namespace software
 } // namespace nvidia

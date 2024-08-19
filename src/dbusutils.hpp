@@ -169,8 +169,38 @@ class DBUSUtils
      */
     bool findSoftwareObject(std::string& objPath);
 
+    /**
+     * @brief Restart a systemd unit
+     *
+     * @param systemUnit
+     */
+    inline void restartSystemUnit(const std::string& systemUnit) const noexcept
+    {
+        controlSystemUnit(systemUnit, "RestartUnit");
+    }
+
+    /**
+     * @brief Start a systemd unit
+     *
+     * @param systemUnit
+     */
+    inline void startSystemUnit(const std::string& systemUnit) const noexcept
+    {
+        controlSystemUnit(systemUnit, "StartUnit");
+    }
+
   protected:
     sdbusplus::bus::bus& bus;
+
+  private:
+    /**
+     * @brief Control a systemd unit
+     *
+     * @param systemUnit
+     * @param action
+     */
+    void controlSystemUnit(const std::string& systemUnit,
+                           const std::string& action) const noexcept;
 
 }; // DBUSUtils
 } // namespace updater

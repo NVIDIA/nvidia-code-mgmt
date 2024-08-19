@@ -241,6 +241,7 @@ phosphor_dbus_interfaces = dependency('phosphor-dbus-interfaces')
 phosphor_logging = dependency('phosphor-logging')
 sdbusplus = dependency('sdbusplus')
 ssl = dependency('openssl')
+libgpiocxx = dependency('libgpiodcxx', default_options: ['bindings=cxx'])
 
 add_project_link_arguments(['-lstdc++fs'], language: 'cpp')
 

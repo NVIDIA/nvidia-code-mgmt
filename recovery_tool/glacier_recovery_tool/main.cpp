@@ -17,6 +17,7 @@ using RecoveryResult =
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
 constexpr auto glacierCrisisObjInterface = "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
+constexpr auto gpioObjInterface = "xyz.openbmc_project.Configuration.GPIORecovery";
 
 static constexpr uint8_t delay1sec = 1;
 
@@ -35,6 +36,34 @@ std::pair<uint32_t, uint32_t> getI2CBusAndAddress(const std::string& objPath, co
             interface.c_str(), "I2CAddress");
 
     return {i2cBus, i2cAddress};
+}
+
+// Check if it is a Glacier device and assign the interface it uses
+static bool isGlacierDevice(nvidia::software::updater::InterfaceMap interfaces,
+                        std::string& interface)
+{
+    if (interfaces.contains(glacierCrisisObjInterface))
+    {
+        bool isRecoverable{true};
+        // Check if device is recoverable (i.e., ERoT)
+        if (interfaces.at(glacierCrisisObjInterface).find("isRecoverable") != interfaces.at(glacierCrisisObjInterface).end())
+        {
+            interface = glacierCrisisObjInterface;
+            isRecoverable = std::get<bool>(interfaces.at(glacierCrisisObjInterface).at("isRecoverable"));
+            return true;
+        }
+        if (!isRecoverable)
+        {
+            return false;
+        }
+    }
+    else if (interfaces.contains(gpioObjInterface) &&
+                std::get<bool>(interfaces.at(gpioObjInterface).at("IsERoT")))
+    {
+        interface = gpioObjInterface;
+        return true;
+    }
+    return false;
 }
 
 int main(int argc, char** argv)
@@ -59,26 +88,17 @@ int main(int argc, char** argv)
     }
 
     int recoveryTaskState = 0;
+    std::string interface{};
     for (const auto& [emObjectPath, interfaces] : managedObjects)
     {
-        if (!interfaces.contains(glacierCrisisObjInterface))
+        interface = "";
+        if (!isGlacierDevice(interfaces, interface))
         {
             continue;
         }
 
         lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
-        bool isRecoverable{true};
-        if (interfaces.at(glacierCrisisObjInterface).find("isRecoverable") != interfaces.at(glacierCrisisObjInterface).end())
-        {
-            isRecoverable = std::get<bool>(interfaces.at(glacierCrisisObjInterface).at("isRecoverable"));
-        }
-
-        if (!isRecoverable)
-        {
-            continue;
-        }
-
-        const auto [busAdd, slaveAdd] = getI2CBusAndAddress(emObjectPath, glacierCrisisObjInterface);
+        const auto [busAdd, slaveAdd] = getI2CBusAndAddress(emObjectPath, interface);
         const auto& device = emObjectPath.filename();
         try
         {
@@ -86,16 +106,21 @@ int main(int argc, char** argv)
                 glacier_recovery_tool::glacier_recovery_commands::
                     GlacierRecoveryCommands>(busAdd, slaveAdd, false);
 
-            if (!glacierRecoveryObj->unlockI2CDevice())
+            auto isHiddenByFPGA = std::get<bool>(interfaces.at(interface).at("HiddenByFPGA"));
+            if (isHiddenByFPGA)
             {
-                lg2::info(
-                    "Failed to unlock addresses for I2C device. Device: {DEVICE}",
-                    "DEVICE", device);
-                messageRegistry->createMessageRegistryResourceErrors(
-                    resourceErrorsDetected, RecoveryProtocol::GlacierRecovery,
-                    static_cast<ErrorCode>(deviceNotResponding), device);
-                continue;
+                if (!glacierRecoveryObj->unlockI2CDevice())
+                {
+                    lg2::info(
+                        "Failed to unlock addresses for I2C device. Device: {DEVICE}",
+                        "DEVICE", device);
+                    messageRegistry->createMessageRegistryResourceErrors(
+                        resourceErrorsDetected, RecoveryProtocol::GlacierRecovery,
+                        static_cast<ErrorCode>(deviceNotResponding), device);
+                    continue;
+                }
             }
+
             auto initRes = glacierRecoveryObj->performInitialization();
             if (initRes != RecoveryResult::Ok)
             {
@@ -125,6 +150,12 @@ int main(int argc, char** argv)
                 "DEVICE", device);
             messageRegistry->createMessageRegistry(recoveryStarted, device);
             auto imgPath = argv[1];
+
+            /*
+             * There is a timing issue happens if we perform the recovery on ERoTs on the same bus
+             * consecutively. Add 1 sec sleep here as a workaround
+             */
+            sleep(1);
             auto recResult =
                 glacierRecoveryObj->performGlacierRecovery(imgPath);
             if (recResult != RecoveryResult::Ok)

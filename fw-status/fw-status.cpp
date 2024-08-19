@@ -18,6 +18,7 @@
 #include "gpu_resource.hpp"
 #include "erot_resource.hpp"
 #include "ap_resource.hpp"
+#include "gpio_resource.hpp"
 
 #include "dbusutils.hpp"
 
@@ -40,6 +41,7 @@ constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
 constexpr auto ocpObjInterface = "xyz.openbmc_project.Configuration.OCPRecovery";
 constexpr auto glacierCrisisObjInterface = "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
+constexpr auto gpioObjInterface = "xyz.openbmc_project.Configuration.GPIORecovery";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/xyz/openbmc_project/inventory/system/";
 constexpr auto i2cInterface = "xyz.openbmc_project.Inventory.Decorator.I2CDevice";
@@ -208,6 +210,30 @@ int main()
                 {
                     resources.push_back(std::make_unique<ERoTResource>(bus, objPath, uuid, chassisObjPath, isRecoverable, mctpVdmHelper));
                 }
+            }
+        }
+        else if (interfaces.contains(gpioObjInterface))
+        {
+            const auto objPath = getSoftwareDBusObjectPath(std::string(emObjectPath));
+            const auto uuid = std::get<std::string>(interfaces.at(gpioObjInterface).at("MctpUUID"));
+            const auto gpio = std::get<std::string>(interfaces.at(gpioObjInterface).at("GPIO"));
+
+            auto isErot = std::get<bool>(interfaces.at(gpioObjInterface).at("IsERoT"));
+            if (isErot)
+            {
+                lg2::info("Found GPIO recovery Object (ERoT): {PATH}", "PATH", emObjectPath);
+                const auto i2cBus = std::get<uint64_t>(interfaces.at(gpioObjInterface).at("I2CBus"));
+                const auto i2cAddress = std::get<uint64_t>(interfaces.at(gpioObjInterface).at("I2CAddress"));
+                const auto target = std::get<std::string>(interfaces.at(gpioObjInterface).at("Target"));
+                resources.push_back(std::make_unique<GPIOResource>(bus, objPath, event, i2cBus, i2cAddress, uuid, gpio, target));
+            }
+            else
+            {
+                lg2::info("Found GPIO recovery Object (AP): {PATH}", "PATH", emObjectPath);
+                const auto risingTarget = std::get<std::string>(interfaces.at(gpioObjInterface).at("RisingTarget"));
+                const auto fallingTarget = std::get<std::string>(interfaces.at(gpioObjInterface).at("FallingTarget"));
+                const auto polarity = std::get<std::string>(interfaces.at(gpioObjInterface).at("Polarity"));
+                resources.push_back(std::make_unique<GPIOResource>(bus, objPath, event, uuid, gpio, risingTarget, fallingTarget, polarity));
             }
         }
     }
