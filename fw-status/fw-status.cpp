@@ -48,38 +48,12 @@ constexpr auto i2cInterface = "xyz.openbmc_project.Inventory.Decorator.I2CDevice
 constexpr auto uuidInterface = "xyz.openbmc_project.Common.UUID";
 
 using namespace phosphor::logging;
+using namespace nvidia::software::updater;
 
 auto& getBus()
 {
     static auto bus = sdbusplus::bus::new_default();
     return bus;
-}
-
-std::pair<uint32_t, uint32_t> getI2CBusAndAddress(const std::string& objPath, const std::string& interface)
-{
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    auto i2cBus = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "I2CBus");
-    auto i2cAddress = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "I2CAddress");
-
-    return {i2cBus, i2cAddress};
-}
-
-std::string getUUID(const std::string& objPath, const std::string& interface)
-{
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    auto uuid = dbusUtil.getProperty<std::string>(entityManagerService, objPath.c_str(),
-           interface.c_str(), "MctpUUID");
-    return uuid;
-}
-
-std::string getChassisName(const std::string& objPath, const std::string& interface)
-{
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    auto chassisName = dbusUtil.getProperty<std::string>(entityManagerService, objPath.c_str(),
-           interface.c_str(), "ChassisName");
-    return chassisName;
 }
 
 std::string getSoftwareDBusObjectPath(const std::filesystem::path& path)
@@ -93,48 +67,43 @@ std::string getChassisObjPath(const std::string& chassisName)
     return "/xyz/openbmc_project/inventory/system/chassis/" + chassisName;
 }
 
-uint8_t getEid(const std::string& objPath, const std::string& interface)
+std::string getString(const InterfaceMap& interfaces, const Interface& interface, const Property& property)
 {
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    auto eid = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
-                interface.c_str(), "APEID");
-
-    return eid;
-}
-
-std::string getBootStatusType(const std::string& objPath, const std::string& interface)
-{
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    std::string bootStatusType{};
     try
     {
-        bootStatusType = dbusUtil.getProperty<std::string>(entityManagerService, objPath.c_str(),
-                interface.c_str(), "APBootStatusType");
+        return std::get<std::string>(interfaces.at(interface).at(property));
     }
     catch (std::exception& e)
     {
+        lg2::error("Failed to get property {NAME}. {ERR}", "NAME", property, "ERR", e.what());
         return {};
     }
-
-    return bootStatusType;
 }
 
-std::string getApName(const std::string& objPath, const std::string& interface)
+uint64_t getUint64(const InterfaceMap& interfaces, const Interface& interface, const Property& property)
 {
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    auto bootStatusType = dbusUtil.getProperty<std::string>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "APName");
-
-    return bootStatusType;
+    try
+    {
+        return std::get<uint64_t>(interfaces.at(interface).at(property));
+    }
+    catch (std::exception& e)
+    {
+        lg2::error("Failed to get property {NAME}. {ERR}", "NAME", property, "ERR", e.what());
+        return {};
+    }
 }
 
-bool isFwRecoverable(const std::string& objPath, const std::string& interface)
+bool getBool(const InterfaceMap& interfaces, const Interface& interface, const Property& property)
 {
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    auto bootStatusType = dbusUtil.getProperty<bool>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "isRecoverable");
-
-    return bootStatusType;
+    try
+    {
+        return std::get<bool>(interfaces.at(interface).at(property));
+    }
+    catch (std::exception& e)
+    {
+        lg2::error("Failed to get property {NAME}. {ERR}", "NAME", property, "ERR", e.what());
+        return {};
+    }
 }
 
 int main()
@@ -172,37 +141,39 @@ int main()
 
     for (const auto& [emObjectPath, interfaces] : managedObjects)
     {
+        const auto objPath = getSoftwareDBusObjectPath(std::string(emObjectPath));
         if (interfaces.contains(ocpObjInterface))
         {
             lg2::info("Found OCP recovery config Object: {PATH}", "PATH", emObjectPath);
-            const auto [i2cBus, i2cAddress] = getI2CBusAndAddress(emObjectPath, ocpObjInterface);
-            const auto uuid = getUUID(emObjectPath, ocpObjInterface);
-            const auto objPath = getSoftwareDBusObjectPath(std::string(emObjectPath));
-            const auto chassisName = getChassisName(emObjectPath, ocpObjInterface);
+            const auto i2cBus = getUint64(interfaces, ocpObjInterface, "I2CBus");
+            const auto i2cAddress = getUint64(interfaces, ocpObjInterface, "I2CAddress");
+            const auto uuid = getString(interfaces, ocpObjInterface, "MctpUUID");
+            const auto chassisName = getString(interfaces, ocpObjInterface, "ChassisName");
             const auto chassisObjPath = getChassisObjPath(chassisName);
             resources.push_back(std::make_unique<GpuResource>(bus, objPath, chassisObjPath, i2cBus, i2cAddress, uuid));
         }
         else if (interfaces.contains(glacierCrisisObjInterface))
         {
             lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
-            const auto isRecoverable = isFwRecoverable(emObjectPath, glacierCrisisObjInterface);
-            uint32_t i2cBus, i2cAddress;
+            const auto isRecoverable = getBool(interfaces, glacierCrisisObjInterface, "isRecoverable");
+
+            uint64_t i2cBus, i2cAddress;
             if (isRecoverable)
             {
-                std::tie(i2cBus, i2cAddress) = getI2CBusAndAddress(emObjectPath, glacierCrisisObjInterface);
+                i2cBus = getUint64(interfaces, glacierCrisisObjInterface, "I2CBus");
+                i2cAddress = getUint64(interfaces, glacierCrisisObjInterface, "I2CAddress");
             }
-            const auto uuid = getUUID(emObjectPath, glacierCrisisObjInterface);
-            const auto objPath = getSoftwareDBusObjectPath(std::string(emObjectPath));
-            const auto apBootStatusType = getBootStatusType(emObjectPath, glacierCrisisObjInterface);
-            const auto chassisName = getChassisName(emObjectPath, glacierCrisisObjInterface);
+            const auto uuid = getString(interfaces, glacierCrisisObjInterface, "MctpUUID");
+            const auto apBootStatusType = getString(interfaces, glacierCrisisObjInterface, "APBootStatusType");
+            const auto chassisName = getString(interfaces, glacierCrisisObjInterface, "ChassisName");
             const auto chassisObjPath = getChassisObjPath(chassisName);
             if (!apBootStatusType.empty())
             {
                 lg2::info("Found AP config on Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
                 if (isRecoverable)
                 {
-                    const auto apEid = getEid(emObjectPath, glacierCrisisObjInterface);
-                    const auto apName = getApName(emObjectPath, glacierCrisisObjInterface);
+                    const auto apEid = getUint64(interfaces, glacierCrisisObjInterface, "APEID");
+                    const auto apName = getString(interfaces, glacierCrisisObjInterface, "APName");
                     const auto apObjPath = getSoftwareDBusObjectPath(apName);
                     resources.push_back(std::make_unique<ERoTResource>(bus, objPath, i2cBus, i2cAddress, uuid, apEid, chassisObjPath, apObjPath, isRecoverable, mctpVdmHelper));
                 }
@@ -214,25 +185,23 @@ int main()
         }
         else if (interfaces.contains(gpioObjInterface))
         {
-            const auto objPath = getSoftwareDBusObjectPath(std::string(emObjectPath));
-            const auto uuid = std::get<std::string>(interfaces.at(gpioObjInterface).at("MctpUUID"));
-            const auto gpio = std::get<std::string>(interfaces.at(gpioObjInterface).at("GPIO"));
-
-            auto isErot = std::get<bool>(interfaces.at(gpioObjInterface).at("IsERoT"));
+            const auto uuid = getString(interfaces, gpioObjInterface, "MctpUUID");
+            const auto gpio = getString(interfaces, gpioObjInterface, "GPIO");
+            const auto isErot = getBool(interfaces, gpioObjInterface, "IsERoT");
             if (isErot)
             {
                 lg2::info("Found GPIO recovery Object (ERoT): {PATH}", "PATH", emObjectPath);
-                const auto i2cBus = std::get<uint64_t>(interfaces.at(gpioObjInterface).at("I2CBus"));
-                const auto i2cAddress = std::get<uint64_t>(interfaces.at(gpioObjInterface).at("I2CAddress"));
-                const auto target = std::get<std::string>(interfaces.at(gpioObjInterface).at("Target"));
+                const auto i2cBus = getUint64(interfaces, gpioObjInterface, "I2CBus");
+                const auto i2cAddress = getUint64(interfaces, gpioObjInterface, "I2CAddress");
+                const auto target = getString(interfaces, gpioObjInterface, "Target");
                 resources.push_back(std::make_unique<GPIOResource>(bus, objPath, event, i2cBus, i2cAddress, uuid, gpio, target));
             }
             else
             {
                 lg2::info("Found GPIO recovery Object (AP): {PATH}", "PATH", emObjectPath);
-                const auto risingTarget = std::get<std::string>(interfaces.at(gpioObjInterface).at("RisingTarget"));
-                const auto fallingTarget = std::get<std::string>(interfaces.at(gpioObjInterface).at("FallingTarget"));
-                const auto polarity = std::get<std::string>(interfaces.at(gpioObjInterface).at("Polarity"));
+                const auto risingTarget = getString(interfaces, gpioObjInterface, "RisingTarget");
+                const auto fallingTarget = getString(interfaces, gpioObjInterface, "FallingTarget");
+                const auto polarity = getString(interfaces, gpioObjInterface, "Polarity");
                 resources.push_back(std::make_unique<GPIOResource>(bus, objPath, event, uuid, gpio, risingTarget, fallingTarget, polarity));
             }
         }
