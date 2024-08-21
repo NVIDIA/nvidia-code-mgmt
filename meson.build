@@ -184,6 +184,7 @@ if get_option('JAMPLAYER_SUPPORT').enabled()
   cdata.set_quoted('JAMPLAYER_BUSNAME_UPDATER', 'com.Nvidia.Software.Jamplayer.Updater')
   cdata.set_quoted('JAMPLAYER_BUSNAME_INVENTORY', 'com.Nvidia.Jamplayer')
   cdata.set_quoted('JAMPLAYER_SERVICE', 'jamplayer-flash@.service')
+  cdata.set_quoted('JAMPLAYER_NAME', get_option('JAMPLAYER_NAME'))
   cdata.set('JAMPLAYER_TIMEOUT', get_option('JAMPLAYER_TIMEOUT'))
 endif
 

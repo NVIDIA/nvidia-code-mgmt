@@ -168,6 +168,11 @@ option('JAMPLAYER_SUPPORTED_MODEL',
        value: '',
        description: 'Altera supported models')
 
+option('JAMPLAYER_NAME',
+       type: 'string',
+       value: '',
+       description: 'Component target name for JAMPLAYER Inventory Objects')
+
 option('VMEPLAYER_SUPPORT',
        type: 'feature',
        value: 'disabled',

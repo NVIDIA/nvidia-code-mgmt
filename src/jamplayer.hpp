@@ -86,6 +86,21 @@ class JamPlayer : public BaseItemUpdater
         args += version;
         args += "\\x20";
         args += "JAMPLAYER";
+
+        if ((targetFilter.type == TargetFilterType::UpdateAll) ||
+            (std::find(targetFilter.targets.begin(), targetFilter.targets.end(), JAMPLAYER_NAME) != targetFilter.targets.end()))
+        {
+            // The TargetFilterType is UpdateAll or component target is in targets, execute the update
+            args += "\\x20";
+            args += "EXECUTE";
+        }
+        else
+        {
+            // Not fulfill the conditions, ignore this update
+            args += "\\x20";
+            args += "IGNORE";
+        }
+
         std::replace(args.begin(), args.end(), '/', '-');
         return args;
     }
