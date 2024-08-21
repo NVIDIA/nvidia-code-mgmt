@@ -102,5 +102,5 @@ class BaseResource : public ResourceInterfaces
         }
 
     protected:
-        const std::string& path;
+        const std::string path;
 };
