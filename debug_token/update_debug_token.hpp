@@ -87,9 +87,14 @@ constexpr auto nsmService = "xyz.openbmc_project.NSM";
 constexpr auto nsmDebugTokenIntfName = "com.nvidia.DebugToken";
 constexpr auto nsmProgressIntfName = "xyz.openbmc_project.Common.Progress";
 constexpr auto nsmDebugTokenPath = "/";
+constexpr auto propertiesPath = "org.freedesktop.DBus.Properties";
+
 constexpr auto nsmCompletedStatus = 
     "xyz.openbmc_project.Common.Progress.OperationStatus.Completed";
-constexpr auto propertiesPath = "org.freedesktop.DBus.Properties";
+constexpr auto nsmTokenTypeCRDT = "com.nvidia.DebugToken.TokenTypes.CRDT";
+constexpr auto nsmTokenStatusDebugSessionActive = "com.nvidia.DebugToken.TokenStatus.DebugSessionActive";
+constexpr auto nsmTokenStatusTokenTimeout = "com.nvidia.DebugToken.TokenStatus.TokenTimeout";
+constexpr auto nsmTokenStatusNoTokenApplied = "com.nvidia.DebugToken.TokenStatus.NoTokenApplied";
 
 const std::string mctpVdmUtilPath = "/usr/bin/mctp-vdm-util";
 const std::string transferFailed{"Update.1.0.TransferFailed"};
@@ -104,7 +109,6 @@ static constexpr size_t mctpDebugTokenQueryResponseLengthV1 =
     19; // Total length of MCTP respose : Header (9) + Data (10)
 static constexpr size_t mctpDebugTokenQueryResponseLengthV2 =
     37; // Total length of MCTP respose : Header (9) + Data (28)
-static constexpr uint8_t nsmTokenTypeCRDT = 6;
 static constexpr uint64_t propertyChangeSignalTimeout = 5;
 
 // Tokken Type bytes in v2 query command are from bytes 19-22
@@ -538,7 +542,7 @@ class UpdateDebugToken : public TokenUtility
         this->createMessageRegistryResourceErrors(
             transferFailed, DEBUG_TOKEN_ERASE_NAME, 
             OperationType::Common,
-            static_cast<int>(CommonErrorCodes::NSMCommandInstallSuccess),
+            static_cast<int>(CommonErrorCodes::NSMCommandEraseFailure),
             path);
     }
 

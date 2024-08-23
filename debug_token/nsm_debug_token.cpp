@@ -46,7 +46,6 @@ std::string getOperationStatus(sdbusplus::message_t &msg)
     std::string interfaceName{};
     std::string response;
     std::map<std::string, std::variant<std::string>>  properties;       
-    std::tuple<uint8_t, uint8_t, uint8_t, uint32_t> tknStatus;
     try
     {
         msg.read(interfaceName, properties);
@@ -103,21 +102,11 @@ int UpdateDebugToken::enumerateNsmDebugTokenEndpoints(NSMEndpoints &nsmEndpoints
     return 0;
 }
 
-/**
-*    Token Status is value of type (yyyu).
-*    .TokenStatus                                property  (yyyu)    2 5 6 2098858688                         emits-change writable
-*
-*    The four values are: Status, AdditionalInfo, TokenType and Time left.
-*    TokenType should be CRDT (0x06).
-*
-*    @return int - Status value from TokenStatus
-*/
-
-int getTokenStatus(sdbusplus::bus::bus& bus, std::string path)
+std::string getTokenStatus(sdbusplus::bus::bus& bus, std::string path)
 {
-    std::variant<std::tuple<uint8_t, uint8_t, uint8_t, uint32_t>> 
+    std::variant<std::tuple<std::string, std::string, std::string, uint32_t>> 
                     tokenStatusProperty;
-    std::tuple<uint8_t, uint8_t, uint8_t, uint32_t> tknStatus;
+    std::tuple<std::string, std::string, std::string, uint32_t> tknStatus;
     auto method = bus.new_method_call(nsmService, path.c_str(),
                                           propertiesPath,
                                           "Get");
@@ -125,15 +114,15 @@ int getTokenStatus(sdbusplus::bus::bus& bus, std::string path)
     auto reply = bus.call(method);
     reply.read(tokenStatusProperty);            
     tknStatus = 
-        std::get<std::tuple<uint8_t, uint8_t, uint8_t, uint32_t>>(
+        std::get<std::tuple<std::string, std::string, std::string, uint32_t>>(
                 tokenStatusProperty);
-    uint8_t tokenType = std::get<2>(tknStatus);
+    std::string tokenType = std::get<0>(tknStatus);
     if(tokenType != nsmTokenTypeCRDT)
     {
         log<level::ERR>("Invalid token type.");
-        return -1;
+        return "";
     }
-    return std::get<0>(tknStatus);
+    return std::get<1>(tknStatus);
 }
 
 /**
@@ -174,7 +163,7 @@ int UpdateDebugToken::nsmTokenErase()
     for(const auto& path: nsmEndpoints)
     {
         std::unique_lock<std::mutex> lock(mtx);
-        uint8_t tokenStatus;
+        std::string tokenStatus;
 
         std::string propertiesMatchString = 
             sdbusplus::bus::match::rules::propertiesChanged(
@@ -200,11 +189,16 @@ int UpdateDebugToken::nsmTokenErase()
             createTokenEraseErrorMessage(path);
             continue;
         }
+        if(nsmOperationStatus != nsmCompletedStatus)
+        {
+            log<level::ERR>("The operation didn't complete");
+            status = -1;
+            continue;
+        }
+
         tokenStatus = getTokenStatus(bus, path); 
-
-
-        if(tokenStatus != static_cast<int>(NSMTokenStatus::DebugSessionActive) &&
-            tokenStatus != static_cast<int>(NSMTokenStatus::TokenTimeout))
+        if(tokenStatus != nsmTokenStatusDebugSessionActive &&
+            tokenStatus != nsmTokenStatusTokenTimeout)
         {
             log<level::INFO>("No token installed.");
             continue;
@@ -223,6 +217,12 @@ int UpdateDebugToken::nsmTokenErase()
             createTokenEraseErrorMessage(path);
             continue;
         }
+        if(nsmOperationStatus != nsmCompletedStatus)
+        {
+            log<level::ERR>("The operation didn't complete");
+            status = -1;
+            continue;
+        }
 
         method = bus.new_method_call(nsmService, path.c_str(),
                                 nsmDebugTokenIntfName,
@@ -238,9 +238,15 @@ int UpdateDebugToken::nsmTokenErase()
             createTokenEraseErrorMessage(path);
             continue;
         }
+        if(nsmOperationStatus != nsmCompletedStatus)
+        {
+            log<level::ERR>("The operation didn't complete");
+            status = -1;
+            continue;
+        }
 
         tokenStatus = getTokenStatus(bus, path); 
-        if(tokenStatus != static_cast<int>(NSMTokenStatus::NoTokenApplied))
+        if(tokenStatus != nsmTokenStatusNoTokenApplied)
         {
             log<level::ERR>(("Token erase failed for: {}" + path).c_str());
             status = -1;
@@ -282,7 +288,7 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
     {
         std::unique_lock<std::mutex> lock(mtx);
         std::variant<std::string> property;
-        uint8_t tokenStatus;
+        std::string tokenStatus;
         std::string propertiesMatchString = 
             sdbusplus::bus::match::rules::propertiesChanged(
                 path, nsmProgressIntfName);
@@ -305,12 +311,18 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
         {
             log<level::ERR>("Timeout waiting for GetStatus command");
             status = -1;
-            createTokenEraseErrorMessage(path);
+            createTokenInstallErrorMessage(path);
+            continue;
+        }
+        if(nsmOperationStatus != nsmCompletedStatus)
+        {
+            log<level::ERR>("The operation didn't complete");
+            status = -1;
             continue;
         }
 
         tokenStatus = getTokenStatus(bus, path); 
-        if(tokenStatus == static_cast<int>(NSMTokenStatus::DebugSessionActive))
+        if(tokenStatus == nsmTokenStatusDebugSessionActive)
         {
             log<level::INFO>("Debug session active.");
             continue;
@@ -350,6 +362,12 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             createTokenInstallErrorMessage(path);
             continue;
         }
+        if(nsmOperationStatus != nsmCompletedStatus)
+        {
+            log<level::ERR>("The operation didn't complete");
+            status = -1;
+            continue;
+        }
 
         method = bus.new_method_call(nsmService, path.c_str(),
                                 nsmDebugTokenIntfName,
@@ -365,9 +383,15 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             createTokenInstallErrorMessage(path);
             continue;
         }
+        if(nsmOperationStatus != nsmCompletedStatus)
+        {
+            log<level::ERR>("The operation didn't complete");
+            status = -1;
+            continue;
+        }
 
         tokenStatus = getTokenStatus(bus, path); 
-        if(tokenStatus != static_cast<int>(NSMTokenStatus::DebugSessionActive))
+        if(tokenStatus != nsmTokenStatusDebugSessionActive)
         {
             log<level::ERR>(("Token install failed for: " + path).c_str());
             status = -1;
