@@ -114,6 +114,7 @@ static constexpr uint64_t propertyChangeSignalTimeout = 5;
 // Tokken Type bytes in v2 query command are from bytes 19-22
 static constexpr int tokenTypeByteStart = 19; 
 static constexpr int tokenTypeByteEnd = 22;
+static constexpr int nsmUnsupportedCmd = 0x05;
 
 static constexpr size_t debugFirmwareTokenType = 0x1;
 

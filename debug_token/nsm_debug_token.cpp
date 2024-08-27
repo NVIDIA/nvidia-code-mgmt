@@ -72,7 +72,7 @@ std::string getOperationStatus(sdbusplus::message_t &msg)
 }
 
 int UpdateDebugToken::progressStatusPropertyChange(sdbusplus::message_t &msg){
-    nsmOperationStatus = getOperationStatus(msg);;
+    nsmOperationStatus = getOperationStatus(msg);
     cv.notify_one();
     return 0;
 }
@@ -101,6 +101,31 @@ int UpdateDebugToken::enumerateNsmDebugTokenEndpoints(NSMEndpoints &nsmEndpoints
     }
     return 0;
 }
+
+int getErrorCode(sdbusplus::bus::bus& bus, std::string path)
+{
+    std::variant<std::tuple<uint16_t, std::string>> 
+                errorCodeProperty;
+    std::tuple<uint16_t, std::string> errorCode;
+    try
+    {
+        auto method = bus.new_method_call(nsmService, path.c_str(),
+                                        propertiesPath,
+                                        "Get");
+        method.append(nsmDebugTokenIntfName, "ErrorCode");
+        auto reply = bus.call(method);
+        reply.read(errorCodeProperty);            
+        errorCode = 
+            std::get<std::tuple<uint16_t, std::string>>(
+                    errorCodeProperty);
+    }
+    catch(const std::exception& e)
+    {
+        log<level::ERR>(e.what());
+        return -1;
+    }
+    return std::get<0>(errorCode);
+} 
 
 std::string getTokenStatus(sdbusplus::bus::bus& bus, std::string path)
 {
@@ -191,8 +216,15 @@ int UpdateDebugToken::nsmTokenErase()
         }
         if(nsmOperationStatus != nsmCompletedStatus)
         {
-            log<level::ERR>("The operation didn't complete");
-            status = -1;
+            if(getErrorCode(bus, path) == nsmUnsupportedCmd)
+            {
+                log<level::INFO>(("Debug token operation not supported for " + path).c_str());
+            }
+            else
+            {
+                log<level::ERR>("The operation didn't complete");
+                status = -1;
+            }
             continue;
         }
 
@@ -299,7 +331,6 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
                 this->progressStatusPropertyChange(msg);
             }
         );
-
         auto method = bus.new_method_call(nsmService, path.c_str(),
                                 nsmDebugTokenIntfName,
                                 "GetStatus");
@@ -316,8 +347,15 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
         }
         if(nsmOperationStatus != nsmCompletedStatus)
         {
-            log<level::ERR>("The operation didn't complete");
-            status = -1;
+            if(getErrorCode(bus, path) == nsmUnsupportedCmd)
+            {
+                log<level::INFO>(("Debug token operation not supported for " + path).c_str());
+            }
+            else
+            {
+                log<level::ERR>("The operation didn't complete");
+                status = -1;
+            }
             continue;
         }
 
