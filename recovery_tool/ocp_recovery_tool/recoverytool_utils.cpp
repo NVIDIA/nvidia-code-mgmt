@@ -275,10 +275,13 @@ nlohmann::json OCPRecoveryTool::getDeviceStatusJson()
                              hexData.size() - 8);
                 for (size_t i = 0; i < maxIndex; ++i)
                 {
-                    vendorStatus += std::to_string(hexData[8 + i]) + " ";
+                    std::stringstream ss;
+                    ss << std::hex << std::uppercase << std::setw(2)
+                       << std::setfill('0') << static_cast<int>(hexData[8 + i]);
+                    vendorStatus += ss.str() + " ";
                 }
 
-                jsonResponse["Vendor Status"] = vendorStatus;
+                jsonResponse["Vendor Status(in hex)"] = vendorStatus;
             }
         }
         else
