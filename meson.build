@@ -283,4 +283,6 @@ if get_option('tests').enabled()
   subdir('test')
 endif
 
-
+if get_option('SPI_WRITE_PROTECT_APP_SUPPORT').enabled()
+  subdir('set-spi-wp')
+endif
