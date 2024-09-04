@@ -36,10 +36,11 @@ class MTDItemUpdater : public BaseItemUpdater
     std::streamoff versionOffset;
     std::size_t versionSize;
     std::unique_ptr<SoftwareVersion> softwareVersionObj;
+    std::string inventory;
 
   public:
     MTDItemUpdater(sdbusplus::bus::bus& bus, std::string mtdN, std::string modelName) :
-		BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE, "MTD_FW_" + mtdN,
+		BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE, computeInventory(mtdN),
 						MTD_BUSNAME_UPDATER_BASE + mtdN,
                         MTD_UPDATE_SERVICE, false, MTD_BUSNAME_INVENTORY_BASE + mtdN),
 		mtdName(mtdN)
@@ -59,7 +60,7 @@ class MTDItemUpdater : public BaseItemUpdater
                 nlohmann::json mtdConfig;
                 jsonFile >> mtdConfig;
                 jsonFile.close();
-                std::string inventory = mtdConfig["Inventory"];
+                inventory = mtdConfig["Inventory"];
                 copyPath = mtdConfig["Path"];
                 std::string off = mtdConfig["Offset"];
                 versionOffset = static_cast<std::streamoff>(std::stoll(off, nullptr, 0));
@@ -76,7 +77,32 @@ class MTDItemUpdater : public BaseItemUpdater
             std::cerr << "Failed to process the file:" << jsonPath << std::endl;
         }
     }
+     /**
+     * @brief compute the inventory name for the correct update messaging
+     *
+     * @param std::string mtd name
+     * @return std::string inventory value
+     */
+    static std::string computeInventory(const std::string& mtdN)
+    {
+        std::string jsonPath = "/usr/share/mtd_targets/" + mtdN + ".json";
 
+        if (std::filesystem::exists(jsonPath)) {
+            try {
+                std::ifstream jsonFile(jsonPath);
+                if (jsonFile.is_open()) {
+                    nlohmann::json mtdConfig;
+                    jsonFile >> mtdConfig;
+                    return mtdConfig["Inventory"];
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error reading inventory from JSON: " << e.what() << std::endl;
+            }
+        }
+
+        // Default case if the file doesn't exist or reading fails
+        return "MTD_FW_" + mtdN;
+    }
     /**
      * @brief Get the Version object
      *
@@ -124,6 +150,12 @@ class MTDItemUpdater : public BaseItemUpdater
         args += imagePath;
         args += "\\x20";
         args += mtdName;
+        if (!inventory.empty())
+        {
+            std::cerr << "adding inventory to the update call:" << inventory << std::endl;
+            args += "\\x20";
+            args += inventory;
+        }
         std::replace(args.begin(), args.end(), '/', '-');
         return args;
     }
