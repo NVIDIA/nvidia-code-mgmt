@@ -69,6 +69,11 @@ option('ORIN_FLASH_SUPPORT',
        value: 'disabled',
        description: 'Enables ORIN flash support')
 
+option('SPI_WRITE_PROTECT_APP_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables presence of write protect assert/deassert for Renesas chip')
+
 option('ORIN_SUPPORTED_MODEL',
        type: 'string',
        value: '',
