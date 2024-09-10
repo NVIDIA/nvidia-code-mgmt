@@ -101,8 +101,7 @@ void GPIOResource::updateERoTHealth()
         dbusUtil.restartSystemUnit(systemTarget);
         isFirmwareInRecovery = false;
     }
-    health(HealthServer::HealthType::OK);
-    state(OperationalStatusServer::StateType::Enabled);
+    deleteDbusObject();
     return;
 }
 
@@ -175,10 +174,8 @@ void GPIOResource::updateAPHealth(uint8_t type)
 
     if (healthy)
     {
-        health(HealthServer::HealthType::OK);
-        state(OperationalStatusServer::StateType::Enabled);
-        lg2::info("Device associated with {OBJ} is healthy", "OBJ",
-                  path.c_str());
+        deleteDbusObject();
+        lg2::info("Device associated with {OBJ} is healthy", "OBJ", path.c_str());
     }
     else
     {
