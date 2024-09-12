@@ -10,20 +10,20 @@ namespace software
 namespace updater
 {
 
-std::string OCPRecovery::getVersion([
-    [maybe_unused]] const std::string& inventoryPath) const
+std::string OCPRecovery::getVersion(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }
 
-std::string OCPRecovery::getManufacturer([
-    [maybe_unused]] const std::string& inventoryPath) const
+std::string OCPRecovery::getManufacturer(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "OCPRecovery";
 }
 
-std::string OCPRecovery::getModel([
-    [maybe_unused]] const std::string& inventoryPath) const
+std::string OCPRecovery::getModel(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "Nvidia";
 }
@@ -31,7 +31,8 @@ std::string OCPRecovery::getModel([
 int OCPRecovery::processImage(std::filesystem::path& filePath)
 {
     // Compute id
-    std::string uniqueIdentifier = filePath.parent_path().parent_path().string();
+    std::string uniqueIdentifier =
+        filePath.parent_path().parent_path().string();
     boost::replace_all(uniqueIdentifier, getImageUploadDir(), "");
     auto id = getIdProperty(uniqueIdentifier);
     if (id == "")
@@ -40,8 +41,9 @@ int OCPRecovery::processImage(std::filesystem::path& filePath)
         return -1;
     }
     auto objPath = std::string{SOFTWARE_OBJPATH} + '/' + id;
-    return initiateUpdateImage(objPath, filePath.parent_path().parent_path().string(), filePath.stem(), id,
-                               uniqueIdentifier);
+    return initiateUpdateImage(objPath,
+                               filePath.parent_path().parent_path().string(),
+                               filePath.stem(), id, uniqueIdentifier);
 }
 
 } // namespace updater

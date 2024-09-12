@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -149,11 +149,12 @@ class BaseItemUpdater :
      *
      * @return std::string
      */
-    void cleanupImageUploadDir(const std::filesystem::path& path, Version* version) const
+    void cleanupImageUploadDir(const std::filesystem::path& path,
+                               Version* version) const
     {
         if (std::filesystem::is_directory(path))
         {
-            for (const auto& file : std::filesystem::directory_iterator(path)) 
+            for (const auto& file : std::filesystem::directory_iterator(path))
             {
                 if (!std::filesystem::is_directory(file.path()))
                 {

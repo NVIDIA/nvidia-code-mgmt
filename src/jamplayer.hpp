@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #include "config.h"
 
 #include "base_item_updater.hpp"
+
 #include "fstream"
 
 namespace nvidia
@@ -29,13 +30,14 @@ namespace updater
 {
 
 class JamPlayer : public BaseItemUpdater
-{   
+{
   public:
     JamPlayer(sdbusplus::bus::bus& bus) :
-		BaseItemUpdater(bus, JAMPLAYER_SUPPORTED_MODEL, JAMPLAYER_INVENTORY_IFACE, "JAMPLAYER",
-						JAMPLAYER_BUSNAME_UPDATER, JAMPLAYER_SERVICE, false, JAMPLAYER_BUSNAME_INVENTORY)
-    {
-    }
+        BaseItemUpdater(bus, JAMPLAYER_SUPPORTED_MODEL,
+                        JAMPLAYER_INVENTORY_IFACE, "JAMPLAYER",
+                        JAMPLAYER_BUSNAME_UPDATER, JAMPLAYER_SERVICE, false,
+                        JAMPLAYER_BUSNAME_INVENTORY)
+    {}
 
     /**
      * @brief Get the Version object
@@ -43,8 +45,8 @@ class JamPlayer : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getVersion([
-		[maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getVersion(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Manufacturer object
@@ -52,8 +54,8 @@ class JamPlayer : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getManufacturer([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getManufacturer(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Model object
@@ -61,8 +63,8 @@ class JamPlayer : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getModel([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getModel(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Service Args object
@@ -73,11 +75,10 @@ class JamPlayer : public BaseItemUpdater
      * @param targetFilter
      * @return std::string
      */
-    virtual std::string
-        getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       const std::string& version,
-                       [[maybe_unused]] const TargetFilter &targetFilter) const override
+    virtual std::string getServiceArgs(
+        [[maybe_unused]] const std::string& inventoryPath,
+        const std::string& imagePath, const std::string& version,
+        [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
         std::string args = "";
         args += "\\x20";
@@ -88,9 +89,11 @@ class JamPlayer : public BaseItemUpdater
         args += "JAMPLAYER";
 
         if ((targetFilter.type == TargetFilterType::UpdateAll) ||
-            (std::find(targetFilter.targets.begin(), targetFilter.targets.end(), JAMPLAYER_NAME) != targetFilter.targets.end()))
+            (std::find(targetFilter.targets.begin(), targetFilter.targets.end(),
+                       JAMPLAYER_NAME) != targetFilter.targets.end()))
         {
-            // The TargetFilterType is UpdateAll or component target is in targets, execute the update
+            // The TargetFilterType is UpdateAll or component target is in
+            // targets, execute the update
             args += "\\x20";
             args += "EXECUTE";
         }
@@ -113,8 +116,7 @@ class JamPlayer : public BaseItemUpdater
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
-        std::string invPath =
-            std::string(SOFTWARE_OBJPATH) + "/JamPlayer";
+        std::string invPath = std::string(SOFTWARE_OBJPATH) + "/JamPlayer";
         ret.emplace_back(invPath);
         return ret;
     }

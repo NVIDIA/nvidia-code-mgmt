@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-
 #include "orin_updater.hpp"
 
 namespace nvidia
@@ -24,18 +23,20 @@ namespace software
 {
 namespace updater
 {
-std::string ORINItemUpdater::getVersion([[maybe_unused]] const std::string& inventoryPath) const
+std::string ORINItemUpdater::getVersion(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }
 
-std::string
-    ORINItemUpdater::getManufacturer([[maybe_unused]] const std::string& inventoryPath) const
+std::string ORINItemUpdater::getManufacturer(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }
 
-std::string ORINItemUpdater::getModel([[maybe_unused]] const std::string& inventoryPath) const
+std::string ORINItemUpdater::getModel(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }

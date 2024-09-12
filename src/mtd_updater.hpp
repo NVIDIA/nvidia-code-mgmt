@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,10 @@
 #include "config.h"
 
 #include "base_item_updater.hpp"
-#include "fstream"
+
 #include <nlohmann/json.hpp>
+
+#include "fstream"
 
 namespace nvidia
 {
@@ -39,21 +41,27 @@ class MTDItemUpdater : public BaseItemUpdater
     std::string inventory;
 
   public:
-    MTDItemUpdater(sdbusplus::bus::bus& bus, std::string mtdN, std::string modelName) :
-		BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE, computeInventory(mtdN),
-						MTD_BUSNAME_UPDATER_BASE + mtdN,
-                        MTD_UPDATE_SERVICE, false, MTD_BUSNAME_INVENTORY_BASE + mtdN),
-		mtdName(mtdN)
+    MTDItemUpdater(sdbusplus::bus::bus& bus, std::string mtdN,
+                   std::string modelName) :
+        BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE,
+                        computeInventory(mtdN), MTD_BUSNAME_UPDATER_BASE + mtdN,
+                        MTD_UPDATE_SERVICE, false,
+                        MTD_BUSNAME_INVENTORY_BASE + mtdN),
+        mtdName(mtdN)
 
     {
         std::string jsonPath = "/usr/share/mtd_targets/" + mtdName + ".json";
 
-        try {
-            if (std::filesystem::exists(jsonPath)) {
+        try
+        {
+            if (std::filesystem::exists(jsonPath))
+            {
                 std::ifstream jsonFile(jsonPath);
 
-                if (!jsonFile.is_open()) {
-                    std::cerr << "Could not open the file:" << jsonPath << std::endl;
+                if (!jsonFile.is_open())
+                {
+                    std::cerr << "Could not open the file:" << jsonPath
+                              << std::endl;
                     return;
                 }
 
@@ -63,21 +71,28 @@ class MTDItemUpdater : public BaseItemUpdater
                 inventory = mtdConfig["Inventory"];
                 copyPath = mtdConfig["Path"];
                 std::string off = mtdConfig["Offset"];
-                versionOffset = static_cast<std::streamoff>(std::stoll(off, nullptr, 0));
+                versionOffset =
+                    static_cast<std::streamoff>(std::stoll(off, nullptr, 0));
                 versionSize = mtdConfig["VersionSize"];
                 auto objPath = std::string(SOFTWARE_OBJPATH) + "/" + inventory;
-                softwareVersionObj = std::make_unique<SoftwareVersion>(bus, objPath);
+                softwareVersionObj =
+                    std::make_unique<SoftwareVersion>(bus, objPath);
                 getVersion("");
             }
-            else {
-                std::cerr << "Json file:" << jsonPath << " not found. Will not host fw inventory object" << std::endl;
+            else
+            {
+                std::cerr << "Json file:" << jsonPath
+                          << " not found. Will not host fw inventory object"
+                          << std::endl;
             }
-        } catch (const std::exception &e) {
+        }
+        catch (const std::exception& e)
+        {
             std::cerr << e.what() << std::endl;
             std::cerr << "Failed to process the file:" << jsonPath << std::endl;
         }
     }
-     /**
+    /**
      * @brief compute the inventory name for the correct update messaging
      *
      * @param std::string mtd name
@@ -87,16 +102,22 @@ class MTDItemUpdater : public BaseItemUpdater
     {
         std::string jsonPath = "/usr/share/mtd_targets/" + mtdN + ".json";
 
-        if (std::filesystem::exists(jsonPath)) {
-            try {
+        if (std::filesystem::exists(jsonPath))
+        {
+            try
+            {
                 std::ifstream jsonFile(jsonPath);
-                if (jsonFile.is_open()) {
+                if (jsonFile.is_open())
+                {
                     nlohmann::json mtdConfig;
                     jsonFile >> mtdConfig;
                     return mtdConfig["Inventory"];
                 }
-            } catch (const std::exception& e) {
-                std::cerr << "Error reading inventory from JSON: " << e.what() << std::endl;
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << "Error reading inventory from JSON: " << e.what()
+                          << std::endl;
             }
         }
 
@@ -109,8 +130,8 @@ class MTDItemUpdater : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getVersion([
-		[maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getVersion(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Manufacturer object
@@ -118,8 +139,8 @@ class MTDItemUpdater : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getManufacturer([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getManufacturer(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Model object
@@ -127,8 +148,8 @@ class MTDItemUpdater : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getModel([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getModel(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Service Args object
@@ -139,11 +160,11 @@ class MTDItemUpdater : public BaseItemUpdater
      * @param targetFilter
      * @return std::string
      */
-    virtual std::string
-        getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       [[maybe_unused]] const std::string& version,
-                       [[maybe_unused]] const TargetFilter &targetFilter) const override
+    virtual std::string getServiceArgs(
+        [[maybe_unused]] const std::string& inventoryPath,
+        const std::string& imagePath,
+        [[maybe_unused]] const std::string& version,
+        [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
         std::string args = "";
         args += "\\x20";
@@ -152,7 +173,8 @@ class MTDItemUpdater : public BaseItemUpdater
         args += mtdName;
         if (!inventory.empty())
         {
-            std::cerr << "adding inventory to the update call:" << inventory << std::endl;
+            std::cerr << "adding inventory to the update call:" << inventory
+                      << std::endl;
             args += "\\x20";
             args += inventory;
         }
@@ -168,8 +190,7 @@ class MTDItemUpdater : public BaseItemUpdater
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
-        std::string invPath =
-            std::string(SOFTWARE_OBJPATH) + "/" + mtdName;
+        std::string invPath = std::string(SOFTWARE_OBJPATH) + "/" + mtdName;
         ret.emplace_back(invPath);
         return ret;
     }
@@ -196,10 +217,12 @@ class MTDItemUpdater : public BaseItemUpdater
     }
 
     /**
-    * @brief method to clean up image dirs. Use this method to update
-    * fw inventory version
-    */
-    void cleanupImageUploadDir(const std::filesystem::path& path, Version* version) const override {
+     * @brief method to clean up image dirs. Use this method to update
+     * fw inventory version
+     */
+    void cleanupImageUploadDir(const std::filesystem::path& path,
+                               Version* version) const override
+    {
         BaseItemUpdater::cleanupImageUploadDir(path, version);
         getVersion("");
     }

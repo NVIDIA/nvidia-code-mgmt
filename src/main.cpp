@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,8 +46,8 @@
 #include "sep_updater.hpp"
 #endif
 #ifdef DEBUG_TOKEN_SUPPORT
-#include "debug_token_install.hpp"
 #include "debug_token_erase.hpp"
+#include "debug_token_install.hpp"
 #endif
 #if MTD_SUPPORT
 #include "mtd_updater.hpp"
@@ -113,7 +113,7 @@ int main(int argc, char** argv)
                 print_wrong_arg_exit();
         }
     }
-    
+
     using namespace nvidia::software::updater;
     auto bus = sdbusplus::bus::new_default();
 
@@ -208,7 +208,8 @@ int main(int argc, char** argv)
 #if MTD_SUPPORT
     if (updater == "MTD")
     {
-        itemUpdater = std::make_unique<MTDItemUpdater>(bus, targetName, modelName);
+        itemUpdater =
+            std::make_unique<MTDItemUpdater>(bus, targetName, modelName);
     }
 #endif
 #if SWITCHTEC_FUSE_SUPPORT
@@ -242,7 +243,7 @@ int main(int argc, char** argv)
     catch (const sdbusplus::exception::SdBusError& e)
     {
         log<level::ERR>("Error while getting service name",
-            entry("ERROR=%s", e.what()));
+                        entry("ERROR=%s", e.what()));
         return -1;
     }
     abstractController = std::make_unique<BaseController>(itemUpdater);

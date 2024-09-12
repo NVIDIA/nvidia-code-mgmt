@@ -1,19 +1,21 @@
 #pragma once
 
 #include "message_registry.hpp"
+
 #include <nlohmann/json.hpp>
 #include <sdbusplus/server.hpp>
-#include <tuple>
 #include <xyz/openbmc_project/Logging/Entry/server.hpp>
+
+#include <tuple>
 
 namespace recovery_tool
 {
-    namespace recovery_commands
-    {
-        class OCPRecoveryCommands;
-        enum class OperationalStatus : uint8_t;
-    }
-}
+namespace recovery_commands
+{
+class OCPRecoveryCommands;
+enum class OperationalStatus : uint8_t;
+} // namespace recovery_commands
+} // namespace recovery_tool
 
 using OperationalStatus = recovery_tool::recovery_commands::OperationalStatus;
 
@@ -24,14 +26,13 @@ using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 
 static constexpr uint8_t delay1sec = 1;
 
-
 /**
  * @enum RecoveryReturnCode
- * @brief Represents the status of ocp recovery 
+ * @brief Represents the status of ocp recovery
  *
  * @var SUCCESS indicates a successful recovery
- * @var SKIPPED indicates that recovery operation was skipped for a GPU owing 
- *              to the device not being in recovery before trying to perform 
+ * @var SKIPPED indicates that recovery operation was skipped for a GPU owing
+ *              to the device not being in recovery before trying to perform
  *              recovery
  * @var FAILURE indicates a failed recovery
  */
@@ -143,7 +144,6 @@ struct DeviceStatus
     ProtocolError protocolError;
 };
 
-
 /**
  * @class OCPRecoveryCommandLine
  * @brief Utility for managing and performing recovery operations on devices
@@ -164,8 +164,8 @@ class OCPRecoveryCommandLine
      * @param verb Verbose logging flag.
      * @param emul Emulation mode flag.
      */
-    OCPRecoveryCommandLine(const std::string_view device,
-            int busAddr, int slaveAddr, bool verb, bool emul=false);
+    OCPRecoveryCommandLine(const std::string_view device, int busAddr,
+                           int slaveAddr, bool verb, bool emul = false);
     OCPRecoveryCommandLine() = delete;
     OCPRecoveryCommandLine(const OCPRecoveryCommandLine&) = delete;
     OCPRecoveryCommandLine(OCPRecoveryCommandLine&&) = delete;
@@ -189,14 +189,17 @@ class OCPRecoveryCommandLine
      * @param imagePaths A list of image paths to use for recovery.
      * @return true on failure and false on successful recovery
      */
-    RecoveryReturnCode performRecovery(const std::vector<std::string>& imagePaths) const noexcept;
+    RecoveryReturnCode performRecovery(
+        const std::vector<std::string>& imagePaths) const noexcept;
 
   private:
     /**
      * @brief Check whether the GPU is operational state
      * @return A JSON object representing the recovery status.
      */
-    std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError, RecoveryStatus> getOperationalStatus() const noexcept;
+    std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError,
+               RecoveryStatus>
+        getOperationalStatus() const noexcept;
 
     /**
      * @brief Converts DeviceStatus enumeration to its string representation.
@@ -220,15 +223,13 @@ class OCPRecoveryCommandLine
      */
     std::string recoveryReasonCodeToStr(RecoveryReasonCode code) const noexcept;
 
-
   private:
     bool verbose;
     std::string device;
-    std::unique_ptr<recovery_tool::recovery_commands::OCPRecoveryCommands> recoveryCommands;
+    std::unique_ptr<recovery_tool::recovery_commands::OCPRecoveryCommands>
+        recoveryCommands;
     sdbusplus::bus::bus bus = sdbusplus::bus::new_default();
     MessageRegistry registry;
-
 };
 
 } // namespace ocp_recovery_commandline
-

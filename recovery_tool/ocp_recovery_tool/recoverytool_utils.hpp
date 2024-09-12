@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,14 +32,14 @@ static constexpr uint8_t delay1sec = 1;
  */
 enum class DeviceId : int
 {
-    PCI_Vendor = 0x00, 
-    IANA = 0x1, 
-    UUID = 0x2, 
-    PnP_Vendor  = 0x3, 
-    ACPI_Vendor = 0x4, 
-    IANA_Enterprise_Type = 0x5, 
-    // Reserved = 0x6-0xFE, 
-    NVMe_MI  = 0xFF
+    PCI_Vendor = 0x00,
+    IANA = 0x1,
+    UUID = 0x2,
+    PnP_Vendor = 0x3,
+    ACPI_Vendor = 0x4,
+    IANA_Enterprise_Type = 0x5,
+    // Reserved = 0x6-0xFE,
+    NVMe_MI = 0xFF
 };
 
 /**
@@ -241,10 +241,12 @@ class OCPRecoveryTool
     /**
      * @brief Fetches CMS logs and returns them as a JSON object.
      *
-     * @param logFilePath The path to the log file where the CMS logs will be stored.
+     * @param logFilePath The path to the log file where the CMS logs will be
+     * stored.
      * @return A JSON object containing the CMS logs.
      */
-    nlohmann::json processCMSLogs(const std::string& logFilePath, uint8_t window) ;
+    nlohmann::json processCMSLogs(const std::string& logFilePath,
+                                  uint8_t window);
 };
 
 } // namespace recovery_tool

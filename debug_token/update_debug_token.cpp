@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 #include "config.h"
 
 #include "update_debug_token.hpp"
+
 #include <boost/container/flat_map.hpp>
 
 #include <filesystem>
@@ -27,8 +28,8 @@ DebugTokenInstallStatus
 {
     DebugTokenInstallStatus status =
         DebugTokenInstallStatus::DebugTokenInstallNone;
-    int queryStatus = static_cast<int>(
-        DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
+    int queryStatus =
+        static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
     TokenMap tokens;
     if (updateEndPoints() != 0)
     {
@@ -55,12 +56,13 @@ DebugTokenInstallStatus
         if (tokens.find(device.second) != tokens.end())
         {
             queryStatus = queryDebugToken(device.first);
-            if(queryStatus < 0)
+            if (queryStatus < 0)
             {
                 continue;
             }
-            else if (queryStatus == static_cast<int>(
-                    DebugTokenQueryErrorCodes::DebugTokenInstalled))
+            else if (queryStatus ==
+                     static_cast<int>(
+                         DebugTokenQueryErrorCodes::DebugTokenInstalled))
             {
                 log<level::ERR>(("debug token already installed on EID " +
                                  std::to_string(device.first))
@@ -130,7 +132,7 @@ DebugTokenInstallStatus
     }
     else
     {
-        if(status == DebugTokenInstallStatus::DebugTokenInstallNone)
+        if (status == DebugTokenInstallStatus::DebugTokenInstallNone)
         {
             status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
         }
@@ -141,8 +143,8 @@ DebugTokenInstallStatus
 int UpdateDebugToken::eraseDebugToken()
 {
     int status = 0;
-    int queryStatus = static_cast<int>(
-        DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
+    int queryStatus =
+        static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
     if (updateEndPoints() != 0)
     {
         log<level::ERR>("discovery failed");
@@ -156,12 +158,14 @@ int UpdateDebugToken::eraseDebugToken()
     for (auto& [uuid, mctpEidInfo] : mctpInfo)
     {
         queryStatus = queryDebugToken(mctpEidInfo.eid);
-        if(queryStatus < 0 || queryStatus ==
-            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
+        if (queryStatus < 0 ||
+            queryStatus ==
+                static_cast<int>(
+                    DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
         {
             // skip erase token for this device since token is not installed OR
             // there was an error with querying debug token status
-            // Query v2 returns DebugTokenNotInstalled if any other token type 
+            // Query v2 returns DebugTokenNotInstalled if any other token type
             // is installed. Don't erase in that case.
             continue;
         }
@@ -221,17 +225,15 @@ std::set<dbus::Service> UpdateDebugToken::getMCTPServiceList()
     try
     {
         auto method = bus.new_method_call(objectMapperService, objectMapperPath,
-                                          objectMapperIntfName,
-                                          "GetSubTree");
+                                          objectMapperIntfName, "GetSubTree");
         method.append(mctpPath, 0, ifaceList);
         auto reply = bus.call(method);
         reply.read(getSubTreeResponse);
-
     }
     catch (const std::exception& e)
     {
         log<level::ERR>("D-Bus error calling GetSubTree on ObjectMapper: ",
-                entry("ERROR=%s", e.what()));
+                        entry("ERROR=%s", e.what()));
     }
 
     for (const auto& [objPath, mapperServiceMap] : getSubTreeResponse)
@@ -249,29 +251,31 @@ dbus::ObjectValueTree UpdateDebugToken::getMCTPManagedObjects()
     auto mctpServices = getMCTPServiceList();
     dbus::ObjectValueTree objects{};
     dbus::ObjectValueTree tmpObjects{};
-    std::for_each(mctpServices.begin(), mctpServices.end(),
-        [&](const auto& service)
-        {
+    std::for_each(
+        mctpServices.begin(), mctpServices.end(), [&](const auto& service) {
             try
             {
-                auto method = bus.new_method_call(service.c_str(), mctpPath,
-                        "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
+                auto method = bus.new_method_call(
+                    service.c_str(), mctpPath,
+                    "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
                 auto reply = bus.call(method);
                 reply.read(tmpObjects);
             }
             catch (const std::exception& e)
             {
-                log<level::ERR>("D-Bus error calling Subtrees method on ObjectMapper: ", entry("ERROR=%s", e.what()));
+                log<level::ERR>(
+                    "D-Bus error calling Subtrees method on ObjectMapper: ",
+                    entry("ERROR=%s", e.what()));
             }
             objects.insert(std::make_move_iterator(tmpObjects.begin()),
-                    std::make_move_iterator(tmpObjects.end()));
+                           std::make_move_iterator(tmpObjects.end()));
             tmpObjects.clear();
         });
     return objects;
-
 }
 
-MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(const dbus::InterfaceMap& interfaces)
+MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(
+    const dbus::InterfaceMap& interfaces)
 {
     EID eid{};
     MctpMedium mctpMedium{};
@@ -297,11 +301,11 @@ MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(const dbus::InterfaceMap& i
 
         if (bindingProperties.contains("BindingType"))
         {
-            mctpBinding = std::get<MctpBinding>(bindingProperties.at("BindingType"));
+            mctpBinding =
+                std::get<MctpBinding>(bindingProperties.at("BindingType"));
         }
     }
     return {eid, mctpMedium, mctpBinding, supportedMsgTypes};
-
 }
 
 bool UpdateDebugToken::checkSupportForSPDMandMCTPVDM(
@@ -341,7 +345,7 @@ int UpdateDebugToken::discoverMCTPDevices()
     {
         UUID uuid{};
         if (!interfaces.contains(mctpEndpointIntfName) or
-                !interfaces.contains(uuidEndpointIntfName))
+            !interfaces.contains(uuidEndpointIntfName))
         {
             continue;
         }
@@ -354,7 +358,7 @@ int UpdateDebugToken::discoverMCTPDevices()
         if (uuid.empty())
         {
             log<level::ERR>("MCTP EID object {PATH} has no UUID",
-                   entry("PATH=%s", std::string(objectPath).c_str()));
+                            entry("PATH=%s", std::string(objectPath).c_str()));
             continue;
         }
 
@@ -366,7 +370,8 @@ int UpdateDebugToken::discoverMCTPDevices()
             continue;
         }
 
-        // For devices having multiple EIDs only the faster medium is chosen for transfer
+        // For devices having multiple EIDs only the faster medium is chosen for
+        // transfer
         if (mctpInfo.find(uuid) == mctpInfo.end())
         {
             mctpInfo.emplace(uuid, eidInfo);
@@ -378,7 +383,6 @@ int UpdateDebugToken::discoverMCTPDevices()
                 mctpInfo[uuid] = eidInfo;
             }
         }
-
     }
     return status;
 }
@@ -475,10 +479,9 @@ int UpdateDebugToken::updateTokenMap(const std::string& debugTokenPath,
             getNextDebugToken(token, tokenOffset, debugTokenPackage);
         if (debugTokenInfo)
         {
-            if(debugTokenInfo->structSize != token.size())
+            if (debugTokenInfo->structSize != token.size())
             {
-                log<level::ERR>(
-                    "Invalid token size");
+                log<level::ERR>("Invalid token size");
                 status = -1;
                 return status;
             }
@@ -495,8 +498,7 @@ int UpdateDebugToken::updateTokenMap(const std::string& debugTokenPath,
         }
         else
         {
-            log<level::ERR>(
-                "Invalid debug token"); 
+            log<level::ERR>("Invalid debug token");
             status = -1;
             return status;
         }
@@ -536,10 +538,10 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
         return status;
     }
     std::string deviceName;
-        if (deviceNameMap.contains(eid))
-        {
-            deviceName = deviceNameMap[eid];
-        }
+    if (deviceNameMap.contains(eid))
+    {
+        deviceName = deviceNameMap[eid];
+    }
     auto rxBytes = parseCommandOutput(commandOut);
     try
     {
@@ -572,7 +574,7 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
     {
         log<level::ERR>(
             ("Error while installing token: " + commandOut).c_str());
-        
+
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
             OperationType::TokenInstall, status, deviceName);
@@ -774,8 +776,7 @@ int UpdateDebugToken::queryDebugTokenV1(const EID& eid)
                 "Debug token query command response size is invalid.");
             return status;
         }
-        status = std::stoi(rxBytes[mctpCompletionCodeByte],
-                            nullptr, 16);
+        status = std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
     }
     catch (const std::exception& e)
     {
@@ -794,8 +795,7 @@ int UpdateDebugToken::queryDebugTokenV1(const EID& eid)
     {
         // 10 the byte from last is token installation status
         auto tokenInstallStatus =
-            std::stoi(rxBytes[tokenInstallStatusByte],
-                        nullptr, 16);
+            std::stoi(rxBytes[tokenInstallStatusByte], nullptr, 16);
         if (tokenInstallStatus ==
             static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
         {
@@ -834,30 +834,33 @@ int UpdateDebugToken::queryDebugTokenV2(const EID& eid)
         return status;
     }
     auto rxBytes = parseCommandOutput(commandOut);
-    status = parseQueryV2Response(rxBytes,
-                                    tokenInstallStatus,
-                                    installedTokenType);
-    if(status == 0)
+    status =
+        parseQueryV2Response(rxBytes, tokenInstallStatus, installedTokenType);
+    if (status == 0)
     {
-        log<level::INFO>(("debug_token_query_v2 Token Install Status: " 
-                            + std::to_string(tokenInstallStatus)).c_str());
-        if(tokenInstallStatus == static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
+        log<level::INFO>(("debug_token_query_v2 Token Install Status: " +
+                          std::to_string(tokenInstallStatus))
+                             .c_str());
+        if (tokenInstallStatus ==
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
         {
-            log<level::INFO>(("debug_token_query_v2 Installed Token Type: " 
-                            + std::to_string(installedTokenType)).c_str());
-            if(static_cast<size_t>(installedTokenType) == debugFirmwareTokenType)
+            log<level::INFO>(("debug_token_query_v2 Installed Token Type: " +
+                              std::to_string(installedTokenType))
+                                 .c_str());
+            if (static_cast<size_t>(installedTokenType) ==
+                debugFirmwareTokenType)
             {
                 status = static_cast<int>(
-                DebugTokenQueryErrorCodes::DebugTokenInstalled);
+                    DebugTokenQueryErrorCodes::DebugTokenInstalled);
             }
             else
             {
                 status = static_cast<int>(
-                DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
+                    DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
             }
         }
     }
-    if(status == -1)
+    if (status == -1)
     {
         // Dump response in case of failure.
         log<level::ERR>(commandOut.c_str());
@@ -870,8 +873,10 @@ int UpdateDebugToken::queryDebugToken(const EID& eid)
     int status = 0;
     status = queryDebugTokenV2(eid);
     // If v2 fails, try v1
-    if(status != static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled) &&
-        status != static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
+    if (status !=
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled) &&
+        status !=
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
     {
         status = queryDebugTokenV1(eid);
     }

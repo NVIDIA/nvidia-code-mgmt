@@ -19,8 +19,8 @@ nlohmann::json GlacierRecoveryTool::getRecoveryStatusJson()
         if (recResult != glacier_recovery_commands::RecoveryResult::Ok)
         {
             auto recResultStr = recoveryCommands.recoveryResultToStr(recResult);
-            if (recResult ==
-                glacier_recovery_commands::RecoveryResult::FirmwareNotInRecovery)
+            if (recResult == glacier_recovery_commands::RecoveryResult::
+                                 FirmwareNotInRecovery)
             {
                 jsonResponse["Status"] = recResultStr;
             }
@@ -46,7 +46,7 @@ nlohmann::json GlacierRecoveryTool::getRecoveryStatusJson()
 
 nlohmann::json GlacierRecoveryTool::getFirmwareInfoJson()
 {
-    nlohmann::json jsonResponse {};
+    nlohmann::json jsonResponse{};
     try
     {
         auto initRes = recoveryCommands.performInitialization();
@@ -89,7 +89,7 @@ nlohmann::json GlacierRecoveryTool::getFirmwareInfoJson()
 
 nlohmann::json GlacierRecoveryTool::performRecovery(const std::string& imgPath)
 {
-    nlohmann::json jsonResponse {};
+    nlohmann::json jsonResponse{};
     try
     {
         recoveryCommands.logVerbose("Perform Glacier Recovery Task Started.");

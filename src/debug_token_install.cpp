@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-
 #include "config.h"
 
 #include "debug_token_install.hpp"
@@ -27,20 +26,20 @@ namespace software
 namespace updater
 {
 
-std::string DebugTokenInstallItemUpdater::getVersion([
-    [maybe_unused]] const std::string& inventoryPath) const
+std::string DebugTokenInstallItemUpdater::getVersion(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }
 
-std::string DebugTokenInstallItemUpdater::getManufacturer([
-    [maybe_unused]] const std::string& inventoryPath) const
+std::string DebugTokenInstallItemUpdater::getManufacturer(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }
 
-std::string DebugTokenInstallItemUpdater::getModel([
-    [maybe_unused]] const std::string& inventoryPath) const
+std::string DebugTokenInstallItemUpdater::getModel(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }

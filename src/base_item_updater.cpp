@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 
 #include "base_item_updater.hpp"
 
@@ -277,9 +276,8 @@ int BaseItemUpdater::initiateUpdateImage(const std::string& objPath,
     // so that PLDMD will identify
     auto status = Version::Status::Ready;
     // Create Version
-    auto versionPtr =
-        createVersion(objPath, versionId, versionStr, uniqueIdentifier,
-                      filePath, status);
+    auto versionPtr = createVersion(objPath, versionId, versionStr,
+                                    uniqueIdentifier, filePath, status);
 
     versions.insert(std::make_pair(versionId, std::move(versionPtr)));
     return 0;
@@ -352,7 +350,8 @@ void BaseItemUpdater::newDeviceAdded(sdbusplus::message::message& msg)
         auto itIntf = interfaces.find(inventoryIface);
         if (itIntf != interfaces.cend())
         {
-            if (pathIsValidDevice(objPath.str)) {
+            if (pathIsValidDevice(objPath.str))
+            {
                 readDeviceDetails(objPath.str);
             }
         }

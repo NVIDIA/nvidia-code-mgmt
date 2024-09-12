@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,8 +43,7 @@ class GetDeviceID : public CommandInterface
         {
             recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
                 busAddress, slaveAddress, verbose, emulation);
-            nlohmann::json jsonResponse =
-                ocpRecoveryToolObj.getDeviceIDJson();
+            nlohmann::json jsonResponse = ocpRecoveryToolObj.getDeviceIDJson();
             std::cout << jsonResponse.dump(4) << "\n";
         }
         catch (const std::exception& e)
@@ -204,9 +203,8 @@ class GetCMSLogs : public CommandInterface
         app->add_option(
             "-o,--outfile", outFile,
             "Output file to store the CMS logs (default: /var/cms2_log.bin)");
-        app->add_option(
-            "-w,--window", window,
-            "Specify the CMS window to retrieve the log from")
+        app->add_option("-w,--window", window,
+                        "Specify the CMS window to retrieve the log from")
             ->required();
     }
 
@@ -235,8 +233,8 @@ void registerCommand(CLI::App& app)
 
     auto getDeviceIDCmd =
         app.add_subcommand("GetDeviceID", "Get the device status");
-    commands.push_back(std::make_unique<GetDeviceID>(
-        busAddress, slaveAddress, getDeviceIDCmd));
+    commands.push_back(std::make_unique<GetDeviceID>(busAddress, slaveAddress,
+                                                     getDeviceIDCmd));
 
     auto getDeviceStatusCmd =
         app.add_subcommand("GetDeviceStatus", "Get the device status");

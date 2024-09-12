@@ -1,17 +1,18 @@
-#include "recoverytool_utils.hpp"
-#include "recovery_commandline.hpp"
-#include "message_registry.hpp"
 #include "dbusutils.hpp"
+#include "message_registry.hpp"
+#include "recovery_commandline.hpp"
+#include "recoverytool_utils.hpp"
 
 #include <CLI/CLI.hpp>
 #include <phosphor-logging/lg2.hpp>
 
-using RecoveryReturnCode = ocp_recovery_commandline::RecoveryReturnCode ;
+using RecoveryReturnCode = ocp_recovery_commandline::RecoveryReturnCode;
 using namespace phosphor::logging;
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
-constexpr auto ocpObjInterface = "xyz.openbmc_project.Configuration.OCPRecovery";
+constexpr auto ocpObjInterface =
+    "xyz.openbmc_project.Configuration.OCPRecovery";
 
 struct CommandOptions
 {
@@ -30,13 +31,14 @@ auto& getBus()
     return bus;
 }
 
-std::pair<uint32_t, uint32_t> getI2CBusAndAddress(const std::string& objPath, const std::string& interface)
+std::pair<uint32_t, uint32_t> getI2CBusAndAddress(const std::string& objPath,
+                                                  const std::string& interface)
 {
     auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    auto i2cBus = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "I2CBus");
-    auto i2cAddress = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "I2CAddress");
+    auto i2cBus = dbusUtil.getProperty<uint64_t>(
+        entityManagerService, objPath.c_str(), interface.c_str(), "I2CBus");
+    auto i2cAddress = dbusUtil.getProperty<uint64_t>(
+        entityManagerService, objPath.c_str(), interface.c_str(), "I2CAddress");
 
     return {i2cBus, i2cAddress};
 }
@@ -45,7 +47,8 @@ bool performRecovery(const CommandOptions& opts)
 {
     auto& bus = getBus();
     auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-    const auto managedObjects = dbusUtil.getManagedObjects(entityManagerService, entityManagerObjManager);
+    const auto managedObjects = dbusUtil.getManagedObjects(
+        entityManagerService, entityManagerObjManager);
     bool retCode = false;
     std::unique_ptr<MessageRegistry> messageRegistry =
         std::make_unique<MessageRegistry>(bus);
@@ -66,12 +69,16 @@ bool performRecovery(const CommandOptions& opts)
             continue;
         }
 
-        lg2::info("Found OCP recovery config Object: {PATH}", "PATH", emObjectPath);
-        const auto [busAddr, slaveAddr] = getI2CBusAndAddress(emObjectPath, ocpObjInterface);
+        lg2::info("Found OCP recovery config Object: {PATH}", "PATH",
+                  emObjectPath);
+        const auto [busAddr, slaveAddr] =
+            getI2CBusAndAddress(emObjectPath, ocpObjInterface);
         const auto& device = emObjectPath.filename();
-        ocp_recovery_commandline::OCPRecoveryCommandLine ocpRecoveryCommandlineObj(device,
-            busAddr, slaveAddr, opts.verbose, opts.emulation);
-        auto status = ocpRecoveryCommandlineObj.performRecovery({opts.fspImagePath, opts.oobhubImagePath});
+        ocp_recovery_commandline::OCPRecoveryCommandLine
+            ocpRecoveryCommandlineObj(device, busAddr, slaveAddr, opts.verbose,
+                                      opts.emulation);
+        auto status = ocpRecoveryCommandlineObj.performRecovery(
+            {opts.fspImagePath, opts.oobhubImagePath});
         if (status == RecoveryReturnCode::FAILURE)
         {
             retCode = true;
@@ -93,7 +100,8 @@ int main(int argc, char** argv)
         ->check(CLI::ExistingFile);
     // app.add_flag("force", opts.forceRecovery, "Slave address");
     app.add_flag("-v,--verbose", opts.verbose, "Verbose output");
-    app.add_flag("-e,--emulation", opts.emulation, "Enable for emulation setup");
+    app.add_flag("-e,--emulation", opts.emulation,
+                 "Enable for emulation setup");
 
     try
     {

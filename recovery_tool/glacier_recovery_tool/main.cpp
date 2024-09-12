@@ -1,11 +1,11 @@
 #include "config.h"
 
+#include "dbusutils.hpp"
 #include "glacier_recovery_commands.hpp"
 #include "message_registry.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
-#include "dbusutils.hpp"
 
 #include <cstdlib>
 #include <exception>
@@ -16,8 +16,10 @@ using RecoveryResult =
     glacier_recovery_tool::glacier_recovery_commands::RecoveryResult;
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
-constexpr auto glacierCrisisObjInterface = "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
-constexpr auto gpioObjInterface = "xyz.openbmc_project.Configuration.GPIORecovery";
+constexpr auto glacierCrisisObjInterface =
+    "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
+constexpr auto gpioObjInterface =
+    "xyz.openbmc_project.Configuration.GPIORecovery";
 
 static constexpr uint8_t delay1sec = 1;
 
@@ -27,29 +29,32 @@ auto& getBus()
     return bus;
 }
 
-std::pair<uint32_t, uint32_t> getI2CBusAndAddress(const std::string& objPath, const std::string& interface)
+std::pair<uint32_t, uint32_t> getI2CBusAndAddress(const std::string& objPath,
+                                                  const std::string& interface)
 {
     auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    auto i2cBus = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "I2CBus");
-    auto i2cAddress = dbusUtil.getProperty<uint64_t>(entityManagerService, objPath.c_str(),
-            interface.c_str(), "I2CAddress");
+    auto i2cBus = dbusUtil.getProperty<uint64_t>(
+        entityManagerService, objPath.c_str(), interface.c_str(), "I2CBus");
+    auto i2cAddress = dbusUtil.getProperty<uint64_t>(
+        entityManagerService, objPath.c_str(), interface.c_str(), "I2CAddress");
 
     return {i2cBus, i2cAddress};
 }
 
 // Check if it is a Glacier device and assign the interface it uses
 static bool isGlacierDevice(nvidia::software::updater::InterfaceMap interfaces,
-                        std::string& interface)
+                            std::string& interface)
 {
     if (interfaces.contains(glacierCrisisObjInterface))
     {
         bool isRecoverable{true};
         // Check if device is recoverable (i.e., ERoT)
-        if (interfaces.at(glacierCrisisObjInterface).find("isRecoverable") != interfaces.at(glacierCrisisObjInterface).end())
+        if (interfaces.at(glacierCrisisObjInterface).find("isRecoverable") !=
+            interfaces.at(glacierCrisisObjInterface).end())
         {
             interface = glacierCrisisObjInterface;
-            isRecoverable = std::get<bool>(interfaces.at(glacierCrisisObjInterface).at("isRecoverable"));
+            isRecoverable = std::get<bool>(
+                interfaces.at(glacierCrisisObjInterface).at("isRecoverable"));
             return isRecoverable;
         }
         if (!isRecoverable)
@@ -58,7 +63,7 @@ static bool isGlacierDevice(nvidia::software::updater::InterfaceMap interfaces,
         }
     }
     else if (interfaces.contains(gpioObjInterface) &&
-                std::get<bool>(interfaces.at(gpioObjInterface).at("IsERoT")))
+             std::get<bool>(interfaces.at(gpioObjInterface).at("IsERoT")))
     {
         interface = gpioObjInterface;
         return true;
@@ -75,7 +80,8 @@ int main(int argc, char** argv)
     }
     auto& bus = getBus();
     auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    const auto managedObjects = dbusUtil.getManagedObjects(entityManagerService, entityManagerObjManager);
+    const auto managedObjects = dbusUtil.getManagedObjects(
+        entityManagerService, entityManagerObjManager);
     std::unique_ptr<MessageRegistry> messageRegistry =
         std::make_unique<MessageRegistry>(bus);
     if (managedObjects.empty())
@@ -97,8 +103,10 @@ int main(int argc, char** argv)
             continue;
         }
 
-        lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH", emObjectPath);
-        const auto [busAdd, slaveAdd] = getI2CBusAndAddress(emObjectPath, interface);
+        lg2::info("Found Glacier Crisis recovery config Object: {PATH}", "PATH",
+                  emObjectPath);
+        const auto [busAdd, slaveAdd] =
+            getI2CBusAndAddress(emObjectPath, interface);
         const auto& device = emObjectPath.filename();
         try
         {
@@ -106,7 +114,8 @@ int main(int argc, char** argv)
                 glacier_recovery_tool::glacier_recovery_commands::
                     GlacierRecoveryCommands>(busAdd, slaveAdd, false);
 
-            auto isHiddenByFPGA = std::get<bool>(interfaces.at(interface).at("HiddenByFPGA"));
+            auto isHiddenByFPGA =
+                std::get<bool>(interfaces.at(interface).at("HiddenByFPGA"));
             if (isHiddenByFPGA)
             {
                 if (!glacierRecoveryObj->unlockI2CDevice())
@@ -115,7 +124,8 @@ int main(int argc, char** argv)
                         "Failed to unlock addresses for I2C device. Device: {DEVICE}",
                         "DEVICE", device);
                     messageRegistry->createMessageRegistryResourceErrors(
-                        resourceErrorsDetected, RecoveryProtocol::GlacierRecovery,
+                        resourceErrorsDetected,
+                        RecoveryProtocol::GlacierRecovery,
                         static_cast<ErrorCode>(deviceNotResponding), device);
                     continue;
                 }
@@ -128,8 +138,8 @@ int main(int argc, char** argv)
                 {
                     lg2::info("Device {DEVICE} is not in recovery state",
                               "DEVICE", device);
-                    messageRegistry->createMessageRegistry(firmwareNotInRecovery,
-                                                           device);
+                    messageRegistry->createMessageRegistry(
+                        firmwareNotInRecovery, device);
                 }
                 else
                 {
@@ -152,8 +162,9 @@ int main(int argc, char** argv)
             auto imgPath = argv[1];
 
             /*
-             * There is a timing issue happens if we perform the recovery on ERoTs on the same bus
-             * consecutively. Add 1 sec sleep here as a workaround
+             * There is a timing issue happens if we perform the recovery on
+             * ERoTs on the same bus consecutively. Add 1 sec sleep here as a
+             * workaround
              */
             sleep(1);
             auto recResult =

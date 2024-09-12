@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -290,25 +290,25 @@ class CPLDItemUpdater : public BaseItemUpdater
 
     std::string getIdProperty(const std::string& identifier) override
     {
-            std::string deviceVersion;
-            for (auto& it : deviceIds)
+        std::string deviceVersion;
+        for (auto& it : deviceIds)
+        {
+            auto& pair = it.second;
+            if (it.first == identifier)
             {
-                auto& pair = it.second;
-                if (it.first == identifier)
-                {
-                    deviceVersion = get<2>(pair);
-                    break;
-                }
-                if (get<2>(pair) == identifier)
-                {
-                    deviceVersion = identifier;
-                    break;
-                }
+                deviceVersion = get<2>(pair);
+                break;
             }
+            if (get<2>(pair) == identifier)
+            {
+                deviceVersion = identifier;
+                break;
+            }
+        }
 
-            if (deviceVersion.empty())
-                return "";
-            return createVersionID(getName(), deviceVersion);
+        if (deviceVersion.empty())
+            return "";
+        return createVersionID(getName(), deviceVersion);
     }
 
   private:

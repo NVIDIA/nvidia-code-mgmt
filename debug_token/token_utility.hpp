@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,6 @@ struct DebugTokenHeader
     uint8_t reserved[6];
 } __attribute__((packed));
 
-
 struct TokenHeader
 {
     char identifier[4];
@@ -59,7 +58,6 @@ struct TokenHeader
     uint8_t serialNumber[8];
 } __attribute__((packed));
 
-
 struct TokenUtility
 {
     /**
@@ -71,13 +69,14 @@ struct TokenUtility
      * @return DebugTokenHeader
      */
     auto getDebugTokenHeader(std::vector<uint8_t>& headerData,
-                            std::ifstream& debugTokenPackage)
+                             std::ifstream& debugTokenPackage)
     {
         const DebugTokenHeader* headerInfo = nullptr;
         debugTokenPackage.seekg(0);
         debugTokenPackage.read(reinterpret_cast<char*>(headerData.data()),
-                            sizeof(DebugTokenHeader));
-        headerInfo = reinterpret_cast<const DebugTokenHeader*>(headerData.data());
+                               sizeof(DebugTokenHeader));
+        headerInfo =
+            reinterpret_cast<const DebugTokenHeader*>(headerData.data());
         if (headerInfo->type != FileTypeDebugToken)
         {
             headerInfo = nullptr;
@@ -95,18 +94,18 @@ struct TokenUtility
      * @return TokenHeader
      */
     auto getNextDebugToken(std::vector<uint8_t>& tokenData,
-                            const uint32_t& tokenOffset,
-                            std::ifstream& debugTokenPackage)
+                           const uint32_t& tokenOffset,
+                           std::ifstream& debugTokenPackage)
     {
-        const TokenHeader *tokenHeaderInfo = nullptr;
+        const TokenHeader* tokenHeaderInfo = nullptr;
         uint16_t tokenSize = 0;
-        
+
         // Read tokenSize from the token
         tokenData.resize(sizeof(TokenHeader), 0);
         debugTokenPackage.seekg(tokenOffset);
         debugTokenPackage.read(reinterpret_cast<char*>(tokenData.data()),
-                            sizeof(TokenHeader));
-        if(debugTokenPackage.gcount() != sizeof(TokenHeader))
+                               sizeof(TokenHeader));
+        if (debugTokenPackage.gcount() != sizeof(TokenHeader))
         {
             log<level::ERR>(
                 "Token offset out of range - unable to read token header.");
@@ -114,16 +113,18 @@ struct TokenUtility
             tokenHeaderInfo = nullptr;
             return tokenHeaderInfo;
         }
-        tokenHeaderInfo = reinterpret_cast<const TokenHeader*>(tokenData.data());
+        tokenHeaderInfo =
+            reinterpret_cast<const TokenHeader*>(tokenData.data());
         tokenSize = tokenHeaderInfo->structSize;
-             
+
         // Read tokenSize bytes from offset to fetch the entire token
         tokenData.resize(tokenSize, 0);
         debugTokenPackage.seekg(tokenOffset);
         debugTokenPackage.read(reinterpret_cast<char*>(tokenData.data()),
-                            tokenSize);
-        tokenHeaderInfo = reinterpret_cast<const TokenHeader*>(tokenData.data());
-        if(debugTokenPackage.gcount() != tokenSize)
+                               tokenSize);
+        tokenHeaderInfo =
+            reinterpret_cast<const TokenHeader*>(tokenData.data());
+        if (debugTokenPackage.gcount() != tokenSize)
         {
             log<level::ERR>(
                 "Token offset out of range - unable to read token bytes.");
@@ -142,7 +143,8 @@ struct TokenUtility
      *
      * @return std::pair<int, std::string> - status, command output
      */
-    std::pair<int, std::string> runMctpVdmUtilCommand(const std::string& command)
+    std::pair<int, std::string>
+        runMctpVdmUtilCommand(const std::string& command)
     {
         std::array<char, 1024> buffer;
         std::stringstream commandOut;

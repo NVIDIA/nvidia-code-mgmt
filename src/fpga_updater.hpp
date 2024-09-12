@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 
 #pragma once
 #include "config.h"
@@ -162,8 +161,7 @@ class FPGAItemUpdater : public BaseItemUpdater
      */
     virtual std::string
         getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       const std::string& version,
+                       const std::string& imagePath, const std::string& version,
                        const TargetFilter /* &targetFilter */) const override
     {
 

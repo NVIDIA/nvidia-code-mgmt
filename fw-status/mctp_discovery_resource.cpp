@@ -1,24 +1,24 @@
-/* 
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved. 
- * SPDX-License-Identifier: Apache-2.0 
- * 
- * Licensed under the Apache License, Version 2.0 (the "License"); 
- * you may not use this file except in compliance with the License. 
- * You may obtain a copy of the License at 
- * 
- * http://www.apache.org/licenses/LICENSE-2.0 
- * 
- * Unless required by applicable law or agreed to in writing, software 
- * distributed under the License is distributed on an "AS IS" BASIS, 
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
- * See the License for the specific language governing permissions and 
- * limitations under the License. 
- */ 
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include "mctp_discovery_resource.hpp"
 
-
-std::unordered_set<std::string> MCTPDiscoveryResource::getMctpServices() const noexcept
+std::unordered_set<std::string>
+    MCTPDiscoveryResource::getMctpServices() const noexcept
 {
     nvidia::software::updater::GetSubTreeResponse getSubTreeResponse{};
     std::unordered_set<std::string> mctpCtrlServices{};
@@ -33,8 +33,9 @@ std::unordered_set<std::string> MCTPDiscoveryResource::getMctpServices() const n
     }
     catch (const std::exception& e)
     {
-        lg2::error("D-Bus error calling Subtrees method on ObjectMapper: {ERROR}",
-                "ERROR", e.what());
+        lg2::error(
+            "D-Bus error calling Subtrees method on ObjectMapper: {ERROR}",
+            "ERROR", e.what());
     }
 
     for (const auto& [objPath, mapperServiceMap] : getSubTreeResponse)
@@ -48,14 +49,16 @@ std::unordered_set<std::string> MCTPDiscoveryResource::getMctpServices() const n
     return mctpCtrlServices;
 }
 
-std::unordered_map<std::string, std::string> MCTPDiscoveryResource::getMCTPObjects()
+std::unordered_map<std::string, std::string>
+    MCTPDiscoveryResource::getMCTPObjects()
 {
     std::unordered_map<std::string, std::string> mctpObjects{};
     const auto& mctpCtrlServices = getMctpServices();
     for (const auto& serviceName : mctpCtrlServices)
     {
         auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-        const auto objects = dbusUtil.getManagedObjects(serviceName.c_str(),  "/xyz/openbmc_project/mctp");
+        const auto objects = dbusUtil.getManagedObjects(
+            serviceName.c_str(), "/xyz/openbmc_project/mctp");
 
         for (const auto& [objectPath, interfaces] : objects)
         {
@@ -63,7 +66,8 @@ std::unordered_map<std::string, std::string> MCTPDiscoveryResource::getMCTPObjec
             {
                 continue;
             }
-            const auto& mctpUUID = std::get<std::string>(interfaces.at(uuidIntfName).at("UUID"));
+            const auto& mctpUUID =
+                std::get<std::string>(interfaces.at(uuidIntfName).at("UUID"));
             if (mctpUUID.c_str() != uuid)
             {
                 continue;
@@ -80,25 +84,28 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects()
     mctpEidObjects = getMCTPObjects();
     if (mctpEidObjects.empty())
     {
-        mctpObjManagerMatch.emplace_back(bus, MatchRules::interfacesAdded("/xyz/openbmc_project/mctp"),
-                  [&]([[maybe_unused]] sdbusplus::message::message& msg)
-                  {
-                      startWatchingMCTPObjects();
-                  });
+        mctpObjManagerMatch.emplace_back(
+            bus, MatchRules::interfacesAdded("/xyz/openbmc_project/mctp"),
+            [&]([[maybe_unused]] sdbusplus::message::message& msg) {
+                startWatchingMCTPObjects();
+            });
         return;
     }
 
     mctpObjManagerMatch.clear();
 
-    for (const auto& [service, mctpObject]: mctpEidObjects)
+    for (const auto& [service, mctpObject] : mctpEidObjects)
     {
-        deviceMatches.emplace_back(bus, MatchRules::propertiesChanged(mctpObject.c_str(),
-            mctpEndpointEnableIntfName),
-        std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
-                  std::placeholders::_1));
-        deviceMatches.emplace_back(bus, MatchRules::interfacesAdded(mctpObject.c_str()),
-        std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
-                  std::placeholders::_1));
+        deviceMatches.emplace_back(
+            bus,
+            MatchRules::propertiesChanged(mctpObject.c_str(),
+                                          mctpEndpointEnableIntfName),
+            std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
+                      std::placeholders::_1));
+        deviceMatches.emplace_back(
+            bus, MatchRules::interfacesAdded(mctpObject.c_str()),
+            std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
+                      std::placeholders::_1));
     }
 }
 
@@ -106,10 +113,11 @@ bool MCTPDiscoveryResource::checkForEnabledMCTPEids() const noexcept
 {
     auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
     bool ret = false;
-    for (const auto& [service, mctpObject]: mctpEidObjects)
+    for (const auto& [service, mctpObject] : mctpEidObjects)
     {
-        ret = ret or dbusUtil.getProperty<bool>(service.c_str(), mctpObject.c_str(),
-                mctpEndpointEnableIntfName, "Enabled");
+        ret = ret or
+              dbusUtil.getProperty<bool>(service.c_str(), mctpObject.c_str(),
+                                         mctpEndpointEnableIntfName, "Enabled");
     }
     return ret;
 }

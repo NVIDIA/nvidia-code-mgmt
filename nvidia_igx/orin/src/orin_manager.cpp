@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES.
+ * All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,13 +29,13 @@ ORINManager::ORINManager(sdbusplus::bus::bus& bus, std::string basePath) :
     {
         const auto baseinvInvPath = basePath + "/" + "ORIN";
 
-        orinInvs = std::make_unique<Orin>(bus, baseinvInvPath); 
+        orinInvs = std::make_unique<Orin>(bus, baseinvInvPath);
     }
     catch (const std::exception& e)
     {
-        lg2::error("Failed to create d-bus object for ORIN inventory","ERROR", e.what());
+        lg2::error("Failed to create d-bus object for ORIN inventory", "ERROR",
+                   e.what());
     }
 }
 
 } // namespace nvidia::orin::manager
-

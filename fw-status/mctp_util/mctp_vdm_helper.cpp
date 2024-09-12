@@ -1,19 +1,19 @@
-/* 
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved. 
- * SPDX-License-Identifier: Apache-2.0 
- * 
- * Licensed under the Apache License, Version 2.0 (the "License"); 
- * you may not use this file except in compliance with the License. 
- * You may obtain a copy of the License at 
- * 
- * http://www.apache.org/licenses/LICENSE-2.0 
- * 
- * Unless required by applicable law or agreed to in writing, software 
- * distributed under the License is distributed on an "AS IS" BASIS, 
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
- * See the License for the specific language governing permissions and 
- * limitations under the License. 
- */ 
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #include "mctp_vdm_helper.hpp"
 
@@ -34,16 +34,15 @@ MCTPVdmHelper::MCTPVdmHelper(
     instanceIdMgr(instanceIdMgr)
 {}
 
-mctp_vdm::requester::Coroutine
-    MCTPVdmHelper::queryBootStatus(uint8_t eid, const mctp_vdm::Message*& responseMsg,
-            size_t& responseLen)
+mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatus(
+    uint8_t eid, const mctp_vdm::Message*& responseMsg, size_t& responseLen)
 {
     // Initialize MCTP sockets for the list of endpoints
     auto ret = sockHandler.activateSockets({eid});
     if (ret < 0)
     {
-        lg2::error("Activating MCTP demux daemon sockets failed. ret={RET}", "RET",
-                   unsigned(ret));
+        lg2::error("Activating MCTP demux daemon sockets failed. ret={RET}",
+                   "RET", unsigned(ret));
         co_return ret;
     }
 
@@ -58,9 +57,8 @@ mctp_vdm::requester::Coroutine
     co_return rc;
 }
 
-mctp_vdm::requester::Coroutine
-    MCTPVdmHelper::queryBootStatusImpl(uint8_t eid, const mctp_vdm::Message*& responseMsg,
-            size_t& responseLen)
+mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatusImpl(
+    uint8_t eid, const mctp_vdm::Message*& responseMsg, size_t& responseLen)
 {
     mctp::Request request(sizeof(mctp_vdm::MsgHeader));
     auto requestMsg = reinterpret_cast<mctp_vdm::MsgHeader*>(request.data());
@@ -70,7 +68,6 @@ mctp_vdm::requester::Coroutine
     requestMsg->msgType = nvidiaMsgType;
     requestMsg->commandCode = 0x05;
     requestMsg->msgVersion = nvidiaMsgVersion;
-
 
     auto rc = co_await mctp_vdm::requester::SendRecvMctpVdmMsg<
         mctp_vdm::requester::Handler<mctp_vdm::requester::Request>>(
@@ -83,7 +80,8 @@ mctp_vdm::requester::Coroutine
     co_return responseMsg->payload[0];
 }
 
-void MCTPVdmHelper::handleMctpEndpoints([[maybe_unused]] const mctp::Infos& mctpInfos)
+void MCTPVdmHelper::handleMctpEndpoints(
+    [[maybe_unused]] const mctp::Infos& mctpInfos)
 {
     return;
 }

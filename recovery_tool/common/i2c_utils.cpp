@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ namespace recovery_tool
 
 namespace i2c_utils
 {
-bool sendI2cCmdForRead(int fd, uint16_t slaveId, std::vector<uint8_t>& commandData,
+bool sendI2cCmdForRead(int fd, uint16_t slaveId,
+                       std::vector<uint8_t>& commandData,
                        std::vector<uint8_t>& readData, bool verbose)
 {
 

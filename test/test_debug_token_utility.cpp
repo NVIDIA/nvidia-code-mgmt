@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
  * limitations under the License.
  */
 
-#include <stdlib.h>
-#include <cstdint>
 #include "../debug_token/update_debug_token.hpp"
+
+#include <stdlib.h>
+
+#include <cstdint>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-
 
 class TestDebugTokenUtility : public testing::Test, public TokenUtility
 {

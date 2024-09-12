@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,10 @@
 #include "config.h"
 
 #include "base_item_updater.hpp"
-#include "fstream"
+
 #include <xyz/openbmc_project/State/Host/server.hpp>
+
+#include "fstream"
 
 namespace nvidia
 {
@@ -32,33 +34,39 @@ namespace updater
 namespace StateServer = sdbusplus::xyz::openbmc_project::State::server;
 
 class SwitchtecFuse : public BaseItemUpdater
-{   
-  std::unique_ptr<SoftwareVersion> softwareVersionObj;
-  //sdbusplus::bus::match_t propertiesChangedSignalCurrentHostState;
-  sdbusplus::bus::match::match _match;
+{
+    std::unique_ptr<SoftwareVersion> softwareVersionObj;
+    // sdbusplus::bus::match_t propertiesChangedSignalCurrentHostState;
+    sdbusplus::bus::match::match _match;
+
   public:
     SwitchtecFuse(sdbusplus::bus::bus& bus) :
-             BaseItemUpdater(bus, SWITCHTEC_SUPPORTED_MODEL, SWITCHTEC_INVENTORY_IFACE, "PCIE_SWITCH_FUSE",
-                        SWITCHTEC_BUSNAME_UPDATER, SWITCHTEC_FUSE_SERVICE, false, SWITCHTEC_BUSNAME_INVENTORY),
-             _match(bus, sdbusplus::bus::match::rules::propertiesChanged("/xyz/openbmc_project/state/host0",
-                                                                         "xyz.openbmc_project.State.Host"),
-                    [this](auto& msg) {
-                      std::string intfName;
-                      std::map<std::string, std::variant<std::string>> msgData;
-                      msg.read(intfName, msgData);
-                      // Check if it was the Value property that changed.
-                      auto valPropMap = msgData.find("CurrentHostState");
-                      if (valPropMap != msgData.end())
-                      {
-                        StateServer::Host::HostState currentHostState =
-                        StateServer::Host::convertHostStateFromString(
-                        std::get<std::string>(valPropMap->second));
-                        if (currentHostState == StateServer::Host::HostState::Running)
-                        {
-                          getVersion("");
-                        }
-                      }
-                    })
+        BaseItemUpdater(bus, SWITCHTEC_SUPPORTED_MODEL,
+                        SWITCHTEC_INVENTORY_IFACE, "PCIE_SWITCH_FUSE",
+                        SWITCHTEC_BUSNAME_UPDATER, SWITCHTEC_FUSE_SERVICE,
+                        false, SWITCHTEC_BUSNAME_INVENTORY),
+        _match(bus,
+               sdbusplus::bus::match::rules::propertiesChanged(
+                   "/xyz/openbmc_project/state/host0",
+                   "xyz.openbmc_project.State.Host"),
+               [this](auto& msg) {
+                   std::string intfName;
+                   std::map<std::string, std::variant<std::string>> msgData;
+                   msg.read(intfName, msgData);
+                   // Check if it was the Value property that changed.
+                   auto valPropMap = msgData.find("CurrentHostState");
+                   if (valPropMap != msgData.end())
+                   {
+                       StateServer::Host::HostState currentHostState =
+                           StateServer::Host::convertHostStateFromString(
+                               std::get<std::string>(valPropMap->second));
+                       if (currentHostState ==
+                           StateServer::Host::HostState::Running)
+                       {
+                           getVersion("");
+                       }
+                   }
+               })
     {
         auto objPath = std::string(SOFTWARE_OBJPATH) + "/PCIE_SWITCH_FUSE";
         createInventory(bus, objPath);
@@ -70,8 +78,8 @@ class SwitchtecFuse : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getVersion([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getVersion(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Manufacturer object
@@ -79,8 +87,8 @@ class SwitchtecFuse : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getManufacturer([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getManufacturer(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Model object
@@ -88,8 +96,8 @@ class SwitchtecFuse : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getModel([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getModel(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Service Args object
@@ -100,11 +108,10 @@ class SwitchtecFuse : public BaseItemUpdater
      * @param targetFilter
      * @return std::string
      */
-    virtual std::string
-        getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       const std::string& version,
-                       [[maybe_unused]] const TargetFilter &targetFilter) const override
+    virtual std::string getServiceArgs(
+        [[maybe_unused]] const std::string& inventoryPath,
+        const std::string& imagePath, const std::string& version,
+        [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
         std::string args = "";
         args += "\\x20";
@@ -125,8 +132,7 @@ class SwitchtecFuse : public BaseItemUpdater
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
-        std::string invPath =
-            std::string(SOFTWARE_OBJPATH) + "/Switchtec";
+        std::string invPath = std::string(SOFTWARE_OBJPATH) + "/Switchtec";
         ret.emplace_back(invPath);
         return ret;
     }
@@ -157,8 +163,7 @@ class SwitchtecFuse : public BaseItemUpdater
      * @param objpath
      * @param versionId
      */
-    void createInventory(sdbusplus::bus::bus& bus,
-                                const std::string& objPath)
+    void createInventory(sdbusplus::bus::bus& bus, const std::string& objPath)
     {
         getVersion("");
         softwareVersionObj = std::make_unique<SoftwareVersion>(bus, objPath);

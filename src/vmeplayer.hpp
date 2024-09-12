@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include "base_item_updater.hpp"
+
 #include "fstream"
 
 namespace nvidia
@@ -12,15 +13,18 @@ namespace updater
 {
 
 class VmePlayer : public BaseItemUpdater
-{   
-  std::string vmeName;  
+{
+    std::string vmeName;
+
   public:
-    VmePlayer(sdbusplus::bus::bus& bus, std::string vmeN, std::string modelName) :
-		BaseItemUpdater(bus, modelName, VMEPLAYER_INVENTORY_IFACE, "VMEPLAYER_" + vmeN,
-						VMEPLAYER_BUSNAME_UPDATER + vmeN, VMEPLAYER_SERVICE, false, VMEPLAYER_BUSNAME_INVENTORY + vmeN),
-                        vmeName(vmeN)
-    {
-    }
+    VmePlayer(sdbusplus::bus::bus& bus, std::string vmeN,
+              std::string modelName) :
+        BaseItemUpdater(bus, modelName, VMEPLAYER_INVENTORY_IFACE,
+                        "VMEPLAYER_" + vmeN, VMEPLAYER_BUSNAME_UPDATER + vmeN,
+                        VMEPLAYER_SERVICE, false,
+                        VMEPLAYER_BUSNAME_INVENTORY + vmeN),
+        vmeName(vmeN)
+    {}
 
     /**
      * @brief Get the Version object
@@ -28,8 +32,8 @@ class VmePlayer : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getVersion([
-		[maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getVersion(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Manufacturer object
@@ -37,8 +41,8 @@ class VmePlayer : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getManufacturer([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getManufacturer(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Model object
@@ -46,8 +50,8 @@ class VmePlayer : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getModel([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getModel(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Service Args object
@@ -58,11 +62,10 @@ class VmePlayer : public BaseItemUpdater
      * @param targetFilter
      * @return std::string
      */
-    virtual std::string
-        getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       const std::string& version,
-                       [[maybe_unused]] const TargetFilter &targetFilter) const override
+    virtual std::string getServiceArgs(
+        [[maybe_unused]] const std::string& inventoryPath,
+        const std::string& imagePath, const std::string& version,
+        [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
         std::string args = "";
         args += "\\x20";
@@ -83,8 +86,7 @@ class VmePlayer : public BaseItemUpdater
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
-        std::string invPath =
-            std::string(SOFTWARE_OBJPATH) + "/" + vmeName;
+        std::string invPath = std::string(SOFTWARE_OBJPATH) + "/" + vmeName;
         ret.emplace_back(invPath);
         return ret;
     }

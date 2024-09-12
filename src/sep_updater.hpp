@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
  * limitations under the License.
  */
 
-
 #pragma once
 #include "config.h"
+
 #include "base_item_updater.hpp"
 
 namespace nvidia
@@ -74,11 +74,11 @@ class SEPItemUpdater : public BaseItemUpdater
      * @param targetFilter
      * @return std::string
      */
-    virtual std::string
-        getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       [[maybe_unused]] const std::string& version,
-                       [[maybe_unused]] const TargetFilter &targetFilter) const override
+    virtual std::string getServiceArgs(
+        [[maybe_unused]] const std::string& inventoryPath,
+        const std::string& imagePath,
+        [[maybe_unused]] const std::string& version,
+        [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
 
         // The systemd unit shall be escaped
@@ -98,8 +98,7 @@ class SEPItemUpdater : public BaseItemUpdater
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
-        std::string invPath =
-            std::string(SOFTWARE_OBJPATH) + "/SEP";
+        std::string invPath = std::string(SOFTWARE_OBJPATH) + "/SEP";
         ret.emplace_back(invPath);
         return ret;
     }

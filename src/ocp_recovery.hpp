@@ -4,8 +4,8 @@
 
 #include "base_item_updater.hpp"
 
-#include <sstream>
 #include <filesystem>
+#include <sstream>
 
 namespace nvidia
 {
@@ -13,7 +13,6 @@ namespace software
 {
 namespace updater
 {
-
 
 /**
  * @brief GPU OCP recovery item updater
@@ -61,7 +60,6 @@ class OCPRecovery : public BaseItemUpdater
      */
     std::string getModel(const std::string& inventoryPath) const override;
 
-
     /**
      * @brief Fetch path to update file transferred by PLDM
      *
@@ -96,8 +94,10 @@ class OCPRecovery : public BaseItemUpdater
         [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
 
-        const std::string oobImage = getUpdateFilePath(imagePath + "/" + GPU_OCP_OOBHUB_COMP_ID);
-        const std::string fspImage = getUpdateFilePath(imagePath + "/" + GPU_OCP_FSP_COMP_ID);
+        const std::string oobImage =
+            getUpdateFilePath(imagePath + "/" + GPU_OCP_OOBHUB_COMP_ID);
+        const std::string fspImage =
+            getUpdateFilePath(imagePath + "/" + GPU_OCP_FSP_COMP_ID);
         // The systemd unit shall be escaped
         std::string args = "";
         args += "\\x20";
@@ -137,15 +137,18 @@ class OCPRecovery : public BaseItemUpdater
      *
      * @return std::vector<std::filesystem::path>
      */
-    virtual std::vector<std::filesystem::path> getPathsToMonitor() const override
+    virtual std::vector<std::filesystem::path>
+        getPathsToMonitor() const override
     {
         std::vector<std::filesystem::path> pathsToMonitor{};
-        for (const auto& [uuid, _]  : deviceIds)
+        for (const auto& [uuid, _] : deviceIds)
         {
             std::filesystem::path basePathToWatch(getImageUploadDir());
             basePathToWatch /= uuid;
-            std::filesystem::path oobPathToWatch = basePathToWatch / GPU_OCP_OOBHUB_COMP_ID;
-            std::filesystem::path fspPathToWatch = basePathToWatch / GPU_OCP_FSP_COMP_ID;
+            std::filesystem::path oobPathToWatch =
+                basePathToWatch / GPU_OCP_OOBHUB_COMP_ID;
+            std::filesystem::path fspPathToWatch =
+                basePathToWatch / GPU_OCP_FSP_COMP_ID;
             pathsToMonitor.push_back(oobPathToWatch);
             pathsToMonitor.push_back(fspPathToWatch);
         }

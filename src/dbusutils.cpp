@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-
 #include "base_item_updater.hpp"
 #include "watch.hpp"
 
@@ -28,8 +27,8 @@
 #include <unistd.h>
 
 #include <phosphor-logging/elog.hpp>
-#include <phosphor-logging/log.hpp>
 #include <phosphor-logging/lg2.hpp>
+#include <phosphor-logging/log.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -119,8 +118,9 @@ any DBUSUtils::getPropertyImpl(const char* service, const char* path,
     }
     catch (const sdbusplus::exception::SdBusError& ex)
     {
-        lg2::error("GetPropertyCall failed. Could not find property {PROPERTY} on {INTERFACE} for the object {PATH}",
-                "PATH", path, "INTERFACE", interface, "PROPERTY", propertyName);
+        lg2::error(
+            "GetPropertyCall failed. Could not find property {PROPERTY} on {INTERFACE} for the object {PATH}",
+            "PATH", path, "INTERFACE", interface, "PROPERTY", propertyName);
         throw std::runtime_error("GetProperty call failed");
     }
 }
@@ -157,8 +157,9 @@ std::vector<std::string> DBUSUtils::getServices(const char* path,
         }
         catch (const sdbusplus::exception::SdBusError& ex)
         {
-            lg2::error("GetObject call failed. Could not find {PATH} with interface {INTERFACE}",
-                    "PATH", path, "INTERFACE", interface);
+            lg2::error(
+                "GetObject call failed. Could not find {PATH} with interface {INTERFACE}",
+                "PATH", path, "INTERFACE", interface);
             std::cerr << ex.what() << std::endl;
 
             if (retry == 9)
@@ -208,44 +209,45 @@ bool DBUSUtils::findSoftwareObject(std::string& objPath)
     return true;
 }
 
-ObjectValueTree DBUSUtils::getManagedObjects(const char* service,
-                                      const char* objManagerPath) const noexcept
+ObjectValueTree
+    DBUSUtils::getManagedObjects(const char* service,
+                                 const char* objManagerPath) const noexcept
 {
     ObjectValueTree managedObjects{};
     try
     {
         ObjectValueTree tmpObjects{};
         auto method = bus.new_method_call(service, objManagerPath,
-                "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
+                                          "org.freedesktop.DBus.ObjectManager",
+                                          "GetManagedObjects");
         auto reply = bus.call(method);
         reply.read(tmpObjects);
         managedObjects.insert(tmpObjects.begin(), tmpObjects.end());
     }
     catch (const std::exception& e)
     {
-        lg2::error("GetManagedObjects call failed for {PATH}",  "PATH", objManagerPath);
+        lg2::error("GetManagedObjects call failed for {PATH}", "PATH",
+                   objManagerPath);
     }
 
     return managedObjects;
 }
 
 void DBUSUtils::controlSystemUnit(const std::string& systemUnit,
-                                const std::string& action) const noexcept
+                                  const std::string& action) const noexcept
 {
     try
     {
         auto msg = bus.new_method_call(
-                "org.freedesktop.systemd1",
-                "/org/freedesktop/systemd1",
-                "org.freedesktop.systemd1.Manager",
-                action.c_str());
+            "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager", action.c_str());
         msg.append(systemUnit.c_str(), "replace");
         bus.call_noreply(msg);
     }
     catch (const sdbusplus::exception::SdBusError& e)
     {
-        lg2::error("Failed to send {ACTION} request to {UNIT}",
-                   "ACTION", action, "UNIT", systemUnit);
+        lg2::error("Failed to send {ACTION} request to {UNIT}", "ACTION",
+                   action, "UNIT", systemUnit);
     }
 }
 

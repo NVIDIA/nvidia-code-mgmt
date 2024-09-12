@@ -10,7 +10,8 @@ using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 
 using namespace phosphor::logging;
 
-const std::string firmwareNotInRecovery{"NvidiaUpdate.1.0.FirmwareNotInRecovery"};
+const std::string firmwareNotInRecovery{
+    "NvidiaUpdate.1.0.FirmwareNotInRecovery"};
 const std::string recoverySuccessful{"NvidiaUpdate.1.0.RecoverySuccessful"};
 const std::string recoveryStarted{"NvidiaUpdate.1.0.RecoveryStarted"};
 const std::string resourceErrorsDetected{
@@ -211,9 +212,7 @@ static ErrorMapping glacierRecoveryErrorMapping{
     {deviceRecoveryFailed,
      {"Recovery failed due to unknown error",
       "Check if firmware is in recovery, and try recovery again using the correct package."}},
-    {noDevicesFound,
-     {"No Devices found to recover",
-      ""}},
+    {noDevicesFound, {"No Devices found to recover", ""}},
 };
 
 static ErrorMapping ocpRecoveryErrorMapping{
@@ -289,11 +288,9 @@ static ErrorMapping ocpRecoveryStatusErrorMapping{
 
 static ErrorMapping ocpDeviceStatusErrorMapping{
     {static_cast<ErrorCode>(OCPDeviceStatusCode::DeviceError),
-     {"Device Error",
-      "Try recovery again using the correct package."}},
+     {"Device Error", "Try recovery again using the correct package."}},
     {static_cast<ErrorCode>(OCPDeviceStatusCode::FatalError),
-     {"Fatal Error detected",
-      "Try recovery again using the correct package."}},
+     {"Fatal Error detected", "Try recovery again using the correct package."}},
 };
 
 static ErrorMapping ocpRecoveryProtocolErrorMapping{
@@ -315,9 +312,7 @@ static ErrorMapping ocpRecoveryProtocolErrorMapping{
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::GeneralProtocolError),
      {"General Protocol Error. Error in communicating with device",
       "Check if firmware is in recovery, and try recovery again using the correct package."}},
-    {noDevicesFound,
-     {"No Devices found to recover",
-      ""}},
+    {noDevicesFound, {"No Devices found to recover", ""}},
 };
 
 static const RecoveryErrorMapping recoveryMappingTbl = {

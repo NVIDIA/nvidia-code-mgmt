@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,27 +17,28 @@
 
 #pragma once
 
+#include <sdbusplus/bus.hpp>
+
+#include <filesystem>
 #include <string>
 #include <vector>
-#include <sdbusplus/bus.hpp>
-#include <filesystem>
 
 namespace nvidia
 {
-  namespace software
-  {
-    namespace updater
-    {
-      class Version;
-    }
-  } // namespace software
+namespace software
+{
+namespace updater
+{
+class Version;
+}
+} // namespace software
 }; // namespace nvidia
 
 using Version = nvidia::software::updater::Version;
 
 /**
  * @brief Enumeration for target filter types
- * 
+ *
  */
 enum class TargetFilterType
 {
@@ -66,7 +67,6 @@ class ActivationListener
      * @return
      */
     virtual ~ActivationListener() = default;
-
 };
 
 /**
@@ -101,7 +101,8 @@ class ItemUpdaterUtils
      *
      * @return std::string
      */
-    virtual void cleanupImageUploadDir(const std::filesystem::path& path, Version* version) const = 0;
+    virtual void cleanupImageUploadDir(const std::filesystem::path& path,
+                                       Version* version) const = 0;
 
     /**
      * @brief Indicates wheather to do update all together at once
@@ -145,13 +146,13 @@ class ItemUpdaterUtils
      * @return std::string
      */
     virtual std::string getDbusService(const std::string& path,
-                          const std::string& interface) = 0;
-    
+                                       const std::string& interface) = 0;
+
     /**
      * @brief apply target filters for non-pldm devices
-     * 
-     * @param targets 
-     * @return TargetFilter 
+     *
+     * @param targets
+     * @return TargetFilter
      */
     virtual TargetFilter applyTargetFilters(
         const std::vector<sdbusplus::message::object_path>& targets) = 0;

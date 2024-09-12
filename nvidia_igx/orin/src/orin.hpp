@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES.
+ * All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,15 +19,16 @@
 
 #include "orin_util.hpp"
 
-#include <filesystem>
-#include <iostream>
 #include <sdbusplus/bus/match.hpp>
-#include <stdexcept>
 #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
 #include <xyz/openbmc_project/Inventory/Item/Chassis/server.hpp>
 #include <xyz/openbmc_project/Inventory/Item/server.hpp>
 #include <xyz/openbmc_project/Software/Version/server.hpp>
 #include <xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp>
+
+#include <filesystem>
+#include <iostream>
+#include <stdexcept>
 
 using namespace nvidia::orin::common;
 
@@ -80,9 +81,7 @@ class Orin : public OrinInherit, public Util
     ~Orin() = default;
 
     Orin(sdbusplus::bus::bus& bus, const std::string& objPath) :
-        OrinInherit(bus, (objPath).c_str()),
-    bus(bus),
-    inventoryPath(objPath)
+        OrinInherit(bus, (objPath).c_str()), bus(bus), inventoryPath(objPath)
     {
         sdbusplus::xyz::openbmc_project::Inventory::server::Item::prettyName(
             "ORIN");

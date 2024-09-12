@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 
 #include "config.h"
 
@@ -56,15 +55,15 @@ std::string
     return ret;
 }
 
-std::string ReTimerItemUpdater::getManufacturer([
-    [maybe_unused]] const std::string& inventoryPath) const
+std::string ReTimerItemUpdater::getManufacturer(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     // GPU manager inventory does not implement manufacturer, return empty value
     return "";
 }
 
-std::string ReTimerItemUpdater::getModel([
-    [maybe_unused]] const std::string& inventoryPath) const
+std::string ReTimerItemUpdater::getModel(
+    [[maybe_unused]] const std::string& inventoryPath) const
 {
     // GPU manager inventory does not implement model, return empty value
     return "";
@@ -80,9 +79,8 @@ std::string ReTimerItemUpdater::getSKU() const
     std::string ret{};
     try
     {
-        ret = getProperty<std::string>(RT_BUSNAME_INVENTORY,
-                                       swPath.c_str(), ASSET_IFACE,
-                                       "SKU");
+        ret = getProperty<std::string>(RT_BUSNAME_INVENTORY, swPath.c_str(),
+                                       ASSET_IFACE, "SKU");
     }
     catch (const std::exception& e)
     {

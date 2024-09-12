@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,10 @@
 
 #include <fmt/format.h>
 
-#include <mutex>
 #include <condition_variable>
 #include <fstream>
 #include <map>
+#include <mutex>
 
 namespace dbus
 {
@@ -82,19 +82,22 @@ constexpr auto mctpBindingIntfName = "xyz.openbmc_project.MCTP.Binding";
 constexpr auto pldmService = "xyz.openbmc_project.PLDM";
 constexpr auto pldmPath = "/";
 constexpr auto pldmInventoryIntfName =
-    "xyz.openbmc_project.Inventory.Decorator.Asset";    
+    "xyz.openbmc_project.Inventory.Decorator.Asset";
 constexpr auto nsmService = "xyz.openbmc_project.NSM";
 constexpr auto nsmDebugTokenIntfName = "com.nvidia.DebugToken";
 constexpr auto nsmProgressIntfName = "xyz.openbmc_project.Common.Progress";
 constexpr auto nsmDebugTokenPath = "/";
 constexpr auto propertiesPath = "org.freedesktop.DBus.Properties";
 
-constexpr auto nsmCompletedStatus = 
+constexpr auto nsmCompletedStatus =
     "xyz.openbmc_project.Common.Progress.OperationStatus.Completed";
 constexpr auto nsmTokenTypeCRDT = "com.nvidia.DebugToken.TokenTypes.CRDT";
-constexpr auto nsmTokenStatusDebugSessionActive = "com.nvidia.DebugToken.TokenStatus.DebugSessionActive";
-constexpr auto nsmTokenStatusTokenTimeout = "com.nvidia.DebugToken.TokenStatus.TokenTimeout";
-constexpr auto nsmTokenStatusNoTokenApplied = "com.nvidia.DebugToken.TokenStatus.NoTokenApplied";
+constexpr auto nsmTokenStatusDebugSessionActive =
+    "com.nvidia.DebugToken.TokenStatus.DebugSessionActive";
+constexpr auto nsmTokenStatusTokenTimeout =
+    "com.nvidia.DebugToken.TokenStatus.TokenTimeout";
+constexpr auto nsmTokenStatusNoTokenApplied =
+    "com.nvidia.DebugToken.TokenStatus.NoTokenApplied";
 
 const std::string mctpVdmUtilPath = "/usr/bin/mctp-vdm-util";
 const std::string transferFailed{"Update.1.0.TransferFailed"};
@@ -102,7 +105,8 @@ const std::string updateSuccessful{"Update.1.0.UpdateSuccessful"};
 const std::string resourceErrorsDetected{
     "ResourceEvent.1.0.ResourceErrorsDetected"};
 static constexpr size_t mctpCompletionCodeByte =
-    8; // 8'th byte from beginning is the MCTP Completion code for debug token query
+    8; // 8'th byte from beginning is the MCTP Completion code for debug token
+       // query
 static constexpr size_t tokenInstallStatusByte =
     9; // 9th byte from beginning is token status code for debug token query
 static constexpr size_t mctpDebugTokenQueryResponseLengthV1 =
@@ -112,7 +116,7 @@ static constexpr size_t mctpDebugTokenQueryResponseLengthV2 =
 static constexpr uint64_t propertyChangeSignalTimeout = 5;
 
 // Tokken Type bytes in v2 query command are from bytes 19-22
-static constexpr int tokenTypeByteStart = 19; 
+static constexpr int tokenTypeByteStart = 19;
 static constexpr int tokenTypeByteEnd = 22;
 static constexpr int nsmUnsupportedCmd = 0x05;
 
@@ -138,8 +142,6 @@ static std::unordered_map<MctpBinding, Priority> bindingPriority = {
     {"xyz.openbmc_project.MCTP.Binding.BindingTypes.SMBus", 5},
 };
 
-
-
 struct MctpEidInfo
 {
     EID eid;
@@ -149,14 +151,14 @@ struct MctpEidInfo
 
     friend bool operator<(MctpEidInfo const& lhs, MctpEidInfo const& rhs)
     {
-        
+
         if (mediumPriority.at(lhs.medium) == mediumPriority.at(rhs.medium))
-            return bindingPriority.at(lhs.binding) > bindingPriority.at(rhs.binding);
+            return bindingPriority.at(lhs.binding) >
+                   bindingPriority.at(rhs.binding);
         else
-            return mediumPriority.at(lhs.medium) > mediumPriority.at(rhs.medium);
+            return mediumPriority.at(lhs.medium) >
+                   mediumPriority.at(rhs.medium);
     }
-
-
 };
 using MctpInfo = std::map<UUID, MctpEidInfo>;
 
@@ -192,7 +194,6 @@ enum class NSMTokenStatus
     TokenInstallTimeout = 0x5,
     TokenTimeout = 0x6
 };
-
 
 enum class MCTPCompletionCodes
 {
@@ -337,7 +338,7 @@ static std::map<CommonErrorCodes, MessageMapping> debugTokenCommonErrorMapping{
       " the baseboard."}},
     {CommonErrorCodes::NSMCommandEraseSuccess,
      {"Debug Token erased on {}", ""}},
-    };
+};
 
 /* Debug Token Install Status Codes*/
 enum class DebugTokenInstallStatus
@@ -450,63 +451,67 @@ class UpdateDebugToken : public TokenUtility
      * @param[in] rxBytes
      * @param[in] tokenInstallStatus
      * @param[in] installedTokenType
-     * 
+     *
      * @return int
      */
-    int parseQueryV2Response(std::vector<std::string> rxBytes, 
-                        int& tokenInstallStatus,
-                        int& installedTokenType)
+    int parseQueryV2Response(std::vector<std::string> rxBytes,
+                             int& tokenInstallStatus, int& installedTokenType)
     {
         int status = 0;
         try
         {
             if (rxBytes.size() != mctpDebugTokenQueryResponseLengthV2)
             {
-                if(rxBytes.size() > mctpCompletionCodeByte)
+                if (rxBytes.size() > mctpCompletionCodeByte)
                 {
-                    status = std::stoi(rxBytes[mctpCompletionCodeByte],
-                                nullptr, 16);
+                    status =
+                        std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
                     log<level::ERR>(
-                    ("debug_token_query_v2 command failed with code: " + 
-                    std::to_string(status)).c_str());
+                        ("debug_token_query_v2 command failed with code: " +
+                         std::to_string(status))
+                            .c_str());
                 }
                 else
                 {
                     status = -1;
                     log<level::ERR>(
-                    "debug_token_query_v2 command response size is invalid.");
+                        "debug_token_query_v2 command response size is invalid.");
                 }
                 return status;
             }
-            status = std::stoi(rxBytes[mctpCompletionCodeByte],
-                                nullptr, 16);
+            status = std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
         }
         catch (const std::exception& e)
         {
             status = -1;
-            log<level::ERR>("Error while getting status code from debug_token_query_v2");
+            log<level::ERR>(
+                "Error while getting status code from debug_token_query_v2");
         }
         if (status != static_cast<int>(MCTPCompletionCodes::Success))
         {
             log<level::ERR>(
-                ("Error while parsing debug token query v2 output: " + std::to_string(status)).c_str());
+                ("Error while parsing debug token query v2 output: " +
+                 std::to_string(status))
+                    .c_str());
             status = -1;
             return status;
         }
         try
         {
             tokenInstallStatus =
-                std::stoi(rxBytes[tokenInstallStatusByte],
-                            nullptr, 16);
+                std::stoi(rxBytes[tokenInstallStatusByte], nullptr, 16);
             if (tokenInstallStatus ==
-                static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
+                static_cast<int>(
+                    DebugTokenQueryErrorCodes::DebugTokenInstalled))
             {
                 installedTokenType = 0;
                 uint8_t shift = 0;
-                for(int idx=tokenTypeByteStart; idx<=tokenTypeByteEnd; idx++)
+                for (int idx = tokenTypeByteStart; idx <= tokenTypeByteEnd;
+                     idx++)
                 {
-                    installedTokenType |= (((uint32_t)std::stoi(rxBytes[idx],
-                                nullptr, 16)) << shift);
+                    installedTokenType |=
+                        (((uint32_t)std::stoi(rxBytes[idx], nullptr, 16))
+                         << shift);
                     shift += 8;
                 }
             }
@@ -527,10 +532,8 @@ class UpdateDebugToken : public TokenUtility
     void createTokenInstallErrorMessage(std::string path)
     {
         this->createMessageRegistryResourceErrors(
-            transferFailed, DEBUG_TOKEN_INSTALL_NAME, 
-            OperationType::Common, 
-            static_cast<int>(CommonErrorCodes::NSMCommandInstallFailure),
-            path);
+            transferFailed, DEBUG_TOKEN_INSTALL_NAME, OperationType::Common,
+            static_cast<int>(CommonErrorCodes::NSMCommandInstallFailure), path);
     }
 
     /**
@@ -541,10 +544,8 @@ class UpdateDebugToken : public TokenUtility
     void createTokenEraseErrorMessage(std::string path)
     {
         this->createMessageRegistryResourceErrors(
-            transferFailed, DEBUG_TOKEN_ERASE_NAME, 
-            OperationType::Common,
-            static_cast<int>(CommonErrorCodes::NSMCommandEraseFailure),
-            path);
+            transferFailed, DEBUG_TOKEN_ERASE_NAME, OperationType::Common,
+            static_cast<int>(CommonErrorCodes::NSMCommandEraseFailure), path);
     }
 
   private:
@@ -553,10 +554,10 @@ class UpdateDebugToken : public TokenUtility
     DeviceMap devices;
     /* map of UUID to EID */
     MctpInfo mctpInfo;
-    /* Conditional Variable to wait till propertyChange signal is received. 
+    /* Conditional Variable to wait till propertyChange signal is received.
        Used only for debug token NSM operations. */
     std::condition_variable cv;
-    /* Variable to communicate the operation status between 
+    /* Variable to communicate the operation status between
        propertyChange signal callback and main thread. */
     std::string nsmOperationStatus;
 
@@ -567,7 +568,7 @@ class UpdateDebugToken : public TokenUtility
      *
      * @param interfaces - interface map
      *
-     * @return MctpEidInfo - Eid info 
+     * @return MctpEidInfo - Eid info
      */
     MctpEidInfo fetchEidInfoFromObject(const dbus::InterfaceMap& interfaces);
     /**
@@ -586,8 +587,8 @@ class UpdateDebugToken : public TokenUtility
      * @return true
      * @return false
      */
-    bool checkSupportForSPDMandMCTPVDM(const SupportedMessageTypes& supportedMsgTypes,
-                                EID eid);
+    bool checkSupportForSPDMandMCTPVDM(
+        const SupportedMessageTypes& supportedMsgTypes, EID eid);
     /**
      * @brief discover MCTP end points
      *
@@ -598,7 +599,7 @@ class UpdateDebugToken : public TokenUtility
      * @brief Retrieve Services that contain objects with
      *        MCTP Endpoint Interface
      *
-     * @return std::set<Service> - Set of services 
+     * @return std::set<Service> - Set of services
      */
     std::set<dbus::Service> getMCTPServiceList();
     /**
@@ -665,7 +666,7 @@ class UpdateDebugToken : public TokenUtility
     int queryDebugTokenV2(const EID& eid);
     /**
      * @brief query debug token status
-     * 
+     *
      * Query status with v2 first and if it fails, query with v1.
      *
      * @param[in] eid
@@ -683,7 +684,7 @@ class UpdateDebugToken : public TokenUtility
      */
     void createLog(const std::string& messageID,
                    std::map<std::string, std::string>& addData, Level& level);
-     /**
+    /**
      * @brief debug token install for NSM endpoints.
      *
      *
@@ -706,7 +707,7 @@ class UpdateDebugToken : public TokenUtility
      *
      * @return int
      */
-    int progressStatusPropertyChange(sdbusplus::message_t &msg);
+    int progressStatusPropertyChange(sdbusplus::message_t& msg);
 
     /**
      * @brief Enumerate endpoints that support debug token over NSM.
@@ -715,5 +716,5 @@ class UpdateDebugToken : public TokenUtility
      *
      * @return int
      */
-    int enumerateNsmDebugTokenEndpoints(NSMEndpoints &nsmEndpoint);
+    int enumerateNsmDebugTokenEndpoints(NSMEndpoints& nsmEndpoint);
 };

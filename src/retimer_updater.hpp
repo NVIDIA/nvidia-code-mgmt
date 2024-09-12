@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,15 @@
  * limitations under the License.
  */
 
-
 #pragma once
 #include "config.h"
 
+#include "fmt/core.h"
+
 #include "base_item_updater.hpp"
+
 #include <bitset>
 #include <filesystem>
-#include "fmt/core.h"
 
 #ifndef MOCK_UTILS
 #include <rt_util.hpp> // part of nvidia-retimer
@@ -83,7 +84,8 @@ class ReTimerItemUpdater : public BaseItemUpdater
 {
     std::vector<std::unique_ptr<RTDevice>> invs;
     std::unique_ptr<DeviceSKU> deviceSKUInventoryObj;
-    const std::string objPath = std::string(SOFTWARE_OBJPATH) + "/" + std::string(RT_NAME);
+    const std::string objPath =
+        std::string(SOFTWARE_OBJPATH) + "/" + std::string(RT_NAME);
 
   public:
     /**
@@ -93,9 +95,9 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param together update everything together
      */
     ReTimerItemUpdater(sdbusplus::bus::bus& bus, bool together) :
-        BaseItemUpdater(bus, RT_SUPPORTED_MODEL, RT_INVENTORY_IFACE,
-                        RT_NAME, RT_BUSNAME_UPDATER,
-                        RT_UPDATE_SERVICE, together, RT_BUSNAME_INVENTORY)
+        BaseItemUpdater(bus, RT_SUPPORTED_MODEL, RT_INVENTORY_IFACE, RT_NAME,
+                        RT_BUSNAME_UPDATER, RT_UPDATE_SERVICE, together,
+                        RT_BUSNAME_INVENTORY)
     {
 
         nlohmann::json fruJson = rtcommonutils::loadJSONFile(
@@ -148,7 +150,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
 
     /**
      * @brief Get retimer SKU from inventory object
-     *      Assumes that all retimers on the platform are from the same 
+     *      Assumes that all retimers on the platform are from the same
      *      manufacturer with the same deviceID
      *
      * @return std::string
@@ -161,8 +163,8 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getManufacturer([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getManufacturer(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get the Model object
@@ -170,13 +172,13 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param inventoryPath
      * @return std::string
      */
-    std::string getModel([
-        [maybe_unused]] const std::string& inventoryPath) const override;
+    std::string getModel(
+        [[maybe_unused]] const std::string& inventoryPath) const override;
 
     /**
      * @brief Get retimer the devices to update object based on target filters
-     * 
-     * @param targetFilter 
+     *
+     * @param targetFilter
      * @return std::bitset representing which retimers to update. At any bit
      *                     1 represents that the retimer is to be updated
      *                     and 0 for skipping update to that retimer
@@ -188,19 +190,21 @@ class ReTimerItemUpdater : public BaseItemUpdater
         {
             devices.set();
         }
-        else if(targetFilter.type == TargetFilterType::UpdateSelected)
+        else if (targetFilter.type == TargetFilterType::UpdateSelected)
         {
-            for(auto& target : targetFilter.targets)
+            for (auto& target : targetFilter.targets)
             {
                 uint deviceId;
-                int ret = std::sscanf(target.c_str(), RT_SW_ID_FORMAT, &deviceId);
+                int ret =
+                    std::sscanf(target.c_str(), RT_SW_ID_FORMAT, &deviceId);
                 if (ret > 0 && deviceId < SUPPORTED_RETIMERS)
                 {
                     devices[deviceId] = 1;
                 }
             }
         }
-        //else targetFilter type is UpdateNone, all bits are set to 0 by default
+        // else targetFilter type is UpdateNone, all bits are set to 0 by
+        // default
         return std::to_string(devices.to_ulong());
     }
 
@@ -215,9 +219,8 @@ class ReTimerItemUpdater : public BaseItemUpdater
      */
     virtual std::string
         getServiceArgs(const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       const std::string& version,
-                       const TargetFilter &targetFilter) const override
+                       const std::string& imagePath, const std::string& version,
+                       const TargetFilter& targetFilter) const override
     {
 
         std::string args = "";
@@ -305,7 +308,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @return std::string
      */
     std::string getDbusService(const std::string& /* path */,
-                    const std::string& /* interface */) override
+                               const std::string& /* interface */) override
     {
         return RT_BUSNAME_INVENTORY;
     }
@@ -313,11 +316,12 @@ class ReTimerItemUpdater : public BaseItemUpdater
     std::string validateTarget(const sdbusplus::message::object_path& target)
     {
         uint deviceId;
-        int ret = std::sscanf(target.filename().c_str(), RT_SW_ID_FORMAT, &deviceId);
+        int ret =
+            std::sscanf(target.filename().c_str(), RT_SW_ID_FORMAT, &deviceId);
         if (ret > 0 && deviceId < SUPPORTED_RETIMERS)
         {
             std::string invPath = RT_INVENTORY_PATH + std::to_string(deviceId);
-            if(getService(invPath.c_str(), ASSET_IFACE) != "")
+            if (getService(invPath.c_str(), ASSET_IFACE) != "")
             {
                 return target.filename();
             }
@@ -351,13 +355,15 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param msg - unused
      * @return void
      */
-    void onSWInventoryChangedMsg([[maybe_unused]] sdbusplus::message::message& msg)
+    void onSWInventoryChangedMsg(
+        [[maybe_unused]] sdbusplus::message::message& msg)
     {
         updateSKU();
     }
 
     /**
-     * @brief sets the sku property on the inventory interface of the RT.Updater object
+     * @brief sets the sku property on the inventory interface of the RT.Updater
+     * object
      *
      * @return void
      */
@@ -375,18 +381,19 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @return void
      */
     void createSKUInventory(sdbusplus::bus::bus& bus,
-                                const std::string& objPath)
+                            const std::string& objPath)
     {
 
         deviceSKUInventoryObj = std::make_unique<DeviceSKU>(bus, objPath);
         updateSKU();
 
-        std::string inventoryObjPath = std::string(RT_INVENTORY_PATH) + invs.at(0)->getId();
+        std::string inventoryObjPath =
+            std::string(RT_INVENTORY_PATH) + invs.at(0)->getId();
         startWatchingInventory(inventoryObjPath);
     }
 
     /**
-     * @brief creates match rules to update sku on interfaces added and 
+     * @brief creates match rules to update sku on interfaces added and
      * properties changed signals
      *
      * @param inventoryObjPath - dbus path of the inventory object to watch
@@ -396,10 +403,12 @@ class ReTimerItemUpdater : public BaseItemUpdater
     {
         // Subscribe to the Inventory Object's PropertiesChanged signal
         deviceMatches.emplace_back(
-            bus, MatchRules::propertiesChanged(inventoryObjPath.c_str(), ASSET_IFACE),
+            bus,
+            MatchRules::propertiesChanged(inventoryObjPath.c_str(),
+                                          ASSET_IFACE),
             std::bind(&ReTimerItemUpdater::onSWInventoryChangedMsg, this,
                       std::placeholders::_1)); // For present
-        
+
         // Subscribe to the Inventory Object's InterfacesAdded signal
         // for when the object is created
         deviceMatches.emplace_back(

@@ -1,6 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES.
+ * All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,13 @@
  */
 
 #include <unistd.h>
-#include <iostream>
-#include <string>
-#include <array>
-#include <memory>
+
 #include <phosphor-logging/lg2.hpp>
+
+#include <array>
+#include <iostream>
+#include <memory>
+#include <string>
 
 namespace nvidia::orin::common
 {
@@ -30,8 +32,7 @@ inline std::string readVersionFile(const std::string& cmd)
     std::string output = "";
     std::array<char, 128> buffer;
 
-    std::unique_ptr<FILE, int (*)(FILE*)> pipe(popen(cmd.c_str(), "r"),
-                                                 pclose);
+    std::unique_ptr<FILE, int (*)(FILE*)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe)
     {
         throw std::runtime_error("popen() failed!");
@@ -59,7 +60,7 @@ class Util
         }
         catch (const std::exception& e)
         {
-            lg2::error("Failed to fetch version: " ,"ERROR", e.what());
+            lg2::error("Failed to fetch version: ", "ERROR", e.what());
         }
 
         return version;
