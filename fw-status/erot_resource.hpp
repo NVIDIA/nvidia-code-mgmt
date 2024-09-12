@@ -17,12 +17,12 @@
 
 #pragma once
 
-#include "ap_resource.hpp"
-#include "glacier_recovery_commands.hpp"
-#include "mctp_discovery_resource.hpp"
-
-#include <format>
 #include <memory>
+#include <format>
+
+#include "mctp_discovery_resource.hpp"
+#include "glacier_recovery_commands.hpp"
+#include "ap_resource.hpp"
 
 class APResource;
 

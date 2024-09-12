@@ -15,24 +15,27 @@
  * limitations under the License.
  */
 
-#include "ap_resource.hpp"
-#include "dbusutils.hpp"
-#include "erot_resource.hpp"
-#include "gpio_resource.hpp"
 #include "gpu_resource.hpp"
-#include "mctp_discovery_resource.hpp"
-#include "mctp_endpoint_discovery.hpp"
-#include "mctp_vdm_helper.hpp"
+#include "erot_resource.hpp"
+#include "ap_resource.hpp"
+#include "gpio_resource.hpp"
 
-#include <phosphor-logging/lg2.hpp>
-#include <sdbusplus/bus.hpp>
+#include "dbusutils.hpp"
+
 #include <sdbusplus/server.hpp>
 #include <sdbusplus/server/manager.hpp>
+
+#include <sdbusplus/bus.hpp>
+#include <phosphor-logging/lg2.hpp>
+#include "mctp_vdm_helper.hpp"
+#include "mctp_discovery_resource.hpp"
+#include "mctp_endpoint_discovery.hpp"
 #include <sdeventplus/event.hpp>
 
-#include <filesystem>
+
 #include <iostream>
 #include <string_view>
+#include <filesystem>
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";

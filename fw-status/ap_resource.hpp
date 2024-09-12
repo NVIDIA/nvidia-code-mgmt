@@ -17,14 +17,13 @@
 
 #pragma once
 
-#include "dbusutils.hpp"
-#include "erot_resource.hpp"
-#include "handler.hpp"
-#include "mctp_vdm_helper.hpp"
-
+#include <coroutine>
 #include <sdbusplus/timer.hpp>
 
-#include <coroutine>
+#include "erot_resource.hpp"
+#include "mctp_vdm_helper.hpp"
+#include "handler.hpp"
+#include "dbusutils.hpp"
 
 using namespace phosphor::logging;
 class ERoTResource;

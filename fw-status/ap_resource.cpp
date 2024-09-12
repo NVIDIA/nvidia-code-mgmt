@@ -15,17 +15,16 @@
  * limitations under the License.
  */
 
-#include "ap_resource.hpp"
-
-#include "dbusutils.hpp"
-#include "erot_resource.hpp"
-#include "handler.hpp"
-#include "mctp_vdm_helper.hpp"
-
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/timer.hpp>
 
+#include "erot_resource.hpp"
+#include "mctp_vdm_helper.hpp"
+#include "handler.hpp"
+#include "dbusutils.hpp"
 #include <filesystem>
+
+#include "ap_resource.hpp"
 
 using namespace phosphor::logging;
 
