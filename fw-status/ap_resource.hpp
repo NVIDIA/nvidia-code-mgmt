@@ -17,13 +17,13 @@
 
 #pragma once
 
-#include <coroutine>
+#include "dbusutils.hpp"
+#include "handler.hpp"
+#include "mctp_discovery_resource.hpp"
+
 #include <sdbusplus/timer.hpp>
 
-#include "erot_resource.hpp"
-#include "mctp_vdm_helper.hpp"
-#include "handler.hpp"
-#include "dbusutils.hpp"
+#include <coroutine>
 
 using namespace phosphor::logging;
 class ERoTResource;
@@ -33,6 +33,7 @@ constexpr static int numberOfSlots = 2;
 constexpr static int maxAttemptsPerSlot = 3;
 constexpr static int maxBootCompleteTimeout =
     maxBootCompleteTimeoutPerAttempt * numberOfSlots * maxAttemptsPerSlot;
+
 /**@class APResource
  *
  *  Represents a resource which is expected to have one or more associated MCTP

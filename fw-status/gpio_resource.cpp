@@ -17,6 +17,8 @@
 
 #include "gpio_resource.hpp"
 
+#include "dbusutils.hpp"
+
 void GPIOResource::waitForGPIOEvent()
 {
     lineEvent = gpioLine.event_read();
@@ -175,7 +177,8 @@ void GPIOResource::updateAPHealth(uint8_t type)
     if (healthy)
     {
         deleteDbusObject();
-        lg2::info("Device associated with {OBJ} is healthy", "OBJ", path.c_str());
+        lg2::info("Device associated with {OBJ} is healthy", "OBJ",
+                  path.c_str());
     }
     else
     {

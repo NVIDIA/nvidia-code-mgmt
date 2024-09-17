@@ -17,6 +17,8 @@
 
 #include "mctp_discovery_resource.hpp"
 
+#include "dbusutils.hpp"
+
 std::unordered_set<std::string>
     MCTPDiscoveryResource::getMctpServices() const noexcept
 {

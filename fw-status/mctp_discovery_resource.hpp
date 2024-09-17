@@ -19,7 +19,11 @@
 
 #include "base_resource.hpp"
 
+#include <phosphor-logging/elog.hpp>
+#include <phosphor-logging/lg2.hpp>
+
 #include <string_view>
+#include <unordered_set>
 
 constexpr static auto mctpEndpointIntfName{"xyz.openbmc_project.MCTP.Endpoint"};
 constexpr static auto mctpEndpointEnableIntfName{
@@ -30,6 +34,8 @@ constexpr auto mapperPath = "/xyz/openbmc_project/object_mapper";
 constexpr auto mapperInterface = "xyz.openbmc_project.ObjectMapper";
 constexpr static std::string_view mctpObjPathPrefix =
     "/xyz/openbmc_project/mctp/0/";
+
+using namespace phosphor::logging;
 
 /**@class MCTPDiscoveryResource
  *

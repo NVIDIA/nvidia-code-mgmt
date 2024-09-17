@@ -15,26 +15,20 @@
  * limitations under the License.
  */
 
-#include "gpu_resource.hpp"
-#include "erot_resource.hpp"
 #include "ap_resource.hpp"
-#include "gpio_resource.hpp"
-
 #include "dbusutils.hpp"
+#include "erot_resource.hpp"
+#include "gpio_resource.hpp"
+#include "gpu_resource.hpp"
+#include "mctp_endpoint_discovery.hpp"
+#include "mctp_vdm_helper.hpp"
 
+#include <phosphor-logging/lg2.hpp>
+#include <sdbusplus/bus.hpp>
 #include <sdbusplus/server.hpp>
 #include <sdbusplus/server/manager.hpp>
-
-#include <sdbusplus/bus.hpp>
-#include <phosphor-logging/lg2.hpp>
-#include "mctp_vdm_helper.hpp"
-#include "mctp_discovery_resource.hpp"
-#include "mctp_endpoint_discovery.hpp"
 #include <sdeventplus/event.hpp>
 
-
-#include <iostream>
-#include <string_view>
 #include <filesystem>
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
@@ -47,9 +41,6 @@ constexpr auto gpioObjInterface =
     "xyz.openbmc_project.Configuration.GPIORecovery";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/xyz/openbmc_project/inventory/system/";
-constexpr auto i2cInterface =
-    "xyz.openbmc_project.Inventory.Decorator.I2CDevice";
-constexpr auto uuidInterface = "xyz.openbmc_project.Common.UUID";
 
 using namespace phosphor::logging;
 using namespace nvidia::software::updater;

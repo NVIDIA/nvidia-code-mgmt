@@ -17,13 +17,14 @@
 
 #pragma once
 
-#include <memory>
-#include <format>
-
-#include "mctp_discovery_resource.hpp"
-#include "glacier_recovery_commands.hpp"
 #include "ap_resource.hpp"
+#include "glacier_recovery_commands.hpp"
+#include "mctp_discovery_resource.hpp"
+#include "mctp_vdm_helper.hpp"
 
+#include <memory>
+
+class MCTPVdmHelper;
 class APResource;
 
 /**@class ERoTResource

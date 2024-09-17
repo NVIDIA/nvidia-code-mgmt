@@ -18,15 +18,12 @@
 #pragma once
 
 #include "com/nvidia/RoT/BootStatus/server.hpp"
-#include "dbusutils.hpp"
 #include "xyz/openbmc_project/Common/UUID/server.hpp"
 #include "xyz/openbmc_project/State/Decorator/Health/server.hpp"
 #include "xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 
-#include <unordered_set>
-#include <unordered_map>
 #include <memory>
 
 using ResourceInterfacesInherit = sdbusplus::server::object_t<
@@ -45,7 +42,6 @@ using OperationalStatusServer = sdbusplus::xyz::openbmc_project::State::
 using BootStatusServer = sdbusplus::com::nvidia::RoT::server::BootStatus;
 
 namespace MatchRules = sdbusplus::bus::match::rules;
-using namespace phosphor::logging;
 
 /**@class ResourceInterface
  *
@@ -96,10 +92,8 @@ class BaseResource
      *
      */
     BaseResource(sdbusplus::bus::bus& bus, const std::string& objPath) :
-        bus(bus),
-        path(objPath)
-    {
-    }
+        bus(bus), path(objPath)
+    {}
 
     /** @brief Sets health of resource on D-Bus object.
      *         Creates D-Bus object if it doesn't already exists
@@ -121,8 +115,10 @@ class BaseResource
     {
         if (!resourceDbusObj)
         {
-            lg2::error("Invalid state of resource {PATH} to fetch health", "PATH", path.c_str());
-            throw std::runtime_error("Invalid state of resource to fetch health");
+            lg2::error("Invalid state of resource {PATH} to fetch health",
+                       "PATH", path.c_str());
+            throw std::runtime_error(
+                "Invalid state of resource to fetch health");
         }
         return resourceDbusObj->health();
     }
@@ -147,8 +143,10 @@ class BaseResource
     {
         if (!resourceDbusObj)
         {
-            lg2::error("Invalid state of resource {PATH} to fetch state", "PATH", path.c_str());
-            throw std::runtime_error("Invalid state of resource to fetch state");
+            lg2::error("Invalid state of resource {PATH} to fetch state",
+                       "PATH", path.c_str());
+            throw std::runtime_error(
+                "Invalid state of resource to fetch state");
         }
         return resourceDbusObj->state();
     }
@@ -164,9 +162,9 @@ class BaseResource
         }
     }
 
-    protected:
-        const std::string path;
+  protected:
+    const std::string path;
 
-    private:
-        std::unique_ptr<ResourceInterfaces> resourceDbusObj;
+  private:
+    std::unique_ptr<ResourceInterfaces> resourceDbusObj;
 };
