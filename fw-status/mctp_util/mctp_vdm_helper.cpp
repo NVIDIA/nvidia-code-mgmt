@@ -47,7 +47,7 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatus(
     }
 
     auto rc = co_await queryBootStatusImpl(eid, responseMsg, responseLen);
-    if (rc != 0)
+    if (rc != 0 or responseMsg == nullptr)
     {
         lg2::error(
             "Fetching QueryBootStatus on ERoT failed, EID={EID}, RC={RC}",
@@ -75,6 +75,11 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatusImpl(
     if (rc)
     {
         co_return rc;
+    }
+
+    if (responseMsg == nullptr)
+    {
+        co_return -1;
     }
 
     co_return responseMsg->payload[0];
