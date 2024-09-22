@@ -109,8 +109,8 @@ class PerformGlacierRecovery : public CommandInterface
 
 void registerCommand(CLI::App& app)
 {
-    int busAddress;
-    int slaveAddress;
+    int busAddress = 0;
+    int slaveAddress = 0;
 
     auto getFirmwareInfoCmd =
         app.add_subcommand("GetFirmwareInfo", "Get the firmware information");

@@ -228,8 +228,8 @@ class GetCMSLogs : public CommandInterface
 
 void registerCommand(CLI::App& app)
 {
-    int busAddress;
-    int slaveAddress;
+    int busAddress = 0;
+    int slaveAddress = 0;
 
     auto getDeviceIDCmd =
         app.add_subcommand("GetDeviceID", "Get the device status");
