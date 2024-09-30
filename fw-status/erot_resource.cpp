@@ -19,6 +19,13 @@
 
 mctp_vdm::requester::Coroutine ERoTResource::updateBootStatusAsync()
 {
+    std::unique_lock<std::mutex> lock(mtx, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        lg2::error("BootStatus refresh already in progress for EID={EID}",
+                   "EID", fetchEid());
+        co_return 0;
+    }
     if (MCTPDiscoveryResource::isDeviceEnumerated() and
         MCTPDiscoveryResource::checkForEnabledMCTPEids())
     {
@@ -27,9 +34,12 @@ mctp_vdm::requester::Coroutine ERoTResource::updateBootStatusAsync()
         auto eid = fetchEid();
         co_await mctpVdmHelper->queryBootStatus(eid, responseMsg, responseLen);
 
-        std::vector<uint8_t> status(responseMsg->payload + 1,
-                                    responseMsg->payload + responseLen);
-        bootStatus->bootStatus(status);
+        if (responseMsg != nullptr)
+        {
+            std::vector<uint8_t> status(responseMsg->payload + 1,
+                                        responseMsg->payload + responseLen);
+            bootStatus->bootStatus(status);
+        }
     }
     else
     {

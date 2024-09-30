@@ -74,6 +74,14 @@ class Handler
     int activateSockets(const std::vector<uint8_t>& eids);
     void deactivateSockets();
 
+    /** @brief
+     * Deactivates the socket handling communication with the EID, if no other
+     * EIDs are communicating over the same socket
+     *
+     * @param eid - input EID to deactivate the socket for
+     * */
+    void deactivateSocket(uint8_t eid);
+
   private:
     sdeventplus::Event& event;
     mctp_vdm::requester::Handler<mctp_vdm::requester::Request>& handler;
@@ -82,6 +90,13 @@ class Handler
                    const std::vector<uint8_t>& pathName);
 
     void processRxMsg(const std::vector<uint8_t>& requestMsg);
+    /** @brief
+     * Checks for active requests on the same communication path as the input
+     * EID
+     *
+     * @param eid - input EID to fetch the communication path
+     * */
+    bool checkActiveEndpoints(uint8_t eid);
 
     /** @brief Socket information for MCTP Tx/Rx daemons */
     std::map<std::vector<uint8_t>,
