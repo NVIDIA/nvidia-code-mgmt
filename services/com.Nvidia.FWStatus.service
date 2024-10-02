@@ -8,7 +8,6 @@ Type=dbus
 BusName=com.Nvidia.FWStatus
 Restart=always
 ExecStart=/usr/bin/fw-status
-ExecStartPre=/usr/bin/sleep 60
 
 [Install]
 WantedBy=multi-user.target
