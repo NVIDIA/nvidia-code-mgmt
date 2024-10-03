@@ -100,7 +100,9 @@ int UpdateDebugToken::enumerateNsmDebugTokenEndpoints(
     }
     catch (const std::exception& e)
     {
-        log<level::ERR>(e.what());
+        log<level::ERR>(
+            ("NSM Command Exception DBUS_ERROR: " + std::string(e.what()))
+                .c_str());
         return -1;
     }
     return 0;
@@ -122,7 +124,9 @@ int getErrorCode(sdbusplus::bus::bus& bus, std::string path)
     }
     catch (const std::exception& e)
     {
-        log<level::ERR>(e.what());
+        log<level::ERR>(
+            ("NSM Command Exception DBUS_ERROR: " + std::string(e.what()))
+                .c_str());
         return -1;
     }
     return std::get<0>(errorCode);
@@ -133,21 +137,31 @@ std::string getTokenStatus(sdbusplus::bus::bus& bus, std::string path)
     std::variant<std::tuple<std::string, std::string, std::string, uint32_t>>
         tokenStatusProperty;
     std::tuple<std::string, std::string, std::string, uint32_t> tknStatus;
-    auto method =
-        bus.new_method_call(nsmService, path.c_str(), propertiesPath, "Get");
-    method.append(nsmDebugTokenIntfName, "TokenStatus");
-    auto reply = bus.call(method);
-    reply.read(tokenStatusProperty);
-    tknStatus =
-        std::get<std::tuple<std::string, std::string, std::string, uint32_t>>(
-            tokenStatusProperty);
-    std::string tokenType = std::get<0>(tknStatus);
-    if (tokenType != nsmTokenTypeCRDT)
+    try
     {
-        log<level::ERR>("Invalid token type.");
+        auto method = bus.new_method_call(nsmService, path.c_str(),
+                                          propertiesPath, "Get");
+        method.append(nsmDebugTokenIntfName, "TokenStatus");
+        auto reply = bus.call(method);
+        reply.read(tokenStatusProperty);
+        tknStatus = std::get<
+            std::tuple<std::string, std::string, std::string, uint32_t>>(
+            tokenStatusProperty);
+        std::string tokenType = std::get<0>(tknStatus);
+        if (tokenType != nsmTokenTypeCRDT)
+        {
+            log<level::ERR>("Invalid token type.");
+            return "";
+        }
+        return std::get<1>(tknStatus);
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>(
+            ("NSM Command Exception DBUS_ERROR: " + std::string(e.what()))
+                .c_str());
         return "";
     }
-    return std::get<1>(tknStatus);
 }
 
 /**
@@ -171,7 +185,7 @@ int UpdateDebugToken::nsmTokenErase()
     std::string response;
     NSMEndpoints nsmEndpoints;
     std::mutex mtx;
-    std::vector<sdbusplus::bus::match_t> propertyChangeCallbacks;
+    std::unique_ptr<sdbusplus::bus::match_t> getStatusMatch;
     if (enumerateNsmDebugTokenEndpoints(nsmEndpoints) != 0)
     {
         log<level::ERR>("NSM Endpoints enumeration error");
@@ -196,21 +210,36 @@ int UpdateDebugToken::nsmTokenErase()
         std::string propertiesMatchString =
             sdbusplus::bus::match::rules::propertiesChanged(
                 path, nsmProgressIntfName);
-        sdbusplus::bus::match_t match(
-            bus, propertiesMatchString, [&](sdbusplus::message::message& msg) {
-                this->progressStatusPropertyChange(msg);
-            });
-
-        auto method = bus.new_method_call(nsmService, path.c_str(),
-                                          nsmDebugTokenIntfName, "GetStatus");
-        method.append(nsmTokenTypeCRDT);
-        bus.call(method);
+        try
+        {
+            getStatusMatch.reset();
+            getStatusMatch = std::make_unique<sdbusplus::bus::match_t>(
+                bus, propertiesMatchString,
+                [this](sdbusplus::message::message& msg) {
+                    this->progressStatusPropertyChange(msg);
+                });
+            auto method = bus.new_method_call(
+                nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
+            method.append(nsmTokenTypeCRDT);
+            bus.call(method);
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>(("NSM D-Bus Exception Erase.GetStatus: " +
+                             std::string(e.what()))
+                                .c_str());
+            status = -1;
+            createTokenEraseErrorMessage(path);
+            continue;
+        }
         // Wait for GetStatus operation to complete
         if (cv.wait_for(lock,
                         std::chrono::seconds(propertyChangeSignalTimeout)) ==
             std::cv_status::timeout)
         {
-            log<level::ERR>("Timeout waiting for GetStatus command");
+            log<level::ERR>(
+                ("Timeout waiting for GetStatus command for path: " + path)
+                    .c_str());
             status = -1;
             createTokenEraseErrorMessage(path);
             continue;
@@ -238,16 +267,31 @@ int UpdateDebugToken::nsmTokenErase()
             log<level::INFO>("No token installed.");
             continue;
         }
+        try
+        {
+            auto method =
+                bus.new_method_call(nsmService, path.c_str(),
+                                    nsmDebugTokenIntfName, "DisableTokens");
+            bus.call(method);
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>(("NSM D-Bus Exception DisableTokens.GetStatus: " +
+                             std::string(e.what()))
+                                .c_str());
 
-        method = bus.new_method_call(nsmService, path.c_str(),
-                                     nsmDebugTokenIntfName, "DisableTokens");
-        bus.call(method);
+            status = -1;
+            createTokenEraseErrorMessage(path);
+            continue;
+        }
         // Wait for DisableTokens operation to complete
         if (cv.wait_for(lock,
                         std::chrono::seconds(propertyChangeSignalTimeout)) ==
             std::cv_status::timeout)
         {
-            log<level::ERR>("Timeout waiting for DisableTokens command");
+            log<level::ERR>(
+                ("Timeout waiting for DisableTokens command for path: " + path)
+                    .c_str());
             status = -1;
             createTokenEraseErrorMessage(path);
             continue;
@@ -259,16 +303,30 @@ int UpdateDebugToken::nsmTokenErase()
             continue;
         }
 
-        method = bus.new_method_call(nsmService, path.c_str(),
-                                     nsmDebugTokenIntfName, "GetStatus");
-        method.append(nsmTokenTypeCRDT);
-        bus.call(method);
+        try
+        {
+            auto method = bus.new_method_call(
+                nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
+            method.append(nsmTokenTypeCRDT);
+            bus.call(method);
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>(("NSM D-Bus Exception EraseStatus.GetStatus:  " +
+                             std::string(e.what()))
+                                .c_str());
+            status = -1;
+            createTokenEraseErrorMessage(path);
+            continue;
+        }
         // Wait for GetStatus operation to complete
         if (cv.wait_for(lock,
                         std::chrono::seconds(propertyChangeSignalTimeout)) ==
             std::cv_status::timeout)
         {
-            log<level::ERR>("Timeout waiting for GetStatus command");
+            log<level::ERR>(
+                ("Timeout waiting for GetStatus command for path: " + path)
+                    .c_str());
             status = -1;
             createTokenEraseErrorMessage(path);
             continue;
@@ -302,7 +360,7 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
     Token token{};
     NSMEndpoints nsmEndpoints;
     std::mutex mtx;
-    std::vector<sdbusplus::bus::match_t> propertyChangeCallbacks;
+    std::unique_ptr<sdbusplus::bus::match_t> getStatusMatch;
     if (enumerateNsmDebugTokenEndpoints(nsmEndpoints) != 0)
     {
         log<level::ERR>("NSM Endpoints enumeration error");
@@ -327,21 +385,36 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
         std::string propertiesMatchString =
             sdbusplus::bus::match::rules::propertiesChanged(
                 path, nsmProgressIntfName);
-
-        sdbusplus::bus::match_t match(
-            bus, propertiesMatchString, [&](sdbusplus::message::message& msg) {
-                this->progressStatusPropertyChange(msg);
-            });
-        auto method = bus.new_method_call(nsmService, path.c_str(),
-                                          nsmDebugTokenIntfName, "GetStatus");
-        method.append(nsmTokenTypeCRDT);
-        bus.call(method);
+        try
+        {
+            getStatusMatch.reset();
+            getStatusMatch = std::make_unique<sdbusplus::bus::match_t>(
+                bus, propertiesMatchString,
+                [this](sdbusplus::message::message& msg) {
+                    this->progressStatusPropertyChange(msg);
+                });
+            auto method = bus.new_method_call(
+                nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
+            method.append(nsmTokenTypeCRDT);
+            bus.call(method);
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>(("NSM D-Bus Exception Install.GetStatus: " +
+                             std::string(e.what()))
+                                .c_str());
+            status = -1;
+            createTokenInstallErrorMessage(path);
+            continue;
+        }
 
         if (cv.wait_for(lock,
                         std::chrono::seconds(propertyChangeSignalTimeout)) ==
             std::cv_status::timeout)
         {
-            log<level::ERR>("Timeout waiting for GetStatus command");
+            log<level::ERR>(
+                ("Timeout waiting for GetStatus command for path: " + path)
+                    .c_str());
             status = -1;
             createTokenInstallErrorMessage(path);
             continue;
@@ -368,38 +441,64 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             log<level::INFO>("Debug session active.");
             continue;
         }
-
-        method = bus.new_method_call(nsmService, path.c_str(), propertiesPath,
-                                     "Get");
-        method.append(nsmDebugTokenIntfName, "TokenDeviceID");
-        auto reply = bus.call(method);
-        reply.read(property);
-
-        const std::string serialNumber = std::get<std::string>(property);
-        if (tokens.find(serialNumber) != tokens.end())
+        try
         {
-            // Strip 44 bytes from the header
-            token = std::vector<uint8_t>(tokens[serialNumber].begin() + 44,
-                                         tokens[serialNumber].end());
-            ;
+            auto method = bus.new_method_call(nsmService, path.c_str(),
+                                              propertiesPath, "Get");
+            method.append(nsmDebugTokenIntfName, "TokenDeviceID");
+            auto reply = bus.call(method);
+            reply.read(property);
+
+            const std::string serialNumber = std::get<std::string>(property);
+            if (tokens.find(serialNumber) != tokens.end())
+            {
+                // Strip 44 bytes from the header
+                token = std::vector<uint8_t>(tokens[serialNumber].begin() + 44,
+                                             tokens[serialNumber].end());
+                ;
+            }
+            else
+            {
+                log<level::ERR>(
+                    ("No token for serial number:" + serialNumber).c_str());
+                continue;
+            }
         }
-        else
+        catch (const std::exception& e)
         {
-            log<level::ERR>(
-                ("No token for serial number:" + serialNumber).c_str());
+            log<level::ERR>(("NSM D-Bus Exception Install.TokenId: " +
+                             std::string(e.what()))
+                                .c_str());
+            status = -1;
+            createTokenInstallErrorMessage(path);
             continue;
         }
 
-        method = bus.new_method_call(nsmService, path.c_str(),
-                                     nsmDebugTokenIntfName, "InstallToken");
-        method.append(token);
-        reply = bus.call(method);
+        try
+        {
+            auto method =
+                bus.new_method_call(nsmService, path.c_str(),
+                                    nsmDebugTokenIntfName, "InstallToken");
+            method.append(token);
+            bus.call(method);
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>(
+                ("NSM D-Bus Exception InstallToken: " + std::string(e.what()))
+                    .c_str());
+            status = -1;
+            createTokenInstallErrorMessage(path);
+            continue;
+        }
 
         if (cv.wait_for(lock,
                         std::chrono::seconds(propertyChangeSignalTimeout)) ==
             std::cv_status::timeout)
         {
-            log<level::ERR>("Timeout waiting for InstallToken command");
+            log<level::ERR>(
+                ("Timeout waiting for InstallToken command for path: " + path)
+                    .c_str());
             status = -1;
             createTokenInstallErrorMessage(path);
             continue;
@@ -411,16 +510,30 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             continue;
         }
 
-        method = bus.new_method_call(nsmService, path.c_str(),
-                                     nsmDebugTokenIntfName, "GetStatus");
-        method.append(nsmTokenTypeCRDT);
-        bus.call(method);
+        try
+        {
+            auto method = bus.new_method_call(
+                nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
+            method.append(nsmTokenTypeCRDT);
+            bus.call(method);
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>(("NSM D-Bus Exception InstallToken.GetStatus: " +
+                             std::string(e.what()))
+                                .c_str());
+            status = -1;
+            createTokenInstallErrorMessage(path);
+            continue;
+        }
 
         if (cv.wait_for(lock,
                         std::chrono::seconds(propertyChangeSignalTimeout)) ==
             std::cv_status::timeout)
         {
-            log<level::ERR>("Timeout waiting for GetStatus command");
+            log<level::ERR>(
+                ("Timeout waiting for GetStatus command for path: " + path)
+                    .c_str());
             status = -1;
             createTokenInstallErrorMessage(path);
             continue;
