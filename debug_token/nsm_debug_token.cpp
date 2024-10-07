@@ -229,7 +229,12 @@ int UpdateDebugToken::nsmTokenErase()
                              std::string(e.what()))
                                 .c_str());
             status = -1;
-            createTokenEraseErrorMessage(path);
+            sdbusplus::message::object_path devicePath(path);
+            std::string deviceName = devicePath.filename();
+            createMessageRegistryResourceErrors(
+                debugTokenEraseFailed, deviceName, OperationType::Common,
+                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                "GetStatus");
             continue;
         }
         // Wait for GetStatus operation to complete
@@ -241,7 +246,12 @@ int UpdateDebugToken::nsmTokenErase()
                 ("Timeout waiting for GetStatus command for path: " + path)
                     .c_str());
             status = -1;
-            createTokenEraseErrorMessage(path);
+            sdbusplus::message::object_path devicePath(path);
+            std::string deviceName = devicePath.filename();
+            createMessageRegistryResourceErrors(
+                debugTokenEraseFailed, deviceName, OperationType::Common,
+                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                "GetStatus");
             continue;
         }
         if (nsmOperationStatus != nsmCompletedStatus)
@@ -281,7 +291,12 @@ int UpdateDebugToken::nsmTokenErase()
                                 .c_str());
 
             status = -1;
-            createTokenEraseErrorMessage(path);
+            sdbusplus::message::object_path devicePath(path);
+            std::string deviceName = devicePath.filename();
+            createMessageRegistryResourceErrors(
+                debugTokenEraseFailed, deviceName, OperationType::Common,
+                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                "DisableTokens");
             continue;
         }
         // Wait for DisableTokens operation to complete
@@ -293,7 +308,12 @@ int UpdateDebugToken::nsmTokenErase()
                 ("Timeout waiting for DisableTokens command for path: " + path)
                     .c_str());
             status = -1;
-            createTokenEraseErrorMessage(path);
+            sdbusplus::message::object_path devicePath(path);
+            std::string deviceName = devicePath.filename();
+            createMessageRegistryResourceErrors(
+                debugTokenEraseFailed, deviceName, OperationType::Common,
+                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                "DisableTokens");
             continue;
         }
         if (nsmOperationStatus != nsmCompletedStatus)
@@ -328,7 +348,12 @@ int UpdateDebugToken::nsmTokenErase()
                 ("Timeout waiting for GetStatus command for path: " + path)
                     .c_str());
             status = -1;
-            createTokenEraseErrorMessage(path);
+            sdbusplus::message::object_path devicePath(path);
+            std::string deviceName = devicePath.filename();
+            createMessageRegistryResourceErrors(
+                debugTokenEraseFailed, deviceName, OperationType::Common,
+                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                "GetStatus");
             continue;
         }
         if (nsmOperationStatus != nsmCompletedStatus)
@@ -343,7 +368,12 @@ int UpdateDebugToken::nsmTokenErase()
         {
             log<level::ERR>(("Token erase failed for: {}" + path).c_str());
             status = -1;
-            createTokenEraseErrorMessage(path);
+            sdbusplus::message::object_path devicePath(path);
+            std::string deviceName = devicePath.filename();
+            createMessageRegistryResourceErrors(
+                debugTokenEraseFailed, deviceName, OperationType::Common,
+                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                "DisableTokens");
             continue;
         }
     }

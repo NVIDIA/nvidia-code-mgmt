@@ -54,8 +54,10 @@ int main(int argc, char** argv)
             if (updateDebugToken->eraseDebugToken() != 0)
             {
                 log<level::ERR>("Debug Token: Erase Failed");
-                updateDebugToken->createMessageRegistry(
-                    transferFailed, DEBUG_TOKEN_ERASE_NAME, version);
+                updateDebugToken->createMessageRegistryResourceErrors(
+                    debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
+                    OperationType::TokenErase,
+                    static_cast<int>(EraseErrorCodes::EraseFailed));
             }
             else
             {

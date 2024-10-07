@@ -150,7 +150,7 @@ int UpdateDebugToken::eraseDebugToken()
         log<level::ERR>("discovery failed");
         status = -1;
         createMessageRegistryResourceErrors(
-            resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+            debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
             OperationType::Common,
             static_cast<int>(CommonErrorCodes::MCTPDiscoveryFailed));
         return status;
@@ -195,7 +195,7 @@ int UpdateDebugToken::eraseDebugToken()
                 deviceName = deviceNameMap[mctpEidInfo.eid];
             }
             createMessageRegistryResourceErrors(
-                resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+                debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
                 OperationType::BackgroundCopy,
                 static_cast<int>(
                     BackgroundCopyErrorCodes::BackgroundEnableFail),
@@ -615,7 +615,7 @@ int UpdateDebugToken::eraseToken(const EID& eid)
         log<level::ERR>("Error while running erase token command");
         status = static_cast<int>(CommonErrorCodes::MCTPCommandEraseFailure);
         createMessageRegistryResourceErrors(
-            resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+            debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
             OperationType::Common, status, deviceName);
         return status;
     }
@@ -638,7 +638,7 @@ int UpdateDebugToken::eraseToken(const EID& eid)
                 deviceName = deviceNameMap[eid];
             }
             createMessageRegistryResourceErrors(
-                resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+                debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
                 OperationType::Common, status, deviceName);
             return status;
         }
@@ -657,7 +657,7 @@ int UpdateDebugToken::eraseToken(const EID& eid)
         log<level::ERR>(("Error while erasing token: " + commandOut).c_str());
         status = -1;
         createMessageRegistryResourceErrors(
-            resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
+            debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
             OperationType::TokenErase,
             static_cast<int>(EraseErrorCodes::EraseInternalError), deviceName);
         // disable background copy since token erase is failed

@@ -39,6 +39,8 @@ namespace updater
 using namespace sdbusplus::xyz::openbmc_project::Common::Error;
 
 const std::string transferFailed{"Update.1.0.TransferFailed"};
+const std::string debugTokenEraseFailed{
+    "NvidiaUpdate.1.0.DebugTokenEraseFailed"};
 
 void Delete::delete_()
 {
@@ -358,15 +360,29 @@ void Version::createLog(const std::string& messageID,
 }
 
 void Version::logTransferFailed(const std::string& compName,
-                                const std::string& compVersion)
+                                [[maybe_unused]] const std::string& compVersion)
 {
     std::map<std::string, std::string> addData;
-    addData["REDFISH_MESSAGE_ID"] = transferFailed;
-    addData["REDFISH_MESSAGE_ARGS"] = (compVersion + "," + compName);
-    // use separate container for fwupdate message registry
-    addData["namespace"] = "FWUpdate";
-    Level level = Level::Critical;
-    createLog(transferFailed, addData, level);
+#ifdef DEBUG_TOKEN_SUPPORT
+    if (compName == DEBUG_TOKEN_ERASE_NAME)
+    {
+        addData["REDFISH_MESSAGE_ID"] = debugTokenEraseFailed;
+        addData["REDFISH_MESSAGE_ARGS"] = (compName + "," + "InternalError");
+        // use separate container for fwupdate message registry
+        addData["namespace"] = "FWUpdate";
+        Level level = Level::Informational;
+        createLog(debugTokenEraseFailed, addData, level);
+    }
+    else
+#endif
+    {
+        addData["REDFISH_MESSAGE_ID"] = transferFailed;
+        addData["REDFISH_MESSAGE_ARGS"] = (compVersion + "," + compName);
+        // use separate container for fwupdate message registry
+        addData["namespace"] = "FWUpdate";
+        Level level = Level::Critical;
+        createLog(transferFailed, addData, level);
+    }
     return;
 }
 } // namespace updater

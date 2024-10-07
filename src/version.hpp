@@ -461,7 +461,7 @@ class Version : public VersionInherit, public DBUSUtils
      * @return void
      */
     void logTransferFailed(const std::string& compName,
-                           const std::string& compVersion);
+                           [[maybe_unused]] const std::string& compVersion);
 
   private:
     std::string versionId;

@@ -104,6 +104,8 @@ const std::string transferFailed{"Update.1.0.TransferFailed"};
 const std::string updateSuccessful{"Update.1.0.UpdateSuccessful"};
 const std::string resourceErrorsDetected{
     "ResourceEvent.1.0.ResourceErrorsDetected"};
+const std::string debugTokenEraseFailed{
+    "NvidiaUpdate.1.0.DebugTokenEraseFailed"};
 static constexpr size_t mctpCompletionCodeByte =
     8; // 8'th byte from beginning is the MCTP Completion code for debug token
        // query
@@ -241,7 +243,8 @@ static std::map<InstallErrorCodes, MessageMapping> installErrorMapping{
 enum class EraseErrorCodes
 {
     EraseSuccess = 0x0,
-    EraseInternalError = 0x1
+    EraseInternalError = 0x1,
+    EraseFailed = 0x2,
 };
 
 /* Debug token erase error code mapping for message registry */
@@ -249,7 +252,12 @@ static std::map<EraseErrorCodes, MessageMapping> eraseErrorMapping{
     {EraseErrorCodes::EraseInternalError,
      {"Debug Token Erase Internal Error for {}",
       "Retry the firmware update operation and if issue still persists reset"
-      " the baseboard."}}};
+      " the baseboard."}},
+    {EraseErrorCodes::EraseFailed,
+     {"Erase failed for one or more devices.",
+      "No action required. If there are other component failures in task, retry"
+      " the firmware update operation and if issue still persists reset the "
+      "baseboard."}}};
 
 /* background copy enabled or disable command error codes */
 enum class BackgroundCopyErrorCodes
@@ -293,7 +301,8 @@ enum class CommonErrorCodes
     NSMCommandInstallSuccess,
     NSMCommandInstallFailure,
     NSMCommandEraseSuccess,
-    NSMCommandEraseFailure
+    NSMCommandEraseFailure,
+    NSMCommandFailure,
 };
 
 /* debug token common error code mapping for message registry */
@@ -338,6 +347,11 @@ static std::map<CommonErrorCodes, MessageMapping> debugTokenCommonErrorMapping{
       " the baseboard."}},
     {CommonErrorCodes::NSMCommandEraseSuccess,
      {"Debug Token erased on {}", ""}},
+    {CommonErrorCodes::NSMCommandFailure,
+     {"NSM Command failure for {}",
+      "No action required. If there are other component failures in task, retry"
+      " the firmware update operation and if issue still persists reset the "
+      "baseboard."}},
 };
 
 /* Debug Token Install Status Codes*/
