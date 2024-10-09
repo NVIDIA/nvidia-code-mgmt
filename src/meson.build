@@ -54,6 +54,10 @@ if get_option('SEP_FLASH_SUPPORT').enabled()
     source_files += 'sep_updater.cpp'
 endif
 
+if get_option('IGX_FUSE_SUPPORT').enabled()
+    source_files += 'igx_fuse_updater.cpp'
+endif
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     source_files += 'debug_token_install.cpp'
     source_files += 'debug_token_erase.cpp'

@@ -1,0 +1,9 @@
+
+[Unit]
+Description=Update IGX Fuse
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/igx-fuse.sh $ARGS
