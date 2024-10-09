@@ -108,6 +108,16 @@ option('SEP_TIMEOUT',
        value: 1800,
        description: 'IGX Safety Extension Package timeout in seconds.')
 
+option('IGX_FUSE_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables IGX fuse burning support.')
+
+option('IGX_FUSE_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'IGX fuse burning supported models.')
+
 option('PEX_SUPPORT',
        type: 'feature',
        value: 'disabled',

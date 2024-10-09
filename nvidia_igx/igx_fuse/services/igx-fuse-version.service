@@ -1,0 +1,14 @@
+[Unit]
+Description=NVIDIA IGX fuse Version
+After=bmc-boot-complete.service
+
+[Service]
+Restart=always
+Type=dbus
+ExecStart=/usr/bin/env igx-fuse-version
+SyslogIdentifier=igx-fuse-version
+BusName=com.Nvidia.IGXFUSE
+
+[Install]
+WantedBy=multi-user.target
+

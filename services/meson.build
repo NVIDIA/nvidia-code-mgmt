@@ -57,6 +57,11 @@ if get_option('SEP_FLASH_SUPPORT').enabled()
                                 'sep-update@.service']
 endif
 
+if get_option('IGX_FUSE_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.IGXFUSE.Updater.service',
+                                'igx-fuse-update@.service']
+endif
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     unit_files = unit_files + ['com.Nvidia.DebugTokenInstall.Updater.service',
                                 'com.Nvidia.DebugTokenErase.Updater.service',

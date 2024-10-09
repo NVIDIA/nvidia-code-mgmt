@@ -45,6 +45,9 @@
 #ifdef SEP_FLASH_SUPPORT
 #include "sep_updater.hpp"
 #endif
+#ifdef IGX_FUSE_SUPPORT
+#include "igx_fuse_updater.hpp"
+#endif
 #ifdef DEBUG_TOKEN_SUPPORT
 #include "debug_token_erase.hpp"
 #include "debug_token_install.hpp"
@@ -179,6 +182,12 @@ int main(int argc, char** argv)
     if (updater == "SEP")
     {
         itemUpdater = std::make_unique<SEPItemUpdater>(bus);
+    }
+#endif
+#if IGX_FUSE_SUPPORT
+    if (updater == "IGXFUSE")
+    {
+        itemUpdater = std::make_unique<IGXFUSEItemUpdater>(bus);
     }
 #endif
 #if GLACIER_RECOVERY_SUPPORT

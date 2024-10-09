@@ -114,6 +114,15 @@ if get_option('SEP_FLASH_SUPPORT').enabled()
   cdata.set('SEP_TIMEOUT', get_option('SEP_TIMEOUT'))
 endif
 
+if get_option('IGX_FUSE_SUPPORT').enabled()
+  add_project_arguments('-DIGX_FUSE_SUPPORT', language : ['c','cpp'])
+  cdata.set_quoted('IGX_FUSE_SUPPORTED_MODEL', get_option('IGX_FUSE_SUPPORTED_MODEL'))
+  cdata.set_quoted('IGX_FUSE_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+  cdata.set_quoted('IGX_FUSE_BUSNAME_UPDATER', 'com.Nvidia.Software.IGXFUSE.Updater')
+  cdata.set_quoted('IGX_FUSE_BUSNAME_INVENTORY', 'com.Nvidia.IGXFUSE')
+  cdata.set_quoted('IGX_FUSE_UPDATE_SERVICE', 'igx-fuse-update@.service')
+endif
+
 if get_option('PEX_SUPPORT').enabled()
   add_project_arguments('-DPEX_SUPPORT', language : ['c','cpp'])
   cdata.set_quoted('PEX_SUPPORTED_MODEL', get_option('PEX_SUPPORTED_MODEL'))
@@ -286,6 +295,10 @@ endif
 
 if get_option('SMCU_FLASH_SUPPORT').enabled()
   subdir('nvidia_igx/smcu')
+endif
+
+if get_option('IGX_FUSE_SUPPORT').enabled()
+  subdir('nvidia_igx/igx_fuse')
 endif
 
 subdir('recovery_tool/ocp_recovery_tool')
