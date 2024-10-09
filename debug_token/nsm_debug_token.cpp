@@ -170,12 +170,16 @@ std::string getTokenStatus(sdbusplus::bus::bus& bus, std::string path)
  *
  * It is terminated when the promise value is set by the main thread.
  */
-void worker(std::future<void> futureObj, sdbusplus::bus::bus& bus)
+void worker(std::future<void> futureObj, sdbusplus::bus::bus& nsmBusIn,
+            std::mutex& mtx)
 {
     while (futureObj.wait_for(std::chrono::milliseconds(100)) ==
            std::future_status::timeout)
     {
-        bus.process_discard();
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+            nsmBusIn.process_discard();
+        }
     }
 }
 
@@ -200,11 +204,12 @@ int UpdateDebugToken::nsmTokenErase()
     // Worker thread to process dbus signals
     std::promise<void> exitSignal;
     std::future<void> futureObj = exitSignal.get_future();
-    std::thread thr(worker, std::move(futureObj), std::ref(bus));
+    auto nsmBusThread = sdbusplus::bus::new_bus();
+    std::thread thr(worker, std::move(futureObj), std::ref(nsmBusThread),
+                    std::ref(mtx));
 
     for (const auto& path : nsmEndpoints)
     {
-        std::unique_lock<std::mutex> lock(mtx);
         std::string tokenStatus;
 
         std::string propertiesMatchString =
@@ -212,12 +217,15 @@ int UpdateDebugToken::nsmTokenErase()
                 path, nsmProgressIntfName);
         try
         {
-            getStatusMatch.reset();
-            getStatusMatch = std::make_unique<sdbusplus::bus::match_t>(
-                bus, propertiesMatchString,
-                [this](sdbusplus::message::message& msg) {
-                    this->progressStatusPropertyChange(msg);
-                });
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                getStatusMatch.reset();
+                getStatusMatch = std::make_unique<sdbusplus::bus::match_t>(
+                    nsmBusThread, propertiesMatchString,
+                    [this](sdbusplus::message::message& msg) {
+                        this->progressStatusPropertyChange(msg);
+                    });
+            }
             auto method = bus.new_method_call(
                 nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
             method.append(nsmTokenTypeCRDT);
@@ -238,21 +246,24 @@ int UpdateDebugToken::nsmTokenErase()
             continue;
         }
         // Wait for GetStatus operation to complete
-        if (cv.wait_for(lock,
-                        std::chrono::seconds(propertyChangeSignalTimeout)) ==
-            std::cv_status::timeout)
         {
-            log<level::ERR>(
-                ("Timeout waiting for GetStatus command for path: " + path)
-                    .c_str());
-            status = -1;
-            sdbusplus::message::object_path devicePath(path);
-            std::string deviceName = devicePath.filename();
-            createMessageRegistryResourceErrors(
-                debugTokenEraseFailed, deviceName, OperationType::Common,
-                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
-                "GetStatus");
-            continue;
+            std::unique_lock<std::mutex> lock(mtx);
+            if (cv.wait_for(
+                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
+                std::cv_status::timeout)
+            {
+                log<level::ERR>(
+                    ("Timeout waiting for GetStatus command for path: " + path)
+                        .c_str());
+                status = -1;
+                sdbusplus::message::object_path devicePath(path);
+                std::string deviceName = devicePath.filename();
+                createMessageRegistryResourceErrors(
+                    debugTokenEraseFailed, deviceName, OperationType::Common,
+                    static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                    "GetStatus");
+                continue;
+            }
         }
         if (nsmOperationStatus != nsmCompletedStatus)
         {
@@ -300,21 +311,25 @@ int UpdateDebugToken::nsmTokenErase()
             continue;
         }
         // Wait for DisableTokens operation to complete
-        if (cv.wait_for(lock,
-                        std::chrono::seconds(propertyChangeSignalTimeout)) ==
-            std::cv_status::timeout)
         {
-            log<level::ERR>(
-                ("Timeout waiting for DisableTokens command for path: " + path)
-                    .c_str());
-            status = -1;
-            sdbusplus::message::object_path devicePath(path);
-            std::string deviceName = devicePath.filename();
-            createMessageRegistryResourceErrors(
-                debugTokenEraseFailed, deviceName, OperationType::Common,
-                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
-                "DisableTokens");
-            continue;
+            std::unique_lock<std::mutex> lock(mtx);
+            if (cv.wait_for(
+                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
+                std::cv_status::timeout)
+            {
+                log<level::ERR>(
+                    ("Timeout waiting for DisableTokens command for path: " +
+                     path)
+                        .c_str());
+                status = -1;
+                sdbusplus::message::object_path devicePath(path);
+                std::string deviceName = devicePath.filename();
+                createMessageRegistryResourceErrors(
+                    debugTokenEraseFailed, deviceName, OperationType::Common,
+                    static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                    "DisableTokens");
+                continue;
+            }
         }
         if (nsmOperationStatus != nsmCompletedStatus)
         {
@@ -340,21 +355,24 @@ int UpdateDebugToken::nsmTokenErase()
             continue;
         }
         // Wait for GetStatus operation to complete
-        if (cv.wait_for(lock,
-                        std::chrono::seconds(propertyChangeSignalTimeout)) ==
-            std::cv_status::timeout)
         {
-            log<level::ERR>(
-                ("Timeout waiting for GetStatus command for path: " + path)
-                    .c_str());
-            status = -1;
-            sdbusplus::message::object_path devicePath(path);
-            std::string deviceName = devicePath.filename();
-            createMessageRegistryResourceErrors(
-                debugTokenEraseFailed, deviceName, OperationType::Common,
-                static_cast<int>(CommonErrorCodes::NSMCommandFailure),
-                "GetStatus");
-            continue;
+            std::unique_lock<std::mutex> lock(mtx);
+            if (cv.wait_for(
+                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
+                std::cv_status::timeout)
+            {
+                log<level::ERR>(
+                    ("Timeout waiting for GetStatus command for path: " + path)
+                        .c_str());
+                status = -1;
+                sdbusplus::message::object_path devicePath(path);
+                std::string deviceName = devicePath.filename();
+                createMessageRegistryResourceErrors(
+                    debugTokenEraseFailed, deviceName, OperationType::Common,
+                    static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                    "GetStatus");
+                continue;
+            }
         }
         if (nsmOperationStatus != nsmCompletedStatus)
         {
@@ -405,11 +423,12 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
     // Worker thread to process dbus signals
     std::promise<void> exitSignal;
     std::future<void> futureObj = exitSignal.get_future();
-    std::thread thr(worker, std::move(futureObj), std::ref(bus));
+    auto nsmBusThread = sdbusplus::bus::new_bus();
+    std::thread thr(worker, std::move(futureObj), std::ref(nsmBusThread),
+                    std::ref(mtx));
 
     for (const auto& path : nsmEndpoints)
     {
-        std::unique_lock<std::mutex> lock(mtx);
         std::variant<std::string> property;
         std::string tokenStatus;
         std::string propertiesMatchString =
@@ -417,12 +436,15 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
                 path, nsmProgressIntfName);
         try
         {
-            getStatusMatch.reset();
-            getStatusMatch = std::make_unique<sdbusplus::bus::match_t>(
-                bus, propertiesMatchString,
-                [this](sdbusplus::message::message& msg) {
-                    this->progressStatusPropertyChange(msg);
-                });
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                getStatusMatch.reset();
+                getStatusMatch = std::make_unique<sdbusplus::bus::match_t>(
+                    nsmBusThread, propertiesMatchString,
+                    [this](sdbusplus::message::message& msg) {
+                        this->progressStatusPropertyChange(msg);
+                    });
+            }
             auto method = bus.new_method_call(
                 nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
             method.append(nsmTokenTypeCRDT);
@@ -437,17 +459,19 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             createTokenInstallErrorMessage(path);
             continue;
         }
-
-        if (cv.wait_for(lock,
-                        std::chrono::seconds(propertyChangeSignalTimeout)) ==
-            std::cv_status::timeout)
         {
-            log<level::ERR>(
-                ("Timeout waiting for GetStatus command for path: " + path)
-                    .c_str());
-            status = -1;
-            createTokenInstallErrorMessage(path);
-            continue;
+            std::unique_lock<std::mutex> lock(mtx);
+            if (cv.wait_for(
+                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
+                std::cv_status::timeout)
+            {
+                log<level::ERR>(
+                    ("Timeout waiting for GetStatus command for path: " + path)
+                        .c_str());
+                status = -1;
+                createTokenInstallErrorMessage(path);
+                continue;
+            }
         }
         if (nsmOperationStatus != nsmCompletedStatus)
         {
@@ -521,17 +545,20 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             createTokenInstallErrorMessage(path);
             continue;
         }
-
-        if (cv.wait_for(lock,
-                        std::chrono::seconds(propertyChangeSignalTimeout)) ==
-            std::cv_status::timeout)
         {
-            log<level::ERR>(
-                ("Timeout waiting for InstallToken command for path: " + path)
-                    .c_str());
-            status = -1;
-            createTokenInstallErrorMessage(path);
-            continue;
+            std::unique_lock<std::mutex> lock(mtx);
+            if (cv.wait_for(
+                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
+                std::cv_status::timeout)
+            {
+                log<level::ERR>(
+                    ("Timeout waiting for InstallToken command for path: " +
+                     path)
+                        .c_str());
+                status = -1;
+                createTokenInstallErrorMessage(path);
+                continue;
+            }
         }
         if (nsmOperationStatus != nsmCompletedStatus)
         {
@@ -556,17 +583,19 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             createTokenInstallErrorMessage(path);
             continue;
         }
-
-        if (cv.wait_for(lock,
-                        std::chrono::seconds(propertyChangeSignalTimeout)) ==
-            std::cv_status::timeout)
         {
-            log<level::ERR>(
-                ("Timeout waiting for GetStatus command for path: " + path)
-                    .c_str());
-            status = -1;
-            createTokenInstallErrorMessage(path);
-            continue;
+            std::unique_lock<std::mutex> lock(mtx);
+            if (cv.wait_for(
+                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
+                std::cv_status::timeout)
+            {
+                log<level::ERR>(
+                    ("Timeout waiting for GetStatus command for path: " + path)
+                        .c_str());
+                status = -1;
+                createTokenInstallErrorMessage(path);
+                continue;
+            }
         }
         if (nsmOperationStatus != nsmCompletedStatus)
         {
