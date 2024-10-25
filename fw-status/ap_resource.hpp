@@ -111,6 +111,14 @@ class APResource : public BaseResource
      */
     void startWatchingApEid() noexcept;
 
+    /**@brief Populates the MCTP service for the EID
+     *
+     * @param objPath D-Bus object path of MCTP EID
+     *
+     * @return void
+     */
+    void populateService(const std::string& objPath) noexcept;
+
     /**@brief Checks whether the associated MCTP EID object is Enabled
      *
      * @return bool returns True when the EID is Enabled,

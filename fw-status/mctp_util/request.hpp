@@ -183,7 +183,7 @@ class Request final : public RequestRetryTimer
     int send() const
     {
 
-        utils::printBuffer(utils::Tx, requestMsg);
+        utils::printBuffer(utils::Tx, requestMsg, eid);
 
         uint8_t hdr[3] = {LIBMCTP_TAG_OWNER_MASK | MCTP_TAG_VDM, eid,
                           mctp_vdm::MessageType};

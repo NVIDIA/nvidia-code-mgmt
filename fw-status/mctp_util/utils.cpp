@@ -24,6 +24,28 @@
 namespace utils
 {
 
+void printBuffer(bool isTx, const std::vector<uint8_t>& buffer, uint8_t eid)
+{
+    if (!buffer.empty())
+    {
+        std::ostringstream tempStream;
+        for (int byte : buffer)
+        {
+            tempStream << std::setfill('0') << std::setw(2) << std::hex << byte
+                       << " ";
+        }
+        if (isTx)
+        {
+            lg2::info("EID: {EID} Tx: {TX}", "EID", eid, "TX",
+                      tempStream.str());
+        }
+        else
+        {
+            lg2::info("Rx: {RX}", "RX", tempStream.str());
+        }
+    }
+}
+
 void printBuffer(bool isTx, const std::vector<uint8_t>& buffer)
 {
     if (!buffer.empty())

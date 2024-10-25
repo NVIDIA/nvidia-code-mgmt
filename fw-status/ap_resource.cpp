@@ -15,9 +15,10 @@
  * limitations under the License.
  */
 
+#include "config.h"
+
 #include "ap_resource.hpp"
 
-#include "dbusutils.hpp"
 #include "erot_resource.hpp"
 #include "handler.hpp"
 
@@ -25,6 +26,30 @@
 #include <sdbusplus/timer.hpp>
 
 using namespace phosphor::logging;
+
+void APResource::populateService(const std::string& objPath) noexcept
+{
+    try
+    {
+        auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
+                                          MAPPER_INTERFACE, "GetObject");
+
+        mapper.append(objPath.c_str(),
+                      std::vector<std::string>({mctpEndpointEnableIntfName}));
+        auto mapperResponseMsg = bus.call(mapper);
+        std::vector<std::pair<std::string, std::vector<std::string>>>
+            mapperResponse;
+        mapperResponseMsg.read(mapperResponse);
+
+        apMCTPService = mapperResponse.at(0).first;
+    }
+    catch (const sdbusplus::exception::SdBusError& ex)
+    {
+        lg2::error(
+            "Could not find {PATH}. MCTP EID for AP is not enumerated now",
+            "PATH", objPath, "INTERFACE", mctpEndpointEnableIntfName);
+    }
+}
 
 mctp_vdm::requester::Coroutine APResource::initializeHealth()
 {
@@ -59,17 +84,7 @@ mctp_vdm::requester::Coroutine APResource::initializeHealth()
 void APResource::startWatchingApEid() noexcept
 {
     const auto objPath = std::string(mctpObjPathPrefix) + std::to_string(eid);
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-    try
-    {
-        apMCTPService =
-            dbusUtil.getServices(objPath.c_str(), mctpEndpointIntfName)[0];
-    }
-    catch (std::runtime_error& e)
-    {
-        lg2::error("D-Bus error while fetching service for {OBJECT}: {ERROR} ",
-                   "OBJECT", objPath, "ERROR", e.what());
-    }
+    populateService(objPath);
 
     if (apMCTPService.empty())
     {
