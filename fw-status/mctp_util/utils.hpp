@@ -68,6 +68,16 @@ constexpr bool Rx = false;
  *  @param[in] isTx - True if the buffer is an outgoing MCTP VDM message,
                        false if the buffer is an incoming MCTP VDM message
  *  @param[in] buffer - Buffer to print
+ *  @param[in] eid - MCTP EID of the message receiver/sender
+ *
+ */
+void printBuffer(bool isTx, const std::vector<uint8_t>& buffer, uint8_t eid);
+
+/** @brief Print the buffer
+ *
+ *  @param[in] isTx - True if the buffer is an outgoing MCTP VDM message,
+                       false if the buffer is an incoming MCTP VDM message
+ *  @param[in] buffer - Buffer to print
  *
  */
 void printBuffer(bool isTx, const std::vector<uint8_t>& buffer);
