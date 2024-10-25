@@ -119,7 +119,7 @@ class Handler
                          std::chrono::seconds(15),
                      uint8_t numRetries = numCommandRetries,
                      std::chrono::milliseconds responseTimeOut =
-                         std::chrono::milliseconds(5000)) :
+                         std::chrono::milliseconds(4800)) :
         event(event),
         instanceIdMgr(instanceIdMgr), sockManager(sockManager),
         instanceIdExpiryInterval(instanceIdExpiryInterval),
@@ -161,9 +161,6 @@ class Handler
                         "Failed to stop the instance ID expiry timer. RC={RC}",
                         "RC", rc);
                 }
-                // Call response handler with an empty response to indicate no
-                // response
-                responseHandler(key.eid, nullptr, 0);
                 this->removeRequestContainer.emplace(
                     key, std::make_unique<sdeventplus::source::Defer>(
                              event, std::bind(&Handler::removeRequestEntry,
@@ -272,9 +269,9 @@ class Handler
             // Call responseHandler after erase it from the handlers to avoid
             // starting it again in runRegisteredRequest()
             auto unique_handler = std::move(responseHandler);
-            instanceIdMgr.markFree(key.eid, key.instanceId);
             handlers.erase(key);
             unique_handler(eid, response, respMsgLen);
+            instanceIdMgr.markFree(key.eid, key.instanceId);
         }
         else
         {
@@ -325,6 +322,9 @@ class Handler
         if (removeRequestContainer.contains(key))
         {
             removeRequestContainer[key].reset();
+            auto& [request, responseHandler, timerInstance] =
+                this->handlers[key];
+            responseHandler(key.eid, nullptr, 0);
             instanceIdMgr.markFree(key.eid, key.instanceId);
             handlers.erase(key);
             removeRequestContainer.erase(key);
