@@ -478,7 +478,7 @@ class Version : public VersionInherit, public DBUSUtils
 
     std::queue<std::string> deviceQueue;
 
-    uint32_t progressStep;
+    uint32_t progressStep{0};
 
     std::string deviceUpdateUnit;
 

@@ -70,7 +70,6 @@ std::string getOperationStatus(sdbusplus::message_t& msg)
         log<level::ERR>("Status property not found");
         return "";
     }
-    return "";
 }
 
 int UpdateDebugToken::progressStatusPropertyChange(sdbusplus::message_t& msg)

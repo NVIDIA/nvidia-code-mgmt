@@ -77,10 +77,19 @@ bool performRecovery(const CommandOptions& opts)
         ocp_recovery_commandline::OCPRecoveryCommandLine
             ocpRecoveryCommandlineObj(device, busAddr, slaveAddr, opts.verbose,
                                       opts.emulation);
-        auto status = ocpRecoveryCommandlineObj.performRecovery(
-            {opts.fspImagePath, opts.oobhubImagePath});
-        if (status == RecoveryReturnCode::FAILURE)
+        try
         {
+            auto status = ocpRecoveryCommandlineObj.performRecovery(
+                {opts.fspImagePath, opts.oobhubImagePath});
+            if (status == RecoveryReturnCode::FAILURE)
+            {
+                retCode = true;
+            }
+        }
+        catch (const sdbusplus::exception::SdBusError& e)
+        {
+            lg2::error("Recovery failed due to exception {EXCEPTION}",
+                       "EXCEPTION", e.what());
             retCode = true;
         }
     }

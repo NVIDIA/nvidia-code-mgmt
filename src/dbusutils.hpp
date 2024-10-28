@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include <phosphor-logging/elog.hpp>
+#include <phosphor-logging/lg2.hpp>
 #include <phosphor-logging/log.hpp>
 
 #include <algorithm>
@@ -33,6 +34,7 @@
 #include <experimental/any>
 #include <filesystem>
 #include <string>
+#include <typeinfo>
 
 namespace nvidia
 {
@@ -120,7 +122,19 @@ class DBUSUtils
                   const char* propertyName) const
     {
         any result = getPropertyImpl(service, path, interface, propertyName);
-        auto value = any_cast<Value>(result);
+        Value value{};
+        try
+        {
+            value = any_cast<Value>(result);
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error(
+                "GetProperty failed. Unable to retrive property {PROPERTY}"
+                " as type {TYPE}",
+                "PROPERTY", propertyName, "TYPE", typeid(T).name());
+            return T{};
+        }
         return std::get<T>(value);
     }
 

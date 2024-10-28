@@ -55,12 +55,8 @@ static bool isGlacierDevice(nvidia::software::updater::InterfaceMap interfaces,
             interface = glacierCrisisObjInterface;
             isRecoverable = std::get<bool>(
                 interfaces.at(glacierCrisisObjInterface).at("isRecoverable"));
-            return isRecoverable;
         }
-        if (!isRecoverable)
-        {
-            return false;
-        }
+        return isRecoverable;
     }
     else if (interfaces.contains(gpioObjInterface) &&
              std::get<bool>(interfaces.at(gpioObjInterface).at("IsERoT")))

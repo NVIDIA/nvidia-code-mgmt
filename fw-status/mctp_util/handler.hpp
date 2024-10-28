@@ -284,7 +284,6 @@ class Handler
     }
 
   private:
-    int fd; //!< file descriptor of MCTP communications socket
     sdeventplus::Event& event; //!< reference to daemon's main event loop
     mctp_vdm::InstanceIdMgr& instanceIdMgr; //!< reference to Requester object
     mctp_socket::Manager& sockManager;
