@@ -35,6 +35,8 @@ mctp_vdm::requester::Coroutine ERoTResource::updateBootStatusAsync()
     {
         bootStatus->bootStatus({0});
     }
+
+    co_return 0;
 }
 
 std::vector<uint8_t> ERoTResource::getBootStatus() const noexcept

@@ -382,8 +382,8 @@ std::tuple<RecoveryResult, std::vector<uint8_t>>
     while (retries < maxRetries)
     {
         hexResponse = GetResponse(resLen);
-        auto recoveryResult = ValidateGetResponseCmd(RecoveryCommand::GetFWInfo,
-                                                     hexResponse, resLen);
+        recoveryResult = ValidateGetResponseCmd(RecoveryCommand::GetFWInfo,
+                                                hexResponse, resLen);
         if (recoveryResult != RecoveryResult::Pending)
         {
             break;

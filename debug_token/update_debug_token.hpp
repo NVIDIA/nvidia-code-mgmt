@@ -306,7 +306,7 @@ enum class CommonErrorCodes
 };
 
 /* debug token common error code mapping for message registry */
-static std::map<CommonErrorCodes, MessageMapping> debugTokenCommonErrorMapping{
+static const std::map<CommonErrorCodes, MessageMapping> debugTokenCommonErrorMapping{
     {CommonErrorCodes::MCTPDiscoveryFailed,
      {"Device Discovery Failure",
       "Retry the firmware update operation and if issue still persists reset"
