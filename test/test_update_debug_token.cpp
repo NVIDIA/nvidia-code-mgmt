@@ -240,11 +240,12 @@ TEST_F(TestUpdateDebugToken, TestMessageTokenInstall)
     testOperationType = OperationType::Common;
     testErrorCode = static_cast<int>(CommonErrorCodes::TokenParseFailure);
     expectedMessageError =
-        debugTokenCommonErrorMapping[CommonErrorCodes::TokenParseFailure].first;
+        debugTokenCommonErrorMapping.at(CommonErrorCodes::TokenParseFailure)
+            .first;
     expectedMessageError =
         updateDebugToken->formatMessage(expectedMessageError, testDeviceName);
     expectedResolution =
-        debugTokenCommonErrorMapping[CommonErrorCodes::TokenParseFailure]
+        debugTokenCommonErrorMapping.at(CommonErrorCodes::TokenParseFailure)
             .second;
 
     outputMessage = updateDebugToken->getMessage(testOperationType,
