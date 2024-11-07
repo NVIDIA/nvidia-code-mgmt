@@ -281,6 +281,7 @@ MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(
     MctpMedium mctpMedium{};
     MctpBinding mctpBinding{};
     SupportedMessageTypes supportedMsgTypes;
+    bool enabled = false;
     const auto& eidProperties = interfaces.at(mctpEndpointIntfName);
     if (eidProperties.contains("EID") &&
         eidProperties.contains("SupportedMessageTypes"))
@@ -305,7 +306,28 @@ MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(
                 std::get<MctpBinding>(bindingProperties.at("BindingType"));
         }
     }
-    return {eid, mctpMedium, mctpBinding, supportedMsgTypes};
+
+    if (interfaces.contains(objectEnableIntfName))
+    {
+        const auto& enabledProperties = interfaces.at(objectEnableIntfName);
+        if (enabledProperties.contains("Enabled"))
+        {
+            enabled = std::get<bool>(enabledProperties.at("Enabled"));
+            if (!enabled)
+            {
+                log<level::INFO>(
+                    ("MCTP endpoint is disabled - EID=" + std::to_string(eid))
+                        .c_str());
+            }
+        }
+    }
+    else
+    {
+        log<level::ERR>(("Failed to get MCTP endpoint Enabled property - EID=" +
+                         std::to_string(eid))
+                            .c_str());
+    }
+    return {eid, mctpMedium, mctpBinding, supportedMsgTypes, enabled};
 }
 
 bool UpdateDebugToken::checkSupportForSPDMandMCTPVDM(
@@ -363,7 +385,8 @@ int UpdateDebugToken::discoverMCTPDevices()
         }
 
         MctpEidInfo eidInfo = fetchEidInfoFromObject(interfaces);
-        if ((eidInfo.medium.empty() and eidInfo.binding.empty()) ||
+        if ((eidInfo.medium.empty() and eidInfo.binding.empty()) or
+            !eidInfo.enabled or
             !checkSupportForSPDMandMCTPVDM(eidInfo.supportedMsgTypes,
                                            eidInfo.eid))
         {
