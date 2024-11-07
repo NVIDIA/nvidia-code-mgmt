@@ -77,6 +77,7 @@ constexpr auto objectMapperService = "xyz.openbmc_project.ObjectMapper";
 constexpr auto objectMapperIntfName = "xyz.openbmc_project.ObjectMapper";
 constexpr auto objectMapperPath = "/xyz/openbmc_project/object_mapper";
 constexpr auto mctpEndpointIntfName = "xyz.openbmc_project.MCTP.Endpoint";
+constexpr auto objectEnableIntfName = "xyz.openbmc_project.Object.Enable";
 constexpr auto uuidEndpointIntfName = "xyz.openbmc_project.Common.UUID";
 constexpr auto mctpBindingIntfName = "xyz.openbmc_project.MCTP.Binding";
 constexpr auto pldmService = "xyz.openbmc_project.PLDM";
@@ -150,6 +151,7 @@ struct MctpEidInfo
     MctpMedium medium;
     MctpBinding binding;
     SupportedMessageTypes supportedMsgTypes;
+    bool enabled;
 
     friend bool operator<(MctpEidInfo const& lhs, MctpEidInfo const& rhs)
     {
