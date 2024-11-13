@@ -54,6 +54,8 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatus(
             "EID", eid, "RC", rc);
     }
 
+    sockHandler.deactivateSocket(eid);
+
     co_return rc;
 }
 

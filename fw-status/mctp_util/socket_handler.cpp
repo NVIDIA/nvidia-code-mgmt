@@ -56,6 +56,8 @@ int Handler::activateSockets(const std::vector<uint8_t>& eids)
             auto fd = initSocket(type, protocol, pathName);
             if (fd < 0)
             {
+                lg2::error("Error initialising socket for EID={EID}", "EID",
+                           eid);
                 continue;
             }
             else
@@ -76,6 +78,36 @@ void Handler::deactivateSockets()
 {
     socketInfoMap.clear();
     manager.clearMctpEndpoints();
+}
+
+bool Handler::checkActiveEndpoints(uint8_t eid)
+{
+    auto activeEids = manager.getActiveEndpoints();
+    auto currentEidPathName = std::get<2>(eidToSockMap[eid]);
+    for (const uint8_t activeEid : activeEids)
+    {
+        if (activeEid == eid)
+        {
+            continue;
+        }
+
+        if (currentEidPathName == std::get<2>(eidToSockMap[activeEid]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void Handler::deactivateSocket(uint8_t eid)
+{
+    auto pathName = std::get<2>(eidToSockMap[eid]);
+    auto entry = socketInfoMap.find(pathName);
+    if (entry != socketInfoMap.end() and checkActiveEndpoints(eid))
+    {
+        socketInfoMap.erase(entry);
+    }
+    manager.clearMctpEndpoint(eid);
 }
 
 int Handler::initSocket(int type, int protocol,

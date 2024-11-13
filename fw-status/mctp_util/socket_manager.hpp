@@ -17,8 +17,8 @@
 
 #pragma once
 
-#include "types.hpp"
-
+#include <cstdint>
+#include <ranges>
 #include <unordered_map>
 
 namespace mctp_socket
@@ -68,9 +68,28 @@ class Manager
     /** @brief Clear all the MCTP endpoints
      *
      */
-    void clearMctpEndpoints()
+    inline void clearMctpEndpoints()
     {
         eidToFd.clear();
+    }
+
+    /** @brief Clear the MCTP endpoint to Fd mapping for a given EID
+     * indicating that the socket is no longer being used by the EID
+     *
+     *  @param[in] eid - MCTP endpoint ID
+     *
+     */
+    inline void clearMctpEndpoint(uint8_t eidToErase)
+    {
+        eidToFd.erase(eidToErase);
+    }
+
+    /** @brief Returns the list of EIDs with unfulfilled requests
+     *
+     */
+    auto getActiveEndpoints()
+    {
+        return std::views::keys(eidToFd);
     }
 
   private:

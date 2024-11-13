@@ -23,6 +23,7 @@
 #include "mctp_vdm_helper.hpp"
 
 #include <memory>
+#include <mutex>
 
 class MCTPVdmHelper;
 class APResource;
@@ -68,6 +69,7 @@ class ERoTResource : public MCTPDiscoveryResource
                                  GlacierRecoveryCommands>(i2cBus, i2cAddress,
                                                           false);
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+        bootStatus->bootStatus({0});
         bootStatus->bootStatusType(
             BootStatusServer::BootStatusTypes::ERoTBootStatus);
         apResource = std::make_unique<APResource>(bus, apObjPath, apEid, this);
@@ -75,7 +77,7 @@ class ERoTResource : public MCTPDiscoveryResource
         health(HealthServer::HealthType::OK);
         state(OperationalStatusServer::StateType::Enabled);
 
-        updateHealth();
+        updateERoTHealth();
     }
 
     /**@brief Constructor for the ERoTResource Class
@@ -97,13 +99,14 @@ class ERoTResource : public MCTPDiscoveryResource
         mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+        bootStatus->bootStatus({0});
         bootStatus->bootStatusType(
             BootStatusServer::BootStatusTypes::ERoTBootStatus);
 
         health(HealthServer::HealthType::OK);
         state(OperationalStatusServer::StateType::Enabled);
 
-        updateHealth();
+        updateERoTHealth();
     }
 
     /**@brief Updates the BootStatus of the AP on chassis D-Bus object
@@ -139,14 +142,15 @@ class ERoTResource : public MCTPDiscoveryResource
     std::unique_ptr<glacier_recovery_tool::glacier_recovery_commands::
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
+    std::mutex mtx;
     std::unique_ptr<APResource> apResource;
     std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
     std::unique_ptr<BootStatus> bootStatus;
     bool isRecoverable;
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
 
-    /* @brief Override function for updating Health and Status of D-Bus object
-     * based on Device Status and MCTP enumeration
+    /* @brief Override function for updating Health and Status of ERoT and AP
+     * D-Bus objects based on Device Status and MCTP enumeration
      * Uses Glacier Crisis Recovery Protocol to fetch device status
      *
      * Updates Health/State of the AP FW if available
@@ -155,13 +159,25 @@ class ERoTResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
-        if (bootStatus)
-        {
-            updateBootStatus();
-        }
         if (apResource)
         {
             apResource->updateHealth();
+        }
+
+        updateERoTHealth();
+    }
+
+    /* @brief Function for updating Health and Status of ERoT D-Bus object
+     * based on Device Status and MCTP enumeration
+     * Uses Glacier Crisis Recovery Protocol to fetch device status
+     *
+     * @return void
+     */
+    void updateERoTHealth()
+    {
+        if (bootStatus)
+        {
+            updateBootStatus();
         }
 
         if (!isRecoverable)

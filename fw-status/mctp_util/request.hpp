@@ -204,8 +204,8 @@ class Request final : public RequestRetryTimer
         {
             int returnCode = -errno;
             lg2::error(
-                "Failed to send MCTP VDM message. RC={RC}, errno={ERRNO}", "RC",
-                unsigned(rc), "ERRNO", strerror(errno));
+                "Failed to send MCTP VDM message. EID={EID}, RC={RC}, errno={ERRNO}",
+                "EID", eid, "RC", unsigned(rc), "ERRNO", strerror(errno));
             return returnCode;
         }
         return returnCode;
