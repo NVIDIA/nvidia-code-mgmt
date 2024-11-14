@@ -144,10 +144,11 @@ class CPLDItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    CPLDItemUpdater(sdbusplus::bus::bus& bus) :
-        BaseItemUpdater(bus, CPLD_SUPPORTED_MODEL, CPLD_INVENTORY_IFACE, "CPLD",
-                        CPLD_BUSNAME_UPDATER, CPLD_UPDATE_SERVICE, false,
-                        CPLD_BUSNAME_INVENTORY)
+    CPLDItemUpdater(sdbusplus::bus::bus& bus, const std::string& model,
+                    const std::string& target) :
+        BaseItemUpdater(bus, model, CPLD_INVENTORY_IFACE, "CPLD",
+                        CPLD_BUSNAME_UPDATER + target, CPLD_UPDATE_SERVICE,
+                        false, CPLD_BUSNAME_INVENTORY)
     {
         nlohmann::json fruJson =
             cpldcommonutils::loadJSONFile(configFile.c_str());
@@ -161,7 +162,7 @@ class CPLDItemUpdater : public BaseItemUpdater
             try
             {
                 const auto baseinvInvPath =
-                    "/xyz/openbmc_project/inventory/system/board/Cpld";
+                    "/xyz/openbmc_project/inventory/system/board/CPLD_";
                 std::string id = fru.at("Index");
                 std::string busN = fru.at("Bus");
                 std::string address = fru.at("Address");
@@ -170,15 +171,25 @@ class CPLDItemUpdater : public BaseItemUpdater
                 std::string manufacturer = fru.at("Manufacturer");
                 uint32_t cpldDeviceN = fru.at("CPLDDeviceNo");
                 std::string invpath = baseinvInvPath + id;
+                bool match = false;
                 for (auto& it : deviceIds)
                 {
                     auto& pair = it.second;
                     if (get<0>(pair) == model && get<1>(pair) == manufacturer)
                     {
+                        match = true;
                         get<2>(pair) = id;
                         break;
                     }
                 }
+
+                // model or manufacture doesn't match. skip it to avoid
+                // publishing it on D-Bus
+                if (!match)
+                {
+                    continue;
+                }
+
                 uint8_t busId = std::stoi(busN);
                 uint8_t devAddr = std::stoi(address, nullptr, 16);
 
@@ -265,8 +276,6 @@ class CPLDItemUpdater : public BaseItemUpdater
                 args += inv->getCPLDDeviceNum();
                 args += "\\x20";
                 args += version; // for Message Registry
-                args += "\\x20";
-                args += configFile;
                 break;
             }
         }
@@ -278,6 +287,7 @@ class CPLDItemUpdater : public BaseItemUpdater
 
     bool pathIsValidDevice(std::string& p)
     {
+
         for (auto& inv : invs)
         {
             if (inv->getInventoryPath() == p)
@@ -290,25 +300,7 @@ class CPLDItemUpdater : public BaseItemUpdater
 
     std::string getIdProperty(const std::string& identifier) override
     {
-        std::string deviceVersion;
-        for (auto& it : deviceIds)
-        {
-            auto& pair = it.second;
-            if (it.first == identifier)
-            {
-                deviceVersion = get<2>(pair);
-                break;
-            }
-            if (get<2>(pair) == identifier)
-            {
-                deviceVersion = identifier;
-                break;
-            }
-        }
-
-        if (deviceVersion.empty())
-            return "";
-        return createVersionID(getName(), deviceVersion);
+        return (getName() + identifier);
     }
 
   private:

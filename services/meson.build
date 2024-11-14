@@ -15,8 +15,15 @@ if get_option('FPGA_SUPPORT').enabled()
 endif
 
 if get_option('CPLD_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.CPLD.Updater.service',
-                                'cpld-update@.service']
+
+    unit_files = unit_files + ['cpld-update@.service']
+    cpld_model = get_option('CPLD_SUPPORTED_MODEL')
+    if cpld_model != ''
+        unit_files = unit_files + ['com.Nvidia.CPLD.Updater.service']
+    else
+        unit_files = unit_files + ['com.Nvidia.CPLD_N.Starter.service',
+                                    'com.Nvidia.CPLD_N.Updater@.service']
+    endif
 endif
 
 if get_option('RT_SUPPORT').enabled()

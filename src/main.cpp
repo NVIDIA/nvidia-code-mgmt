@@ -139,7 +139,8 @@ int main(int argc, char** argv)
 #if CPLD_SUPPORT
     if (updater == "CPLD")
     {
-        itemUpdater = std::make_unique<CPLDItemUpdater>(bus);
+        itemUpdater =
+            std::make_unique<CPLDItemUpdater>(bus, modelName, targetName);
     }
 #endif
 #if RT_SUPPORT
