@@ -58,9 +58,12 @@ endif
 
 if get_option('CPLD_SUPPORT').enabled()
   add_project_arguments('-DCPLD_SUPPORT', language : ['c','cpp'])
-  cdata.set_quoted('CPLD_SUPPORTED_MODEL', get_option('CPLD_SUPPORTED_MODEL'))
+  cpld_model = get_option('CPLD_SUPPORTED_MODEL')
+  if cpld_model != ''
+    cdata.set_quoted('CPLD_SUPPORTED_MODEL', cpld_model)
+  endif
   cdata.set_quoted('CPLD_INVENTORY_IFACE', 'xyz.openbmc_project.Inventory.Item.Chassis')
-  cdata.set_quoted('CPLD_BUSNAME_UPDATER', 'com.Nvidia.Software.CPLD.Updater')
+  cdata.set_quoted('CPLD_BUSNAME_UPDATER', 'com.Nvidia.Software.CPLD.Updater.')
   cdata.set_quoted('CPLD_BUSNAME_INVENTORY', 'com.Nvidia.Cpld')
   cdata.set_quoted('CPLD_UPDATE_SERVICE', 'cpld-update@.service')
 endif
@@ -230,7 +233,6 @@ cdata.set_quoted('MODEL', 'Model')
 cdata.set_quoted('SYSTEMD_BUSNAME','org.freedesktop.systemd1')
 cdata.set_quoted('SYSTEMD_PATH' ,'/org/freedesktop/systemd1')
 cdata.set_quoted('SYSTEMD_INTERFACE' ,'org.freedesktop.systemd1.Manager')
-
 cdata.set_quoted('INVENTORY_PATH_BASE', get_option('INVENTORY_PATH_BASE'))
 cdata.set_quoted('IMG_DIR', get_option('IMG_DIR'))
 cdata.set_quoted('IMG_DIR_PERSIST', get_option('IMG_DIR_PERSIST'))

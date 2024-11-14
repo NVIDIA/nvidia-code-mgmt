@@ -1,0 +1,27 @@
+[Unit]
+Description=CPLD Update Starter Service
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/cpldupdate/cpldmanager.env
+ExecStart=/bin/sh -c '\
+    if [ -z "$INSTANCE_COUNT" ]; then \
+        echo "Error: INSTANCE_COUNT not set"; \
+        exit 1; \
+    fi; \
+    for i in $(seq 0 $((INSTANCE_COUNT-1))); do \
+        TARGET_VAR=$(eval "echo \\$TARGET_NAME_$i"); \
+        if [ -z "$TARGET_VAR" ]; then \
+          echo "Error: TARGET_NAME_$i not set"; \
+          exit 1; \
+        fi; \
+        echo "Starting com.Nvidia.CPLD_N.Updater@$TARGET_VAR.service"; \
+        systemctl start "com.Nvidia.CPLD_N.Updater@$TARGET_VAR.service" || exit 1; \
+    done'
+
+[Install]
+WantedBy=multi-user.target

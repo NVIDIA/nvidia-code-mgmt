@@ -6,4 +6,4 @@ Description=Update CPLD %I
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=cpldupdate $ARGS
+ExecStart=cpldupdate $ARGS /usr/share/nvidia-power-manager/cpld_config.json

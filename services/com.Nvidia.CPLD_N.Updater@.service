@@ -1,0 +1,22 @@
+[Unit]
+Description=OpenBMC CPLD Code Manager
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+EnvironmentFile=/etc/cpldupdate/cpldmanager.env
+ExecStart=/bin/sh -c '\
+  MODEL_VAR=$(eval "echo \\$%i_MODEL"); \
+  if [ -z "$MODEL_VAR" ]; then \
+    echo "Error: %i_MODEL not set in environment file"; \
+    exit 1; \
+  fi; \
+  exec /usr/bin/code-manager -u CPLD -i %i -m "$MODEL_VAR"'
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.CPLD.Updater.%i
+
+[Install]
+WantedBy=multi-user.target
