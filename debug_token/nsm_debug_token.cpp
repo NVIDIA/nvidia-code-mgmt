@@ -225,6 +225,7 @@ int UpdateDebugToken::nsmTokenErase()
                         this->progressStatusPropertyChange(msg);
                     });
             }
+            nsmOperationStatus = nsmInProgressStatus;
             auto method = bus.new_method_call(
                 nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
             method.append(nsmTokenTypeCRDT);
@@ -247,20 +248,31 @@ int UpdateDebugToken::nsmTokenErase()
         // Wait for GetStatus operation to complete
         {
             std::unique_lock<std::mutex> lock(mtx);
-            if (cv.wait_for(
-                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
-                std::cv_status::timeout)
+            bool nsmTimeout = false;
+            while (nsmOperationStatus == nsmInProgressStatus)
             {
-                log<level::ERR>(
-                    ("Timeout waiting for GetStatus command for path: " + path)
-                        .c_str());
-                status = -1;
-                sdbusplus::message::object_path devicePath(path);
-                std::string deviceName = devicePath.filename();
-                createMessageRegistryResourceErrors(
-                    debugTokenEraseFailed, deviceName, OperationType::Common,
-                    static_cast<int>(CommonErrorCodes::NSMCommandFailure),
-                    "GetStatus");
+                if (cv.wait_for(lock, std::chrono::seconds(
+                                          propertyChangeSignalTimeout)) ==
+                    std::cv_status::timeout)
+                {
+                    log<level::ERR>(
+                        ("Timeout waiting for GetStatus command for path: " +
+                         path)
+                            .c_str());
+                    status = -1;
+                    sdbusplus::message::object_path devicePath(path);
+                    std::string deviceName = devicePath.filename();
+                    createMessageRegistryResourceErrors(
+                        debugTokenEraseFailed, deviceName,
+                        OperationType::Common,
+                        static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                        "GetStatus");
+                    nsmTimeout = true;
+                    break;
+                }
+            }
+            if (nsmTimeout)
+            {
                 continue;
             }
         }
@@ -289,6 +301,7 @@ int UpdateDebugToken::nsmTokenErase()
         }
         try
         {
+            nsmOperationStatus = nsmInProgressStatus;
             auto method =
                 bus.new_method_call(nsmService, path.c_str(),
                                     nsmDebugTokenIntfName, "DisableTokens");
@@ -312,21 +325,31 @@ int UpdateDebugToken::nsmTokenErase()
         // Wait for DisableTokens operation to complete
         {
             std::unique_lock<std::mutex> lock(mtx);
-            if (cv.wait_for(
-                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
-                std::cv_status::timeout)
+            bool nsmTimeout = false;
+            while (nsmOperationStatus == nsmInProgressStatus)
             {
-                log<level::ERR>(
-                    ("Timeout waiting for DisableTokens command for path: " +
-                     path)
-                        .c_str());
-                status = -1;
-                sdbusplus::message::object_path devicePath(path);
-                std::string deviceName = devicePath.filename();
-                createMessageRegistryResourceErrors(
-                    debugTokenEraseFailed, deviceName, OperationType::Common,
-                    static_cast<int>(CommonErrorCodes::NSMCommandFailure),
-                    "DisableTokens");
+                if (cv.wait_for(lock, std::chrono::seconds(
+                                          propertyChangeSignalTimeout)) ==
+                    std::cv_status::timeout)
+                {
+                    log<level::ERR>(
+                        ("Timeout waiting for DisableTokens command for path: " +
+                         path)
+                            .c_str());
+                    status = -1;
+                    sdbusplus::message::object_path devicePath(path);
+                    std::string deviceName = devicePath.filename();
+                    createMessageRegistryResourceErrors(
+                        debugTokenEraseFailed, deviceName,
+                        OperationType::Common,
+                        static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                        "DisableTokens");
+                    nsmTimeout = true;
+                    break;
+                }
+            }
+            if (nsmTimeout)
+            {
                 continue;
             }
         }
@@ -339,6 +362,7 @@ int UpdateDebugToken::nsmTokenErase()
 
         try
         {
+            nsmOperationStatus = nsmInProgressStatus;
             auto method = bus.new_method_call(
                 nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
             method.append(nsmTokenTypeCRDT);
@@ -356,20 +380,31 @@ int UpdateDebugToken::nsmTokenErase()
         // Wait for GetStatus operation to complete
         {
             std::unique_lock<std::mutex> lock(mtx);
-            if (cv.wait_for(
-                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
-                std::cv_status::timeout)
+            bool nsmTimeout = false;
+            while (nsmOperationStatus == nsmInProgressStatus)
             {
-                log<level::ERR>(
-                    ("Timeout waiting for GetStatus command for path: " + path)
-                        .c_str());
-                status = -1;
-                sdbusplus::message::object_path devicePath(path);
-                std::string deviceName = devicePath.filename();
-                createMessageRegistryResourceErrors(
-                    debugTokenEraseFailed, deviceName, OperationType::Common,
-                    static_cast<int>(CommonErrorCodes::NSMCommandFailure),
-                    "GetStatus");
+                if (cv.wait_for(lock, std::chrono::seconds(
+                                          propertyChangeSignalTimeout)) ==
+                    std::cv_status::timeout)
+                {
+                    log<level::ERR>(
+                        ("Timeout waiting for GetStatus command for path: " +
+                         path)
+                            .c_str());
+                    status = -1;
+                    sdbusplus::message::object_path devicePath(path);
+                    std::string deviceName = devicePath.filename();
+                    createMessageRegistryResourceErrors(
+                        debugTokenEraseFailed, deviceName,
+                        OperationType::Common,
+                        static_cast<int>(CommonErrorCodes::NSMCommandFailure),
+                        "GetStatus");
+                    nsmTimeout = true;
+                    break;
+                }
+            }
+            if (nsmTimeout)
+            {
                 continue;
             }
         }
@@ -444,6 +479,7 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
                         this->progressStatusPropertyChange(msg);
                     });
             }
+            nsmOperationStatus = nsmInProgressStatus;
             auto method = bus.new_method_call(
                 nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
             method.append(nsmTokenTypeCRDT);
@@ -460,15 +496,25 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
         }
         {
             std::unique_lock<std::mutex> lock(mtx);
-            if (cv.wait_for(
-                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
-                std::cv_status::timeout)
+            bool nsmTimeout = false;
+            while (nsmOperationStatus == nsmInProgressStatus)
             {
-                log<level::ERR>(
-                    ("Timeout waiting for GetStatus command for path: " + path)
-                        .c_str());
-                status = -1;
-                createTokenInstallErrorMessage(path);
+                if (cv.wait_for(lock, std::chrono::seconds(
+                                          propertyChangeSignalTimeout)) ==
+                    std::cv_status::timeout)
+                {
+                    log<level::ERR>(
+                        ("Timeout waiting for GetStatus command for path: " +
+                         path)
+                            .c_str());
+                    status = -1;
+                    createTokenInstallErrorMessage(path);
+                    nsmTimeout = true;
+                    break;
+                }
+            }
+            if (nsmTimeout)
+            {
                 continue;
             }
         }
@@ -529,6 +575,7 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
 
         try
         {
+            nsmOperationStatus = nsmInProgressStatus;
             auto method =
                 bus.new_method_call(nsmService, path.c_str(),
                                     nsmDebugTokenIntfName, "InstallToken");
@@ -546,16 +593,25 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
         }
         {
             std::unique_lock<std::mutex> lock(mtx);
-            if (cv.wait_for(
-                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
-                std::cv_status::timeout)
+            bool nsmTimeout = false;
+            while (nsmOperationStatus == nsmInProgressStatus)
             {
-                log<level::ERR>(
-                    ("Timeout waiting for InstallToken command for path: " +
-                     path)
-                        .c_str());
-                status = -1;
-                createTokenInstallErrorMessage(path);
+                if (cv.wait_for(lock, std::chrono::seconds(
+                                          propertyChangeSignalTimeout)) ==
+                    std::cv_status::timeout)
+                {
+                    log<level::ERR>(
+                        ("Timeout waiting for InstallToken command for path: " +
+                         path)
+                            .c_str());
+                    status = -1;
+                    createTokenInstallErrorMessage(path);
+                    nsmTimeout = true;
+                    break;
+                }
+            }
+            if (nsmTimeout)
+            {
                 continue;
             }
         }
@@ -568,6 +624,7 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
 
         try
         {
+            nsmOperationStatus = nsmInProgressStatus;
             auto method = bus.new_method_call(
                 nsmService, path.c_str(), nsmDebugTokenIntfName, "GetStatus");
             method.append(nsmTokenTypeCRDT);
@@ -584,15 +641,25 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
         }
         {
             std::unique_lock<std::mutex> lock(mtx);
-            if (cv.wait_for(
-                    lock, std::chrono::seconds(propertyChangeSignalTimeout)) ==
-                std::cv_status::timeout)
+            bool nsmTimeout = false;
+            while (nsmOperationStatus == nsmInProgressStatus)
             {
-                log<level::ERR>(
-                    ("Timeout waiting for GetStatus command for path: " + path)
-                        .c_str());
-                status = -1;
-                createTokenInstallErrorMessage(path);
+                if (cv.wait_for(lock, std::chrono::seconds(
+                                          propertyChangeSignalTimeout)) ==
+                    std::cv_status::timeout)
+                {
+                    log<level::ERR>(
+                        ("Timeout waiting for GetStatus command for path: " +
+                         path)
+                            .c_str());
+                    status = -1;
+                    createTokenInstallErrorMessage(path);
+                    nsmTimeout = true;
+                    break;
+                }
+            }
+            if (nsmTimeout)
+            {
                 continue;
             }
         }

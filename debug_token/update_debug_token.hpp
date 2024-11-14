@@ -94,6 +94,8 @@ constexpr auto propertiesPath = "org.freedesktop.DBus.Properties";
 
 constexpr auto nsmCompletedStatus =
     "xyz.openbmc_project.Common.Progress.OperationStatus.Completed";
+constexpr auto nsmInProgressStatus =
+    "xyz.openbmc_project.Common.Progress.OperationStatus.InProgress";
 constexpr auto nsmTokenTypeCRDT = "com.nvidia.DebugToken.TokenTypes.CRDT";
 constexpr auto nsmTokenStatusDebugSessionActive =
     "com.nvidia.DebugToken.TokenStatus.DebugSessionActive";
