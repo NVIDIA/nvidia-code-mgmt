@@ -149,6 +149,19 @@ void GPIOResource::updateAPHealth(uint8_t type)
                 (!val && polarity == gpiod::line::ACTIVE_LOW))
             {
                 healthy = true;
+
+                if (polarity == gpiod::line::ACTIVE_HIGH &&
+                    !risingTarget.empty())
+                {
+                    lg2::info("Starting... {TARGET}", "TARGET", risingTarget);
+                    dbusUtil.startSystemUnit(risingTarget);
+                }
+                else if (polarity == gpiod::line::ACTIVE_LOW &&
+                         !fallingTarget.empty())
+                {
+                    lg2::info("Starting... {TARGET}", "TARGET", fallingTarget);
+                    dbusUtil.startSystemUnit(fallingTarget);
+                }
             }
             else
             {
