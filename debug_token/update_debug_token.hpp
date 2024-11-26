@@ -71,6 +71,8 @@ using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 
 static constexpr uint8_t mctpTypeSPDM = 0x5;
 static constexpr uint8_t mctpTypeVDMIANA = 0x7f;
+constexpr auto erasePolicyIntfName = "com.nvidia.DebugToken.ErasePolicy";
+constexpr auto erasePolicyPath = "/com/nvidia/debug_token/";
 constexpr auto mctpPCIeService = "xyz.openbmc_project.MCTP.Control.PCIe";
 constexpr auto mctpPath = "/xyz/openbmc_project/mctp";
 constexpr auto objectMapperService = "xyz.openbmc_project.ObjectMapper";
@@ -611,6 +613,12 @@ class UpdateDebugToken : public TokenUtility
      * @return int - status code
      */
     int discoverMCTPDevices();
+    /**
+     * @brief Get debug token erase policy from DBus
+     *
+     * @return std::string - erase policy (automatic or manual)
+     */
+    std::string getErasePolicy();
     /**
      * @brief Retrieve Services that contain objects with
      *        MCTP Endpoint Interface
