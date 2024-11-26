@@ -145,6 +145,11 @@ int UpdateDebugToken::eraseDebugToken()
     int status = 0;
     int queryStatus =
         static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
+    if (getErasePolicy() == "Manual")
+    {
+        log<level::INFO>("Erase policy set to manual, skipping operation.");
+        return status;
+    }
     if (updateEndPoints() != 0)
     {
         log<level::ERR>("discovery failed");
@@ -215,6 +220,59 @@ int UpdateDebugToken::eraseDebugToken()
         return status;
     }
     return status;
+}
+
+std::string UpdateDebugToken::getErasePolicy()
+{
+    dbus::GetSubTreeResponse getSubTreeResponse{};
+    const dbus::Interfaces ifaceList{erasePolicyIntfName};
+    std::string policy;
+    try
+    {
+        auto method = bus.new_method_call(objectMapperService, objectMapperPath,
+                                          objectMapperIntfName, "GetSubTree");
+        method.append(erasePolicyPath, 0, ifaceList);
+        auto reply = bus.call(method);
+        reply.read(getSubTreeResponse);
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>("D-Bus error calling GetSubTree on ObjectMapper",
+                        entry("ERROR=%s", e.what()));
+        return policy;
+    }
+    if (getSubTreeResponse.size() == 0)
+    {
+        log<level::ERR>("No erase policy objects found");
+        return policy;
+    }
+    if (getSubTreeResponse.size() != 1)
+    {
+        log<level::ERR>(
+            "Only one erase policy object was expected, but more were found");
+        return policy;
+    }
+
+    const auto& path = getSubTreeResponse[0].first;
+    const auto& service = getSubTreeResponse[0].second[0].first;
+    try
+    {
+        std::variant<std::string> policyProperty;
+        auto method = bus.new_method_call(service.c_str(), path.c_str(),
+                                          propertiesPath, "Get");
+        method.append(erasePolicyIntfName, "Policy");
+        auto reply = bus.call(method);
+        reply.read(policyProperty);
+        policy = std::get<std::string>(policyProperty);
+        policy = policy.substr(policy.find_last_of('.') + 1);
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>("D-Bus error getting erase policy value",
+                        entry("ERROR=%s", e.what()));
+    }
+
+    return policy;
 }
 
 std::set<dbus::Service> UpdateDebugToken::getMCTPServiceList()
