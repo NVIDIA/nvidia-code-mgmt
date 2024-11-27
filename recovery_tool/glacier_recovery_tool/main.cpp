@@ -177,40 +177,59 @@ int main(int argc, char** argv)
                 recoveryTaskState = -1;
                 continue;
             }
-            std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
-            auto postRecInitRes = glacierRecoveryObj->performInitialization();
-            if (postRecInitRes != RecoveryResult::Ok)
+            uint8_t maxRetries = 3;
+            uint8_t retries = 0;
+            while (retries < maxRetries)
             {
+                std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
+
+                auto postRecInitRes =
+                    glacierRecoveryObj->performInitialization();
+
                 if (postRecInitRes == RecoveryResult::FirmwareNotInRecovery)
                 {
-                    lg2::info("Device {DEVICE} is successfully recovered",
+                    lg2::info("Device {DEVICE} successfully recovered",
                               "DEVICE", device);
                     messageRegistry->createMessageRegistry(recoverySuccessful,
                                                            device);
+                    break;
+                }
+                else if (postRecInitRes == RecoveryResult::Ok)
+                {
+                    lg2::error(
+                        "Firmware recovery failed, Device {DEVICE} is still in recovery state.",
+                        "DEVICE", device);
+                    messageRegistry->createMessageRegistryResourceErrors(
+                        resourceErrorsDetected,
+                        RecoveryProtocol::GlacierRecovery, deviceRecoveryFailed,
+                        device);
+                    recoveryTaskState = -1;
+                    break;
                 }
                 else
                 {
-                    lg2::error(
-                        "Firmware recovery is performed on device: {DEVICE}, Error while getting status, Error: {ERROR}",
-                        "DEVICE", device, "ERROR",
-                        glacierRecoveryObj->recoveryResultToStr(
-                            postRecInitRes));
-                    messageRegistry->createMessageRegistryResourceErrors(
-                        resourceErrorsDetected,
-                        RecoveryProtocol::GlacierRecovery,
-                        static_cast<ErrorCode>(postRecInitRes), device);
-                    recoveryTaskState = -1;
+                    if (retries == maxRetries - 1)
+                    {
+                        lg2::error(
+                            "Firmware recovery performed on device: {DEVICE}, but encountered an error while retrieving the status even after maximum retries. Error: {ERROR}",
+                            "DEVICE", device, "ERROR",
+                            glacierRecoveryObj->recoveryResultToStr(
+                                postRecInitRes));
+                        messageRegistry->createMessageRegistryResourceErrors(
+                            resourceErrorsDetected,
+                            RecoveryProtocol::GlacierRecovery,
+                            static_cast<ErrorCode>(postRecInitRes), device);
+                        recoveryTaskState = -1;
+                    }
+                    else
+                    {
+                        lg2::info(
+                            "Error while getting Firmware recovery status. Attempting retry {RETRIES}",
+                            "RETRIES", retries + 1);
+                    }
                 }
-            }
-            else
-            {
-                lg2::error(
-                    "Firmware recovery failed, Device {DEVICE} is still in recovery state.",
-                    "DEVICE", device);
-                messageRegistry->createMessageRegistryResourceErrors(
-                    resourceErrorsDetected, RecoveryProtocol::GlacierRecovery,
-                    deviceRecoveryFailed, device);
-                recoveryTaskState = -1;
+
+                retries += 1;
             }
         }
         catch (const std::exception& e)
