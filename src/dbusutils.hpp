@@ -61,6 +61,14 @@ using ObjectValueTree = std::map<sdbusplus::message::object_path, InterfaceMap>;
 using MapperServiceMap = std::vector<std::pair<std::string, Interfaces>>;
 using GetSubTreeResponse = std::vector<std::pair<ObjectPath, MapperServiceMap>>;
 
+const std::string hostOn = "xyz.openbmc_project.State.Chassis.PowerState.On";
+
+namespace LoggingServer = sdbusplus::xyz::openbmc_project::Logging::server;
+using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
+
+const std::string resourceErrorsDetected{
+    "ResourceEvent.1.0.ResourceErrorsDetected"};
+
 /**
  * @brief
  * @author
@@ -202,6 +210,24 @@ class DBUSUtils
     {
         controlSystemUnit(systemUnit, "StartUnit");
     }
+
+    /**
+     * @brief Get power status of Host
+     */
+    std::string getHostPwrStatus() const noexcept;
+
+    /**
+     * @brief Create a Log entry
+     */
+    void createLog(const std::string& messageID,
+                   std::map<std::string, std::string>& addData,
+                   Level& level) const;
+    /**
+     * @brief Create a Message Registry for Resource Event Errors
+     */
+    void createMessageRegistryResourceErrors(
+        const std::string& messageID, const std::string& deviceName,
+        const std::string& errorMsg, const std::string& resolution) const;
 
   protected:
     sdbusplus::bus::bus& bus;
