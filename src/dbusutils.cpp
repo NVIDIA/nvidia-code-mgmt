@@ -251,6 +251,55 @@ void DBUSUtils::controlSystemUnit(const std::string& systemUnit,
     }
 }
 
+std::string DBUSUtils::getHostPwrStatus() const noexcept
+{
+    auto pwrStatus = getProperty<std::string>(
+        "xyz.openbmc_project.State.Chassis",
+        "/xyz/openbmc_project/state/chassis0",
+        "xyz.openbmc_project.State.Chassis", "CurrentPowerState");
+    return pwrStatus;
+}
+
+void DBUSUtils::createLog(const std::string& messageID,
+                          std::map<std::string, std::string>& addData,
+                          Level& level) const
+{
+    static constexpr auto logService = "xyz.openbmc_project.Logging";
+    static constexpr auto logObjPath = "/xyz/openbmc_project/logging";
+    static constexpr auto logInterface = "xyz.openbmc_project.Logging.Create";
+
+    try
+    {
+        auto severity = LoggingServer::convertForMessage(level);
+        auto method =
+            bus.new_method_call(logService, logObjPath, logInterface, "Create");
+        method.append(messageID, severity, addData);
+        bus.call_noreply(method);
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>("Failed to create D-Bus log entry for message registry",
+                        entry("ERROR=%s", e.what()));
+    }
+    return;
+}
+
+void DBUSUtils::createMessageRegistryResourceErrors(
+    const std::string& messageID, const std::string& deviceName,
+    const std::string& errorMsg, const std::string& resolution) const
+{
+    std::map<std::string, std::string> addData;
+    Level level = Level::Critical;
+    addData["REDFISH_MESSAGE_ID"] = messageID;
+    addData["REDFISH_MESSAGE_ARGS"] = (deviceName + "," + errorMsg);
+    addData["namespace"] = "FWUpdate";
+    if (!resolution.empty())
+    {
+        addData["xyz.openbmc_project.Logging.Entry.Resolution"] = resolution;
+    }
+    createLog(messageID, addData, level);
+}
+
 } // namespace updater
 } // namespace software
 } // namespace nvidia

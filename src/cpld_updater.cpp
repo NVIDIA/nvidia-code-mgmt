@@ -68,6 +68,41 @@ std::string CPLDItemUpdater::getModel(const std::string& inventoryPath) const
     }
     return "";
 }
+
+std::vector<std::string> CPLDItemUpdater::getItemUpdaterInventoryPaths()
+{
+    std::vector<std::string> paths;
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+    auto pwrStatus = dbusUtil.getHostPwrStatus();
+
+    for (auto dev : inventoryMap)
+    {
+        std::string path = dev.first;
+        bool isPowerOnDev = dev.second;
+        if (isPowerOnDev)
+        {
+            if (pwrStatus == hostOn)
+            {
+                paths.push_back(path);
+            }
+            else
+            {
+                // get index of CPLD
+                size_t last_slash = path.find_last_of("_");
+                std::string devName = "FW_CPLD_" + path.substr(last_slash + 1);
+                dbusUtil.createMessageRegistryResourceErrors(
+                    resourceErrorsDetected, devName, "Host Main Power is Off",
+                    "Please power on the Host before performing the FW update");
+            }
+        }
+        else
+        {
+            paths.push_back(path);
+        }
+    }
+    return paths;
+}
+
 } // namespace updater
 } // namespace software
 } // namespace nvidia

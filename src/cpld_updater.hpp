@@ -201,6 +201,7 @@ class CPLDItemUpdater : public BaseItemUpdater
                 {
                     continue;
                 }
+                inventoryMap[invpath] = fru.at("PowerOnDevice").get<bool>();
                 auto inv = std::make_unique<CPLDDevice>(
                     invpath, busId, devAddr, imageselect, id, model,
                     manufacturer, cpldDeviceN);
@@ -303,7 +304,15 @@ class CPLDItemUpdater : public BaseItemUpdater
         return (getName() + identifier);
     }
 
+    /**
+     * @brief Get the Item Updater Inventory Paths object
+     *
+     * @return std::vector<std::string>
+     */
+    std::vector<std::string> getItemUpdaterInventoryPaths() override;
+
   private:
+    std::unordered_map<std::string, bool> inventoryMap;
     inline static const std::string configFile =
         "/usr/share/nvidia-power-manager/cpld_config.json";
 };
