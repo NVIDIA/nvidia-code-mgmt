@@ -201,7 +201,15 @@ class CPLDItemUpdater : public BaseItemUpdater
                 {
                     continue;
                 }
-                inventoryMap[invpath] = fru.at("PowerOnDevice").get<bool>();
+
+                bool isPowerOnDev = fru.at("PowerOnDevice").get<bool>();
+                if (isPowerOnDev)
+                {
+                    // create SW objects directly if this device is powered on
+                    // by main power
+                    createSoftwareObject(invpath, id);
+                }
+                inventoryMap[invpath] = isPowerOnDev;
                 auto inv = std::make_unique<CPLDDevice>(
                     invpath, busId, devAddr, imageselect, id, model,
                     manufacturer, cpldDeviceN);
@@ -288,7 +296,6 @@ class CPLDItemUpdater : public BaseItemUpdater
 
     bool pathIsValidDevice(std::string& p)
     {
-
         for (auto& inv : invs)
         {
             if (inv->getInventoryPath() == p)
