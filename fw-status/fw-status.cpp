@@ -40,7 +40,7 @@ constexpr auto glacierCrisisObjInterface =
 constexpr auto gpioObjInterface =
     "xyz.openbmc_project.Configuration.GPIORecovery";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
-constexpr auto fwStatusObjManager = "/xyz/openbmc_project/inventory/system/";
+constexpr auto fwStatusObjManager = "/";
 constexpr auto configurableStateManagerService =
     "xyz.openbmc_project.State.ConfigurableStateManager";
 constexpr auto configurableStateManagerPath =
