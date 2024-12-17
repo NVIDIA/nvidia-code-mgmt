@@ -18,7 +18,10 @@
 #pragma once
 #include "xyz/openbmc_project/Common/error.hpp"
 
+#include <fcntl.h>
 #include <fmt/format.h>
+#include <linux/i2c-dev.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <nlohmann/json.hpp>
@@ -164,9 +167,41 @@ class Util
   public:
     virtual ~Util() = default;
 
-    //   protected:
+    /**
+     * @brief Check if I2C device of CPLD exist
+     *
+     * @return bool
+     */
     virtual bool getPresence() const
     {
+        char filename[20], tmp;
+        std::string dev = std::to_string(b) + "-00" + std::format("{:X}", d);
+
+        std::snprintf(filename, sizeof(filename) - 1, "/dev/i2c-%d", b);
+        int fd = open(filename, O_RDWR);
+        if (fd < 0)
+        {
+            log<level::ERR>(
+                ("Failed to open i2c bus: " + std::to_string(b)).c_str());
+            return false;
+        }
+
+        if (ioctl(fd, I2C_SLAVE, d) < 0)
+        {
+            log<level::ERR>(("Failed to ioctl the device: " + dev).c_str());
+            close(fd);
+            return false;
+        }
+
+        // try to read 1 byte from device
+        if (read(fd, &tmp, 1) != 1)
+        {
+            close(fd);
+            log<level::ERR>(("Failed to read the device: " + dev).c_str());
+            return false;
+        }
+
+        close(fd);
         return true;
     }
 
