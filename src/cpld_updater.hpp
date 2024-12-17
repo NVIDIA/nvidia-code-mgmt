@@ -306,6 +306,27 @@ class CPLDItemUpdater : public BaseItemUpdater
         return false;
     }
 
+    bool isDeviceExist(std::string& p)
+    {
+        for (auto& inv : invs)
+        {
+            if (inv->getInventoryPath() == p)
+            {
+                if (inv->getPresence())
+                {
+                    return true;
+                }
+                else
+                {
+                    log<level::ERR>(("Cannot detect I2C device: " + p).c_str());
+                    return false;
+                }
+            }
+        }
+        log<level::ERR>(("Cannot find matched inventory: " + p).c_str());
+        return false;
+    }
+
     std::string getIdProperty(const std::string& identifier) override
     {
         return (getName() + identifier);
