@@ -79,17 +79,28 @@ std::vector<std::string> CPLDItemUpdater::getItemUpdaterInventoryPaths()
     {
         std::string path = dev.first;
         bool isPowerOnDev = dev.second;
+
+        // get index of CPLD and create dev string for message
+        size_t last_slash = path.find_last_of("_");
+        std::string devName = "FW_CPLD_" + path.substr(last_slash + 1);
         if (isPowerOnDev)
         {
             if (pwrStatus == hostOn)
             {
-                paths.push_back(path);
+                if (isDeviceExist(path))
+                {
+                    paths.push_back(path);
+                }
+                else
+                {
+                    dbusUtil.createMessageRegistryResourceErrors(
+                        resourceErrorsDetected, devName,
+                        "I2C device cannot be detected",
+                        "Please check the connection between the BMC and the CPLD");
+                }
             }
             else
             {
-                // get index of CPLD
-                size_t last_slash = path.find_last_of("_");
-                std::string devName = "FW_CPLD_" + path.substr(last_slash + 1);
                 dbusUtil.createMessageRegistryResourceErrors(
                     resourceErrorsDetected, devName, "Host Main Power is Off",
                     "Please power on the Host before performing the FW update");
@@ -97,7 +108,17 @@ std::vector<std::string> CPLDItemUpdater::getItemUpdaterInventoryPaths()
         }
         else
         {
-            paths.push_back(path);
+            if (isDeviceExist(path))
+            {
+                paths.push_back(path);
+            }
+            else
+            {
+                dbusUtil.createMessageRegistryResourceErrors(
+                    resourceErrorsDetected, devName,
+                    "I2C device cannot be detected",
+                    "Please check the connection between the BMC and the CPLD");
+            }
         }
     }
     return paths;
