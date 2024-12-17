@@ -1,5 +1,7 @@
 [Unit]
 Description=NVIDIA IGX SMCU Firmware Version
+After=bmc-boot-complete.service
+
 [Service]
 Restart=always
 Type=dbus

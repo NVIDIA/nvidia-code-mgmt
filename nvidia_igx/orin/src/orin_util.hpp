@@ -55,7 +55,7 @@ class Util
         std::string version = "";
         try
         {
-            std::string cmd = "cat /etc/version.txt";
+            std::string cmd = "cat /var/emmc/firmware-storage/version.txt";
             version = readVersionFile(cmd);
         }
         catch (const std::exception& e)
