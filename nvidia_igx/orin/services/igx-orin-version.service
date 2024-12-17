@@ -1,5 +1,7 @@
 [Unit]
 Description=NVIDIA IGX Orin QSPI version
+After=nvidia-emmc-partition.service
+
 [Service]
 Restart=always
 Type=dbus
