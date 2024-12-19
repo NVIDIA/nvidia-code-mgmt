@@ -247,15 +247,26 @@ void publishDBusRecoveryObject()
             {
                 lg2::info("Found GPIO recovery Object (AP): {PATH}", "PATH",
                           emObjectPath);
+                std::string chassisObjPath;
+
                 const auto risingTarget =
                     getString(interfaces, gpioObjInterface, "RisingTarget");
                 const auto fallingTarget =
                     getString(interfaces, gpioObjInterface, "FallingTarget");
                 const auto polarity =
                     getString(interfaces, gpioObjInterface, "Polarity");
+
+                const auto apBootStatusType =
+                    getString(interfaces, gpioObjInterface, "APBootStatusType");
+                if (!apBootStatusType.empty())
+                {
+                    const auto chassisName =
+                        getString(interfaces, gpioObjInterface, "ChassisName");
+                    chassisObjPath = getChassisObjPath(chassisName);
+                }
                 resources.push_back(std::make_unique<GPIOResource>(
                     getBus(), objPath, event, uuid, gpio, risingTarget,
-                    fallingTarget, polarity));
+                    fallingTarget, polarity, chassisObjPath, mctpVdmHelper));
             }
         }
     }

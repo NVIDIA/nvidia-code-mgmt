@@ -114,6 +114,11 @@ void GPIOResource::updateAPHealth(uint8_t type)
     auto newBus = sdbusplus::bus::new_default();
     auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
 
+    if (bootStatus)
+    {
+        updateBootStatus();
+    }
+
     // Use event type to check AP health
     switch (type)
     {
@@ -226,4 +231,79 @@ void GPIOResource::initAPHealth()
     updateAPHealth(LEVEL_TRIGGER);
 
     gpioLine.release();
+}
+
+mctp_vdm::requester::Coroutine GPIOResource::updateBootStatusAsync()
+{
+    auto eid = fetchEid();
+    if (eid == invalidEid)
+    {
+        lg2::error("Cannot get EID of {PATH}", "PATH", path);
+        co_return 0;
+    }
+
+    std::unique_lock<std::mutex> lock(mtx, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        lg2::error("BootStatus refresh already in progress for EID={EID}",
+                   "EID", eid);
+        co_return 0;
+    }
+
+    const mctp_vdm::Message* responseMsg = nullptr;
+    size_t responseLen = 0;
+    co_await mctpVdmHelper->queryBootStatus(eid, responseMsg, responseLen);
+
+    if (responseMsg != nullptr)
+    {
+        std::vector<uint8_t> status(responseMsg->payload + 1,
+                                    responseMsg->payload + responseLen);
+        bootStatus->bootStatus(status);
+    }
+
+    co_return 0;
+}
+
+uint8_t GPIOResource::fetchEid() const noexcept
+{
+    // Get MCTP endpoint list
+    nvidia::software::updater::GetSubTreeResponse getSubTreeResponse{};
+    std::unordered_set<std::string> mctpCtrlServices{};
+    const nvidia::software::updater::Interfaces ifaceList{mctpEndpointIntfName};
+    try
+    {
+        auto method = bus.new_method_call(mapperService, mapperPath,
+                                          mapperInterface, "GetSubTree");
+        method.append("/xyz/openbmc_project/mctp", 0, ifaceList);
+        auto reply = bus.call(method);
+        reply.read(getSubTreeResponse);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "D-Bus error calling Subtrees method on ObjectMapper: {ERROR}",
+            "ERROR", e.what());
+    }
+
+    // Check if it has UUID interface and if it is same as the UUID from JSON
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+    for (const auto& [objPath, mapperServiceMap] : getSubTreeResponse)
+    {
+        for (const auto& [service, interfaces] : mapperServiceMap)
+        {
+            auto it =
+                std::find(interfaces.begin(), interfaces.end(), uuidIntfName);
+            if (it != interfaces.end())
+            {
+                auto mctpUuid = dbusUtil.getProperty<std::string>(
+                    service.c_str(), objPath.c_str(), uuidIntfName, "UUID");
+                if (mctpUuid == uuid)
+                {
+                    return std::stoi(std::filesystem::path(objPath).stem());
+                }
+            }
+        }
+    }
+
+    return invalidEid;
 }

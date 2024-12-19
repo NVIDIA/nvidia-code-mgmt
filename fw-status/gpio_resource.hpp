@@ -16,7 +16,10 @@
  */
 
 #include "base_resource.hpp"
+#include "dbusutils.hpp"
 #include "glacier_recovery_commands.hpp"
+#include "mctp_discovery_resource.hpp"
+#include "mctp_vdm_helper.hpp"
 
 #include <gpiod.hpp>
 #include <phosphor-logging/lg2.hpp>
@@ -26,6 +29,9 @@
 #include <sdeventplus/source/io.hpp>
 
 #include <memory>
+#include <unordered_set>
+
+constexpr static int invalidEid = 255;
 
 /** @class GPIOResource
  *  Represents a BaseResource whose healthy status is updated by monitoring GPIO
@@ -87,17 +93,30 @@ class GPIOResource : public BaseResource
      * @param fallingTarget - systemd unit to be executed when risifallingng
      * event triggered
      * @param gpioPolarity - GPIO polarity
-     *
+     * @param chassisObjPath - Path of the Chassis D-Bus object to publish
+     * BootStatus
+     * @param mctpVdmHelper - MCTP VDM helper object
      */
     GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                  sdeventplus::Event& event, const std::string& uuid,
                  const std::string& gpio, const std::string& risingTarget,
                  const std::string& fallingTarget,
-                 const std::string& gpioPolarity) :
+                 const std::string& gpioPolarity,
+                 const std::string chassisObjPath,
+                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
         BaseResource(bus, objPath),
         sdEvent(event), uuid(uuid), gpioLineName(gpio),
-        risingTarget(risingTarget), fallingTarget(fallingTarget), isEROT(false)
+        risingTarget(risingTarget), fallingTarget(fallingTarget), isEROT(false),
+        mctpVdmHelper(mctpVdmHelper)
     {
+        if (!chassisObjPath.empty())
+        {
+            bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+            bootStatus->bootStatus({0});
+            bootStatus->bootStatusType(
+                BootStatusServer::BootStatusTypes::ERoTBootStatus);
+        }
+
         if (gpioPolarity == "ActiveHigh")
         {
             polarity = gpiod::line::ACTIVE_HIGH;
@@ -135,6 +154,10 @@ class GPIOResource : public BaseResource
     std::unique_ptr<glacier_recovery_tool::glacier_recovery_commands::
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
+    std::mutex mtx;
+    std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
+    std::unique_ptr<BootStatus> bootStatus;
+    std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
 
     /** @brief callback function to handle GPIO event
      *
@@ -161,4 +184,38 @@ class GPIOResource : public BaseResource
      * initialize its status
      */
     void initAPHealth();
+
+    /** @brief Updates the BootStatus of the AP on chassis D-Bus object
+     *
+     * @return coroutine
+     *
+     */
+    mctp_vdm::requester::Coroutine updateBootStatusAsync();
+
+    /** @brief Updates the BootStatus D-Bus object
+     *
+     * @return coroutine
+     *
+     */
+    void updateBootStatus()
+    {
+        if (co)
+        {
+            if (co.done())
+            {
+                co.destroy();
+            }
+            co = nullptr;
+        }
+        auto rc = updateBootStatusAsync();
+        co = rc.handle;
+        return;
+    }
+
+    /** @brief Fetches EID for the resource
+     *
+     *  @return uint8_t - EID of the resource
+     *
+     */
+    uint8_t fetchEid() const noexcept;
 };
