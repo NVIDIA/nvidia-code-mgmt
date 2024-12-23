@@ -160,6 +160,18 @@ void publishDBusRecoveryObject()
     {
         const auto objPath =
             getSoftwareDBusObjectPath(std::string(emObjectPath));
+
+        // Check if the object path already exists
+        if (std::find_if(resources.begin(), resources.end(),
+                         [&objPath](const auto& resource) {
+                             return resource->getObjectPath() == objPath;
+                         }) != resources.end())
+        {
+            lg2::info("Object path already registered: {PATH}", "PATH",
+                      objPath);
+            continue; // Skip registration
+        }
+
         if (interfaces.contains(ocpObjInterface))
         {
             lg2::info("Found OCP recovery config Object: {PATH}", "PATH",
