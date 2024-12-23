@@ -162,6 +162,15 @@ class BaseResource
         }
     }
 
+    /** @brief Get the D-Bus object path for this resource
+     *
+     * @return The D-Bus object path as a string
+     */
+    inline std::string getObjectPath() const
+    {
+        return path;
+    }
+
   protected:
     const std::string path;
 
