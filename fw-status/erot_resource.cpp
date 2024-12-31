@@ -17,6 +17,20 @@
 
 #include "erot_resource.hpp"
 
+bool ERoTResource::isApBootFinished(const std::vector<uint8_t>& status)
+{
+    bool isApBootCompleted = getBit(status, AP0_BOOT_COMPLETE_BIT);
+    bool isApBootCompleteTimeout =
+        getBit(status, AP0_BOOT_COMPLETE_TIMEOUT_BIT);
+
+    if (isApBootCompleteTimeout)
+    {
+        lg2::error("AP boot complete timeout");
+    }
+
+    return isApBootCompleted || isApBootCompleteTimeout;
+}
+
 mctp_vdm::requester::Coroutine ERoTResource::updateBootStatusAsync()
 {
     std::unique_lock<std::mutex> lock(mtx, std::try_to_lock);
@@ -39,6 +53,13 @@ mctp_vdm::requester::Coroutine ERoTResource::updateBootStatusAsync()
             std::vector<uint8_t> status(responseMsg->payload + 1,
                                         responseMsg->payload + responseLen);
             bootStatus->bootStatus(status);
+
+            if (!isApBootFinished(status))
+            {
+                apBootStatusTimer->start(std::chrono::microseconds(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::seconds(apBootCompleteRetryInterval))));
+            }
         }
     }
     else

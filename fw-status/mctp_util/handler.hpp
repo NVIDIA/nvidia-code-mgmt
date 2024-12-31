@@ -402,7 +402,7 @@ struct SendRecvMctpVdmMsg
             std::move(
                 std::bind_front(&SendRecvMctpVdmMsg::HandleResponse, this)));
 
-        lg2::error("Register Request successful");
+        lg2::info("Register Request successful");
         if (rc)
         {
             lg2::error("registerRequest failed, rc={RC}", "RC",
@@ -443,7 +443,7 @@ struct SendRecvMctpVdmMsg
     void HandleResponse(uint8_t eid, const mctp_vdm::Message* response,
                         size_t length)
     {
-        lg2::error("Handle response called");
+        lg2::info("Handle response called");
         if (response == nullptr || !length)
         {
             lg2::error("No response received, EID={EID}", "EID", eid);
