@@ -25,6 +25,21 @@
 #include <memory>
 #include <mutex>
 
+/*
+ * This interval is used to keep polling boot status from ERoT until
+ * either AP0_BOOT_COMPLETE or AP0_BOOT_COMPLETE_TIMEOUT is set
+ * TODO: Set it via MESON option
+ */
+constexpr static int apBootCompleteRetryInterval = 10;
+constexpr static size_t AP0_BOOT_COMPLETE_BIT = 5;
+constexpr static size_t AP0_BOOT_COMPLETE_TIMEOUT_BIT = 27;
+
+inline bool getBit(const std::vector<uint8_t>& status, size_t bit)
+{
+    size_t maxIdx = status.size() - 1;
+    return (status[maxIdx - bit / 8] >> (bit % 8)) & 1;
+}
+
 class MCTPVdmHelper;
 class APResource;
 
@@ -43,6 +58,7 @@ class ERoTResource : public MCTPDiscoveryResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
+     * @param event - sdevent
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
      * @param uuid - UUID of the Resource
@@ -56,13 +72,14 @@ class ERoTResource : public MCTPDiscoveryResource
      *
      */
     ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                 const uint64_t i2cBus, const uint64_t i2cAddress,
-                 const std::string& uuid, const uint64_t apEid,
-                 const std::string chassisObjPath, const std::string apObjPath,
-                 const bool isRecoverable,
+                 sdeventplus::Event& event, const uint64_t i2cBus,
+                 const uint64_t i2cAddress, const std::string& uuid,
+                 const uint64_t apEid, const std::string chassisObjPath,
+                 const std::string apObjPath, const bool isRecoverable,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
         MCTPDiscoveryResource(bus, objPath, uuid),
-        mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
+        sdEvent(event), mctpVdmHelper(mctpVdmHelper),
+        isRecoverable(isRecoverable)
     {
         glacierRecoveryObj =
             std::make_unique<glacier_recovery_tool::glacier_recovery_commands::
@@ -78,6 +95,12 @@ class ERoTResource : public MCTPDiscoveryResource
         state(OperationalStatusServer::StateType::Enabled);
 
         updateERoTHealth();
+
+        apBootStatusTimer = std::make_unique<sdbusplus::Timer>(
+            sdEvent.get(), [this, objPath]() {
+                lg2::info("Checking Boot Status of {OBJ}", "OBJ", objPath);
+                updateBootStatusAsync();
+            });
     }
 
     /**@brief Constructor for the ERoTResource Class
@@ -85,6 +108,7 @@ class ERoTResource : public MCTPDiscoveryResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
+     * @param event - sdevent
      * @param uuid - UUID of the Resource
      * @param mctpVdmHelper - MCTP VDM helper object
      * @param isRecoverable - Indicates whether recovery can be performed on the
@@ -92,11 +116,12 @@ class ERoTResource : public MCTPDiscoveryResource
      *
      */
     ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                 const std::string& uuid, const std::string chassisObjPath,
-                 const bool isRecoverable,
+                 sdeventplus::Event& event, const std::string& uuid,
+                 const std::string chassisObjPath, const bool isRecoverable,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
         MCTPDiscoveryResource(bus, objPath, uuid),
-        mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
+        sdEvent(event), mctpVdmHelper(mctpVdmHelper),
+        isRecoverable(isRecoverable)
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
         bootStatus->bootStatus({0});
@@ -107,6 +132,12 @@ class ERoTResource : public MCTPDiscoveryResource
         state(OperationalStatusServer::StateType::Enabled);
 
         updateERoTHealth();
+
+        apBootStatusTimer = std::make_unique<sdbusplus::Timer>(
+            sdEvent.get(), [this, objPath]() {
+                lg2::info("Checking Boot Status of {OBJ}", "OBJ", objPath);
+                updateBootStatusAsync();
+            });
     }
 
     /**@brief Updates the BootStatus of the AP on chassis D-Bus object
@@ -139,6 +170,7 @@ class ERoTResource : public MCTPDiscoveryResource
     std::vector<uint8_t> getBootStatus() const noexcept;
 
   private:
+    sdeventplus::Event& sdEvent;
     std::unique_ptr<glacier_recovery_tool::glacier_recovery_commands::
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
@@ -148,6 +180,7 @@ class ERoTResource : public MCTPDiscoveryResource
     std::unique_ptr<BootStatus> bootStatus;
     bool isRecoverable;
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
+    std::unique_ptr<sdbusplus::Timer> apBootStatusTimer;
 
     /* @brief Override function for updating Health and Status of ERoT and AP
      * D-Bus objects based on Device Status and MCTP enumeration
@@ -229,4 +262,14 @@ class ERoTResource : public MCTPDiscoveryResource
         state(OperationalStatusServer::StateType::Enabled);
         return;
     }
+
+    /**
+     * @brief Check if AP boot process is finished
+     *
+     * @param status A vector of bytes containing boot status information
+     *
+     * @return bool - Returns true if either bit 5 or bit 27 is set in the
+     * status, false otherwise
+     */
+    bool isApBootFinished(const std::vector<uint8_t>& status);
 };

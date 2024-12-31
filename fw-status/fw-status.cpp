@@ -223,15 +223,15 @@ void publishDBusRecoveryObject()
                         interfaces, glacierCrisisObjInterface, "APName");
                     const auto apObjPath = getSoftwareDBusObjectPath(apName);
                     resources.push_back(std::make_unique<ERoTResource>(
-                        getBus(), objPath, i2cBus, i2cAddress, uuid, apEid,
-                        chassisObjPath, apObjPath, isRecoverable,
+                        getBus(), objPath, event, i2cBus, i2cAddress, uuid,
+                        apEid, chassisObjPath, apObjPath, isRecoverable,
                         mctpVdmHelper));
                 }
                 else
                 {
                     resources.push_back(std::make_unique<ERoTResource>(
-                        getBus(), objPath, uuid, chassisObjPath, isRecoverable,
-                        mctpVdmHelper));
+                        getBus(), objPath, event, uuid, chassisObjPath,
+                        isRecoverable, mctpVdmHelper));
                 }
             }
         }
