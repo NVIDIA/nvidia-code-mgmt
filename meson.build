@@ -200,6 +200,20 @@ if get_option('VMEPLAYER_SUPPORT').enabled()
   cdata.set('VMEPLAYER_TIMEOUT', get_option('VMEPLAYER_TIMEOUT'))
 endif
 
+if get_option('AP_IMAGE_VERIFICATION').enabled()
+  add_project_arguments('-DAP_IMAGE_VERIFICATION', language : ['c','cpp'])
+
+  if get_option('VERIFY_PCIECHIP').enabled()
+    add_project_arguments('-DVERIFY_PCIECHIP', language : ['c','cpp'])
+    cdata.set_quoted('PUBKEY_PCIECHIP', get_option('PUBKEY_PCIECHIP'))
+  endif
+
+  if get_option('VERIFY_CPLD').enabled()
+    add_project_arguments('-DVERIFY_CPLD', language : ['c','cpp'])
+    cdata.set_quoted('PUBKEY_CPLD', get_option('PUBKEY_CPLD'))
+  endif
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 

@@ -149,7 +149,7 @@ void BaseItemUpdater::createSoftwareObject(const std::string& inventoryPath,
         else
         {
             std::cerr << "\nUUID  found " << uuid << " " << model << " "
-                      << manufacturer;
+                      << manufacturer << "\n";
         }
         std::filesystem::path imageDirPath = getImageUploadDir();
         imageDirPath /= uuid;
