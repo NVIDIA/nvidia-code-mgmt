@@ -10,7 +10,8 @@ source_files = [
     'watch.cpp',
     'base_controller.cpp',
     'dbusutils.cpp',
-    'base_item_updater.cpp'
+    'base_item_updater.cpp',
+    'signature_verifier.cpp'
 ]
 
 if get_option('PSU_SUPPORT').enabled()
@@ -73,7 +74,6 @@ endif
 if get_option('VMEPLAYER_SUPPORT').enabled()
     source_files += 'vmeplayer.cpp'
 endif
-
 
 executable('code-manager',
             sources: source_files,

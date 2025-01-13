@@ -20,6 +20,7 @@
 
 #include "activation_listener.hpp"
 #include "dbusutils.hpp"
+#include "signature_verifier.hpp"
 #include "version.hpp"
 
 #include <sdbusplus/server.hpp>
@@ -66,7 +67,7 @@ class BaseItemUpdater :
         DBUSUtils(bus),
         _name(name), busName(busName), serviceName(serviceName),
         inventoryIface(inventoryIface), updateTogether(updateTogether),
-        inventoryBusName(inventoryBusName)
+        inventoryBusName(inventoryBusName), checkSignature(false), publicKey("")
     {
         // supportedDevices
         std::vector<std::string> supportedModels;
@@ -534,6 +535,40 @@ class BaseItemUpdater :
         return true; // default is supported
     }
 
+    /**
+     * @brief method to check if signature verification is needed
+     *
+     * @return true - if signature verification is required, false otherwise
+     */
+    inline bool needVerify() const
+    {
+        return checkSignature;
+    }
+
+    /**
+     * @brief method to perform signature verification on the given image
+     *
+     * @param imagePath - path to the image file to be verified
+     * @return true - if signature verification succeeds, false otherwise
+     */
+    bool doVerify(const std::string& imagePath) const
+    {
+        try
+        {
+            std::unique_ptr<SignatureVerifier> sigVerifier =
+                std::make_unique<SignatureVerifier>(imagePath, publicKey);
+            if (sigVerifier->isInitialized())
+            {
+                return sigVerifier->verify();
+            }
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("Failed to verify: {ERR}", "ERR", e.what());
+        }
+        return false;
+    }
+
   protected:
     std::string _name;
 
@@ -561,6 +596,8 @@ class BaseItemUpdater :
     bool updateTogether;
     std::unique_ptr<sdbusplus::bus::match_t> deviceIfacesAddedMatch;
     std::string inventoryBusName;
+    bool checkSignature;
+    std::string publicKey;
 };
 
 } // namespace updater

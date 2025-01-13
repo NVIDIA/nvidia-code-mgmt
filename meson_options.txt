@@ -264,6 +264,30 @@ option(
     description: 'vmeplayer update timeout in seconds.'
 )
 
+option('AP_IMAGE_VERIFICATION',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables signature verification support')
+
+option('VERIFY_PCIECHIP',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables signature verification of PCIe Chip FW')
+
+option('PUBKEY_PCIECHIP',
+       type: 'string',
+       value: '',
+       description: 'Public Key of PCIe Chip FW')
+
+option('VERIFY_CPLD',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables signature verification of CPLD FW')
+
+option('PUBKEY_CPLD',
+       type: 'string',
+       value: '',
+       description: 'Public Key of CPLD FW')
 
 option(
        'tests',

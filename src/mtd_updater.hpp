@@ -78,6 +78,25 @@ class MTDItemUpdater : public BaseItemUpdater
                 softwareVersionObj =
                     std::make_unique<SoftwareVersion>(bus, objPath);
                 getVersion("");
+#ifdef VERIFY_PCIECHIP
+                checkSignature = mtdConfig["Authentication"];
+                if (checkSignature)
+                {
+                    lg2::info("{TGT}: Image Authentication is Enabled", "TGT",
+                              mtdName);
+                    publicKey = PUBKEY_PCIECHIP;
+                    if (publicKey.empty())
+                    {
+                        lg2::error(
+                            "Public key is empty. Please set PUBKEY_PCIECHIP");
+                    }
+                }
+                else
+                {
+                    lg2::info("{TGT}: Image Authentication is Disabled", "TGT",
+                              mtdName);
+                }
+#endif
             }
             else
             {

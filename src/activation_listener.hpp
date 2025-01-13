@@ -171,4 +171,19 @@ class ItemUpdaterUtils
      * @return true - if inventory is supported else false
      */
     virtual bool inventorySupported() = 0;
+
+    /**
+     * @brief method to check if signature verification is needed
+     *
+     * @return true - if signature verification is required, false otherwise
+     */
+    virtual bool needVerify() const = 0;
+
+    /**
+     * @brief method to perform signature verification on the given image
+     *
+     * @param imagePath - path to the image file to be verified
+     * @return true - if signature verification succeeds, false otherwise
+     */
+    virtual bool doVerify(const std::string& imagePath) const = 0;
 };
