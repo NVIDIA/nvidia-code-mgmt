@@ -41,6 +41,7 @@ using namespace sdbusplus::xyz::openbmc_project::Common::Error;
 const std::string transferFailed{"Update.1.0.TransferFailed"};
 const std::string debugTokenEraseFailed{
     "NvidiaUpdate.1.0.DebugTokenEraseFailed"};
+const std::string verificationFailed{"Update.1.0.VerificationFailed"};
 
 void Delete::delete_()
 {
@@ -177,6 +178,21 @@ Version::Status Version::startActivation()
         log<level::WARNING>("No image for the activation, skipped",
                             entry("VERSION_ID=%s", getVersionId().c_str()));
         return activation(); // Return the previous activation status
+    }
+
+    if (itemUpdaterUtils->needVerify())
+    {
+        if (!itemUpdaterUtils->doVerify(path()))
+        {
+            std::map<std::string, std::string> addData;
+            addData["REDFISH_MESSAGE_ID"] = verificationFailed;
+            addData["REDFISH_MESSAGE_ARGS"] =
+                (extendedVersion() + "," + itemUpdaterUtils->getName());
+            addData["namespace"] = "FWUpdate";
+            Level level = Level::Critical;
+            createLog(verificationFailed, addData, level);
+            return Status::Failed;
+        }
     }
 
     auto devicePaths = itemUpdaterUtils->getItemUpdaterInventoryPaths();

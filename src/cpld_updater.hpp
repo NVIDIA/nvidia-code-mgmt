@@ -220,6 +220,34 @@ class CPLDItemUpdater : public BaseItemUpdater
                 std::cerr << e.what() << std::endl;
             }
         }
+
+#ifdef VERIFY_CPLD
+        if (fruJson.contains("Authentication"))
+        {
+            checkSignature = fruJson["Authentication"];
+        }
+        else
+        {
+            lg2::info(
+                "Authentication setting not found in JSON, using default value");
+        }
+
+        if (checkSignature)
+        {
+            lg2::info("CPLD-{TGT}: Image Authentication is Enabled", "TGT",
+                      target);
+            publicKey = PUBKEY_CPLD;
+            if (publicKey.empty())
+            {
+                lg2::error("Public key is empty. Please set PUBKEY_CPLD");
+            }
+        }
+        else
+        {
+            lg2::info("CPLD-{TGT}: Image Authentication is Disabled", "TGT",
+                      target);
+        }
+#endif
     }
     // TODO add VDT methods here
 
