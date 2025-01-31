@@ -196,13 +196,6 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    if (!((statusReg[0] >> WPP_BIT) & 0x1))
-    { // WP pin is asserted
-        std::cerr << "Write protect pin is asserted. Exiting" << std::endl;
-        write_disable(fd);
-        return 2;
-    }
-
     if (read_only)
     {
         std::cout << "Status Register Byte 1: 0x" << std::hex
@@ -228,8 +221,15 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    // Modify the write-protect bits based on user input
+    // check if WP is set
     bool assert_wp = (wp_action == "assert");
+    if (!(statusReg[0] & 0x10) && !assert_wp)
+    {
+        std::cout << "WP bit is asserted!!!" << std::endl;
+        return -1;
+    }
+
+    // Modify the write-protect bits based on user input
     if (assert_wp)
     {
         statusReg[0] |= (1 << BP0_BIT | 1 << BPL_BIT);
