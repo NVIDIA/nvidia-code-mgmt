@@ -54,6 +54,11 @@ option('GPU_OCP_RECOVERY_SUPPORT',
        value: 'disabled',
        description: 'Enables ocp recovery support')
 
+option('GPU_OCP_RECOVERY_COMPAT_CP2112',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables CP2112 I2C transaction compatibility (32B write size)')
+
 option('RT_SUPPORTED_MODEL',
        type: 'string',
        value: '',

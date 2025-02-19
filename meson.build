@@ -134,6 +134,9 @@ if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
   cdata.set_quoted('GPU_OCP_RECOVERY_BUSNAME_INVENTORY', 'xyz.openbmc_project.PLDM')
   cdata.set_quoted('GPU_OCP_RECOVERY_INVENTORY_PATH', '/xyz/openbmc_project/PLDM')
   cdata.set_quoted('GPU_OCP_RECOVERY_UPDATE_SERVICE', 'ocp-recovery@.service')
+  if get_option('GPU_OCP_RECOVERY_COMPAT_CP2112').enabled()
+    add_project_arguments('-DGPU_OCP_RECOVERY_COMPAT_CP2112', language : ['c','cpp'])
+  endif
 endif
 
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
