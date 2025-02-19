@@ -126,7 +126,13 @@ class OCPRecoveryCommands
     bool verbose;
     bool emulation;
     int i2cFile;
+#ifdef GPU_OCP_RECOVERY_COMPAT_CP2112
+    // CP2112 has max size of 61 for writes, e.g. i2ctransfer -y 35 w61@0x6f
+    // Set chunk size to 32 to be safe for writes (read size limit is 512B)
+    static constexpr size_t chunkSize = 32;
+#else
     static constexpr size_t chunkSize = 252;
+#endif
 
     /**
      * @brief Constructs the path to the I2C device.
