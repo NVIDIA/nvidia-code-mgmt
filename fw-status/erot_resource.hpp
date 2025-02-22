@@ -154,6 +154,12 @@ class ERoTResource : public MCTPDiscoveryResource
      */
     void updateBootStatus()
     {
+        if (co && !co.done())
+        {
+            lg2::info("Update in progress, skipping new update request");
+            return;
+        }
+
         if (co)
         {
             if (co.done())
@@ -162,9 +168,9 @@ class ERoTResource : public MCTPDiscoveryResource
             }
             co = nullptr;
         }
+
         auto rc = updateBootStatusAsync();
         co = rc.handle;
-        return;
     }
 
     std::vector<uint8_t> getBootStatus() const noexcept;
