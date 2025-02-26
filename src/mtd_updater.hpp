@@ -38,6 +38,7 @@ class MTDItemUpdater : public BaseItemUpdater
     std::streamoff versionOffset;
     std::size_t versionSize;
     std::unique_ptr<SoftwareVersion> softwareVersionObj;
+    std::unique_ptr<SoftwareSettings> softwareSettingsObj;
     std::string inventory;
 
   public:
@@ -78,6 +79,9 @@ class MTDItemUpdater : public BaseItemUpdater
                 softwareVersionObj =
                     std::make_unique<SoftwareVersion>(bus, objPath);
                 getVersion("");
+                softwareSettingsObj =
+                    std::make_unique<SoftwareSettings>(bus, objPath);
+
 #ifdef VERIFY_PCIECHIP
                 checkSignature = mtdConfig["Authentication"];
                 if (checkSignature)
