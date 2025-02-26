@@ -38,6 +38,7 @@
 #include <xyz/openbmc_project/Software/Activation/server.hpp>
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
+#include <xyz/openbmc_project/Software/Settings/server.hpp>
 #include <xyz/openbmc_project/Software/UpdatePolicy/server.hpp>
 
 #include <functional>
@@ -111,6 +112,33 @@ class SoftwareVersion : public softwareVersionInherit
         purpose(sdbusplus::xyz::openbmc_project::Software::server::Version::
                     VersionPurpose::Other);
     }
+};
+
+/**
+ * @brief For devices like retimer version interface is populated by gpu manager
+ * in case of HGX but for PSU and CPLD it needs to be populated from item
+ * updater hence handling it seperately.
+ */
+using softwareSettingsInherit = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::Software::server::Settings>;
+
+/**
+ * @brief xyz.openbmc_project.Software.Settings Interface for dbus
+ */
+
+class SoftwareSettings : public softwareSettingsInherit
+{
+  public:
+    /** @brief Constructor
+     *
+     *  @param[in] bus - Bus to attach to
+     *  @param[in] objPath - D-Bus object path
+     */
+    SoftwareSettings(sdbusplus::bus::bus& bus, const std::string& objPath) :
+        softwareSettingsInherit(bus, objPath.c_str(),
+                                action::emit_interface_added)
+
+    {}
 };
 
 /**
