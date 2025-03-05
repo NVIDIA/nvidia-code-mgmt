@@ -67,7 +67,7 @@ class BaseItemUpdater :
         DBUSUtils(bus),
         _name(name), busName(busName), serviceName(serviceName),
         inventoryIface(inventoryIface), updateTogether(updateTogether),
-        inventoryBusName(inventoryBusName), checkSignature(false), publicKey("")
+        inventoryBusName(inventoryBusName), publicKey("")
     {
         // supportedDevices
         std::vector<std::string> supportedModels;
@@ -540,9 +540,9 @@ class BaseItemUpdater :
      *
      * @return true - if signature verification is required, false otherwise
      */
-    inline bool needVerify() const
+    virtual bool needVerify() const
     {
-        return checkSignature;
+        return false;
     }
 
     /**
@@ -596,7 +596,6 @@ class BaseItemUpdater :
     bool updateTogether;
     std::unique_ptr<sdbusplus::bus::match_t> deviceIfacesAddedMatch;
     std::string inventoryBusName;
-    bool checkSignature;
     std::string publicKey;
 };
 
