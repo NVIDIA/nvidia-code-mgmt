@@ -1,4 +1,3 @@
-
 option('FWSTATUS_SUPPORT',
        type: 'feature',
        value: 'disabled',
@@ -298,6 +297,16 @@ option('PUBKEY_CPLD',
        type: 'string',
        value: '',
        description: 'Public Key of CPLD FW')
+
+option('VERIFY_JAMPLAYER',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables signature verification of JAM files')
+
+option('PUBKEY_JAMPLAYER',
+       type: 'string',
+       value: '',
+       description: 'Public Key of JAM files')
 
 option(
        'tests',
