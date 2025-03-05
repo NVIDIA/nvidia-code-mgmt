@@ -44,13 +44,13 @@ class MTDItemUpdater : public BaseItemUpdater
   public:
     MTDItemUpdater(sdbusplus::bus::bus& bus, std::string mtdN,
                    std::string modelName) :
-        BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE,
+         BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE,
                         computeInventory(mtdN), MTD_BUSNAME_UPDATER_BASE + mtdN,
                         MTD_UPDATE_SERVICE, false,
                         MTD_BUSNAME_INVENTORY_BASE + mtdN),
         mtdName(mtdN)
 
-    {
+     {
         std::string jsonPath = "/usr/share/mtd_targets/" + mtdName + ".json";
 
         try
@@ -83,7 +83,7 @@ class MTDItemUpdater : public BaseItemUpdater
                     std::make_unique<SoftwareSettings>(bus, objPath);
 
 #ifdef VERIFY_PCIECHIP
-                checkSignature = mtdConfig["Authentication"];
+                bool checkSignature = mtdConfig["Authentication"];
                 if (checkSignature)
                 {
                     lg2::info("{TGT}: Image Authentication is Enabled", "TGT",
@@ -248,6 +248,11 @@ class MTDItemUpdater : public BaseItemUpdater
     {
         BaseItemUpdater::cleanupImageUploadDir(path, version);
         getVersion("");
+    }
+
+    virtual bool needVerify() const override
+    {
+        return !publicKey.empty();
     }
 };
 
