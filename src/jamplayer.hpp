@@ -20,7 +20,11 @@
 
 #include "base_item_updater.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include "fstream"
+
+using json = nlohmann::json;
 
 namespace nvidia
 {
@@ -37,7 +41,54 @@ class JamPlayer : public BaseItemUpdater
                         JAMPLAYER_INVENTORY_IFACE, "JAMPLAYER",
                         JAMPLAYER_BUSNAME_UPDATER, JAMPLAYER_SERVICE, false,
                         JAMPLAYER_BUSNAME_INVENTORY)
-    {}
+    {
+#ifdef VERIFY_JAMPLAYER
+        std::ifstream ifs(configFile.c_str());
+
+        if (!ifs.good())
+        {
+            lg2::error("Unable to open file PATH={PATH}", "PATH", configFile);
+            return;
+        }
+
+        auto configJson = json::parse(ifs, nullptr, false);
+        if (configJson.is_discarded())
+        {
+            lg2::error("Failed to parse json PATH={PATH}", "PATH", configFile);
+            return;
+        }
+
+        if (configJson == nullptr)
+        {
+            lg2::error("InternalFailure when parsing the JSON file");
+            return;
+        }
+
+        if (configJson.contains("Authentication"))
+        {
+            checkSignature = configJson["Authentication"];
+        }
+        else
+        {
+            lg2::info(
+                "Authentication setting not found in JSON, using default value");
+        }
+
+        if (checkSignature)
+        {
+            lg2::info("JamPlayer: Image Authentication is Enabled");
+            publicKey = PUBKEY_JAMPLAYER;
+            if (publicKey.empty())
+            {
+                lg2::error("JamPlayer: Public Key is not set");
+            }
+        }
+        else
+        {
+            lg2::info("JamPlayer: Image Authentication is Disabled");
+        }
+#endif
+    }
 
     /**
      * @brief Get the Version object
@@ -141,6 +192,10 @@ class JamPlayer : public BaseItemUpdater
     {
         return false; // default is supported
     }
+
+  private:
+    inline static const std::string configFile =
+        "/usr/share/nvidia-power-manager/cpld_config.json";
 };
 
 } // namespace updater
