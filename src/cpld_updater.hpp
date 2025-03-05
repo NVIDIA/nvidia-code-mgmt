@@ -222,6 +222,7 @@ class CPLDItemUpdater : public BaseItemUpdater
         }
 
 #ifdef VERIFY_CPLD
+        bool checkSignature = false;
         if (fruJson.contains("Authentication"))
         {
             checkSignature = fruJson["Authentication"];
@@ -358,6 +359,11 @@ class CPLDItemUpdater : public BaseItemUpdater
     std::string getIdProperty(const std::string& identifier) override
     {
         return (getName() + identifier);
+    }
+
+    virtual bool needVerify() const override
+    {
+        return !publicKey.empty();
     }
 
     /**

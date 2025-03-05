@@ -44,6 +44,7 @@ class JamPlayer : public BaseItemUpdater
     {
 #ifdef VERIFY_JAMPLAYER
         std::ifstream ifs(configFile.c_str());
+        bool checkSignature = false;
 
         if (!ifs.good())
         {
@@ -191,6 +192,11 @@ class JamPlayer : public BaseItemUpdater
     bool inventorySupported() override
     {
         return false; // default is supported
+    }
+
+    virtual bool needVerify() const override
+    {
+        return !publicKey.empty();
     }
 
   private:
