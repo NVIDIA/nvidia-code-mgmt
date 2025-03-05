@@ -212,6 +212,11 @@ if get_option('AP_IMAGE_VERIFICATION').enabled()
     add_project_arguments('-DVERIFY_CPLD', language : ['c','cpp'])
     cdata.set_quoted('PUBKEY_CPLD', get_option('PUBKEY_CPLD'))
   endif
+
+  if get_option('VERIFY_JAMPLAYER').enabled()
+    add_project_arguments('-DVERIFY_JAMPLAYER', language : ['c','cpp'])
+    cdata.set_quoted('PUBKEY_JAMPLAYER', get_option('PUBKEY_JAMPLAYER'))
+  endif
 endif
 
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
