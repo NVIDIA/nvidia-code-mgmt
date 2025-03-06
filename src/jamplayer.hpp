@@ -196,7 +196,8 @@ class JamPlayer : public BaseItemUpdater
 
     virtual bool needVerify() const override
     {
-        return !publicKey.empty();
+        return !publicKey.empty() &&
+               std::filesystem::exists("/var/check_signature");
     }
 
   private:
