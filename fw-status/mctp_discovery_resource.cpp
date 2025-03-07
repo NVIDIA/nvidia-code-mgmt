@@ -81,7 +81,7 @@ std::unordered_map<std::string, std::string>
     return mctpObjects;
 }
 
-void MCTPDiscoveryResource::startWatchingMCTPObjects()
+void MCTPDiscoveryResource::startWatchingMCTPObjects(bool needUpdateHealth)
 {
     mctpEidObjects = getMCTPObjects();
     if (mctpEidObjects.empty())
@@ -89,7 +89,7 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects()
         mctpObjManagerMatch.emplace_back(
             bus, MatchRules::interfacesAdded("/xyz/openbmc_project/mctp"),
             [&]([[maybe_unused]] sdbusplus::message::message& msg) {
-                startWatchingMCTPObjects();
+                startWatchingMCTPObjects(true);
             });
         return;
     }
@@ -104,10 +104,20 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects()
                                           mctpEndpointEnableIntfName),
             std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
                       std::placeholders::_1));
+
         deviceMatches.emplace_back(
             bus, MatchRules::interfacesAdded(mctpObject.c_str()),
             std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
                       std::placeholders::_1));
+    }
+
+    if (needUpdateHealth)
+    {
+        // Force a health status update since we might have missed the signals
+        // during MCTP enumeration. The signals
+        // (propertiesChanged/interfacesAdded) could have been sent before we
+        // set up the matches above.
+        updateHealth();
     }
 }
 

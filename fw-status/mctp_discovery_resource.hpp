@@ -60,7 +60,9 @@ class MCTPDiscoveryResource : public BaseResource
         BaseResource(bus, objPath),
         uuid(uuid)
     {
-        startWatchingMCTPObjects();
+        // Don't update health on startup because the inherited resource
+        // will do that in its constructor
+        startWatchingMCTPObjects(false);
     }
 
     /**@brief Fetches EID for the resource
@@ -145,5 +147,5 @@ class MCTPDiscoveryResource : public BaseResource
      * @return void
      *
      */
-    void startWatchingMCTPObjects();
+    void startWatchingMCTPObjects(bool needUpdateHealth);
 };
