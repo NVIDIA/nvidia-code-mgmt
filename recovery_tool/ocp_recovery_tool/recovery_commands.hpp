@@ -67,7 +67,7 @@ enum class ResponseLength : uint8_t
     DeviceStatusResLen = 25,
     RecoveryStatusResLen = 3,
     IndirectStatusResLen = 7,
-    CMSLogsChunkSize = 252,
+    CMSLogsChunkSize = 253,
 };
 
 /**
