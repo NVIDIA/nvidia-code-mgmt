@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "config.h"
 
 #include "mctp_vdm_helper.hpp"
 
@@ -25,16 +26,18 @@
 
 using namespace mctp_vdm;
 
-MCTPVdmHelper::MCTPVdmHelper(
-    sdbusplus::bus::bus& bus,
-    mctp_vdm::requester::Handler<mctp_vdm::requester::Request>& reqHandler,
-    mctp_socket::Handler& sockHandler, mctp_vdm::InstanceIdMgr& instanceIdMgr) :
+template <typename T>
+MCTPVdmHelper<T>::MCTPVdmHelper(sdbusplus::bus::bus& bus,
+                                mctp_vdm::requester::Handler<T>& reqHandler,
+                                mctp_socket::Handler<T>& sockHandler,
+                                mctp_vdm::InstanceIdMgr& instanceIdMgr) :
     bus(bus),
     reqHandler(reqHandler), sockHandler(sockHandler),
     instanceIdMgr(instanceIdMgr)
 {}
 
-mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatus(
+template <typename T>
+mctp_vdm::requester::Coroutine MCTPVdmHelper<T>::queryBootStatus(
     uint8_t eid, const mctp_vdm::Message*& responseMsg, size_t& responseLen)
 {
     // Initialize MCTP sockets for the list of endpoints
@@ -59,7 +62,8 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatus(
     co_return rc;
 }
 
-mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatusImpl(
+template <typename T>
+mctp_vdm::requester::Coroutine MCTPVdmHelper<T>::queryBootStatusImpl(
     uint8_t eid, const mctp_vdm::Message*& responseMsg, size_t& responseLen)
 {
     mctp::Request request(sizeof(mctp_vdm::MsgHeader));
@@ -72,8 +76,8 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatusImpl(
     requestMsg->msgVersion = nvidiaMsgVersion;
 
     auto rc = co_await mctp_vdm::requester::SendRecvMctpVdmMsg<
-        mctp_vdm::requester::Handler<mctp_vdm::requester::Request>>(
-        reqHandler, eid, request, &responseMsg, &responseLen);
+        mctp_vdm::requester::Handler<T>>(reqHandler, eid, request, &responseMsg,
+                                         &responseLen);
     if (rc)
     {
         co_return rc;
@@ -87,8 +91,18 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatusImpl(
     co_return responseMsg->payload[0];
 }
 
-void MCTPVdmHelper::handleMctpEndpoints(
+template <typename T>
+void MCTPVdmHelper<T>::handleMctpEndpoints(
     [[maybe_unused]] const mctp::Infos& mctpInfos)
 {
     return;
 }
+
+// Explicit template instantiations
+#ifdef MCTP_IN_KERNEL
+using TRequest = mctp_vdm::requester::InKernelRequest;
+#else
+using TRequest = mctp_vdm::requester::DaemonRequest;
+#endif
+
+template class MCTPVdmHelper<TRequest>;

@@ -14,12 +14,75 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "config.h"
 
 #include "gpio_resource.hpp"
 
-#include "dbusutils.hpp"
+template <typename T>
+GPIOResource<T>::GPIOResource(sdbusplus::bus::bus& bus,
+                              const std::string& objPath,
+                              sdeventplus::Event& event, const uint64_t i2cBus,
+                              const uint64_t i2cAddress,
+                              const std::string& uuid, const std::string& gpio,
+                              const std::string& target) :
+    BaseResource(bus, objPath),
+    sdEvent(event), uuid(uuid), gpioLineName(gpio), systemTarget(target),
+    isEROT(true)
+{
+    isFirmwareInRecovery = false;
+    glacierRecoveryObj =
+        std::make_unique<glacier_recovery_tool::glacier_recovery_commands::
+                             GlacierRecoveryCommands>(i2cBus, i2cAddress,
+                                                      false);
 
-void GPIOResource::waitForGPIOEvent()
+    registerGPIOEvent();
+
+    // Call it one time to initialize the status
+    updateERoTHealth();
+}
+
+template <typename T>
+GPIOResource<T>::GPIOResource(
+    sdbusplus::bus::bus& bus, const std::string& objPath,
+    sdeventplus::Event& event, const std::string& uuid, const std::string& gpio,
+    const std::string& risingTarget, const std::string& fallingTarget,
+    const std::string& gpioPolarity, const std::string chassisObjPath,
+    std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
+    BaseResource(bus, objPath),
+    sdEvent(event), uuid(uuid), gpioLineName(gpio), risingTarget(risingTarget),
+    fallingTarget(fallingTarget), isEROT(false), mctpVdmHelper(mctpVdmHelper)
+{
+    if (!chassisObjPath.empty())
+    {
+        bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+        bootStatus->bootStatus({0});
+        bootStatus->bootStatusType(
+            BootStatusServer::BootStatusTypes::ERoTBootStatus);
+    }
+
+    if (gpioPolarity == "ActiveHigh")
+    {
+        polarity = gpiod::line::ACTIVE_HIGH;
+    }
+    else if (gpioPolarity == "ActiveLow")
+    {
+        polarity = gpiod::line::ACTIVE_LOW;
+    }
+    else
+    {
+        lg2::error(
+            "Invalid type for GPIO polarity {TYPE}. Use ActiveHigh as default",
+            "TYPE", gpioPolarity);
+        polarity = gpiod::line::ACTIVE_HIGH;
+    }
+
+    initAPHealth();
+
+    registerGPIOEvent();
+}
+
+template <typename T>
+void GPIOResource<T>::waitForGPIOEvent()
 {
     lineEvent = gpioLine.event_read();
     if (lineEvent.event_type == gpiod::line_event::RISING_EDGE)
@@ -36,7 +99,8 @@ void GPIOResource::waitForGPIOEvent()
     }
 }
 
-void GPIOResource::registerGPIOEvent()
+template <typename T>
+void GPIOResource<T>::registerGPIOEvent()
 {
     lg2::info("Registering... event callback for {GPIO}", "GPIO", gpioLineName);
     gpioLine = gpiod::find_line(gpioLineName);
@@ -70,7 +134,8 @@ void GPIOResource::registerGPIOEvent()
     gpioEvent->set_enabled(sdeventplus::source::Enabled::On);
 }
 
-void GPIOResource::updateERoTHealth()
+template <typename T>
+void GPIOResource<T>::updateERoTHealth()
 {
     const auto& status = glacierRecoveryObj->performInitialization();
 
@@ -107,7 +172,8 @@ void GPIOResource::updateERoTHealth()
     return;
 }
 
-void GPIOResource::updateAPHealth(uint8_t type)
+template <typename T>
+void GPIOResource<T>::updateAPHealth(uint8_t type)
 {
     bool healthy = false;
     int val;
@@ -207,7 +273,8 @@ void GPIOResource::updateAPHealth(uint8_t type)
     }
 }
 
-void GPIOResource::initAPHealth()
+template <typename T>
+void GPIOResource<T>::initAPHealth()
 {
     lg2::info("Initializing... {OBJ} status", "OBJ", path.c_str());
     gpioLine = gpiod::find_line(gpioLineName);
@@ -233,7 +300,8 @@ void GPIOResource::initAPHealth()
     gpioLine.release();
 }
 
-mctp_vdm::requester::Coroutine GPIOResource::updateBootStatusAsync()
+template <typename T>
+mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
 {
     auto eid = fetchEid();
     if (eid == invalidEid)
@@ -264,7 +332,8 @@ mctp_vdm::requester::Coroutine GPIOResource::updateBootStatusAsync()
     co_return 0;
 }
 
-uint8_t GPIOResource::fetchEid() const noexcept
+template <typename T>
+uint8_t GPIOResource<T>::fetchEid() const noexcept
 {
     // Get MCTP endpoint list
     nvidia::software::updater::GetSubTreeResponse getSubTreeResponse{};
@@ -307,3 +376,12 @@ uint8_t GPIOResource::fetchEid() const noexcept
 
     return invalidEid;
 }
+
+#ifdef MCTP_IN_KERNEL
+using TRequest = mctp_vdm::requester::InKernelRequest;
+#else
+using TRequest = mctp_vdm::requester::DaemonRequest;
+#endif
+
+// Explicit template instantiations
+template class GPIOResource<TRequest>;

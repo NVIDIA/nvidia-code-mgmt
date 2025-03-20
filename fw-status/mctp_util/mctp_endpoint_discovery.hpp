@@ -46,6 +46,7 @@ class MctpDiscoveryHandlerIntf
     {}
 };
 
+template <typename T = mctp_vdm::requester::RequestRetryTimer>
 class MctpDiscovery
 {
   public:
@@ -63,7 +64,7 @@ class MctpDiscovery
      *  @param[in] list - initializer list to the MctpDiscoveryHandlerIntf
      */
     explicit MctpDiscovery(
-        sdbusplus::bus::bus& bus, mctp_socket::Handler& handler,
+        sdbusplus::bus::bus& bus, mctp_socket::Handler<T>& handler,
         std::initializer_list<MctpDiscoveryHandlerIntf*> list);
 
   private:
@@ -73,7 +74,7 @@ class MctpDiscovery
     /** @brief Used to watch for new MCTP endpoints */
     sdbusplus::bus::match_t mctpEndpointAddedSignal;
 
-    mctp_socket::Handler& handler;
+    mctp_socket::Handler<T>& handler;
 
     void discoverEndpoints(sdbusplus::message::message& msg);
 

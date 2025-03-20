@@ -261,6 +261,10 @@ cdata.set_quoted('IMG_DIR_PERSIST', get_option('IMG_DIR_PERSIST'))
 cdata.set_quoted('IMG_DIR_BUILTIN', get_option('IMG_DIR_BUILTIN'))
 cdata.set('NON_PLDM_DEFAULT_TIMEOUT', get_option('NON_PLDM_DEFAULT_TIMEOUT'))
 
+if get_option('ENABLE_IN_KERNEL_MCTP').enabled()
+    cdata.set('MCTP_IN_KERNEL', 0)
+endif
+
 phosphor_dbus_interfaces = dependency('phosphor-dbus-interfaces')
 phosphor_logging = dependency('phosphor-logging')
 sdbusplus = dependency('sdbusplus')

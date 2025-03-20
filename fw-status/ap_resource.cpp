@@ -27,7 +27,8 @@
 
 using namespace phosphor::logging;
 
-void APResource::populateService(const std::string& objPath) noexcept
+template <typename T>
+void APResource<T>::populateService(const std::string& objPath) noexcept
 {
     try
     {
@@ -51,7 +52,8 @@ void APResource::populateService(const std::string& objPath) noexcept
     }
 }
 
-mctp_vdm::requester::Coroutine APResource::initializeHealth()
+template <typename T>
+mctp_vdm::requester::Coroutine APResource<T>::initializeHealth()
 {
     if (isERoTHealthy())
     {
@@ -81,7 +83,8 @@ mctp_vdm::requester::Coroutine APResource::initializeHealth()
     co_return 0;
 }
 
-void APResource::startWatchingApEid() noexcept
+template <typename T>
+void APResource<T>::startWatchingApEid() noexcept
 {
     const auto objPath = std::string(mctpObjPathPrefix) + std::to_string(eid);
     populateService(objPath);
@@ -110,7 +113,8 @@ void APResource::startWatchingApEid() noexcept
                                          std::placeholders::_1));
 }
 
-mctp_vdm::requester::Coroutine APResource::updateHealthAsync()
+template <typename T>
+mctp_vdm::requester::Coroutine APResource<T>::updateHealthAsync()
 {
     if (isERoTHealthy())
     {
@@ -138,13 +142,15 @@ mctp_vdm::requester::Coroutine APResource::updateHealthAsync()
     co_return 0;
 }
 
-bool APResource::isERoTHealthy() const noexcept
+template <typename T>
+bool APResource<T>::isERoTHealthy() const noexcept
 {
     return erotResource->isDeviceEnumerated() and
            erotResource->checkForEnabledMCTPEids();
 }
 
-bool APResource::isAPInRecovery() const noexcept
+template <typename T>
+bool APResource<T>::isAPInRecovery() const noexcept
 {
     if (isERoTHealthy())
     {
@@ -156,3 +162,12 @@ bool APResource::isAPInRecovery() const noexcept
     }
     return !isApHealthy();
 }
+
+#ifdef MCTP_IN_KERNEL
+using TRequest = mctp_vdm::requester::InKernelRequest;
+#else
+using TRequest = mctp_vdm::requester::DaemonRequest;
+#endif
+
+// Explicit template instantiations
+template class APResource<TRequest>;
