@@ -295,4 +295,6 @@ if get_option('SPI_WRITE_PROTECT_APP_SUPPORT').enabled()
   subdir('set-spi-wp')
 endif
 
-subdir('recovery_tool/mcu_recovery_tool')
+if get_option('MCU_RECOVERY_SUPPORT').enabled()
+    subdir('recovery_tool/mcu_recovery_tool')
+endif
