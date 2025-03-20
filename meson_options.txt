@@ -314,3 +314,10 @@ option(
        value: 'enabled',
        description: 'Build tests.'
 )
+
+option('MCU_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables presence of mcu recovery tool in the build')
+
+
