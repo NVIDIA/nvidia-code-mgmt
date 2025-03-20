@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+#include "config.h"
+
 #include "mctp_endpoint_discovery.hpp"
 
 #include "constants.hpp"
@@ -34,8 +36,9 @@ namespace mctp_vdm
 
 using namespace dbus;
 
-MctpDiscovery::MctpDiscovery(
-    sdbusplus::bus::bus& bus, mctp_socket::Handler& handler,
+template <typename T>
+MctpDiscovery<T>::MctpDiscovery(
+    sdbusplus::bus::bus& bus, mctp_socket::Handler<T>& handler,
     std::initializer_list<MctpDiscoveryHandlerIntf*> list) :
     bus(bus),
     mctpEndpointAddedSignal(
@@ -96,8 +99,9 @@ MctpDiscovery::MctpDiscovery(
     handleMctpEndpoints(mctpInfos);
 }
 
-void MctpDiscovery::populateMctpInfo(const dbus::InterfaceMap& interfaces,
-                                     mctp::Infos& mctpInfos)
+template <typename T>
+void MctpDiscovery<T>::populateMctpInfo(const dbus::InterfaceMap& interfaces,
+                                        mctp::Infos& mctpInfos)
 {
     mctp::UUID uuid{};
     int type = 0;
@@ -156,7 +160,8 @@ void MctpDiscovery::populateMctpInfo(const dbus::InterfaceMap& interfaces,
     }
 }
 
-void MctpDiscovery::discoverEndpoints(sdbusplus::message::message& msg)
+template <typename T>
+void MctpDiscovery<T>::discoverEndpoints(sdbusplus::message::message& msg)
 {
     mctp::Infos mctpInfos;
 
@@ -169,7 +174,8 @@ void MctpDiscovery::discoverEndpoints(sdbusplus::message::message& msg)
     handleMctpEndpoints(mctpInfos);
 }
 
-void MctpDiscovery::handleMctpEndpoints(const mctp::Infos& mctpInfos)
+template <typename T>
+void MctpDiscovery<T>::handleMctpEndpoints(const mctp::Infos& mctpInfos)
 {
     for (MctpDiscoveryHandlerIntf* handler : handlers)
     {
@@ -181,3 +187,11 @@ void MctpDiscovery::handleMctpEndpoints(const mctp::Infos& mctpInfos)
 }
 
 } // namespace mctp_vdm
+
+#ifdef MCTP_IN_KERNEL
+using TRequest = mctp_vdm::requester::InKernelRequest;
+#else
+using TRequest = mctp_vdm::requester::DaemonRequest;
+#endif
+
+template class mctp_vdm::MctpDiscovery<TRequest>;

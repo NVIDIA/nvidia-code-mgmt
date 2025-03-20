@@ -14,10 +14,72 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "config.h"
 
 #include "erot_resource.hpp"
 
-bool ERoTResource::isApBootFinished(const std::vector<uint8_t>& status)
+template <typename T>
+ERoTResource<T>::ERoTResource(
+    sdbusplus::bus::bus& bus, const std::string& objPath,
+    sdeventplus::Event& event, const uint64_t i2cBus, const uint64_t i2cAddress,
+    const std::string& uuid, const uint64_t apEid,
+    const std::string chassisObjPath, const std::string apObjPath,
+    const bool isRecoverable, std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
+    MCTPDiscoveryResource(bus, objPath, uuid),
+    sdEvent(event), mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
+{
+    glacierRecoveryObj =
+        std::make_unique<glacier_recovery_tool::glacier_recovery_commands::
+                             GlacierRecoveryCommands>(i2cBus, i2cAddress,
+                                                      false);
+    bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+    bootStatus->bootStatus({0});
+    bootStatus->bootStatusType(
+        BootStatusServer::BootStatusTypes::ERoTBootStatus);
+    apResource = std::make_unique<APResource<T>>(bus, apObjPath, apEid, this);
+
+    health(HealthServer::HealthType::OK);
+    state(OperationalStatusServer::StateType::Enabled);
+
+    updateERoTHealth();
+
+    apBootStatusTimer =
+        std::make_unique<sdbusplus::Timer>(sdEvent.get(), [this, objPath]() {
+            lg2::info("Checking Boot Status of {OBJ}", "OBJ", objPath);
+            updateBootStatusAsync();
+        });
+}
+
+template <typename T>
+ERoTResource<T>::ERoTResource(sdbusplus::bus::bus& bus,
+                              const std::string& objPath,
+                              sdeventplus::Event& event,
+                              const std::string& uuid,
+                              const std::string chassisObjPath,
+                              const bool isRecoverable,
+                              std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
+    MCTPDiscoveryResource(bus, objPath, uuid),
+    sdEvent(event), mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
+{
+    bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+    bootStatus->bootStatus({0});
+    bootStatus->bootStatusType(
+        BootStatusServer::BootStatusTypes::ERoTBootStatus);
+
+    health(HealthServer::HealthType::OK);
+    state(OperationalStatusServer::StateType::Enabled);
+
+    updateERoTHealth();
+
+    apBootStatusTimer =
+        std::make_unique<sdbusplus::Timer>(sdEvent.get(), [this, objPath]() {
+            lg2::info("Checking Boot Status of {OBJ}", "OBJ", objPath);
+            updateBootStatusAsync();
+        });
+}
+
+template <typename T>
+bool ERoTResource<T>::isApBootFinished(const std::vector<uint8_t>& status)
 {
     bool isApBootCompleted = getBit(status, AP0_BOOT_COMPLETE_BIT);
     bool isApBootCompleteTimeout =
@@ -31,7 +93,66 @@ bool ERoTResource::isApBootFinished(const std::vector<uint8_t>& status)
     return isApBootCompleted || isApBootCompleteTimeout;
 }
 
-mctp_vdm::requester::Coroutine ERoTResource::updateBootStatusAsync()
+template <typename T>
+void ERoTResource<T>::updateERoTHealth()
+{
+    if (bootStatus)
+    {
+        updateBootStatus();
+    }
+
+    if (!isRecoverable)
+    {
+        return;
+    }
+
+    if (MCTPDiscoveryResource::isDeviceEnumerated() and
+        MCTPDiscoveryResource::checkForEnabledMCTPEids())
+    {
+        lg2::info("MCTP EID for {PATH} is enumerated and enabled", "PATH",
+                  path.c_str());
+        health(HealthServer::HealthType::OK);
+        state(OperationalStatusServer::StateType::Enabled);
+        return;
+    }
+
+    if (!glacierRecoveryObj->unlockI2CDevice())
+    {
+        lg2::error("Unable to unlock I2C for object {OBJECT}", "OBJECT",
+                   path.c_str());
+        health(HealthServer::HealthType::Critical);
+        if (MCTPDiscoveryResource::isDeviceEnumerated())
+        {
+            state(OperationalStatusServer::StateType::UnavailableOffline);
+            return;
+        }
+
+        state(OperationalStatusServer::StateType::Absent);
+        return;
+    }
+
+    const auto& status = glacierRecoveryObj->performInitialization();
+
+    if (status != glacier_recovery_tool::glacier_recovery_commands::
+                      RecoveryResult::FirmwareNotInRecovery)
+    {
+        lg2::info("Device associated with {PATH} is in recovery", "PATH",
+                  path.c_str());
+
+        health(HealthServer::HealthType::Critical);
+        state(OperationalStatusServer::StateType::StandbyOffline);
+        return;
+    }
+
+    lg2::info("Device associated with {PATH} is not in recovery", "PATH",
+              path.c_str());
+    health(HealthServer::HealthType::OK);
+    state(OperationalStatusServer::StateType::Enabled);
+    return;
+}
+
+template <typename T>
+mctp_vdm::requester::Coroutine ERoTResource<T>::updateBootStatusAsync()
 {
     std::unique_lock<std::mutex> lock(mtx, std::try_to_lock);
     if (!lock.owns_lock())
@@ -70,7 +191,17 @@ mctp_vdm::requester::Coroutine ERoTResource::updateBootStatusAsync()
     co_return 0;
 }
 
-std::vector<uint8_t> ERoTResource::getBootStatus() const noexcept
+template <typename T>
+std::vector<uint8_t> ERoTResource<T>::getBootStatus() const noexcept
 {
     return bootStatus->bootStatus();
 }
+
+#ifdef MCTP_IN_KERNEL
+using TRequest = mctp_vdm::requester::InKernelRequest;
+#else
+using TRequest = mctp_vdm::requester::DaemonRequest;
+#endif
+
+// Explicit template instantiations
+template class ERoTResource<TRequest>;

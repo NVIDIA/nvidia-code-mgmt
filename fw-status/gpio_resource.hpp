@@ -36,6 +36,7 @@ constexpr static int invalidEid = 255;
 /** @class GPIOResource
  *  Represents a BaseResource whose healthy status is updated by monitoring GPIO
  */
+template <typename T = mctp_vdm::requester::RequestRetryTimer>
 class GPIOResource : public BaseResource
 {
     enum : uint8_t
@@ -62,22 +63,7 @@ class GPIOResource : public BaseResource
     GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                  sdeventplus::Event& event, const uint64_t i2cBus,
                  const uint64_t i2cAddress, const std::string& uuid,
-                 const std::string& gpio, const std::string& target) :
-        BaseResource(bus, objPath),
-        sdEvent(event), uuid(uuid), gpioLineName(gpio), systemTarget(target),
-        isEROT(true)
-    {
-        isFirmwareInRecovery = false;
-        glacierRecoveryObj =
-            std::make_unique<glacier_recovery_tool::glacier_recovery_commands::
-                                 GlacierRecoveryCommands>(i2cBus, i2cAddress,
-                                                          false);
-
-        registerGPIOEvent();
-
-        // Call it one time to initialize the status
-        updateERoTHealth();
-    }
+                 const std::string& gpio, const std::string& target);
 
     /** @brief Constructor for the GPIOResource Class - Monitoring GPIO
      * Interrupt for Non-ERoT devices Updates Health and Status of the D-Bus
@@ -103,40 +89,7 @@ class GPIOResource : public BaseResource
                  const std::string& fallingTarget,
                  const std::string& gpioPolarity,
                  const std::string chassisObjPath,
-                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
-        BaseResource(bus, objPath),
-        sdEvent(event), uuid(uuid), gpioLineName(gpio),
-        risingTarget(risingTarget), fallingTarget(fallingTarget), isEROT(false),
-        mctpVdmHelper(mctpVdmHelper)
-    {
-        if (!chassisObjPath.empty())
-        {
-            bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
-            bootStatus->bootStatus({0});
-            bootStatus->bootStatusType(
-                BootStatusServer::BootStatusTypes::ERoTBootStatus);
-        }
-
-        if (gpioPolarity == "ActiveHigh")
-        {
-            polarity = gpiod::line::ACTIVE_HIGH;
-        }
-        else if (gpioPolarity == "ActiveLow")
-        {
-            polarity = gpiod::line::ACTIVE_LOW;
-        }
-        else
-        {
-            lg2::error(
-                "Invalid type for GPIO polarity {TYPE}. Use ActiveHigh as default",
-                "TYPE", gpioPolarity);
-            polarity = gpiod::line::ACTIVE_HIGH;
-        }
-
-        initAPHealth();
-
-        registerGPIOEvent();
-    }
+                 std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper);
 
   private:
     sdeventplus::Event& sdEvent;
@@ -155,7 +108,7 @@ class GPIOResource : public BaseResource
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
     std::mutex mtx;
-    std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
+    std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper;
     std::unique_ptr<BootStatus> bootStatus;
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
 

@@ -23,6 +23,8 @@
 #include "utils.hpp"
 
 #include <libmctp-externals.h>
+#include <linux/if_arp.h>
+#include <linux/mctp.h>
 #include <sys/socket.h>
 
 #include <phosphor-logging/lg2.hpp>
@@ -136,7 +138,7 @@ class RequestRetryTimer
     }
 };
 
-/** @class Request
+/** @class DaemonRequest
  *
  *  The concrete implementation of RequestIntf. This class implements the send()
  *  to send the MCTP VDM request message over MCTP socket.
@@ -145,15 +147,15 @@ class RequestRetryTimer
  *  of time to wait between each retry. It provides APIs to start and stop the
  *  request flow.
  */
-class Request final : public RequestRetryTimer
+class DaemonRequest final : public RequestRetryTimer
 {
   public:
-    Request() = delete;
-    Request(const Request&) = delete;
-    Request(Request&&) = default;
-    Request& operator=(const Request&) = delete;
-    Request& operator=(Request&&) = default;
-    ~Request() = default;
+    DaemonRequest() = delete;
+    DaemonRequest(const DaemonRequest&) = delete;
+    DaemonRequest(DaemonRequest&&) = default;
+    DaemonRequest& operator=(const DaemonRequest&) = delete;
+    DaemonRequest& operator=(DaemonRequest&&) = default;
+    ~DaemonRequest() = default;
 
     /** @brief Constructor
      *
@@ -164,9 +166,9 @@ class Request final : public RequestRetryTimer
      *  @param[in] numRetries - number of request retries
      *  @param[in] timeout - time to wait between each retry in milliseconds
      */
-    explicit Request(int fd, uint8_t eid, sdeventplus::Event& event,
-                     mctp::Request&& requestMsg, uint8_t numRetries,
-                     std::chrono::milliseconds timeout) :
+    explicit DaemonRequest(int fd, uint8_t eid, sdeventplus::Event& event,
+                           mctp::Request&& requestMsg, uint8_t numRetries,
+                           std::chrono::milliseconds timeout) :
         RequestRetryTimer(event, numRetries, timeout),
         fd(fd), eid(eid), requestMsg(std::move(requestMsg))
     {}
@@ -208,6 +210,75 @@ class Request final : public RequestRetryTimer
                 "EID", eid, "RC", unsigned(rc), "ERRNO", strerror(errno));
             return returnCode;
         }
+        return returnCode;
+    }
+};
+
+/** @class InKernelRequest
+ *
+ *  Class for handling in-kernel MCTP requests
+ */
+class InKernelRequest final : public RequestRetryTimer
+{
+  public:
+    InKernelRequest() = delete;
+    InKernelRequest(const InKernelRequest&) = delete;
+    InKernelRequest(InKernelRequest&&) = default;
+    InKernelRequest& operator=(const InKernelRequest&) = delete;
+    InKernelRequest& operator=(InKernelRequest&&) = default;
+    ~InKernelRequest() = default;
+
+    // using RequestRetryTimer::RequestRetryTimer;
+
+    /** @brief Constructor
+     *
+     *  @param[in] fd - fd of the MCTP communication socket
+     *  @param[in] eid - endpoint ID of the remote MCTP endpoint
+     *  @param[in] event - reference to daemon's main event loop
+     *  @param[in] requestMsg - MCTP VDM request message
+     *  @param[in] numRetries - number of request retries
+     *  @param[in] timeout - time to wait between each retry in milliseconds
+     */
+    explicit InKernelRequest(int fd, uint8_t eid, sdeventplus::Event& event,
+                             mctp::Request&& requestMsg, uint8_t numRetries,
+                             std::chrono::milliseconds timeout) :
+        RequestRetryTimer(event, numRetries, timeout),
+        fd(fd), eid(eid), requestMsg(std::move(requestMsg))
+    {}
+
+  private:
+    int fd;                   //!< file descriptor of MCTP communications socket
+    uint8_t eid;              //!< endpoint ID of the remote MCTP endpoint
+    mctp::Request requestMsg; //!< MCTP VDM request message
+
+    // const uint8_t MCTP_MSG_TYPE_PLDM = 1;
+
+    /** @brief Send the request message
+     *
+     *  @return 0 on success, negative value on failure
+     */
+    int send() const
+    {
+        int returnCode{0};
+
+        utils::printBuffer(utils::Tx, requestMsg, eid);
+
+        struct sockaddr_mctp destAddr = {}; // Initialize at declaration
+        destAddr.smctp_family = AF_MCTP;
+        destAddr.smctp_network = MCTP_NET_ANY;
+        destAddr.smctp_addr.s_addr = eid;
+        destAddr.smctp_tag = MCTP_TAG_OWNER;
+        destAddr.smctp_type = mctp_vdm::MessageType;
+
+        ssize_t rc = sendto(fd, requestMsg.data(), requestMsg.size(), 0,
+                            reinterpret_cast<struct sockaddr*>(&destAddr),
+                            sizeof(destAddr));
+        if (rc == -1)
+        {
+            returnCode = -errno;
+            lg2::error("sendmsg system call failed, RC={RC}", "RC", returnCode);
+        }
+
         return returnCode;
     }
 };

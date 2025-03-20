@@ -321,3 +321,17 @@ option('MCU_RECOVERY_SUPPORT',
        description: 'Enables presence of mcu recovery tool in the build')
 
 
+
+option('MCU_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables presence of mcu recovery tool in the build')
+
+
+
+option(
+       'ENABLE_IN_KERNEL_MCTP',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Use the in-kernel MCTP stack instead of the demux daemon'
+)

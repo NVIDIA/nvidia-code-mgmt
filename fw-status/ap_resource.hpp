@@ -26,6 +26,7 @@
 #include <coroutine>
 
 using namespace phosphor::logging;
+template <typename T>
 class ERoTResource;
 
 constexpr static int maxBootCompleteTimeoutPerAttempt = 120;
@@ -42,6 +43,7 @@ constexpr static int maxBootCompleteTimeout =
  *  - Updates Health/State of the resource based on MCTP Events and BootStatus
  *
  */
+template <typename T = mctp_vdm::requester::RequestRetryTimer>
 class APResource : public BaseResource
 {
   public:
@@ -53,7 +55,7 @@ class APResource : public BaseResource
      *
      */
     APResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-               uint8_t apEid, ERoTResource* erotResource) :
+               uint8_t apEid, ERoTResource<T>* erotResource) :
         BaseResource(bus, objPath),
         eid(apEid), erotResource(erotResource)
     {
@@ -87,7 +89,7 @@ class APResource : public BaseResource
     std::string apMCTPService{};
     std::unique_ptr<sdbusplus::Timer> timer;
     std::vector<sdbusplus::bus::match_t> mctpApObjManagerMatch;
-    ERoTResource* erotResource;
+    ERoTResource<T>* erotResource;
     std::vector<sdbusplus::bus::match_t> deviceMatches;
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
 
