@@ -126,7 +126,7 @@ DebugTokenInstallStatus
     }
     if (nsmTokenInstall(tokens) != 0)
     {
-        log<level::ERR>("NSM token installed failed");
+        log<level::ERR>("NSM token installation failed");
         status = DebugTokenInstallStatus::DebugTokenInstallFailed;
         return status;
     }
@@ -259,7 +259,7 @@ std::string UpdateDebugToken::getErasePolicy()
     {
         std::variant<std::string> policyProperty;
         auto method = bus.new_method_call(service.c_str(), path.c_str(),
-                                          propertiesPath, "Get");
+                                          propertiesIntfName, "Get");
         method.append(erasePolicyIntfName, "Policy");
         auto reply = bus.call(method);
         reply.read(policyProperty);
