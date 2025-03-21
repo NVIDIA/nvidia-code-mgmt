@@ -22,10 +22,10 @@
 
 #include <fmt/format.h>
 
-#include <condition_variable>
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <tuple>
 
 namespace dbus
 {
@@ -64,6 +64,10 @@ using Message = std::string;
 using Resolution = std::string;
 using MessageMapping = std::pair<Message, Resolution>;
 using NSMEndpoints = std::vector<std::string>;
+using NSMTokenStatusTuple =
+    std::tuple<std::string, std::string, std::string, uint32_t>;
+using NSMErrorTuple = std::tuple<uint16_t, std::string>;
+using NSMAsyncValue = std::variant<NSMTokenStatusTuple, NSMErrorTuple>;
 
 using namespace dbus;
 namespace LoggingServer = sdbusplus::xyz::openbmc_project::Logging::server;
@@ -86,16 +90,15 @@ constexpr auto pldmService = "xyz.openbmc_project.PLDM";
 constexpr auto pldmPath = "/";
 constexpr auto pldmInventoryIntfName =
     "xyz.openbmc_project.Inventory.Decorator.Asset";
+
 constexpr auto nsmService = "xyz.openbmc_project.NSM";
 constexpr auto nsmDebugTokenIntfName = "com.nvidia.DebugToken";
-constexpr auto nsmProgressIntfName = "xyz.openbmc_project.Common.Progress";
+constexpr auto nsmAsyncStatusIntfName = "com.nvidia.Async.Status";
+constexpr auto nsmAsyncValueIntfName = "com.nvidia.Async.Value";
+constexpr auto nsmAsyncBasePath = "/com/nvidia/nsmd/AsyncOperation";
 constexpr auto nsmDebugTokenPath = "/";
-constexpr auto propertiesPath = "org.freedesktop.DBus.Properties";
+constexpr auto propertiesIntfName = "org.freedesktop.DBus.Properties";
 
-constexpr auto nsmCompletedStatus =
-    "xyz.openbmc_project.Common.Progress.OperationStatus.Completed";
-constexpr auto nsmInProgressStatus =
-    "xyz.openbmc_project.Common.Progress.OperationStatus.InProgress";
 constexpr auto nsmTokenTypeCRDT = "com.nvidia.DebugToken.TokenTypes.CRDT";
 constexpr auto nsmTokenStatusDebugSessionActive =
     "com.nvidia.DebugToken.TokenStatus.DebugSessionActive";
@@ -574,12 +577,8 @@ class UpdateDebugToken : public TokenUtility
     DeviceMap devices;
     /* map of UUID to EID */
     MctpInfo mctpInfo;
-    /* Conditional Variable to wait till propertyChange signal is received.
-       Used only for debug token NSM operations. */
-    std::condition_variable cv;
-    /* Variable to communicate the operation status between
-       propertyChange signal callback and main thread. */
-    std::string nsmOperationStatus;
+    /* Mutex for NSM async status handling. */
+    std::mutex mtx;
 
     /* component name map for message registry */
     DeviceNameMap deviceNameMap;
@@ -713,7 +712,7 @@ class UpdateDebugToken : public TokenUtility
     /**
      * @brief debug token install for NSM endpoints.
      *
-     *
+     * @param[in] tokens - token map
      * @return int
      */
     int nsmTokenInstall(TokenMap& tokens);
@@ -721,19 +720,9 @@ class UpdateDebugToken : public TokenUtility
     /**
      * @brief debug token erase for NSM endpoints.
      *
-     *
      * @return int
      */
     int nsmTokenErase();
-
-    /**
-     * @brief Callback for NSM debug token operations.
-     *
-     * @param[in] msg
-     *
-     * @return int
-     */
-    int progressStatusPropertyChange(sdbusplus::message_t& msg);
 
     /**
      * @brief Enumerate endpoints that support debug token over NSM.
@@ -743,4 +732,53 @@ class UpdateDebugToken : public TokenUtility
      * @return int
      */
     int enumerateNsmDebugTokenEndpoints(NSMEndpoints& nsmEndpoint);
+
+    /**
+     * Helper function to make com.nvidia.DebugToken method calls
+     * @param path The object path
+     * @param methodName The name of the method to call
+     * @param args The arguments to pass to the method
+     * @return The async object path returned by the method
+     */
+    std::string makeDebugTokenMethodCall(
+        const std::string& path, const std::string& methodName,
+        const std::variant<std::monostate, std::string, std::vector<uint8_t>>&
+            arg = std::monostate{});
+
+    /**
+     * Helper function to get async value
+     * @param asyncPath The path of the async operation
+     * @return The async value
+     */
+    NSMAsyncValue getAsyncValue(const std::string& path);
+
+    /**
+     * Helper function to log async operation errors
+     * @param asyncPath The path of the async operation
+     * @param methodName Name of the method to call
+     * @param asyncStatus The status of the async operation
+     */
+    void logAsyncError(const std::string& asyncPath,
+                       const std::string& methodName,
+                       const std::string& asyncStatus);
+
+    /**
+     * Helper function to handle async calls with status monitoring
+     * @param path The path of the async operation
+     * @param methodName Name of the method to call
+     * @param args The arguments to pass to the method
+     * @return The async object path if operation succeeded, empty string
+     * otherwise
+     */
+    std::string handleAsyncCall(
+        const std::string& path, const std::string& methodName,
+        const std::variant<std::monostate, std::string, std::vector<uint8_t>>&
+            arg = std::monostate{});
+
+    /**
+     * Helper function to get token status for a given path
+     * @param path The object path
+     * @return The token status string if successful, empty string otherwise
+     */
+    std::string getTokenStatus(const std::string& path);
 };
