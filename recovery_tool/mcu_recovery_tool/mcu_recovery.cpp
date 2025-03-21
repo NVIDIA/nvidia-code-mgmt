@@ -202,8 +202,22 @@ int performResetFlow(const std::map<std::string, MCUInfo>& mcuMap)
         }
     }
 
-    for (int i = 0; i < 11 && !mcuList.empty(); ++i)
+    for (int i = 0; i < 10 && !mcuList.empty(); ++i)
     {
+        // Put all MCUs into reset state
+        for (const auto& [usbPort, line] : gpioLines)
+        {
+            line.set_value(0);
+        }
+        sleep(1);
+
+        // Release all MCU reset pins
+        for (const auto& [usbPort, line] : gpioLines)
+        {
+            line.set_value(1);
+        }
+        sleep(3);
+
         for (auto it = mcuList.begin(); it != mcuList.end();)
         {
             const auto& [usbPort, mcuInfo] = *it;
@@ -245,19 +259,6 @@ int performResetFlow(const std::map<std::string, MCUInfo>& mcuMap)
             }
             ++it;
         }
-        // Put all MCUs into reset state
-        for (const auto& [usbPort, line] : gpioLines)
-        {
-            line.set_value(0);
-        }
-        sleep(1);
-
-        // Release all MCU reset pins
-        for (const auto& [usbPort, line] : gpioLines)
-        {
-            line.set_value(1);
-        }
-        sleep(3);
     }
 
     int failedDevices = mcuList.size();
