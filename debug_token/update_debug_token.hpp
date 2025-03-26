@@ -117,17 +117,26 @@ const std::string debugTokenEraseFailed{
 static constexpr size_t mctpCompletionCodeByte =
     8; // 8'th byte from beginning is the MCTP Completion code for debug token
        // query
-static constexpr size_t tokenInstallStatusByte =
+static constexpr size_t tokenInstallStatusByteV1 =
     9; // 9th byte from beginning is token status code for debug token query
+static constexpr size_t tokenInstallStatusByteV2 =
+    9; // 9th byte from beginning is token status code for debug token query
+static constexpr size_t tokenInstallStatusByteV3 =
+    12; // 12th byte from beginning is token status code for debug token query
 static constexpr size_t mctpDebugTokenQueryResponseLengthV1 =
-    19; // Total length of MCTP respose : Header (9) + Data (10)
+    19; // Total length of MCTP response : Header (9) + Data (10)
 static constexpr size_t mctpDebugTokenQueryResponseLengthV2 =
-    37; // Total length of MCTP respose : Header (9) + Data (28)
+    37; // Total length of MCTP response : Header (9) + Data (28)
+static constexpr size_t mctpDebugTokenQueryResponseLengthV3 =
+    50; // Total length of MCTP response : Header (9) + Data (41)
 static constexpr uint64_t propertyChangeSignalTimeout = 5;
 
-// Tokken Type bytes in v2 query command are from bytes 19-22
-static constexpr int tokenTypeByteStart = 19;
-static constexpr int tokenTypeByteEnd = 22;
+// Token type bytes in v2 query command are bytes 19-22
+static constexpr int tokenTypeByteStartV2 = 19;
+static constexpr int tokenTypeByteEndV2 = 22;
+// Token type bytes in v3 query command are bytes 30-33
+static constexpr int tokenTypeByteStartV3 = 30;
+static constexpr int tokenTypeByteEndV3 = 33;
 static constexpr int nsmUnsupportedCmd = 0x05;
 
 static constexpr size_t debugFirmwareTokenType = 0x1;
@@ -469,85 +478,6 @@ class UpdateDebugToken : public TokenUtility
     }
 
     /**
-     * @brief Parse query v2 response.
-     *
-     * @param[in] rxBytes
-     * @param[in] tokenInstallStatus
-     * @param[in] installedTokenType
-     *
-     * @return int
-     */
-    int parseQueryV2Response(std::vector<std::string> rxBytes,
-                             int& tokenInstallStatus, int& installedTokenType)
-    {
-        int status = 0;
-        try
-        {
-            if (rxBytes.size() != mctpDebugTokenQueryResponseLengthV2)
-            {
-                if (rxBytes.size() > mctpCompletionCodeByte)
-                {
-                    status =
-                        std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
-                    log<level::ERR>(
-                        ("debug_token_query_v2 command failed with code: " +
-                         std::to_string(status))
-                            .c_str());
-                }
-                else
-                {
-                    status = -1;
-                    log<level::ERR>(
-                        "debug_token_query_v2 command response size is invalid.");
-                }
-                return status;
-            }
-            status = std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
-        }
-        catch (const std::exception& e)
-        {
-            status = -1;
-            log<level::ERR>(
-                "Error while getting status code from debug_token_query_v2");
-        }
-        if (status != static_cast<int>(MCTPCompletionCodes::Success))
-        {
-            log<level::ERR>(
-                ("Error while parsing debug token query v2 output: " +
-                 std::to_string(status))
-                    .c_str());
-            status = -1;
-            return status;
-        }
-        try
-        {
-            tokenInstallStatus =
-                std::stoi(rxBytes[tokenInstallStatusByte], nullptr, 16);
-            if (tokenInstallStatus ==
-                static_cast<int>(
-                    DebugTokenQueryErrorCodes::DebugTokenInstalled))
-            {
-                installedTokenType = 0;
-                uint8_t shift = 0;
-                for (int idx = tokenTypeByteStart; idx <= tokenTypeByteEnd;
-                     idx++)
-                {
-                    installedTokenType |=
-                        (((uint32_t)std::stoi(rxBytes[idx], nullptr, 16))
-                         << shift);
-                    shift += 8;
-                }
-            }
-        }
-        catch (const std::exception& e)
-        {
-            status = -1;
-            log<level::ERR>("Error while getting token installation status");
-        }
-        return status;
-    }
-
-    /**
      * @brief Create a Message Registry for Install Errors
      *
      * @param[in] path
@@ -676,6 +606,15 @@ class UpdateDebugToken : public TokenUtility
      */
     int eraseToken(const EID& eid);
     /**
+     * @brief query debug token status
+     *
+     * Query status with v3 first, then v2, and if both fail, query with v1.
+     *
+     * @param[in] eid
+     * @return int - installation status
+     */
+    int queryDebugToken(const EID& eid);
+    /**
      * @brief query debug token status with debug_token_query
      *
      * @param[in] eid
@@ -690,14 +629,34 @@ class UpdateDebugToken : public TokenUtility
      */
     int queryDebugTokenV2(const EID& eid);
     /**
-     * @brief query debug token status
+     * @brief Parse query v2 response.
      *
-     * Query status with v2 first and if it fails, query with v1.
+     * @param[in] rxBytes
+     * @param[in] tokenInstallStatus
+     * @param[in] installedTokenType
+     *
+     * @return int
+     */
+    int parseQueryV2Response(std::vector<std::string> rxBytes,
+                             int& tokenInstallStatus, int& installedTokenType);
+    /**
+     * @brief query debug token status with debug_token_query_v3
      *
      * @param[in] eid
      * @return int - installation status
      */
-    int queryDebugToken(const EID& eid);
+    int queryDebugTokenV3(const EID& eid);
+    /**
+     * @brief Parse query v3 response.
+     *
+     * @param[in] rxBytes
+     * @param[in] tokenInstallStatus
+     * @param[in] installedTokenType
+     *
+     * @return int
+     */
+    int parseQueryV3Response(std::vector<std::string> rxBytes,
+                             int& tokenInstallStatus, int& installedTokenType);
     /**
      * @brief Create a Log entry
      *

@@ -555,27 +555,36 @@ int UpdateDebugToken::updateTokenMap(const std::string& debugTokenPath,
     uint32_t tokenOffset = headerInfo->offsetToListOfStructs;
     for (uint16_t i = 0; i < headerInfo->numberOfRecords; i++)
     {
-        Token token;
-        auto debugTokenInfo =
-            getNextDebugToken(token, tokenOffset, debugTokenPackage);
-        if (debugTokenInfo)
+        std::vector<uint8_t> tokenData;
+        std::vector<uint8_t> serialNumber;
+        auto token = getNextDebugToken(debugTokenPackage, tokenOffset,
+                                       tokenData, serialNumber);
+        if (token)
         {
-            if (debugTokenInfo->structSize != token.size())
+            if (token->structSize != tokenData.size())
             {
                 log<level::ERR>("Invalid token size");
                 status = -1;
                 return status;
             }
-            std::stringstream serialNumber;
-            serialNumber << std::hex;
-            for (size_t x = 0; x < sizeof(debugTokenInfo->serialNumber); x++)
+            std::stringstream serialNumberStream;
+            serialNumberStream << std::hex;
+            for (const auto& byte : serialNumber)
             {
-                serialNumber << std::uppercase << std::setw(2)
-                             << std::setfill('0')
-                             << (int)debugTokenInfo->serialNumber[x];
+                serialNumberStream << std::uppercase << std::setw(2)
+                                   << std::setfill('0') << (int)byte;
             }
-            tokens.emplace(("0x" + serialNumber.str()), token);
-            tokenOffset += debugTokenInfo->structSize;
+            std::string logEntry{"Read token - "};
+            logEntry += std::string{token->identifier, 4};
+            logEntry += " - ";
+            logEntry += std::to_string(token->versionMajor);
+            logEntry += ".";
+            logEntry += std::to_string(token->versionMinor);
+            logEntry += " - ";
+            logEntry += serialNumberStream.str();
+            log<level::INFO>(logEntry.c_str());
+            tokens.emplace(("0x" + serialNumberStream.str()), tokenData);
+            tokenOffset += token->structSize;
         }
         else
         {
@@ -876,7 +885,7 @@ int UpdateDebugToken::queryDebugTokenV1(const EID& eid)
     {
         // 10 the byte from last is token installation status
         auto tokenInstallStatus =
-            std::stoi(rxBytes[tokenInstallStatusByte], nullptr, 16);
+            std::stoi(rxBytes[tokenInstallStatusByteV1], nullptr, 16);
         if (tokenInstallStatus ==
             static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
         {
@@ -928,18 +937,8 @@ int UpdateDebugToken::queryDebugTokenV2(const EID& eid)
             log<level::INFO>(("debug_token_query_v2 Installed Token Type: " +
                               std::to_string(installedTokenType))
                                  .c_str());
-            if (static_cast<size_t>(installedTokenType) ==
-                debugFirmwareTokenType)
-            {
-                status = static_cast<int>(
-                    DebugTokenQueryErrorCodes::DebugTokenInstalled);
-            }
-            else
-            {
-                status = static_cast<int>(
-                    DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
-            }
         }
+        return tokenInstallStatus;
     }
     if (status == -1)
     {
@@ -949,17 +948,203 @@ int UpdateDebugToken::queryDebugTokenV2(const EID& eid)
     return status;
 }
 
+int UpdateDebugToken::parseQueryV2Response(std::vector<std::string> rxBytes,
+                                           int& tokenInstallStatus,
+                                           int& installedTokenType)
+{
+    int status = 0;
+    try
+    {
+        if (rxBytes.size() != mctpDebugTokenQueryResponseLengthV2)
+        {
+            if (rxBytes.size() > mctpCompletionCodeByte)
+            {
+                status =
+                    std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
+                log<level::ERR>(
+                    ("debug_token_query_v2 command failed with code: " +
+                     std::to_string(status))
+                        .c_str());
+            }
+            else
+            {
+                status = -1;
+                log<level::ERR>(
+                    "debug_token_query_v2 command response size is invalid.");
+            }
+            return status;
+        }
+        status = std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
+    }
+    catch (const std::exception& e)
+    {
+        status = -1;
+        log<level::ERR>(
+            "Error while getting status code from debug_token_query_v2");
+    }
+    if (status != static_cast<int>(MCTPCompletionCodes::Success))
+    {
+        log<level::ERR>(("Error while parsing debug token query v2 output: " +
+                         std::to_string(status))
+                            .c_str());
+        status = -1;
+        return status;
+    }
+    try
+    {
+        tokenInstallStatus =
+            std::stoi(rxBytes[tokenInstallStatusByteV2], nullptr, 16);
+        if (tokenInstallStatus ==
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
+        {
+            installedTokenType = 0;
+            uint8_t shift = 0;
+            for (int idx = tokenTypeByteStartV2; idx <= tokenTypeByteEndV2;
+                 idx++)
+            {
+                installedTokenType |=
+                    (((uint32_t)std::stoi(rxBytes[idx], nullptr, 16)) << shift);
+                shift += 8;
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        status = -1;
+        log<level::ERR>("Error while getting token installation status");
+    }
+    return status;
+}
+
+int UpdateDebugToken::queryDebugTokenV3(const EID& eid)
+{
+    int status = 0;
+    int tokenInstallStatus = 0;
+    int installedTokenType = 0;
+    std::string command = "";
+    // form debug_token_query_v3 command
+    command += mctpVdmUtilPath;
+    command += " -c debug_token_query_v3 ";
+    command += "-t " + std::to_string(eid);
+    auto [retCode, commandOut] = runMctpVdmUtilCommand(command);
+    if (retCode != 0)
+    {
+        log<level::ERR>("Error while running debug_token_query_v3 command");
+        status = -1;
+        return status;
+    }
+    auto rxBytes = parseCommandOutput(commandOut);
+    status =
+        parseQueryV3Response(rxBytes, tokenInstallStatus, installedTokenType);
+    if (status == 0)
+    {
+        log<level::INFO>(("debug_token_query_v3 Token Install Status: " +
+                          std::to_string(tokenInstallStatus))
+                             .c_str());
+        if (tokenInstallStatus ==
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
+        {
+            log<level::INFO>(("debug_token_query_v3 Installed Token Type: " +
+                              std::to_string(installedTokenType))
+                                 .c_str());
+        }
+        return tokenInstallStatus;
+    }
+    if (status == -1)
+    {
+        // Dump response in case of failure.
+        log<level::ERR>(commandOut.c_str());
+    }
+    return status;
+}
+
+int UpdateDebugToken::parseQueryV3Response(std::vector<std::string> rxBytes,
+                                           int& tokenInstallStatus,
+                                           int& installedTokenType)
+{
+    int status = 0;
+    try
+    {
+        if (rxBytes.size() != mctpDebugTokenQueryResponseLengthV3)
+        {
+            if (rxBytes.size() > mctpCompletionCodeByte)
+            {
+                status =
+                    std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
+                log<level::ERR>(
+                    ("debug_token_query_v3 command failed with code: " +
+                     std::to_string(status))
+                        .c_str());
+            }
+            else
+            {
+                status = -1;
+                log<level::ERR>(
+                    "debug_token_query_v3 command response size is invalid.");
+            }
+            return status;
+        }
+        status = std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
+    }
+    catch (const std::exception& e)
+    {
+        status = -1;
+        log<level::ERR>(
+            "Error while getting status code from debug_token_query_v3");
+    }
+    if (status != static_cast<int>(MCTPCompletionCodes::Success))
+    {
+        log<level::ERR>(("Error while parsing debug token query v3 output: " +
+                         std::to_string(status))
+                            .c_str());
+        status = -1;
+        return status;
+    }
+    try
+    {
+        tokenInstallStatus =
+            std::stoi(rxBytes[tokenInstallStatusByteV3], nullptr, 16);
+        if (tokenInstallStatus ==
+            static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
+        {
+            installedTokenType = 0;
+            uint8_t shift = 0;
+            for (int idx = tokenTypeByteStartV3; idx <= tokenTypeByteEndV3;
+                 idx++)
+            {
+                installedTokenType |=
+                    (((uint32_t)std::stoi(rxBytes[idx], nullptr, 16)) << shift);
+                shift += 8;
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        status = -1;
+        log<level::ERR>("Error while getting token installation status");
+    }
+    return status;
+}
+
 int UpdateDebugToken::queryDebugToken(const EID& eid)
 {
     int status = 0;
-    status = queryDebugTokenV2(eid);
-    // If v2 fails, try v1
+    status = queryDebugTokenV3(eid);
+    // If v3 fails, try v2
     if (status !=
             static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled) &&
         status !=
             static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
     {
-        status = queryDebugTokenV1(eid);
+        status = queryDebugTokenV2(eid);
+        // If v2 fails, try v1
+        if (status != static_cast<int>(
+                          DebugTokenQueryErrorCodes::DebugTokenInstalled) &&
+            status != static_cast<int>(
+                          DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
+        {
+            status = queryDebugTokenV1(eid);
+        }
     }
     return status;
 }
