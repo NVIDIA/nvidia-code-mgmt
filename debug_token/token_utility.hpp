@@ -32,6 +32,12 @@ using namespace phosphor::logging;
 // File type for debug token is 2 and file type for token request is 1
 constexpr uint8_t FileTypeDebugToken = 2;
 
+constexpr size_t tokenIdentifierSize = 4;
+constexpr size_t tokenVersionSize = 4;
+constexpr size_t tokenNonceSize = 16;
+constexpr size_t tokenSerialNumberSizeDefault = 8;
+constexpr size_t tokenSerialNumberSizeMCU = 16;
+constexpr std::string_view tokenIdentifierMCU = "MCDT";
 /**
  * @brief structure for debug token header
  *
@@ -49,13 +55,13 @@ struct DebugTokenHeader
 struct TokenHeader
 {
     char identifier[4];
-    uint32_t version;
+    uint16_t versionMinor;
+    uint16_t versionMajor;
     uint16_t structSize;
     uint16_t tokenAttributes;
     uint32_t tokenType;
     uint32_t ecFWVersion;
     uint8_t nonce[16];
-    uint8_t serialNumber[8];
 } __attribute__((packed));
 
 struct TokenUtility
@@ -87,21 +93,22 @@ struct TokenUtility
     /**
      * @brief get next debug token from debug token file
      *
-     * @param[in] tokenData
-     * @param[in] tokenOffset
      * @param[in] debugTokenPackage
-     *
+     * @param[in] tokenOffset
+     * @param[out] tokenData
+     * @param[out] serialNumber
      * @return TokenHeader
      */
-    auto getNextDebugToken(std::vector<uint8_t>& tokenData,
-                           const uint32_t& tokenOffset,
-                           std::ifstream& debugTokenPackage)
+    const TokenHeader* getNextDebugToken(std::ifstream& debugTokenPackage,
+                                         const uint32_t tokenOffset,
+                                         std::vector<uint8_t>& tokenData,
+                                         std::vector<uint8_t>& serialNumber)
     {
-        const TokenHeader* tokenHeaderInfo = nullptr;
+        const TokenHeader* header = nullptr;
         uint16_t tokenSize = 0;
 
         // Read tokenSize from the token
-        tokenData.resize(sizeof(TokenHeader), 0);
+        tokenData.resize(sizeof(TokenHeader));
         debugTokenPackage.seekg(tokenOffset);
         debugTokenPackage.read(reinterpret_cast<char*>(tokenData.data()),
                                sizeof(TokenHeader));
@@ -110,29 +117,36 @@ struct TokenUtility
             log<level::ERR>(
                 "Token offset out of range - unable to read token header.");
             tokenData.clear();
-            tokenHeaderInfo = nullptr;
-            return tokenHeaderInfo;
+            return nullptr;
         }
-        tokenHeaderInfo =
-            reinterpret_cast<const TokenHeader*>(tokenData.data());
-        tokenSize = tokenHeaderInfo->structSize;
+        header = reinterpret_cast<const TokenHeader*>(tokenData.data());
+        std::string identifier{header->identifier, sizeof(header->identifier)};
+        if (identifier == tokenIdentifierMCU)
+        {
+            serialNumber.resize(tokenSerialNumberSizeMCU);
+        }
+        else
+        {
+            serialNumber.resize(tokenSerialNumberSizeDefault);
+        }
+        debugTokenPackage.read(reinterpret_cast<char*>(serialNumber.data()),
+                               serialNumber.size());
 
         // Read tokenSize bytes from offset to fetch the entire token
-        tokenData.resize(tokenSize, 0);
+        tokenSize = header->structSize;
+        tokenData.resize(tokenSize);
         debugTokenPackage.seekg(tokenOffset);
         debugTokenPackage.read(reinterpret_cast<char*>(tokenData.data()),
                                tokenSize);
-        tokenHeaderInfo =
-            reinterpret_cast<const TokenHeader*>(tokenData.data());
         if (debugTokenPackage.gcount() != tokenSize)
         {
             log<level::ERR>(
                 "Token offset out of range - unable to read token bytes.");
             tokenData.clear();
-            tokenHeaderInfo = nullptr;
-            return tokenHeaderInfo;
+            return nullptr;
         }
-        return tokenHeaderInfo;
+        header = reinterpret_cast<const TokenHeader*>(tokenData.data());
+        return header;
     }
 
     /**
