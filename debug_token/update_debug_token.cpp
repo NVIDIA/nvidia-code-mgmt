@@ -615,7 +615,9 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
     auto [retCode, commandOut] = runMctpVdmUtilCommand(command);
     if (retCode != 0)
     {
-        log<level::ERR>("Error while running install token command");
+        log<level::ERR>(("Error while running install token command for EID=" +
+                         std::to_string(eid))
+                            .c_str());
         status = static_cast<int>(CommonErrorCodes::MCTPCommandInstallFailure);
         std::string deviceName;
         if (deviceNameMap.contains(eid))
@@ -647,7 +649,9 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
             createMessageRegistryResourceErrors(
                 resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
                 OperationType::Common, status, deviceName);
-            log<level::ERR>("Error while parsing mctp response");
+            log<level::ERR>(("Error while parsing mctp response for EID=" +
+                             std::to_string(eid))
+                                .c_str());
             return status;
         }
     }
@@ -657,13 +661,16 @@ int UpdateDebugToken::installToken(const EID& eid, const Token& token)
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
             OperationType::Common, status, deviceName);
-        log<level::ERR>("Error while getting status code");
+        log<level::ERR>(
+            ("Error while getting status code for EID=" + std::to_string(eid))
+                .c_str());
         return status;
     }
     if (status != static_cast<int>(InstallErrorCodes::InstallSuccess))
     {
-        log<level::ERR>(
-            ("Error while installing token: " + commandOut).c_str());
+        log<level::ERR>(("Error while installing token: " + commandOut +
+                         " for EID=" + std::to_string(eid))
+                            .c_str());
 
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
@@ -702,7 +709,9 @@ int UpdateDebugToken::eraseToken(const EID& eid)
     }
     if (retCode != 0)
     {
-        log<level::ERR>("Error while running erase token command");
+        log<level::ERR>(("Error while running erase token command for EID=" +
+                         std::to_string(eid))
+                            .c_str());
         status = static_cast<int>(CommonErrorCodes::MCTPCommandEraseFailure);
         createMessageRegistryResourceErrors(
             debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
@@ -719,7 +728,9 @@ int UpdateDebugToken::eraseToken(const EID& eid)
         }
         else
         {
-            log<level::ERR>("Error while parsing MCTP response");
+            log<level::ERR>(("Error while parsing MCTP response for EID=" +
+                             std::to_string(eid))
+                                .c_str());
             status =
                 static_cast<int>(CommonErrorCodes::MCTPResponseEraseFailure);
             std::string deviceName;
@@ -739,12 +750,16 @@ int UpdateDebugToken::eraseToken(const EID& eid)
         createMessageRegistryResourceErrors(
             resourceErrorsDetected, DEBUG_TOKEN_ERASE_NAME,
             OperationType::Common, status, deviceName);
-        log<level::ERR>("Error while getting status code");
+        log<level::ERR>(
+            ("Error while getting status code for EID=" + std::to_string(eid))
+                .c_str());
         return status;
     }
     if (status != static_cast<int>(EraseErrorCodes::EraseSuccess))
     {
-        log<level::ERR>(("Error while erasing token: " + commandOut).c_str());
+        log<level::ERR>(("Error while erasing token: " + commandOut +
+                         " for EID=" + std::to_string(eid))
+                            .c_str());
         status = -1;
         createMessageRegistryResourceErrors(
             debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
@@ -779,7 +794,10 @@ int UpdateDebugToken::disableBackgroundCopy(const EID& eid)
     if (retCode != 0)
     {
         status = -1;
-        log<level::ERR>("Error while running background copy disable command");
+        log<level::ERR>(
+            ("Error while running background copy disable command for EID=" +
+             std::to_string(eid))
+                .c_str());
         return status;
     }
     auto rxBytes = parseCommandOutput(commandOut);
@@ -792,13 +810,16 @@ int UpdateDebugToken::disableBackgroundCopy(const EID& eid)
     {
         status =
             static_cast<int>(BackgroundCopyErrorCodes::BackgroundCopyFailed);
-        log<level::ERR>("Error while getting status code");
+        log<level::ERR>(
+            ("Error while getting status code for EID=" + std::to_string(eid))
+                .c_str());
     }
     if (status !=
         static_cast<int>(BackgroundCopyErrorCodes::BackgroundCopySuccess))
     {
-        log<level::ERR>(
-            ("Error while disabling background copy: " + commandOut).c_str());
+        log<level::ERR>(("Error while disabling background copy: " +
+                         commandOut + " for EID=" + std::to_string(eid))
+                            .c_str());
         status = -1;
     }
     return status;
@@ -815,7 +836,10 @@ int UpdateDebugToken::enableBackgroundCopy(const EID& eid)
     auto [retCode, commandOut] = runMctpVdmUtilCommand(command);
     if (retCode != 0)
     {
-        log<level::ERR>("Error while running background copy enable command");
+        log<level::ERR>(
+            ("Error while running background copy enable command for EID=" +
+             std::to_string(eid))
+                .c_str());
         status = -1;
         return status;
     }
@@ -829,13 +853,16 @@ int UpdateDebugToken::enableBackgroundCopy(const EID& eid)
     {
         status =
             static_cast<int>(BackgroundCopyErrorCodes::BackgroundCopyFailed);
-        log<level::ERR>("Error while getting status code");
+        log<level::ERR>(
+            ("Error while getting status code for EID=" + std::to_string(eid))
+                .c_str());
     }
     if (status !=
         static_cast<int>(BackgroundCopyErrorCodes::BackgroundCopySuccess))
     {
-        log<level::ERR>(
-            ("Error while enabling background copy: " + commandOut).c_str());
+        log<level::ERR>(("Error while enabling background copy: " + commandOut +
+                         " for EID=" + std::to_string(eid))
+                            .c_str());
         status = -1;
     }
     return status;
@@ -852,7 +879,10 @@ int UpdateDebugToken::queryDebugTokenV1(const EID& eid)
     auto [retCode, commandOut] = runMctpVdmUtilCommand(command);
     if (retCode != 0)
     {
-        log<level::ERR>("Error while running debug token query command");
+        log<level::ERR>(
+            ("Error while running debug token query command for EID=" +
+             std::to_string(eid))
+                .c_str());
         status = -1;
         return status;
     }
@@ -863,7 +893,9 @@ int UpdateDebugToken::queryDebugTokenV1(const EID& eid)
         {
             status = -1;
             log<level::ERR>(
-                "Debug token query command response size is invalid.");
+                ("Debug token query command response size is invalid for EID=" +
+                 std::to_string(eid))
+                    .c_str());
             return status;
         }
         status = std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
@@ -871,13 +903,15 @@ int UpdateDebugToken::queryDebugTokenV1(const EID& eid)
     catch (const std::exception& e)
     {
         status = -1;
-        log<level::ERR>("Error while getting status code");
+        log<level::ERR>(
+            ("Error while getting status code for EID=" + std::to_string(eid))
+                .c_str());
     }
     if (status != 0)
     {
-        log<level::ERR>(
-            ("Error while parsing debug token query output: " + commandOut)
-                .c_str());
+        log<level::ERR>(("Error while parsing debug token query output: " +
+                         commandOut + " for EID=" + std::to_string(eid))
+                            .c_str());
         status = -1;
         return status;
     }
@@ -901,7 +935,10 @@ int UpdateDebugToken::queryDebugTokenV1(const EID& eid)
     catch (const std::exception& e)
     {
         status = -1;
-        log<level::ERR>("Error while getting token installation status");
+        log<level::ERR>(
+            ("Error while getting token installation status for EID=" +
+             std::to_string(eid))
+                .c_str());
     }
     return status;
 }
@@ -919,23 +956,28 @@ int UpdateDebugToken::queryDebugTokenV2(const EID& eid)
     auto [retCode, commandOut] = runMctpVdmUtilCommand(command);
     if (retCode != 0)
     {
-        log<level::ERR>("Error while running debug_token_query_v2 command");
+        log<level::ERR>(
+            ("Error while running debug_token_query_v2 command for EID=" +
+             std::to_string(eid))
+                .c_str());
         status = -1;
         return status;
     }
     auto rxBytes = parseCommandOutput(commandOut);
-    status =
-        parseQueryV2Response(rxBytes, tokenInstallStatus, installedTokenType);
+    status = parseQueryV2Response(rxBytes, tokenInstallStatus,
+                                  installedTokenType, eid);
     if (status == 0)
     {
         log<level::INFO>(("debug_token_query_v2 Token Install Status: " +
-                          std::to_string(tokenInstallStatus))
+                          std::to_string(tokenInstallStatus) +
+                          " for EID=" + std::to_string(eid))
                              .c_str());
         if (tokenInstallStatus ==
             static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
         {
             log<level::INFO>(("debug_token_query_v2 Installed Token Type: " +
-                              std::to_string(installedTokenType))
+                              std::to_string(installedTokenType) +
+                              " for EID=" + std::to_string(eid))
                                  .c_str());
         }
         return tokenInstallStatus;
@@ -950,7 +992,8 @@ int UpdateDebugToken::queryDebugTokenV2(const EID& eid)
 
 int UpdateDebugToken::parseQueryV2Response(std::vector<std::string> rxBytes,
                                            int& tokenInstallStatus,
-                                           int& installedTokenType)
+                                           int& installedTokenType,
+                                           const EID& eid)
 {
     int status = 0;
     try
@@ -963,14 +1006,16 @@ int UpdateDebugToken::parseQueryV2Response(std::vector<std::string> rxBytes,
                     std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
                 log<level::ERR>(
                     ("debug_token_query_v2 command failed with code: " +
-                     std::to_string(status))
+                     std::to_string(status) + " for EID=" + std::to_string(eid))
                         .c_str());
             }
             else
             {
                 status = -1;
                 log<level::ERR>(
-                    "debug_token_query_v2 command response size is invalid.");
+                    ("debug_token_query_v2 command response size is invalid for EID=" +
+                     std::to_string(eid))
+                        .c_str());
             }
             return status;
         }
@@ -980,7 +1025,9 @@ int UpdateDebugToken::parseQueryV2Response(std::vector<std::string> rxBytes,
     {
         status = -1;
         log<level::ERR>(
-            "Error while getting status code from debug_token_query_v2");
+            ("Error while getting status code from debug_token_query_v2 for EID=" +
+             std::to_string(eid))
+                .c_str());
     }
     if (status != static_cast<int>(MCTPCompletionCodes::Success))
     {
@@ -1011,7 +1058,10 @@ int UpdateDebugToken::parseQueryV2Response(std::vector<std::string> rxBytes,
     catch (const std::exception& e)
     {
         status = -1;
-        log<level::ERR>("Error while getting token installation status");
+        log<level::ERR>(
+            ("Error while getting token installation status for EID=" +
+             std::to_string(eid))
+                .c_str());
     }
     return status;
 }
@@ -1029,23 +1079,28 @@ int UpdateDebugToken::queryDebugTokenV3(const EID& eid)
     auto [retCode, commandOut] = runMctpVdmUtilCommand(command);
     if (retCode != 0)
     {
-        log<level::ERR>("Error while running debug_token_query_v3 command");
+        log<level::ERR>(
+            ("Error while running debug_token_query_v3 command for EID=" +
+             std::to_string(eid))
+                .c_str());
         status = -1;
         return status;
     }
     auto rxBytes = parseCommandOutput(commandOut);
-    status =
-        parseQueryV3Response(rxBytes, tokenInstallStatus, installedTokenType);
+    status = parseQueryV3Response(rxBytes, tokenInstallStatus,
+                                  installedTokenType, eid);
     if (status == 0)
     {
         log<level::INFO>(("debug_token_query_v3 Token Install Status: " +
-                          std::to_string(tokenInstallStatus))
+                          std::to_string(tokenInstallStatus) +
+                          " for EID=" + std::to_string(eid))
                              .c_str());
         if (tokenInstallStatus ==
             static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenInstalled))
         {
             log<level::INFO>(("debug_token_query_v3 Installed Token Type: " +
-                              std::to_string(installedTokenType))
+                              std::to_string(installedTokenType) +
+                              " for EID=" + std::to_string(eid))
                                  .c_str());
         }
         return tokenInstallStatus;
@@ -1060,7 +1115,8 @@ int UpdateDebugToken::queryDebugTokenV3(const EID& eid)
 
 int UpdateDebugToken::parseQueryV3Response(std::vector<std::string> rxBytes,
                                            int& tokenInstallStatus,
-                                           int& installedTokenType)
+                                           int& installedTokenType,
+                                           const EID& eid)
 {
     int status = 0;
     try
@@ -1073,14 +1129,16 @@ int UpdateDebugToken::parseQueryV3Response(std::vector<std::string> rxBytes,
                     std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
                 log<level::ERR>(
                     ("debug_token_query_v3 command failed with code: " +
-                     std::to_string(status))
+                     std::to_string(status) + " for EID=" + std::to_string(eid))
                         .c_str());
             }
             else
             {
                 status = -1;
                 log<level::ERR>(
-                    "debug_token_query_v3 command response size is invalid.");
+                    ("debug_token_query_v3 command response size is invalid for EID=" +
+                     std::to_string(eid))
+                        .c_str());
             }
             return status;
         }
@@ -1090,7 +1148,9 @@ int UpdateDebugToken::parseQueryV3Response(std::vector<std::string> rxBytes,
     {
         status = -1;
         log<level::ERR>(
-            "Error while getting status code from debug_token_query_v3");
+            ("Error while getting status code from debug_token_query_v3 for EID=" +
+             std::to_string(eid))
+                .c_str());
     }
     if (status != static_cast<int>(MCTPCompletionCodes::Success))
     {
@@ -1121,7 +1181,10 @@ int UpdateDebugToken::parseQueryV3Response(std::vector<std::string> rxBytes,
     catch (const std::exception& e)
     {
         status = -1;
-        log<level::ERR>("Error while getting token installation status");
+        log<level::ERR>(
+            ("Error while getting token installation status for EID=" +
+             std::to_string(eid))
+                .c_str());
     }
     return status;
 }

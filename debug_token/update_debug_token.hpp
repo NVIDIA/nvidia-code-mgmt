@@ -500,6 +500,19 @@ class UpdateDebugToken : public TokenUtility
             transferFailed, DEBUG_TOKEN_ERASE_NAME, OperationType::Common,
             static_cast<int>(CommonErrorCodes::NSMCommandEraseFailure), path);
     }
+    /**
+     * @brief Parse query v2 response.
+     *
+     * @param[in] rxBytes
+     * @param[in] tokenInstallStatus
+     * @param[in] installedTokenType
+     * @param[in] eid
+     *
+     * @return int
+     */
+    int parseQueryV2Response(std::vector<std::string> rxBytes,
+                             int& tokenInstallStatus, int& installedTokenType,
+                             const EID& eid);
 
   private:
     sdbusplus::bus::bus& bus;
@@ -628,17 +641,7 @@ class UpdateDebugToken : public TokenUtility
      * @return int - installation status
      */
     int queryDebugTokenV2(const EID& eid);
-    /**
-     * @brief Parse query v2 response.
-     *
-     * @param[in] rxBytes
-     * @param[in] tokenInstallStatus
-     * @param[in] installedTokenType
-     *
-     * @return int
-     */
-    int parseQueryV2Response(std::vector<std::string> rxBytes,
-                             int& tokenInstallStatus, int& installedTokenType);
+
     /**
      * @brief query debug token status with debug_token_query_v3
      *
@@ -652,11 +655,13 @@ class UpdateDebugToken : public TokenUtility
      * @param[in] rxBytes
      * @param[in] tokenInstallStatus
      * @param[in] installedTokenType
+     * @param[in] eid
      *
      * @return int
      */
     int parseQueryV3Response(std::vector<std::string> rxBytes,
-                             int& tokenInstallStatus, int& installedTokenType);
+                             int& tokenInstallStatus, int& installedTokenType,
+                             const EID& eid);
     /**
      * @brief Create a Log entry
      *
