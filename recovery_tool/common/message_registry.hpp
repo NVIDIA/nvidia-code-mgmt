@@ -35,6 +35,7 @@ enum class RecoveryProtocol : uint8_t
     OCPRecoveryProtocolError = 0x2,
     OCPDeviceStatusCode = 0x3,
     OCPRecovery = 0x4,
+    MCURecovery = 0x5
 };
 
 using RecoveryErrorMapping = std::unordered_map<RecoveryProtocol, ErrorMapping>;
@@ -106,6 +107,18 @@ enum class OCPRecoveryProtocolError : uint8_t
     CrcError = 0x4,
     DeviceNotResponding = 0x5,
     GeneralProtocolError = 0xFF
+};
+
+enum class MCURecoveryErrorCode : uint8_t
+{
+    CmdExecFailed = 0x1,
+    DevNotProvisioned = 0x2,
+    GetSecurityStateFailed = 0x3,
+    NotSecureDevice = 0x4,
+    ReadMemoryFailed = 0x5,
+    EncryptKeyNotSet = 0x6,
+    SbFileWriteFailed = 0x7,
+    InvalidSB3File = 0x8,
 };
 
 /**
@@ -315,6 +328,38 @@ static ErrorMapping ocpRecoveryProtocolErrorMapping{
     {noDevicesFound, {"No Devices found to recover", ""}},
 };
 
+static ErrorMapping mcuRecoveryErrorMapping{
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::CmdExecFailed),
+     {"blhost command execution failed",
+      "Check if device is in ISP mode (recovery mode), and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::DevNotProvisioned),
+     {"Device is not provisioned", "Return to NVIDIA for provisioning."}},
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::GetSecurityStateFailed),
+     {"blhost get-property security-state command execution failed",
+      "Check if device is in ISP mode (recovery mode), and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::NotSecureDevice),
+     {"Device is not fully provisioned (MCU is not locked)",
+      "Return to NVIDIA for provisioning."}},
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::ReadMemoryFailed),
+     {"blhost read-memory command execution failed",
+      "Check if device is in ISP mode (recovery mode), and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::EncryptKeyNotSet),
+     {"Encrypt key is not set", "Return to NVIDIA for provisioning."}},
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::SbFileWriteFailed),
+     {"blhost receive-sb-file command execution failed",
+      "Check if device is in ISP mode (recovery mode) or if the SB file is invalid, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::InvalidSB3File),
+     {"SB3 file header mismatch",
+      "Check if the SB3 file in fwpkg is valid, and try recovery again using the correct package."}},
+    {deviceNotResponding,
+     {"Device is not responding",
+      "Check if device is in ISP mode (recovery mode) , and try recovery again using the correct package."}},
+    {deviceRecoveryFailed,
+     {"Recovery failed due to unknown error",
+      "Check if device is in ISP mode (recovery mode), and try recovery again using the correct package."}},
+    {noDevicesFound, {"No Devices found to recover", ""}},
+};
+
 static const RecoveryErrorMapping recoveryMappingTbl = {
     {RecoveryProtocol::GlacierRecovery, glacierRecoveryErrorMapping},
     {RecoveryProtocol::OCPRecovery, ocpRecoveryErrorMapping},
@@ -322,6 +367,7 @@ static const RecoveryErrorMapping recoveryMappingTbl = {
     {RecoveryProtocol::OCPDeviceStatusCode, ocpDeviceStatusErrorMapping},
     {RecoveryProtocol::OCPRecoveryProtocolError,
      ocpRecoveryProtocolErrorMapping},
+    {RecoveryProtocol::MCURecovery, mcuRecoveryErrorMapping},
 };
 
 class MessageRegistry
