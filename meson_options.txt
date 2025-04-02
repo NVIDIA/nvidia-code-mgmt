@@ -142,6 +142,20 @@ option('GLACIER_RECOVERY_TIMEOUT',
        type: 'integer',
        description: 'Glacier Recovery timeout in seconds.')
 
+option('MCU_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables MCU Recovery support')
+
+option('MCU_RECOVERY_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'MCU Recovery supported models')
+
+option('MCU_RECOVERY_TIMEOUT',
+       type: 'integer',
+       description: 'MCU Recovery timeout in seconds.')
+
 option('DEBUG_TOKEN_SUPPORT',
        type: 'feature',
        value: 'disabled',

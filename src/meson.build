@@ -79,6 +79,10 @@ if get_option('VMEPLAYER_SUPPORT').enabled()
     source_files += 'vmeplayer.cpp'
 endif
 
+if get_option('MCU_RECOVERY_SUPPORT').enabled()
+    source_files += 'mcu_recovery.cpp'
+endif
+
 executable('code-manager',
             sources: source_files,
             include_directories: psu_inc,
