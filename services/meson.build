@@ -144,6 +144,12 @@ if get_option('GLACIER_RECOVERY_SUPPORT').enabled()
                                 'glacier-recovery@.service']
 endif
 
+if get_option('MCU_RECOVERY_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.MCURecovery.Starter.service',
+                                'com.Nvidia.MCURecovery.Updater@.service',
+                                'mcu-recovery@.service']
+endif
+
 foreach unit : unit_files
 configure_file(input: unit,
                output: unit,
