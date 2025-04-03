@@ -21,6 +21,8 @@
 
 #include <CLI/CLI.hpp>
 
+#include <string>
+
 namespace recovery_tool
 {
 
@@ -40,6 +42,7 @@ class CommandInterface
      * @brief Constructs a new CommandInterface object.
      *
      * Initializes the object with provided parameters and sets up CLI options.
+     * Either busAddress or port_path must be provided.
      *
      * @param busAddr Bus address for the command operation.
      * @param slaveAddr Slave address for the device.
@@ -49,12 +52,29 @@ class CommandInterface
         busAddress(busAddr), slaveAddress(slaveAddr), verbose(false),
         emulation(false)
     {
-        app->add_option("-b,--bus", busAddress, "Bus address")->required();
+        busOpt = app->add_option("-b,--bus", busAddress, "Bus address");
+        portOpt = app->add_option("-p,--port", portPath, "USB port");
+
+        // Make either bus or port required, but not both
+        busOpt->excludes(portOpt);
+        portOpt->excludes(busOpt);
+
         app->add_option("-s,--slave", slaveAddress, "Slave address")
             ->required();
         app->add_flag("-v,--verbose", verbose, "Verbose output");
         app->add_flag("-e,--emulation", emulation, "To test emulation setup");
-        app->callback([&]() { exec(); });
+        app->callback([this]() {
+            bool hasBus = busOpt->count() > 0;
+            bool hasPort = portOpt->count() > 0;
+
+            if (!hasBus && !hasPort)
+            {
+                throw CLI::ValidationError(
+                    "Either --bus or --port must be specified");
+            }
+
+            exec();
+        });
     }
 
     /**
@@ -69,11 +89,16 @@ class CommandInterface
      */
     virtual void exec() = 0;
 
+    std::unique_ptr<OCPRecoveryTool> CreateOcpRecoveryToolObj();
+
   protected:
     int busAddress;
     int slaveAddress;
+    std::string portPath;
     bool verbose;
     bool emulation;
+    CLI::Option* busOpt;
+    CLI::Option* portOpt;
 };
 
 /**

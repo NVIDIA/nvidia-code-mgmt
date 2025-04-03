@@ -11,6 +11,7 @@ inc_dirs = include_directories(['.', '../../src/',
 recovery_tool_source_files = [
   'recoverytool_interface.cpp',
   'recoverytool_utils.cpp',
+  'usb_i2c_mapper.cpp',
   join_paths(common_dir, 'i2c_utils.cpp'),
   'recovery_commands.cpp',
 ]

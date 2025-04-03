@@ -17,11 +17,24 @@
 
 #include "recoverytool_interface.hpp"
 
+#include "usb_i2c_mapper.hpp"
 namespace recovery_tool
 {
 
 namespace interface
 {
+
+std::unique_ptr<OCPRecoveryTool> CommandInterface::CreateOcpRecoveryToolObj()
+{
+
+    if (!portPath.empty())
+    {
+        busAddress = usb_i2c::getI2CBusFromUSBPort(portPath, verbose);
+    }
+
+    return std::make_unique<OCPRecoveryTool>(busAddress, slaveAddress, verbose,
+                                             emulation);
+}
 
 std::vector<std::unique_ptr<CommandInterface>> commands;
 
@@ -41,9 +54,9 @@ class GetDeviceID : public CommandInterface
     {
         try
         {
-            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
-                busAddress, slaveAddress, verbose, emulation);
-            nlohmann::json jsonResponse = ocpRecoveryToolObj.getDeviceIDJson();
+            std::unique_ptr<recovery_tool::OCPRecoveryTool> ocpRecoveryToolObj =
+                CreateOcpRecoveryToolObj();
+            nlohmann::json jsonResponse = ocpRecoveryToolObj->getDeviceIDJson();
             std::cout << jsonResponse.dump(4) << "\n";
         }
         catch (const std::exception& e)
@@ -69,10 +82,10 @@ class GetDeviceStatus : public CommandInterface
     {
         try
         {
-            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
-                busAddress, slaveAddress, verbose, emulation);
+            std::unique_ptr<recovery_tool::OCPRecoveryTool> ocpRecoveryToolObj =
+                CreateOcpRecoveryToolObj();
             nlohmann::json jsonResponse =
-                ocpRecoveryToolObj.getDeviceStatusJson();
+                ocpRecoveryToolObj->getDeviceStatusJson();
             std::cout << jsonResponse.dump(4) << "\n";
         }
         catch (const std::exception& e)
@@ -98,10 +111,11 @@ class GetRecoveryStatus : public CommandInterface
     {
         try
         {
-            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
-                busAddress, slaveAddress, verbose, emulation);
+            std::unique_ptr<recovery_tool::OCPRecoveryTool> ocpRecoveryToolObj =
+                CreateOcpRecoveryToolObj();
+
             nlohmann::json jsonResponse =
-                ocpRecoveryToolObj.getRecoveryStatusJson();
+                ocpRecoveryToolObj->getRecoveryStatusJson();
             std::cout << jsonResponse.dump(4) << "\n";
         }
         catch (const std::exception& e)
@@ -127,10 +141,10 @@ class SetForceRecoveryMode : public CommandInterface
     {
         try
         {
-            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
-                busAddress, slaveAddress, verbose, emulation);
+            std::unique_ptr<recovery_tool::OCPRecoveryTool> ocpRecoveryToolObj =
+                CreateOcpRecoveryToolObj();
             nlohmann::json jsonResponse =
-                ocpRecoveryToolObj.setForceRecoveryMode();
+                ocpRecoveryToolObj->setForceRecoveryMode();
             std::cout << jsonResponse.dump(4) << "\n";
         }
         catch (const std::exception& e)
@@ -167,10 +181,10 @@ class PerformRecovery : public CommandInterface
     {
         try
         {
-            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
-                busAddress, slaveAddress, verbose, emulation);
+            std::unique_ptr<recovery_tool::OCPRecoveryTool> ocpRecoveryToolObj =
+                CreateOcpRecoveryToolObj();
             nlohmann::json jsonResponse =
-                ocpRecoveryToolObj.performRecovery(imagePaths);
+                ocpRecoveryToolObj->performRecovery(imagePaths);
             std::cout << jsonResponse.dump(4) << "\n";
         }
         catch (const std::exception& e)
@@ -212,10 +226,10 @@ class GetCMSLogs : public CommandInterface
     {
         try
         {
-            recovery_tool::OCPRecoveryTool ocpRecoveryToolObj(
-                busAddress, slaveAddress, verbose, emulation);
+            std::unique_ptr<recovery_tool::OCPRecoveryTool> ocpRecoveryToolObj =
+                CreateOcpRecoveryToolObj();
             nlohmann::json jsonResponse =
-                ocpRecoveryToolObj.processCMSLogs(outFile, window);
+                ocpRecoveryToolObj->processCMSLogs(outFile, window);
 
             std::cout << jsonResponse.dump(4) << "\n";
         }
