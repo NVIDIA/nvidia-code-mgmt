@@ -116,16 +116,16 @@ class MCTPDiscoveryResource : public BaseResource
         updateHealth();
     }
 
-  private:
-    std::string uuid;
-    std::vector<sdbusplus::bus::match_t> mctpObjManagerMatch;
-
     /**@brief Fetches the list of currently active MCTP Services
      *
      * @return set<string> - Set containing the currently active MCTP services
      *
      */
     std::unordered_set<std::string> getMctpServices() const noexcept;
+
+  private:
+    std::string uuid;
+    std::vector<sdbusplus::bus::match_t> mctpObjManagerMatch;
 
     /**@brief Fetches a mapping of MCTP service to the list of EIDs associated
      * with the resource

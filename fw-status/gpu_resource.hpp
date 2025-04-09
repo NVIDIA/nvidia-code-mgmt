@@ -37,6 +37,7 @@ class GpuResource : public MCTPDiscoveryResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
+     * @param chassisObjPath - Path of D-Bus object to publish
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
      * @param uuid - UUID of the Resource
@@ -58,10 +59,45 @@ class GpuResource : public MCTPDiscoveryResource
         updateHealth();
     }
 
+    /**@brief Constructor for the GpuResource Class
+     * Updates Health and Status of the D-Bus object on startup
+     *
+     * @param bus - SystemD bus to publish the object
+     * @param objPath - Path of D-Bus object to publish
+     * @param chassisObjPath - Path of D-Bus object to publish
+     * @param i2cBus - I2C Bus where the resource is present
+     * @param i2cAddress - I2C Address of the resource
+     * @param uuid - UUID of the Resource
+     * @param smaEid - EID of the SMA
+     */
+    GpuResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+                const std::string& chassisObjPath, const uint64_t i2cBus,
+                const uint64_t i2cAddress, const std::string& uuid,
+                const uint32_t smaEid) :
+        MCTPDiscoveryResource(bus, objPath, uuid),
+        smaEid(smaEid)
+    {
+        ocpRecoveryCommands = std::make_unique<
+            recovery_tool::recovery_commands::OCPRecoveryCommands>(
+            i2cBus, i2cAddress, false, false);
+
+        bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+        bootStatus->bootStatusType(
+            BootStatusServer::BootStatusTypes::OCPDeviceStatus);
+
+        updateHealth();
+
+        startWatchingSMAMCTPObjects(false);
+    }
+
   private:
     std::unique_ptr<recovery_tool::recovery_commands::OCPRecoveryCommands>
         ocpRecoveryCommands;
     std::unique_ptr<BootStatus> bootStatus;
+    std::vector<sdbusplus::bus::match_t> mctpSMAObjManagerMatch;
+    std::unordered_map<std::string, std::string> mctpSMAEidObjects;
+    std::vector<sdbusplus::bus::match_t> deviceSMAMatches;
+    uint32_t smaEid;
 
     /* @brief Override function for updating Health and Status of D-Bus object
      * based on Device Status and MCTP enumeration
@@ -121,5 +157,93 @@ class GpuResource : public MCTPDiscoveryResource
         health(HealthServer::HealthType::OK);
         state(OperationalStatusServer::StateType::Enabled);
         return;
+    }
+
+    /**@brief Fetches a mapping of MCTP service to the list of EIDs associated
+     * with the SMA resource
+     *
+     * @return Map between service name and mctp object path
+     *
+     */
+    std::unordered_map<std::string, std::string> getSMAMCTPObjects()
+    {
+        std::unordered_map<std::string, std::string> mctpObjects{};
+        const auto& mctpCtrlServices = getMctpServices();
+        for (const auto& serviceName : mctpCtrlServices)
+        {
+            auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+            const auto objects = dbusUtil.getManagedObjects(
+                serviceName.c_str(), "/xyz/openbmc_project/mctp");
+
+            for (const auto& [objectPath, interfaces] : objects)
+            {
+                if (!interfaces.contains(mctpEndpointIntfName))
+                {
+                    continue;
+                }
+
+                const auto& mctpEID = std::get<uint32_t>(
+                    interfaces.at(mctpEndpointIntfName).at("EID"));
+
+                if (mctpEID != smaEid)
+                {
+                    continue;
+                }
+                mctpObjects[serviceName] = objectPath;
+                break;
+            }
+        }
+        return mctpObjects;
+    }
+
+    /**@brief Start watching for events on SMA MCTP objects
+     *
+     * @param needUpdateHealth - Whether to force a health status update
+     *
+     * @return void
+     *
+     */
+    void startWatchingSMAMCTPObjects(bool needUpdateHealth)
+    {
+        // Clear any existing matches first to prevent accumulation
+        mctpSMAObjManagerMatch.clear();
+        deviceSMAMatches.clear();
+
+        mctpSMAEidObjects = getSMAMCTPObjects();
+        if (mctpSMAEidObjects.empty())
+        {
+            mctpSMAObjManagerMatch.emplace_back(
+                bus, MatchRules::interfacesAdded("/xyz/openbmc_project/mctp"),
+                [&]([[maybe_unused]] sdbusplus::message::message& msg) {
+                    startWatchingSMAMCTPObjects(true);
+                });
+            return;
+        }
+
+        mctpSMAObjManagerMatch.clear();
+
+        for (const auto& [service, mctpObject] : mctpSMAEidObjects)
+        {
+            deviceSMAMatches.emplace_back(
+                bus,
+                MatchRules::propertiesChanged(mctpObject.c_str(),
+                                              mctpEndpointEnableIntfName),
+                std::bind(&GpuResource::onMCTPDiscoveryMsg, this,
+                          std::placeholders::_1));
+
+            deviceSMAMatches.emplace_back(
+                bus, MatchRules::interfacesAdded(mctpObject.c_str()),
+                std::bind(&GpuResource::onMCTPDiscoveryMsg, this,
+                          std::placeholders::_1));
+        }
+
+        if (needUpdateHealth)
+        {
+            // Force a health status update since we might have missed the
+            // signals during MCTP enumeration. The signals
+            // (propertiesChanged/interfacesAdded) could have been sent before
+            // we set up the matches above.
+            updateHealth();
+        }
     }
 };
