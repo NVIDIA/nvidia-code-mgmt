@@ -32,6 +32,7 @@ commandline_source_files = [
   'ocp_commandline.cpp',
   'recovery_commandline.cpp',
   'recoverytool_utils.cpp',
+  'usb_i2c_mapper.cpp',
   join_paths(common_dir, 'i2c_utils.cpp'),
   join_paths(common_dir, 'message_registry.cpp'),
   join_paths(dbus_utils_dir, 'dbusutils.cpp'),
