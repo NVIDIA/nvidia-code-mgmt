@@ -24,6 +24,7 @@
 #include "gpu_resource.hpp"
 #include "mctp_endpoint_discovery.hpp"
 #include "mctp_vdm_helper.hpp"
+#include "usb_i2c_mapper.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
@@ -158,6 +159,92 @@ bool getBool(const InterfaceMap& interfaces, const Interface& interface,
 }
 
 /**
+ * @brief Check if a property exists in a D-Bus interface
+ *
+ * @param[in] interfaces - Map of D-Bus interfaces and their properties
+ * @param[in] interface - The interface to check
+ * @param[in] property - The property to check for
+ *
+ * @return bool - True if the property exists, false otherwise
+ */
+bool hasProperty(const InterfaceMap& interfaces, const Interface& interface,
+                 const Property& property)
+{
+    try
+    {
+        return interfaces.at(interface).contains(property);
+    }
+    catch (std::exception& e)
+    {
+        lg2::error("Failed to check property {NAME}. {ERR}", "NAME", property,
+                   "ERR", e.what());
+        return false;
+    }
+}
+
+/**
+ * @brief Retrieves the UUID of an MCTP endpoint given its EID (Endpoint ID)
+ *
+ * This function queries the D-Bus to find the MCTP endpoint with the specified
+ * EID and returns its associated UUID. It searches through all MCTP services
+ * and their managed objects to find a matching endpoint.
+ *
+ * @param[in] eid - The MCTP Endpoint ID to look up
+ *
+ * @return std::string - The UUID of the MCTP endpoint if found, empty string if
+ * not found
+ */
+std::string getMctpUUID(uint32_t eid)
+{
+    nvidia::software::updater::GetSubTreeResponse getSubTreeResponse{};
+    const nvidia::software::updater::Interfaces ifaceList{mctpEndpointIntfName};
+    try
+    {
+        auto method = getBus().new_method_call(mapperService, mapperPath,
+                                               mapperInterface, "GetSubTree");
+        method.append("/xyz/openbmc_project/mctp", 0, ifaceList);
+        auto reply = getBus().call(method);
+        reply.read(getSubTreeResponse);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "D-Bus error calling Subtrees method on ObjectMapper: {ERROR}",
+            "ERROR", e.what());
+    }
+
+    for (const auto& [objPath, mapperServiceMap] : getSubTreeResponse)
+    {
+        for (const auto& [service, interfaces] : mapperServiceMap)
+        {
+            auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
+            const auto objects = dbusUtil.getManagedObjects(
+                service.c_str(), "/xyz/openbmc_project/mctp");
+
+            for (const auto& [objectPath, interfaces] : objects)
+            {
+                if (!interfaces.contains(uuidIntfName) ||
+                    !interfaces.contains(mctpEndpointIntfName))
+                {
+                    continue;
+                }
+
+                const auto& mctpEID = std::get<uint32_t>(
+                    interfaces.at(mctpEndpointIntfName).at("EID"));
+
+                if (eid == mctpEID)
+                {
+                    const auto& mctpUUID = std::get<std::string>(
+                        interfaces.at(uuidIntfName).at("UUID"));
+                    return mctpUUID;
+                }
+            }
+        }
+    }
+    return {};
+}
+
+/**
  * @brief Publish the D-Bus recovery object
  *
  * @return None
@@ -189,17 +276,97 @@ void publishDBusRecoveryObject()
         {
             lg2::info("Found OCP recovery config Object: {PATH}", "PATH",
                       emObjectPath);
-            const auto i2cBus =
-                getUint64(interfaces, ocpObjInterface, "I2CBus");
+
+            uint64_t i2cBus = 0;
             const auto i2cAddress =
                 getUint64(interfaces, ocpObjInterface, "I2CAddress");
-            const auto uuid =
-                getString(interfaces, ocpObjInterface, "MctpUUID");
+
+            std::string uuid;
+
+            if (hasProperty(interfaces, ocpObjInterface, "MctpUUID"))
+            {
+                uuid = getString(interfaces, ocpObjInterface, "MctpUUID");
+            }
+            else
+            {
+                lg2::info(
+                    "MctpUUID not found in OCP recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                if (hasProperty(interfaces, ocpObjInterface, "MctpEID"))
+                {
+                    const auto eid =
+                        getUint64(interfaces, ocpObjInterface, "MctpEID");
+                    uuid = getMctpUUID(eid);
+                    if (uuid.empty())
+                    {
+                        lg2::error(
+                            "Failed to get MCTP UUID for EID {EID} in OCP recovery config "
+                            "Object: {PATH}",
+                            "EID", eid, "PATH", emObjectPath);
+                        continue;
+                    }
+                }
+                else
+                {
+                    lg2::error(
+                        "Error in Entity Manager configuration: No MctpUUID or MctpEID "
+                        "found in OCP recovery config Object: {PATH}",
+                        "PATH", emObjectPath);
+                    continue;
+                }
+            }
+
             const auto chassisName =
                 getString(interfaces, ocpObjInterface, "ChassisName");
             const auto chassisObjPath = getChassisObjPath(chassisName);
-            resources.push_back(std::make_unique<GpuResource>(
-                getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, uuid));
+
+            if (hasProperty(interfaces, ocpObjInterface, "I2CBus"))
+            {
+                i2cBus = getUint64(interfaces, ocpObjInterface, "I2CBus");
+            }
+            else
+            {
+                if (hasProperty(interfaces, ocpObjInterface, "USBPort"))
+                {
+                    const auto usbPort =
+                        getString(interfaces, ocpObjInterface, "USBPort");
+                    const auto busAddr =
+                        recovery_tool::usb_i2c::getI2CBusFromUSBPort(usbPort,
+                                                                     false);
+                    if (busAddr < 0)
+                    {
+                        lg2::error(
+                            "Failed to get I2C bus from USB port {USBPORT}",
+                            "USBPORT", usbPort);
+                        continue;
+                    }
+
+                    i2cBus = busAddr;
+                }
+                else
+                {
+                    lg2::error(
+                        "No I2CBus or USBPort found in OCP recovery config Object: {PATH}",
+                        "PATH", emObjectPath);
+                    continue;
+                }
+            }
+
+            if (hasProperty(interfaces, ocpObjInterface, "SMAEID"))
+            {
+                const auto smaEID =
+                    getUint64(interfaces, ocpObjInterface, "SMAEID");
+
+                resources.push_back(std::make_unique<GpuResource>(
+                    getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, uuid,
+                    smaEID));
+            }
+            else
+            {
+                resources.push_back(std::make_unique<GpuResource>(
+                    getBus(), objPath, chassisObjPath, i2cBus, i2cAddress,
+                    uuid));
+            }
         }
         else if (interfaces.contains(glacierCrisisObjInterface))
         {
