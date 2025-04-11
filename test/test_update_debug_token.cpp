@@ -240,12 +240,11 @@ TEST_F(TestUpdateDebugToken, TestMessageTokenInstall)
     testOperationType = OperationType::Common;
     testErrorCode = static_cast<int>(CommonErrorCodes::TokenParseFailure);
     expectedMessageError =
-        debugTokenCommonErrorMapping[CommonErrorCodes::TokenParseFailure].first;
+        debugTokenCommonErrorMapping.at(CommonErrorCodes::TokenParseFailure).first;
     expectedMessageError =
         updateDebugToken->formatMessage(expectedMessageError, testDeviceName);
     expectedResolution =
-        debugTokenCommonErrorMapping[CommonErrorCodes::TokenParseFailure]
-            .second;
+        debugTokenCommonErrorMapping.at(CommonErrorCodes::TokenParseFailure).second;
 
     outputMessage = updateDebugToken->getMessage(testOperationType,
                                                  testErrorCode, testDeviceName);
@@ -266,7 +265,7 @@ TEST_F(TestUpdateDebugToken, DebugTokenQueryV2InvalidResponse)
     auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
     int tokenInstallStatus, installedTokenType;
     int status = updateDebugToken->parseQueryV2Response(
-        rxBytes, tokenInstallStatus, installedTokenType);
+        rxBytes, tokenInstallStatus, installedTokenType, 31);
     EXPECT_EQ(status, -1);
 }
 
@@ -279,7 +278,7 @@ TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseCommandNotSupported)
     auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
     int tokenInstallStatus, installedTokenType;
     int status = updateDebugToken->parseQueryV2Response(
-        rxBytes, tokenInstallStatus, installedTokenType);
+        rxBytes, tokenInstallStatus, installedTokenType, 31);
     EXPECT_EQ(status, 5); // ERR_UNSUPPORTED_CMD
 }
 
@@ -292,7 +291,7 @@ TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseInvalidData)
     auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
     int tokenInstallStatus, installedTokenType;
     int status = updateDebugToken->parseQueryV2Response(
-        rxBytes, tokenInstallStatus, installedTokenType);
+        rxBytes, tokenInstallStatus, installedTokenType, 31);
     EXPECT_EQ(status, 2); // ERR_INVALID_DATA
 }
 
@@ -306,7 +305,7 @@ TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseTokenNotInstalled)
     auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
     int tokenInstallStatus, installedTokenType;
     updateDebugToken->parseQueryV2Response(rxBytes, tokenInstallStatus,
-                                           installedTokenType);
+                                           installedTokenType, 31);
     EXPECT_EQ(tokenInstallStatus, 0);
 }
 
@@ -320,7 +319,7 @@ TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseTokenInstalled)
     auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
     int tokenInstallStatus, installedTokenType;
     updateDebugToken->parseQueryV2Response(rxBytes, tokenInstallStatus,
-                                           installedTokenType);
+                                           installedTokenType, 31);
     EXPECT_EQ(tokenInstallStatus, 1);
     EXPECT_EQ(installedTokenType, 1);
 }
@@ -335,7 +334,7 @@ TEST_F(TestUpdateDebugToken, DebugTokenQueryV2ResponseHwUnlockTokenInstalled)
     auto rxBytes = updateDebugToken->parseCommandOutput(cmdResponse);
     int tokenInstallStatus, installedTokenType;
     updateDebugToken->parseQueryV2Response(rxBytes, tokenInstallStatus,
-                                           installedTokenType);
+                                           installedTokenType, 31);
     EXPECT_EQ(tokenInstallStatus, 1);
     EXPECT_EQ(installedTokenType, 4);
 }

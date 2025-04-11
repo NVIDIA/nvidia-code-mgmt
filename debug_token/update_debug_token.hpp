@@ -469,11 +469,13 @@ class UpdateDebugToken : public TokenUtility
      * @param[in] rxBytes
      * @param[in] tokenInstallStatus
      * @param[in] installedTokenType
+     * @param[in] eid
      *
      * @return int
      */
     int parseQueryV2Response(std::vector<std::string> rxBytes,
-                             int& tokenInstallStatus, int& installedTokenType)
+                             int& tokenInstallStatus, int& installedTokenType,
+                             const EID& eid)
     {
         int status = 0;
         try
@@ -486,8 +488,8 @@ class UpdateDebugToken : public TokenUtility
                         std::stoi(rxBytes[mctpCompletionCodeByte], nullptr, 16);
                     log<level::ERR>(
                         ("debug_token_query_v2 command failed with code: " +
-                         std::to_string(status))
-                            .c_str());
+                         std::to_string(status) + " for EID=" + 
+                         std::to_string(eid)).c_str());
                 }
                 else
                 {

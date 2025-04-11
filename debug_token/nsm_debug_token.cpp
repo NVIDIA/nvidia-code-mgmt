@@ -284,7 +284,7 @@ int UpdateDebugToken::nsmTokenErase()
         if (tokenStatus != nsmTokenStatusDebugSessionActive &&
             tokenStatus != nsmTokenStatusTokenTimeout)
         {
-            log<level::INFO>("No token installed.");
+            log<level::INFO>(("No token installed for NSM device: Path = " + path).c_str());
             continue;
         }
         try
