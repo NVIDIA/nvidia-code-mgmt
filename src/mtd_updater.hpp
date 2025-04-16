@@ -24,6 +24,10 @@
 
 #include "fstream"
 
+// Add the Asset interface definition
+using AssetObject = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::Inventory::Decorator::server::Asset>;
+
 namespace nvidia
 {
 namespace software
@@ -40,6 +44,8 @@ class MTDItemUpdater : public BaseItemUpdater
     std::unique_ptr<SoftwareVersion> softwareVersionObj;
     std::unique_ptr<SoftwareSettings> softwareSettingsObj;
     std::string inventory;
+    std::string manufacturer;
+    std::unique_ptr<AssetObject> assetObject;
 
   public:
     MTDItemUpdater(sdbusplus::bus::bus& bus, std::string mtdN,
@@ -75,12 +81,51 @@ class MTDItemUpdater : public BaseItemUpdater
                 versionOffset =
                     static_cast<std::streamoff>(std::stoll(off, nullptr, 0));
                 versionSize = mtdConfig["VersionSize"];
+
+                // Check if Manufacturer exists and is not null
+                if (mtdConfig.contains("Manufacturer") &&
+                    !mtdConfig["Manufacturer"].is_null())
+                {
+                    manufacturer = mtdConfig["Manufacturer"];
+                }
+                else
+                {
+                    // Default manufacturer if not specified or null
+                    manufacturer = "NVIDIA";
+                    std::cerr
+                        << "Manufacturer not specified in config, using default: "
+                        << manufacturer << std::endl;
+                }
+
                 auto objPath = std::string(SOFTWARE_OBJPATH) + "/" + inventory;
                 softwareVersionObj =
                     std::make_unique<SoftwareVersion>(bus, objPath);
                 getVersion("");
                 softwareSettingsObj =
                     std::make_unique<SoftwareSettings>(bus, objPath);
+
+                // Create Asset object with Manufacturer property
+                std::cerr << "Creating Asset object at path: " << objPath
+                          << " with Manufacturer: " << manufacturer
+                          << std::endl;
+
+                // Create the Asset interface using AssetObject with the correct
+                // constructor
+                assetObject =
+                    std::make_unique<AssetObject>(bus, objPath.c_str());
+
+                // Set the properties after creation
+                if (assetObject)
+                {
+                    assetObject->manufacturer(manufacturer);
+                    std::cerr
+                        << "Asset object created successfully with manufacturer: "
+                        << manufacturer << std::endl;
+                }
+                else
+                {
+                    std::cerr << "Failed to create Asset object" << std::endl;
+                }
 
 #ifdef VERIFY_PCIECHIP
                 bool checkSignature = mtdConfig["Authentication"];
