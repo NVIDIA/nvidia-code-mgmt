@@ -46,7 +46,7 @@ ERoTResource<T>::ERoTResource(
     apBootStatusTimer =
         std::make_unique<sdbusplus::Timer>(sdEvent.get(), [this, objPath]() {
             lg2::info("Checking Boot Status of {OBJ}", "OBJ", objPath);
-            updateBootStatusAsync();
+            updateBootStatusAsync().detach();
         });
 }
 
@@ -74,7 +74,7 @@ ERoTResource<T>::ERoTResource(sdbusplus::bus::bus& bus,
     apBootStatusTimer =
         std::make_unique<sdbusplus::Timer>(sdEvent.get(), [this, objPath]() {
             lg2::info("Checking Boot Status of {OBJ}", "OBJ", objPath);
-            updateBootStatusAsync();
+            updateBootStatusAsync().detach();
         });
 }
 
