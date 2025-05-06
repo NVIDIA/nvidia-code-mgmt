@@ -58,7 +58,7 @@ class APResource : public BaseResource
         eid(apEid), erotResource(erotResource)
     {
         startWatchingApEid();
-        initializeHealth();
+        initializeHealth().detach();
     }
 
     /* @brief Function for updating Health and Status of the resource

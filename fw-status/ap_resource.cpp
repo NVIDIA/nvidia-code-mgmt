@@ -68,7 +68,7 @@ mctp_vdm::requester::Coroutine APResource::initializeHealth()
     if (isAPInRecovery())
     {
         timer =
-            std::make_unique<sdbusplus::Timer>([&]() { updateHealthAsync(); });
+            std::make_unique<sdbusplus::Timer>([&]() { updateHealthAsync().detach(); });
 
         timer->start(std::chrono::seconds(maxBootCompleteTimeout), false);
     }
