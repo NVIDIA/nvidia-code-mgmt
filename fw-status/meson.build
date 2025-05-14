@@ -2,6 +2,7 @@ inc_dirs = include_directories(['.', '../src/',
     '../debug_token/',
     '../recovery_tool/ocp_recovery_tool/',
     '../recovery_tool/glacier_recovery_tool/',
+    '../recovery_tool/mcu_recovery_tool/',
     '../recovery_tool/common',
     './mctp_util',
     ])
@@ -9,8 +10,11 @@ inc_dirs = include_directories(['.', '../src/',
 recovery_common_dir = '../recovery_tool/common'
 ocp_recovery_dir = '../recovery_tool/ocp_recovery_tool'
 glacier_recovery_dir = '../recovery_tool/glacier_recovery_tool'
+mcu_recovery_dir = '../recovery_tool/mcu_recovery_tool'
 dbus_utils_dir = '../src'
 mctp_util_dir = './mctp_util'
+
+libusb_dep = dependency('libusb-1.0', required: true)
 
 source_files = [
     'fw-status.cpp',
@@ -28,6 +32,8 @@ source_files = [
     join_paths(ocp_recovery_dir, 'usb_i2c_mapper.cpp'),
     join_paths(glacier_recovery_dir, 'glacier_recovery_commands.cpp'),
     join_paths(recovery_common_dir, 'i2c_utils.cpp'),
+    join_paths(recovery_common_dir, 'message_registry.cpp'),
+    join_paths(mcu_recovery_dir, 'mcu_recovery_manager.cpp'),
 ]
 
 sdeventplus = dependency('sdeventplus')
@@ -43,6 +49,7 @@ executable('fw-status',
                    fmt,
                    ssl,
                    libgpiocxx,
+                   libusb_dep,
                ],
             install: true,
             install_dir: get_option('bindir')

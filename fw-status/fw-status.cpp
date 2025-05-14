@@ -24,6 +24,8 @@
 #include "gpu_resource.hpp"
 #include "mctp_endpoint_discovery.hpp"
 #include "mctp_vdm_helper.hpp"
+#include "mcu_recovery_manager.hpp"
+#include "mcu_resource.hpp"
 #include "usb_i2c_mapper.hpp"
 
 #include <phosphor-logging/lg2.hpp>
@@ -42,6 +44,8 @@ constexpr auto glacierCrisisObjInterface =
     "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
 constexpr auto gpioObjInterface =
     "xyz.openbmc_project.Configuration.GPIORecovery";
+constexpr auto mcuObjInterface =
+    "xyz.openbmc_project.Configuration.MCURecovery";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/";
 constexpr auto configurableStateManagerService =
@@ -80,6 +84,7 @@ template class mctp_vdm::MctpDiscovery<TRequest>;
 template class mctp_socket::Handler<TRequest>;
 
 std::shared_ptr<MCTPVdmHelper<TRequest>> mctpVdmHelper;
+std::shared_ptr<mcu_recovery_manager::MCURecoveryManager> mcuRecoveryManager;
 
 void checkEntityManagerAvailability();
 
@@ -245,6 +250,84 @@ std::string getMctpUUID(uint32_t eid)
 }
 
 /**
+ * @brief Retrieves MCU configuration information from Entity Manager D-Bus
+ * interface
+ *
+ * This function queries the Entity Manager D-Bus service to collect
+ * configuration information for all MCU (Microcontroller Unit) devices. It
+ * looks for objects implementing the MCU Recovery interface and extracts their
+ * properties including:
+ * - USB port identifier
+ * - Reset GPIO name
+ * - Recovery GPIO name
+ * - Functional Product ID
+ *
+ * The function processes each MCU configuration object found in the Entity
+ * Manager. If a required property is missing for a particular MCU, that MCU
+ * is skipped and processing continues with the next one. This allows partial
+ * configuration to be loaded even if some MCUs have incomplete configuration.
+ *
+ * @return std::map<std::string, mcu_recovery_manager::MCUInfo> A map where:
+ *         - Key: USB port identifier
+ *         - Value: MCUInfo structure containing device configuration
+ *         Returns an empty map if:
+ *         - No MCU configurations are found
+ *         - D-Bus query fails
+ */
+std::map<std::string, mcu_recovery_manager::MCUInfo> getMCUConfig()
+{
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
+    const auto managedObjects = dbusUtil.getManagedObjects(
+        entityManagerService, entityManagerObjManager);
+
+    std::map<std::string, mcu_recovery_manager::MCUInfo> mcuMap;
+
+    for (const auto& [emObjectPath, interfaces] : managedObjects)
+    {
+        if (interfaces.contains(mcuObjInterface))
+        {
+            if (!hasProperty(interfaces, mcuObjInterface, "USBPort"))
+            {
+                continue;
+            }
+
+            const auto usbPort =
+                getString(interfaces, mcuObjInterface, "USBPort");
+
+            if (!hasProperty(interfaces, mcuObjInterface, "ResetGpioName"))
+            {
+                continue;
+            }
+            const auto resetGpioName =
+                getString(interfaces, mcuObjInterface, "ResetGpioName");
+
+            if (!hasProperty(interfaces, mcuObjInterface, "RecoveryGpioName"))
+            {
+                continue;
+            }
+            const auto recoveryGpioName =
+                getString(interfaces, mcuObjInterface, "RecoveryGpioName");
+
+            if (!hasProperty(interfaces, mcuObjInterface, "ProductId"))
+            {
+                continue;
+            }
+            auto functionalPid =
+                getUint64(interfaces, mcuObjInterface, "ProductId");
+
+            mcu_recovery_manager::MCUInfo info;
+            info.usbPort = usbPort;
+            info.resetGpioName = resetGpioName;
+            info.recoveryGpioName = recoveryGpioName;
+            info.functionalPid = functionalPid;
+            mcuMap[info.usbPort] = info;
+        }
+    }
+
+    return mcuMap;
+}
+
+/**
  * @brief Publish the D-Bus recovery object
  *
  * @return None
@@ -255,6 +338,16 @@ void publishDBusRecoveryObject()
     const auto managedObjects = dbusUtil.getManagedObjects(
         entityManagerService, entityManagerObjManager);
     auto& event = getEvent();
+
+    auto mcuMap = getMCUConfig();
+
+    if (!mcuMap.empty())
+    {
+        mcuRecoveryManager =
+            std::make_shared<mcu_recovery_manager::MCURecoveryManager>();
+        auto messageRegistry = std::make_unique<MessageRegistry>(getBus());
+        mcuRecoveryManager->initialize(mcuMap, std::move(messageRegistry));
+    }
 
     for (const auto& [emObjectPath, interfaces] : managedObjects)
     {
@@ -462,6 +555,44 @@ void publishDBusRecoveryObject()
                     getBus(), objPath, event, uuid, gpio, risingTarget,
                     fallingTarget, polarity, chassisObjPath, mctpVdmHelper));
             }
+        }
+        else if (interfaces.contains(mcuObjInterface))
+        {
+            lg2::info("Found MCU recovery config Object: {PATH}", "PATH",
+                      emObjectPath);
+
+            if (!hasProperty(interfaces, mcuObjInterface, "USBPort"))
+            {
+                lg2::error("Failed to get USB Port in MCU recovery config "
+                           "Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto usbPort =
+                getString(interfaces, mcuObjInterface, "USBPort");
+
+            if (!hasProperty(interfaces, mcuObjInterface, "EID"))
+            {
+                lg2::error("Failed to get EID in SMA recovery config "
+                           "Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto eid = getUint64(interfaces, mcuObjInterface, "EID");
+            const auto uuid = getMctpUUID(eid);
+            if (uuid.empty())
+            {
+                lg2::error(
+                    "Failed to get MCTP UUID for EID {EID} in SMA recovery config "
+                    "Object: {PATH}",
+                    "EID", eid, "PATH", emObjectPath);
+                continue;
+            }
+
+            resources.push_back(std::make_unique<MCUResource>(
+                getBus(), objPath, uuid, usbPort, mcuRecoveryManager));
         }
     }
 }
