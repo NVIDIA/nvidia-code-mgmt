@@ -188,7 +188,7 @@ void MCURecoveryManager::updateDevHealth(const std::string& usbPort,
 
 bool MCURecoveryManager::updateDevInfo(const std::string& usbPort)
 {
-    const uint8_t maxRetries = 3;
+    const uint8_t maxRetries = 5;
     uint8_t retries = 0;
 
     while (retries < maxRetries)
@@ -255,7 +255,7 @@ bool MCURecoveryManager::updateDevInfo(const std::string& usbPort)
             lg2::info(
                 "Retrying get USB device info for {PORT} (attempt {CURRENT}/{MAX})",
                 "PORT", usbPort, "CURRENT", retries + 1, "MAX", maxRetries);
-            sleep(1);
+            sleep(2);
         }
     }
 
