@@ -32,14 +32,15 @@ std::string OCPRecoveryCommands::constructI2CDevicePath()
     return "/dev/i2c-" + std::to_string(busAddress);
 }
 
-void OCPRecoveryCommands::openI2CDevice()
+utils::CustomFD OCPRecoveryCommands::openI2CDevice()
 {
     std::string i2cDevicePath = constructI2CDevicePath();
-    i2cFile = open(i2cDevicePath.c_str(), O_RDWR);
-    if (i2cFile < 0)
+    int fd = open(i2cDevicePath.c_str(), O_RDWR);
+    if (fd < 0)
     {
         throw std::runtime_error("Failed to open device.");
     }
+    return utils::CustomFD(fd);
 }
 
 void OCPRecoveryCommands::printBuffer(bool isTx,
@@ -92,8 +93,9 @@ bool OCPRecoveryCommands::setRecoveryControlRegisterCommand(ImageType imageType,
         std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
     }
 
+    auto fd = openI2CDevice();
     return recovery_tool::i2c_utils::sendI2cCmdForWrite(
-        i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose);
+        fd(), static_cast<uint16_t>(slaveAddress), writeData, verbose);
 }
 
 bool OCPRecoveryCommands::setIndirectControlRegisterCommand(ImageType imageType)
@@ -110,8 +112,9 @@ bool OCPRecoveryCommands::setIndirectControlRegisterCommand(ImageType imageType)
         0x0                              // byte 2:5 -> 0 IMO
     };
     printBuffer(Tx, writeData);
+    auto fd = openI2CDevice();
     return recovery_tool::i2c_utils::sendI2cCmdForWrite(
-        i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose);
+        fd(), static_cast<uint16_t>(slaveAddress), writeData, verbose);
 }
 
 bool OCPRecoveryCommands::sendIndirectDataCommand(
@@ -124,13 +127,15 @@ bool OCPRecoveryCommands::sendIndirectDataCommand(
     writeData[1] = static_cast<uint8_t>(data.size());
     std::copy(data.begin(), data.end(), writeData.begin() + cmdHeaderSize);
     printBuffer(Tx, writeData);
+    auto fd = openI2CDevice();
     return recovery_tool::i2c_utils::sendI2cCmdForWrite(
-        i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose);
+        fd(), static_cast<uint16_t>(slaveAddress), writeData, verbose);
 }
 
 std::tuple<bool, std::vector<uint8_t>, std::string>
     OCPRecoveryCommands::getIndirectStatusCommand()
 {
+    auto fd = openI2CDevice();
     try
     {
         std::vector<uint8_t> commandData = {
@@ -139,7 +144,7 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
             static_cast<size_t>(ResponseLength::IndirectStatusResLen), 0);
         printBuffer(Tx, commandData);
         if (recovery_tool::i2c_utils::sendI2cCmdForRead(
-                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
+                fd(), static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
             printBuffer(Rx, readBuffer);
@@ -287,19 +292,13 @@ OCPRecoveryCommands::OCPRecoveryCommands(int busAddr, int slaveAddr, bool verb,
                                          bool emul) :
     busAddress(busAddr),
     slaveAddress(slaveAddr), verbose(verb), emulation(emul)
-{
-    openI2CDevice();
-}
-
-OCPRecoveryCommands::~OCPRecoveryCommands()
-{
-    close(i2cFile);
-}
+{}
 
 std::tuple<bool, std::vector<uint8_t>, std::string>
     OCPRecoveryCommands::getDeviceIDCommand()
 {
     std::string errorMsg = "";
+    auto fd = openI2CDevice();
     try
     {
         std::vector<uint8_t> commandData = {
@@ -308,7 +307,7 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
             static_cast<size_t>(ResponseLength::DeviceIDResLen), 0);
         printBuffer(Tx, commandData);
         if (recovery_tool::i2c_utils::sendI2cCmdForRead(
-                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
+                fd(), static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
             printBuffer(Rx, readBuffer);
@@ -335,11 +334,11 @@ std::pair<bool, std::string> OCPRecoveryCommands::setForceRecoveryMode()
     writeData[3] = static_cast<uint8_t>(0x0F); // Enter Recovery Mode on Reset
     writeData[4] = static_cast<uint8_t>(0x01); // Enable Interface Mastering
     printBuffer(Tx, writeData);
+    auto fd = openI2CDevice();
     try
     {
         if (!recovery_tool::i2c_utils::sendI2cCmdForWrite(
-                i2cFile, static_cast<uint16_t>(slaveAddress), writeData,
-                verbose))
+                fd(), static_cast<uint16_t>(slaveAddress), writeData, verbose))
         {
             return {false, "Failed to set device into recovery mode"};
         }
@@ -357,6 +356,7 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
     OCPRecoveryCommands::getDeviceStatusCommand()
 {
     std::string errorMsg = "";
+    auto fd = openI2CDevice();
     try
     {
         std::vector<uint8_t> commandData = {
@@ -365,7 +365,7 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
             static_cast<size_t>(ResponseLength::DeviceStatusResLen), 0);
         printBuffer(Tx, commandData);
         if (recovery_tool::i2c_utils::sendI2cCmdForRead(
-                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
+                fd(), static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
             printBuffer(Rx, readBuffer);
@@ -385,6 +385,7 @@ std::tuple<bool, std::vector<unsigned char>, std::string>
     OCPRecoveryCommands::getRecoveryStatusCommand()
 {
     std::string errorMsg = "";
+    auto fd = openI2CDevice();
     try
     {
         std::vector<uint8_t> readBuffer(
@@ -394,7 +395,7 @@ std::tuple<bool, std::vector<unsigned char>, std::string>
             static_cast<uint8_t>(RecoveryCommands::RecoveryStatus)};
         printBuffer(Tx, commandData);
         if (recovery_tool::i2c_utils::sendI2cCmdForRead(
-                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
+                fd(), static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
             printBuffer(Rx, readBuffer);
@@ -513,10 +514,12 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
         0);
     std::vector<uint8_t> commandData = {
         static_cast<uint8_t>(RecoveryCommands::IndirectData)};
+
+    auto fd = openI2CDevice();
     for (int i = 0; i < numOfReadsForCMSLogs; ++i)
     {
         if (!recovery_tool::i2c_utils::sendI2cCmdForRead(
-                i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
+                fd(), static_cast<uint16_t>(slaveAddress), commandData,
                 readBuffer, verbose))
         {
             std::string errorMsg = "Failed to read " + std::to_string(i + 1) +

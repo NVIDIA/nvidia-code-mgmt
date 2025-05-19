@@ -1,4 +1,5 @@
 #pragma once
+#include "../../fw-status/mctp_util/utils.hpp"
 #include "i2c_utils.hpp"
 
 #include <chrono>
@@ -114,13 +115,13 @@ class GlacierRecoveryCommands
     int busAddress;
     int slaveAddress;
     bool verbose;
-    int i2cFile;
     Revision revision = Revision::RevB;
 
     /**
      * @brief Opens the I2C device for communication.
+     * @return The file descriptor for the opened I2C device.
      */
-    void openI2CDevice();
+    utils::CustomFD openI2CDevice();
     /**
      * @brief Generates a command byte sequence with an appended CRC32 checksum.
      *
@@ -258,7 +259,7 @@ class GlacierRecoveryCommands
     GlacierRecoveryCommands(GlacierRecoveryCommands&&) = delete;
     GlacierRecoveryCommands& operator=(const GlacierRecoveryCommands&) = delete;
     GlacierRecoveryCommands& operator=(GlacierRecoveryCommands&&) = delete;
-    ~GlacierRecoveryCommands();
+    ~GlacierRecoveryCommands() = default;
     /**
      * @brief Get the firmware information of the device.
      *

@@ -72,14 +72,15 @@ uint32_t crc32(const void* data, size_t size)
     return crc ^ ~0U;
 }
 
-void GlacierRecoveryCommands::openI2CDevice()
+utils::CustomFD GlacierRecoveryCommands::openI2CDevice()
 {
     auto i2cDevicePath = "/dev/i2c-" + std::to_string(busAddress);
-    i2cFile = open(i2cDevicePath.c_str(), O_RDWR);
-    if (i2cFile < 0)
+    int fd = open(i2cDevicePath.c_str(), O_RDWR);
+    if (fd < 0)
     {
         throw std::runtime_error("Failed to open device.");
     }
+    return utils::CustomFD(fd);
 }
 
 std::string GlacierRecoveryCommands::recoveryResultToStr(RecoveryResult result)
@@ -187,9 +188,11 @@ std::vector<uint8_t>
         getCommandBytesWithCRC32(RecoveryCommand::GetResponse, {});
     std::vector<uint8_t> readBuffer(static_cast<size_t>(responseLen), 0);
     printBuffer(Tx, commandData);
+
+    auto fd = openI2CDevice();
     if (recovery_tool::i2c_utils::sendI2cCmdForRead(
-            i2cFile, static_cast<uint16_t>(slaveAddress), commandData,
-            readBuffer, verbose))
+            fd(), static_cast<uint16_t>(slaveAddress), commandData, readBuffer,
+            verbose))
     {
         printBuffer(Rx, readBuffer);
         return readBuffer;
@@ -317,30 +320,27 @@ bool GlacierRecoveryCommands::performSRAMExe()
     std::vector<uint8_t> writeData{
         static_cast<uint8_t>(RecoveryCommand::SRAMExe)};
     printBuffer(Tx, writeData);
+
+    auto fd = openI2CDevice();
     return (recovery_tool::i2c_utils::sendI2cCmdForWrite(
-        i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose));
+        fd(), static_cast<uint16_t>(slaveAddress), writeData, verbose));
 }
 
 GlacierRecoveryCommands::GlacierRecoveryCommands(int busAdd, int slaveAdd,
                                                  bool verbose) :
     busAddress(busAdd),
     slaveAddress(slaveAdd), verbose(verbose)
-{
-    openI2CDevice();
-};
-
-GlacierRecoveryCommands::~GlacierRecoveryCommands()
-{
-    close(i2cFile);
-}
+{}
 
 RecoveryResult GlacierRecoveryCommands::performInitialization()
 {
     auto writeData = getCommandBytesWithCRC32(RecoveryCommand::Initialization,
                                               {initResponseByte0});
     printBuffer(Tx, writeData);
+
+    auto fd = openI2CDevice();
     if (!(recovery_tool::i2c_utils::sendI2cCmdForWrite(
-            i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose)))
+            fd(), static_cast<uint16_t>(slaveAddress), writeData, verbose)))
     {
         return RecoveryResult::FailedToReadData;
     }
@@ -357,8 +357,10 @@ std::tuple<RecoveryResult, std::vector<uint8_t>>
 
     auto writeData = getCommandBytesWithCRC32(RecoveryCommand::GetFWInfo, {});
     printBuffer(Tx, writeData);
+
+    auto fd = openI2CDevice();
     if (!(recovery_tool::i2c_utils::sendI2cCmdForWrite(
-            i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose)))
+            fd(), static_cast<uint16_t>(slaveAddress), writeData, verbose)))
     {
         return {RecoveryResult::FailedToReadData, {}};
     }
@@ -439,8 +441,10 @@ RecoveryResult GlacierRecoveryCommands::executeWriteImageCmd(
     auto payload = getWriteCommandPayload(dataChunk, offset);
     auto writeData = getCommandBytesWithCRC32(cmd, payload);
     printBuffer(Tx, writeData);
+
+    auto fd = openI2CDevice();
     if (!(recovery_tool::i2c_utils::sendI2cCmdForWrite(
-            i2cFile, static_cast<uint16_t>(slaveAddress), writeData, verbose)))
+            fd(), static_cast<uint16_t>(slaveAddress), writeData, verbose)))
     {
         return RecoveryResult::FailedToReadData;
     }
@@ -583,8 +587,10 @@ bool GlacierRecoveryCommands::unlockI2CDevice()
 {
     std::vector<uint8_t> writeData{0xc0, 0x01};
     printBuffer(Tx, writeData);
+
+    auto fd = openI2CDevice();
     return (recovery_tool::i2c_utils::sendI2cCmdForWrite(
-        i2cFile, static_cast<uint16_t>(RecoveryCommand::ShowHiddenERoTs),
+        fd(), static_cast<uint16_t>(RecoveryCommand::ShowHiddenERoTs),
         writeData, verbose));
 }
 
