@@ -16,6 +16,7 @@
  */
 
 #pragma once
+#include "../../fw-status/mctp_util/utils.hpp"
 #include "i2c_utils.hpp"
 
 #include <filesystem>
@@ -125,7 +126,6 @@ class OCPRecoveryCommands
     int slaveAddress;
     bool verbose;
     bool emulation;
-    int i2cFile;
 #ifdef GPU_OCP_RECOVERY_COMPAT_CP2112
     // CP2112 has max size of 61 for writes, e.g. i2ctransfer -y 35 w61@0x6f
     // Set chunk size to 32 to be safe for writes (read size limit is 512B)
@@ -141,9 +141,10 @@ class OCPRecoveryCommands
     std::string constructI2CDevicePath();
 
     /**
-     * @brief Opens the I2C device for communication.
+     * @brief Gets an I2C file descriptor for communication.
+     * @return The file descriptor, or -1 if failed.
      */
-    void openI2CDevice();
+    utils::CustomFD openI2CDevice();
 
     /**
      * @brief Sets the control register for recovery based on the given image
@@ -233,6 +234,7 @@ class OCPRecoveryCommands
     OCPRecoveryCommands(OCPRecoveryCommands&&) = delete;
     OCPRecoveryCommands& operator=(const OCPRecoveryCommands&) = delete;
     OCPRecoveryCommands& operator=(OCPRecoveryCommands&&) = delete;
+    ~OCPRecoveryCommands() = default;
 
     /**
      * @brief Retrieves the device's id
@@ -292,8 +294,6 @@ class OCPRecoveryCommands
     std::pair<bool, std::string>
         saveToLogFile(const std::vector<uint8_t>& hexData,
                       const std::string& filePath);
-
-    ~OCPRecoveryCommands();
 };
 
 } // namespace recovery_commands
