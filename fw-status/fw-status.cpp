@@ -18,6 +18,7 @@
 #include "config.h"
 
 #include "ap_resource.hpp"
+#include "cx8_resource.hpp"
 #include "dbusutils.hpp"
 #include "erot_resource.hpp"
 #include "gpio_resource.hpp"
@@ -46,6 +47,8 @@ constexpr auto gpioObjInterface =
     "xyz.openbmc_project.Configuration.GPIORecovery";
 constexpr auto mcuObjInterface =
     "xyz.openbmc_project.Configuration.MCURecovery";
+constexpr auto cx8ObjInterface =
+    "xyz.openbmc_project.Configuration.CX8Recovery";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/";
 constexpr auto configurableStateManagerService =
@@ -460,6 +463,55 @@ void publishDBusRecoveryObject()
                     getBus(), objPath, chassisObjPath, i2cBus, i2cAddress,
                     uuid));
             }
+        }
+        else if (interfaces.contains(cx8ObjInterface))
+        {
+            lg2::info("Found CX8 recovery config Object: {PATH}", "PATH",
+                      emObjectPath);
+
+            const auto eid = getUint64(interfaces, cx8ObjInterface, "EID");
+            const auto uuid = getMctpUUID(eid);
+            if (uuid.empty())
+            {
+                lg2::error(
+                    "Failed to get MCTP UUID for EID {EID} in CX8 recovery config "
+                    "Object: {PATH}",
+                    "EID", eid, "PATH", emObjectPath);
+                continue;
+            }
+
+            if (!hasProperty(interfaces, cx8ObjInterface, "I2CBus"))
+            {
+                lg2::error(
+                    "No I2CBus found in CX8 recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto i2cBus =
+                getUint64(interfaces, cx8ObjInterface, "I2CBus");
+
+            if (!hasProperty(interfaces, cx8ObjInterface, "I2CAddress"))
+            {
+                lg2::error(
+                    "No I2CAddress found in CX8 recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto i2cAddress =
+                getUint64(interfaces, cx8ObjInterface, "I2CAddress");
+
+            const auto chassisName =
+                getString(interfaces, cx8ObjInterface, "ChassisName");
+            const auto chassisObjPath = getChassisObjPath(chassisName);
+
+            const auto smaEID =
+                getUint64(interfaces, cx8ObjInterface, "SMAEID");
+
+            resources.push_back(std::make_unique<Cx8Resource>(
+                getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, uuid,
+                smaEID));
         }
         else if (interfaces.contains(glacierCrisisObjInterface))
         {

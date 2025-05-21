@@ -113,5 +113,60 @@ bool sendI2cCmdForWrite(int fd, uint16_t slaveId,
     return true;
 }
 
+bool sendI2cCmdForWriteRead(int fd, uint16_t slaveId,
+                            std::vector<uint8_t>& writeData,
+                            std::vector<uint8_t>& readData, bool verbose)
+{
+    if (writeData.empty())
+    {
+        if (verbose)
+        {
+            std::cerr << "sendI2cCmdForWriteRead: writeData is empty\n";
+        }
+        return false;
+    }
+
+    if (readData.empty())
+    {
+        if (verbose)
+        {
+            std::cerr << "sendI2cCmdForWriteRead: readData is empty\n";
+        }
+        return false;
+    }
+
+    struct i2c_rdwr_ioctl_data rdwrMsg
+    {};
+    struct i2c_msg msg[2]{};
+    int ret = -1;
+
+    // First message: Write operation
+    msg[0].addr = slaveId;
+    msg[0].flags = 0; // Write
+    msg[0].len = static_cast<uint16_t>(writeData.size());
+    msg[0].buf = writeData.data();
+
+    // Second message: Read operation
+    msg[1].addr = slaveId;
+    msg[1].flags = I2C_M_RD; // Read
+    msg[1].len = static_cast<uint16_t>(readData.size());
+    msg[1].buf = readData.data();
+
+    rdwrMsg.msgs = msg;
+    rdwrMsg.nmsgs = 2;
+
+    if ((ret = ioctl(fd, I2C_RDWR, &rdwrMsg)) < 0)
+    {
+        if (verbose)
+        {
+            std::cerr << "sendI2cCmdForWriteRead failed: ret=" << ret
+                      << " error=" << std::strerror(errno) << "\n";
+        }
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace i2c_utils
 } // namespace recovery_tool
