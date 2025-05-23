@@ -127,9 +127,23 @@ bool MCTPDiscoveryResource::checkForEnabledMCTPEids() const noexcept
     bool ret = false;
     for (const auto& [service, mctpObject] : mctpEidObjects)
     {
-        ret = ret or
-              dbusUtil.getProperty<bool>(service.c_str(), mctpObject.c_str(),
-                                         mctpEndpointEnableIntfName, "Enabled");
+        try
+        {
+            ret = ret or dbusUtil.getProperty<bool>(
+                             service.c_str(), mctpObject.c_str(),
+                             mctpEndpointEnableIntfName, "Enabled");
+            // return true if any of the MCTP EIDs are enabled
+            if (ret)
+            {
+                return true;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error(
+                "Failed to get Enabled property for {OBJECT} on service {SERVICE}. Error: {ERROR}",
+                "OBJECT", mctpObject, "SERVICE", service, "ERROR", e.what());
+        }
     }
     return ret;
 }
