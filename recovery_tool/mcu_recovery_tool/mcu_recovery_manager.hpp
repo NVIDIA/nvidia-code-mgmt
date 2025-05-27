@@ -67,6 +67,7 @@ struct MCUDevice
     gpiod::line resetPin;
     gpiod::line recoveryPin;
     bool inRecoveryMode;
+    bool hasMctpClass;
 };
 
 /**
@@ -135,6 +136,12 @@ class MCURecoveryManager
     /**
      * @brief Checks if the MCU device is healthy.
      *
+     * For general case, we can determine the device is healthy if the
+     * functional PID matches the it's current product ID. However, for
+     * Iris MCU (PX86E) it's different as Iris MCU PIDs are the same when
+     * it's in ISP mode. So we need to check if the device has MCTP class.
+     * the MCU is healthy if it has MCTP class.
+     *
      * @param usbPort The USB port of the MCU device.
      * @return True if the MCU device is healthy, false otherwise.
      */
@@ -142,8 +149,9 @@ class MCURecoveryManager
     {
         try
         {
-            return (mcuMap.at(usbPort).functionalPid ==
-                    mcuDevices.at(usbPort).curUsbDesc.idProduct);
+            return (mcuDevices.at(usbPort).hasMctpClass ||
+                    (mcuMap.at(usbPort).functionalPid ==
+                     mcuDevices.at(usbPort).curUsbDesc.idProduct));
         }
         catch (const std::out_of_range& oor)
         {

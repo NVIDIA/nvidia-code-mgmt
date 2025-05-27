@@ -161,10 +161,14 @@ std::string MCURecoveryManager::getFullPortPath(libusb_device* dev)
 void MCURecoveryManager::updateDevHealth(const std::string& usbPort,
                                          libusb_config_descriptor* config)
 {
+    mcuDevices[usbPort].hasMctpClass = false;
     bool hasHidClass = false;
     for (int i = 0; i < config->bNumInterfaces; i++)
     {
         const struct libusb_interface* interface = &config->interface[i];
+        // check if the MCU has MCTP class and HID class
+        // the MCU is healthy if it has MCTP class
+        // the MCU is in recovery mode if it only has HID class
         for (int j = 0; j < interface->num_altsetting; j++)
         {
             const struct libusb_interface_descriptor* altsetting =
@@ -172,6 +176,7 @@ void MCURecoveryManager::updateDevHealth(const std::string& usbPort,
             if (altsetting->bInterfaceClass == LIBUSB_CLASS_MCTP)
             {
                 mcuDevices[usbPort].inRecoveryMode = false;
+                mcuDevices[usbPort].hasMctpClass = true;
                 return;
             }
             else if (altsetting->bInterfaceClass == LIBUSB_CLASS_HID)
