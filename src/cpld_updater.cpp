@@ -101,9 +101,7 @@ std::vector<std::string> CPLDItemUpdater::getItemUpdaterInventoryPaths()
             }
             else
             {
-                dbusUtil.createMessageRegistryResourceErrors(
-                    resourceErrorsDetected, devName, "Host Main Power is Off",
-                    "Please power on the Host before performing the FW update");
+                log<level::ERR>("Host Main Power is Off. Please power on the Host before performing the FW update");
             }
         }
         else
