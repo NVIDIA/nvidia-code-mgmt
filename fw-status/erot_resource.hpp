@@ -124,6 +124,11 @@ class ERoTResource : public MCTPDiscoveryResource
 
         auto rc = updateBootStatusAsync();
         co = rc.handle;
+
+        if (co.done())
+        {
+            co = nullptr;
+        }
     }
 
     std::vector<uint8_t> getBootStatus() const noexcept;
