@@ -209,7 +209,11 @@ class GPIOResource : public BaseResource
         }
         auto rc = updateBootStatusAsync();
         co = rc.handle;
-        return;
+
+        if (co.done())
+        {
+            co = nullptr;
+        }
     }
 
     /** @brief Fetches EID for the resource
