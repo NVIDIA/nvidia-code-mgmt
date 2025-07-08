@@ -253,7 +253,6 @@ int BaseItemUpdater::initiateUpdateImage(const std::string& objPath,
                                          const std::string& versionId,
                                          const std::string& uniqueIdentifier)
 {
-    // bool forceUpdate = true; // TODO get this from settings
     auto it = versions.find(versionId);
     if (it != versions.end())
     {

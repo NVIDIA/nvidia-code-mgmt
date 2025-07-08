@@ -356,7 +356,7 @@ class CPLDItemUpdater : public BaseItemUpdater
         return false;
     }
 
-    std::string getIdProperty(const std::string& identifier) override
+    std::string getIdProperty(const std::string& identifier) const override
     {
         return (getName() + identifier);
     }

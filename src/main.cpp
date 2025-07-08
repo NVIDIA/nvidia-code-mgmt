@@ -70,6 +70,9 @@
 #ifdef MCU_RECOVERY_SUPPORT
 #include "mcu_recovery.hpp"
 #endif
+#ifdef CX8_RECOVERY_SUPPORT
+#include "cx8_recovery.hpp"
+#endif
 
 #include "watch.hpp"
 
@@ -247,6 +250,12 @@ int main(int argc, char** argv)
     if (updater == "MCURecovery")
     {
         itemUpdater = std::make_unique<MCURecovery>(bus, modelName, targetName);
+    }
+#endif
+#if CX8_RECOVERY_SUPPORT
+    if (updater == "CX8Recovery")
+    {
+        itemUpdater = std::make_unique<CX8RecoveryUpdater>(bus);
     }
 #endif
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=CX8 Recovery Updater
+Wants=pldmd.service
+After=pldmd.service
+
+[Service]
+ExecStart=/usr/bin/code-manager -u CX8Recovery
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.CX8Recovery.Updater
+
+[Install]
+# This should require run power
+WantedBy=multi-user.target

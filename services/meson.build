@@ -150,6 +150,11 @@ if get_option('MCU_RECOVERY_SUPPORT').enabled()
                                 'mcu-recovery@.service']
 endif
 
+if get_option('CX8_RECOVERY_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.CX8Recovery.Updater.service',
+                               'cx8-recovery@.service']
+endif
+
 foreach unit : unit_files
 configure_file(input: unit,
                output: unit,
