@@ -45,9 +45,8 @@ class PowerSupplyDevice : public psucommonutils::PSShellIntf
   public:
     PowerSupplyDevice(const std::string& objPath, const std::string& name,
                       std::string id, uint32_t bus, uint32_t slaveAddress) :
-        psucommonutils::PSShellIntf(id, "psui2ccmd.sh"),
-        name(name), inventoryPath(objPath), I2cBus(bus),
-        I2cSlaveAddress(slaveAddress)
+        psucommonutils::PSShellIntf(id, "psui2ccmd.sh"), name(name),
+        inventoryPath(objPath), I2cBus(bus), I2cSlaveAddress(slaveAddress)
     {
         index = std::stoi(id);
     }

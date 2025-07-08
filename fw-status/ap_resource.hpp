@@ -56,8 +56,7 @@ class APResource : public BaseResource
      */
     APResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                uint8_t apEid, ERoTResource<T>* erotResource) :
-        BaseResource(bus, objPath),
-        eid(apEid), erotResource(erotResource)
+        BaseResource(bus, objPath), eid(apEid), erotResource(erotResource)
     {
         startWatchingApEid();
         initializeHealth().detach();

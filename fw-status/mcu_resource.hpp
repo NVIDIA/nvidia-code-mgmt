@@ -43,8 +43,8 @@ class MCUResource : public MCTPDiscoveryResource
                 const std::string& uuid, const std::string& usbPort,
                 std::shared_ptr<mcu_recovery_manager::MCURecoveryManager>
                     mcuRecoveryManager) :
-        MCTPDiscoveryResource(bus, objPath, uuid),
-        usbPort(usbPort), mcuRecoveryManager(mcuRecoveryManager)
+        MCTPDiscoveryResource(bus, objPath, uuid), usbPort(usbPort),
+        mcuRecoveryManager(mcuRecoveryManager)
     {
         lg2::info("Creating MCU Resource: UUID={UUID}, USB_PORT={PORT}", "UUID",
                   uuid, "PORT", usbPort);

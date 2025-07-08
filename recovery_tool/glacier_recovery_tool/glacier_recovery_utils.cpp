@@ -5,8 +5,7 @@ namespace glacier_recovery_tool
 
 GlacierRecoveryTool::GlacierRecoveryTool(int busAddr, int slaveAddr,
                                          bool verbose) :
-    verbose(verbose),
-    recoveryCommands(busAddr, slaveAddr, verbose)
+    verbose(verbose), recoveryCommands(busAddr, slaveAddr, verbose)
 {}
 
 nlohmann::json GlacierRecoveryTool::getRecoveryStatusJson()

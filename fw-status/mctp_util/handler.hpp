@@ -120,8 +120,7 @@ class Handler
                      uint8_t numRetries = numCommandRetries,
                      std::chrono::milliseconds responseTimeOut =
                          std::chrono::milliseconds(4800)) :
-        event(event),
-        instanceIdMgr(instanceIdMgr), sockManager(sockManager),
+        event(event), instanceIdMgr(instanceIdMgr), sockManager(sockManager),
         instanceIdExpiryInterval(instanceIdExpiryInterval),
         numRetries(numRetries), responseTimeOut(responseTimeOut)
     {}
@@ -429,8 +428,7 @@ struct SendRecvMctpVdmMsg
                        mctp::Request& request,
                        const mctp_vdm::Message** responseMsg,
                        size_t* responseLen) :
-        handler(handler),
-        eid(eid), request(request), responseMsg(responseMsg),
+        handler(handler), eid(eid), request(request), responseMsg(responseMsg),
         responseLen(responseLen),
         rc(static_cast<int>(mctp_vdm::CompletionCodes::ErrGeneral))
     {}

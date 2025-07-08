@@ -25,8 +25,7 @@ namespace recovery_tool
 
 OCPRecoveryTool::OCPRecoveryTool(int busAddr, int slaveAddr, bool verb,
                                  bool emul) :
-    verbose(verb),
-    emul(emul), recoveryCommands(busAddr, slaveAddr, verb, emul)
+    verbose(verb), emul(emul), recoveryCommands(busAddr, slaveAddr, verb, emul)
 {}
 
 void OCPRecoveryTool::logVerbose(const std::string& message) const

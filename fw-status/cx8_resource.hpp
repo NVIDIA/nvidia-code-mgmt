@@ -49,8 +49,8 @@ class Cx8Resource : public MCTPDiscoveryResource
                 const std::string& chassisObjPath, const uint64_t i2cBus,
                 const uint64_t i2cAddress, const std::string& uuid,
                 const uint32_t smaEid) :
-        MCTPDiscoveryResource(bus, objPath, uuid),
-        smaEid(smaEid), busAddress(i2cBus), slaveAddress(i2cAddress)
+        MCTPDiscoveryResource(bus, objPath, uuid), smaEid(smaEid),
+        busAddress(i2cBus), slaveAddress(i2cAddress)
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
         bootStatus->bootStatusType(

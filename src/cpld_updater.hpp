@@ -47,8 +47,7 @@ class CPLDDevice : public cpldcommonutils::Util
                uint32_t imageNo, const std::string& name,
                const std::string& model, const std::string& manufacturer,
                uint32_t cpldN) :
-        name(name),
-        inventoryPath(objPath), i2cBus(busN), imageSelect(imageNo),
+        name(name), inventoryPath(objPath), i2cBus(busN), imageSelect(imageNo),
         model(model), manufacturer(manufacturer), cpldN(cpldN)
     {
         b = busN;

@@ -45,8 +45,7 @@ bool sendI2cCmdForRead(int fd, uint16_t slaveId,
         return false;
     }
 
-    struct i2c_rdwr_ioctl_data rdwrMsg
-    {};
+    struct i2c_rdwr_ioctl_data rdwrMsg{};
     struct i2c_msg msg[2]{};
     int ret = -1;
 
@@ -87,8 +86,7 @@ bool sendI2cCmdForWrite(int fd, uint16_t slaveId,
         return false;
     }
 
-    struct i2c_rdwr_ioctl_data rdwrMsg
-    {};
+    struct i2c_rdwr_ioctl_data rdwrMsg{};
     struct i2c_msg msg[1]{};
     int ret = -1;
 
@@ -135,8 +133,7 @@ bool sendI2cCmdForWriteRead(int fd, uint16_t slaveId,
         return false;
     }
 
-    struct i2c_rdwr_ioctl_data rdwrMsg
-    {};
+    struct i2c_rdwr_ioctl_data rdwrMsg{};
     struct i2c_msg msg[2]{};
     int ret = -1;
 

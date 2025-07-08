@@ -328,8 +328,7 @@ bool GlacierRecoveryCommands::performSRAMExe()
 
 GlacierRecoveryCommands::GlacierRecoveryCommands(int busAdd, int slaveAdd,
                                                  bool verbose) :
-    busAddress(busAdd),
-    slaveAddress(slaveAdd), verbose(verbose)
+    busAddress(busAdd), slaveAddress(slaveAdd), verbose(verbose)
 {}
 
 RecoveryResult GlacierRecoveryCommands::performInitialization()

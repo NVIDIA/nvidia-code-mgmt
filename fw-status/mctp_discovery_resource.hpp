@@ -57,8 +57,7 @@ class MCTPDiscoveryResource : public BaseResource
      */
     MCTPDiscoveryResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                           const std::string& uuid) :
-        BaseResource(bus, objPath),
-        uuid(uuid)
+        BaseResource(bus, objPath), uuid(uuid)
     {
         // Don't update health on startup because the inherited resource
         // will do that in its constructor

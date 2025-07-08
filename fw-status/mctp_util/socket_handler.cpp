@@ -66,8 +66,7 @@ int DaemonHandler::initSocket(int type, int protocol,
     auto fd = std::make_unique<utils::CustomFD>(sockFd);
 
     /* Initiate a connection to the socket */
-    struct sockaddr_un addr
-    {};
+    struct sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     memcpy(addr.sun_path, pathName.data(), pathName.size());
     rc = connect(sockFd, reinterpret_cast<struct sockaddr*>(&addr),

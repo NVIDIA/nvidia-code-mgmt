@@ -74,8 +74,7 @@ class GpuResource : public MCTPDiscoveryResource
                 const std::string& chassisObjPath, const uint64_t i2cBus,
                 const uint64_t i2cAddress, const std::string& uuid,
                 const uint32_t smaEid) :
-        MCTPDiscoveryResource(bus, objPath, uuid),
-        smaEid(smaEid)
+        MCTPDiscoveryResource(bus, objPath, uuid), smaEid(smaEid)
     {
         ocpRecoveryCommands = std::make_unique<
             recovery_tool::recovery_commands::OCPRecoveryCommands>(
