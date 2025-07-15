@@ -75,19 +75,13 @@ class CX8RecoveryUpdater : public BaseItemUpdater
      * @param targetFilter
      * @return std::string
      */
-    std::string
-        getServiceArgs([[maybe_unused]] const std::string& inventoryPath,
-                       const std::string& imagePath,
-                       [[maybe_unused]] const std::string& version,
-                       [[maybe_unused]] const TargetFilter& targetFilter,
-                       [[maybe_unused]] const bool forceUpdate) const override
+    std::string getServiceArgs(
+        [[maybe_unused]] const std::string& inventoryPath,
+        const std::string& imagePath,
+        [[maybe_unused]] const std::string& version,
+        [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
-        std::string args = "";
-        if (forceUpdate)
-        {
-            args += "\\x2d\\x2dforce\\x20";
-        }
-        args += imagePath;
+        std::string args = imagePath;
         std::replace(args.begin(), args.end(), '/', '-');
         return args;
     }
