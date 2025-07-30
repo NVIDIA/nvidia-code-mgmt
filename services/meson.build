@@ -5,13 +5,17 @@ if get_option('FWSTATUS_SUPPORT').enabled()
 endif
 
 if get_option('PSU_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.PSU.Updater.service',
-                                'psu-update@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.PSU.Updater.service',
+        'psu-update@.service',
+    ]
 endif
 
 if get_option('FPGA_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.FPGA.Updater.service',
-                                'fpga-update@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.FPGA.Updater.service',
+        'fpga-update@.service',
+    ]
 endif
 
 if get_option('CPLD_SUPPORT').enabled()
@@ -21,51 +25,69 @@ if get_option('CPLD_SUPPORT').enabled()
     if cpld_model != ''
         unit_files = unit_files + ['com.Nvidia.CPLD.Updater.service']
     else
-        unit_files = unit_files + ['com.Nvidia.CPLD_N.Starter.service',
-                                    'com.Nvidia.CPLD_N.Updater@.service']
+        unit_files = unit_files + [
+            'com.Nvidia.CPLD_N.Starter.service',
+            'com.Nvidia.CPLD_N.Updater@.service',
+        ]
     endif
 endif
 
 if get_option('RT_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.RT.Updater.service',
-                                'rt-update@.service',
-                                'rt-update-direct@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.RT.Updater.service',
+        'rt-update@.service',
+        'rt-update-direct@.service',
+    ]
 endif
 
 if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.OCP.GPU.Recovery.service',
-                                'ocp-recovery@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.OCP.GPU.Recovery.service',
+        'ocp-recovery@.service',
+    ]
 endif
 
 if get_option('PEX_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.PEX.Updater.service',
-                                'pex-update@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.PEX.Updater.service',
+        'pex-update@.service',
+    ]
 endif
 
 if get_option('ORIN_FLASH_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.ORIN.Updater.service',
-                                'orin-update@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.ORIN.Updater.service',
+        'orin-update@.service',
+    ]
 endif
 
 if get_option('SMCU_FLASH_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.SMCU.Updater.service',
-                                'smcu-update@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.SMCU.Updater.service',
+        'smcu-update@.service',
+    ]
 endif
 
 if get_option('SEP_FLASH_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.SEP.Updater.service',
-                                'sep-update@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.SEP.Updater.service',
+        'sep-update@.service',
+    ]
 endif
 
 if get_option('IGX_FUSE_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.IGXFUSE.Updater.service',
-                                'igx-fuse-update@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.IGXFUSE.Updater.service',
+        'igx-fuse-update@.service',
+    ]
 endif
 
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.DebugTokenInstall.Updater.service',
-                                'com.Nvidia.DebugTokenErase.Updater.service',
-                                'debug-token-update@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.DebugTokenInstall.Updater.service',
+        'com.Nvidia.DebugTokenErase.Updater.service',
+        'debug-token-update@.service',
+    ]
 endif
 
 if get_option('MTD_UPDATER_SUPPORT').enabled()
@@ -78,7 +100,13 @@ if get_option('MTD_UPDATER_SUPPORT').enabled()
         fpga_sed_arg = 's/FPGA_MODEL/'
         fpga_sed_arg += fpga_model
         fpga_sed_arg += '/g'
-        run_command('sed', '-i', fpga_sed_arg, 'com.Nvidia.MTD.Updater.fpga1.service', check: true)
+        run_command(
+            'sed',
+            '-i',
+            fpga_sed_arg,
+            'com.Nvidia.MTD.Updater.fpga1.service',
+            check: true,
+        )
     endif
 
     bmc_model = get_option('BMC_SUPPORTED_MODEL')
@@ -86,9 +114,15 @@ if get_option('MTD_UPDATER_SUPPORT').enabled()
     if (bmc_model != '')
         unit_files = unit_files + ['com.Nvidia.MTD.Updater.bmc.service']
         bmc_sed_arg = 's/BMC_MODEL/'
-        bmc_sed_arg +=bmc_model
+        bmc_sed_arg += bmc_model
         bmc_sed_arg += '/g'
-        run_command('sed', '-i', bmc_sed_arg, 'com.Nvidia.MTD.Updater.bmc.service', check: true)
+        run_command(
+            'sed',
+            '-i',
+            bmc_sed_arg,
+            'com.Nvidia.MTD.Updater.bmc.service',
+            check: true,
+        )
     endif
 
     pciechip_model = get_option('PCIECHIP_SUPPORTED_MODEL')
@@ -96,22 +130,35 @@ if get_option('MTD_UPDATER_SUPPORT').enabled()
     if (pciechip_model != '')
         unit_files = unit_files + ['com.Nvidia.MTD.Updater.pciechip.service']
         pciechip_sed_arg = 's/PCIECHIP_MODEL/'
-        pciechip_sed_arg +=pciechip_model
+        pciechip_sed_arg += pciechip_model
         pciechip_sed_arg += '/g'
-        run_command('sed', '-i', pciechip_sed_arg, 'com.Nvidia.MTD.Updater.pciechip.service', check: true)
+        run_command(
+            'sed',
+            '-i',
+            pciechip_sed_arg,
+            'com.Nvidia.MTD.Updater.pciechip.service',
+            check: true,
+        )
     endif
 
-    assert(bmc_model != '' or fpga_model !='' or pciechip_model !='' ,  'BMC, FPGA, or PCIECHIP model must be set when using MTD updater')
+    assert(
+        bmc_model != '' or fpga_model != '' or pciechip_model != '',
+        'BMC, FPGA, or PCIECHIP model must be set when using MTD updater',
+    )
 endif
 
 if get_option('SWITCHTEC_FUSE_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.Switchtec.Fuse.service',
-                                'switchtec-fuser@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.Switchtec.Fuse.service',
+        'switchtec-fuser@.service',
+    ]
 endif
 
 if get_option('JAMPLAYER_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.Jamplayer.service',
-                                'jamplayer-flash@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.Jamplayer.service',
+        'jamplayer-flash@.service',
+    ]
 endif
 
 if get_option('VMEPLAYER_SUPPORT').enabled()
@@ -123,7 +170,13 @@ if get_option('VMEPLAYER_SUPPORT').enabled()
         cpld0_sed_arg = 's/CPLD0_MODEL/'
         cpld0_sed_arg += cpld0_model
         cpld0_sed_arg += '/g'
-        run_command('sed', '-i', cpld0_sed_arg, 'com.Nvidia.Vmeplayer0.service', check: true)
+        run_command(
+            'sed',
+            '-i',
+            cpld0_sed_arg,
+            'com.Nvidia.Vmeplayer0.service',
+            check: true,
+        )
     endif
 
     cpld1_model = get_option('VMEPLAYER1_SUPPORTED_MODEL')
@@ -131,33 +184,50 @@ if get_option('VMEPLAYER_SUPPORT').enabled()
     if (cpld1_model != '')
         unit_files = unit_files + ['com.Nvidia.Vmeplayer1.service']
         cpld1_sed_arg = 's/CPLD1_MODEL/'
-        cpld1_sed_arg +=cpld1_model
+        cpld1_sed_arg += cpld1_model
         cpld1_sed_arg += '/g'
-        run_command('sed', '-i', cpld1_sed_arg, 'com.Nvidia.Vmeplayer1.service', check: true)
+        run_command(
+            'sed',
+            '-i',
+            cpld1_sed_arg,
+            'com.Nvidia.Vmeplayer1.service',
+            check: true,
+        )
     endif
 
-    assert(cpld0_model != '' or cpld1_model !='', 'Lattice CPLD0 or CPLD1 model must be set when using VME updater')
+    assert(
+        cpld0_model != '' or cpld1_model != '',
+        'Lattice CPLD0 or CPLD1 model must be set when using VME updater',
+    )
 endif
 
 if get_option('GLACIER_RECOVERY_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.GlacierRecovery.Updater.service',
-                                'glacier-recovery@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.GlacierRecovery.Updater.service',
+        'glacier-recovery@.service',
+    ]
 endif
 
 if get_option('MCU_RECOVERY_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.MCURecovery.Starter.service',
-                                'com.Nvidia.MCURecovery.Updater@.service',
-                                'mcu-recovery@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.MCURecovery.Starter.service',
+        'com.Nvidia.MCURecovery.Updater@.service',
+        'mcu-recovery@.service',
+    ]
 endif
 
 if get_option('CX8_RECOVERY_SUPPORT').enabled()
-    unit_files = unit_files + ['com.Nvidia.CX8Recovery.Updater.service',
-                               'cx8-recovery@.service']
+    unit_files = unit_files + [
+        'com.Nvidia.CX8Recovery.Updater.service',
+        'cx8-recovery@.service',
+    ]
 endif
 
 foreach unit : unit_files
-configure_file(input: unit,
-               output: unit,
-               copy: true,
-               install_dir: servicedir)
+    configure_file(
+        input: unit,
+        output: unit,
+        copy: true,
+        install_dir: servicedir,
+    )
 endforeach

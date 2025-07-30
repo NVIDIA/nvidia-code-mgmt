@@ -1,15 +1,15 @@
 systemd = dependency('systemd')
-servicedir = systemd.get_variable(pkgconfig : 'systemdsystemunitdir')
+servicedir = systemd.get_variable(pkgconfig: 'systemdsystemunitdir')
 
 cdata_igx_fuse = configuration_data()
 
-cdata_igx_fuse.set_quoted(
-    'BUSNAME', 'com.Nvidia.IGXFUSE')
+cdata_igx_fuse.set_quoted('BUSNAME', 'com.Nvidia.IGXFUSE')
 
 cdata_igx_fuse.set_quoted(
-    'BASE_INV_PATH', '/xyz/openbmc_project/inventory/system/board')
-cdata_igx_fuse.set_quoted(
-    'SW_INV_PATH', '/xyz/openbmc_project/software')
+    'BASE_INV_PATH',
+    '/xyz/openbmc_project/inventory/system/board',
+)
+cdata_igx_fuse.set_quoted('SW_INV_PATH', '/xyz/openbmc_project/software')
 
 sdbusplus = dependency('sdbusplus')
 sdeventplus = dependency('sdeventplus')

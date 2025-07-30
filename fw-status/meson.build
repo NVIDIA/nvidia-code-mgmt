@@ -1,11 +1,15 @@
-inc_dirs = include_directories(['.', '../src/',
-    '../debug_token/',
-    '../recovery_tool/ocp_recovery_tool/',
-    '../recovery_tool/glacier_recovery_tool/',
-    '../recovery_tool/mcu_recovery_tool/',
-    '../recovery_tool/common',
-    './mctp_util',
-    ])
+inc_dirs = include_directories(
+    [
+        '.',
+        '../src/',
+        '../debug_token/',
+        '../recovery_tool/ocp_recovery_tool/',
+        '../recovery_tool/glacier_recovery_tool/',
+        '../recovery_tool/mcu_recovery_tool/',
+        '../recovery_tool/common',
+        './mctp_util',
+    ],
+)
 
 recovery_common_dir = '../recovery_tool/common'
 ocp_recovery_dir = '../recovery_tool/ocp_recovery_tool'
@@ -37,20 +41,21 @@ source_files = [
 ]
 
 sdeventplus = dependency('sdeventplus')
-executable('fw-status',
-            sources: source_files,
-            include_directories: inc_dirs,
-            cpp_args: compiler_args,
-            dependencies:[
-                   phosphor_logging,
-                   phosphor_dbus_interfaces,
-                   sdbusplus,
-                   sdeventplus,
-                   fmt,
-                   ssl,
-                   libgpiocxx,
-                   libusb_dep,
-               ],
-            install: true,
-            install_dir: get_option('bindir')
+executable(
+    'fw-status',
+    sources: source_files,
+    include_directories: inc_dirs,
+    cpp_args: compiler_args,
+    dependencies: [
+        phosphor_logging,
+        phosphor_dbus_interfaces,
+        sdbusplus,
+        sdeventplus,
+        fmt,
+        ssl,
+        libgpiocxx,
+        libusb_dep,
+    ],
+    install: true,
+    install_dir: get_option('bindir'),
 )

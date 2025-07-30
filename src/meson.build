@@ -1,6 +1,4 @@
-configure_file(output: 'config.h',
-            configuration: cdata, 
-)
+configure_file(output: 'config.h', configuration: cdata)
 psu_inc = include_directories('.')
 
 source_files = [
@@ -11,7 +9,7 @@ source_files = [
     'base_controller.cpp',
     'dbusutils.cpp',
     'base_item_updater.cpp',
-    'signature_verifier.cpp'
+    'signature_verifier.cpp',
 ]
 
 if get_option('PSU_SUPPORT').enabled()
@@ -87,17 +85,18 @@ if get_option('CX8_RECOVERY_SUPPORT').enabled()
     source_files += 'cx8_recovery.cpp'
 endif
 
-executable('code-manager',
-            sources: source_files,
-            include_directories: psu_inc,
-            cpp_args: compiler_args,
-            dependencies:[
-                   phosphor_logging,
-                   phosphor_dbus_interfaces,
-                   sdbusplus,
-                   fmt,
-                   ssl,
-               ],
-            install: true,
-            install_dir: get_option('bindir')
+executable(
+    'code-manager',
+    sources: source_files,
+    include_directories: psu_inc,
+    cpp_args: compiler_args,
+    dependencies: [
+        phosphor_logging,
+        phosphor_dbus_interfaces,
+        sdbusplus,
+        fmt,
+        ssl,
+    ],
+    install: true,
+    install_dir: get_option('bindir'),
 )
