@@ -25,9 +25,8 @@ GPIOResource<T>::GPIOResource(sdbusplus::bus::bus& bus,
                               const uint64_t i2cAddress,
                               const std::string& uuid, const std::string& gpio,
                               const std::string& target) :
-    BaseResource(bus, objPath),
-    sdEvent(event), uuid(uuid), gpioLineName(gpio), systemTarget(target),
-    isEROT(true)
+    BaseResource(bus, objPath), sdEvent(event), uuid(uuid), gpioLineName(gpio),
+    systemTarget(target), isEROT(true)
 {
     isFirmwareInRecovery = false;
     glacierRecoveryObj =
@@ -48,9 +47,9 @@ GPIOResource<T>::GPIOResource(
     const std::string& risingTarget, const std::string& fallingTarget,
     const std::string& gpioPolarity, const std::string chassisObjPath,
     std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
-    BaseResource(bus, objPath),
-    sdEvent(event), uuid(uuid), gpioLineName(gpio), risingTarget(risingTarget),
-    fallingTarget(fallingTarget), isEROT(false), mctpVdmHelper(mctpVdmHelper)
+    BaseResource(bus, objPath), sdEvent(event), uuid(uuid), gpioLineName(gpio),
+    risingTarget(risingTarget), fallingTarget(fallingTarget), isEROT(false),
+    mctpVdmHelper(mctpVdmHelper)
 {
     if (!chassisObjPath.empty())
     {
@@ -343,7 +342,7 @@ uint8_t GPIOResource<T>::fetchEid() const noexcept
     {
         auto method = bus.new_method_call(mapperService, mapperPath,
                                           mapperInterface, "GetSubTree");
-        method.append("/xyz/openbmc_project/mctp", 0, ifaceList);
+        method.append(mctpObjPathPrefix.data(), 0, ifaceList);
         auto reply = bus.call(method);
         reply.read(getSubTreeResponse);
     }

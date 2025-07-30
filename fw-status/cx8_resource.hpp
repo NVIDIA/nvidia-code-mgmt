@@ -12,8 +12,7 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * limitations under the License. */
 
 #pragma once
 
@@ -49,8 +48,8 @@ class Cx8Resource : public MCTPDiscoveryResource
                 const std::string& chassisObjPath, const uint64_t i2cBus,
                 const uint64_t i2cAddress, const std::string& uuid,
                 const uint32_t smaEid) :
-        MCTPDiscoveryResource(bus, objPath, uuid),
-        smaEid(smaEid), busAddress(i2cBus), slaveAddress(i2cAddress)
+        MCTPDiscoveryResource(bus, objPath, uuid), smaEid(smaEid),
+        busAddress(i2cBus), slaveAddress(i2cAddress)
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
         bootStatus->bootStatusType(
@@ -67,7 +66,6 @@ class Cx8Resource : public MCTPDiscoveryResource
     std::unordered_map<std::string, std::string> mctpSMAEidObjects;
     std::vector<sdbusplus::bus::match_t> deviceSMAMatches;
     std::unique_ptr<sdbusplus::bus::match_t> chassisPowerStateMatch;
-    std::string const mctpPath = "/xyz/openbmc_project/mctp";
     std::string const chassisService = "xyz.openbmc_project.State.Chassis";
     std::string const chassisPath = "/xyz/openbmc_project/state/chassis0";
     std::string const chassisInterface = "xyz.openbmc_project.State.Chassis";
@@ -164,8 +162,8 @@ class Cx8Resource : public MCTPDiscoveryResource
         for (const auto& serviceName : mctpCtrlServices)
         {
             auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-            const auto objects = dbusUtil.getManagedObjects(serviceName.c_str(),
-                                                            mctpPath.c_str());
+            const auto objects = dbusUtil.getManagedObjects(
+                serviceName.c_str(), mctpObjMgrPath.data());
 
             for (const auto& [objectPath, interfaces] : objects)
             {
@@ -205,7 +203,7 @@ class Cx8Resource : public MCTPDiscoveryResource
         if (mctpSMAEidObjects.empty())
         {
             mctpSMAObjManagerMatch.emplace_back(
-                bus, MatchRules::interfacesAdded(mctpPath),
+                bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
                 [&]([[maybe_unused]] sdbusplus::message::message& msg) {
                     startWatchingSMAMCTPObjects(true);
                 });

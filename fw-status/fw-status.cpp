@@ -51,16 +51,6 @@ constexpr auto cx8ObjInterface =
     "xyz.openbmc_project.Configuration.CX8Recovery";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/";
-constexpr auto configurableStateManagerService =
-    "xyz.openbmc_project.State.ConfigurableStateManager";
-constexpr auto configurableStateManagerPath =
-    "/xyz/openbmc_project/state/configurableStateManager";
-constexpr auto configurableStateManagerMctpPath =
-    "/xyz/openbmc_project/state/configurableStateManager/MCTP";
-constexpr auto csmFeatureReadyStateIntfName =
-    "xyz.openbmc_project.State.FeatureReady";
-constexpr auto csmFeatureReadyStateEnabled =
-    "xyz.openbmc_project.State.FeatureReady.States.Enabled";
 constexpr auto recoveryConfigIntfName =
     "xyz.openbmc_project.Inventory.Item.Recovery_Config";
 
@@ -70,9 +60,6 @@ using namespace mctp_vdm;
 
 std::vector<std::unique_ptr<BaseResource>> resources;
 
-// Define the maps to hold unique matches
-std::unique_ptr<sdbusplus::bus::match_t> csmServiceMatch;
-std::unique_ptr<sdbusplus::bus::match_t> csmServiceStateMatch;
 std::unique_ptr<sdbusplus::bus::match_t> entityManagerServiceMatch;
 
 #ifdef MCTP_IN_KERNEL
@@ -210,7 +197,7 @@ std::string getMctpUUID(uint32_t eid)
     {
         auto method = getBus().new_method_call(mapperService, mapperPath,
                                                mapperInterface, "GetSubTree");
-        method.append("/xyz/openbmc_project/mctp", 0, ifaceList);
+        method.append(mctpObjPathPrefix.data(), 0, ifaceList);
         auto reply = getBus().call(method);
         reply.read(getSubTreeResponse);
     }
@@ -227,7 +214,7 @@ std::string getMctpUUID(uint32_t eid)
         {
             auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
             const auto objects = dbusUtil.getManagedObjects(
-                service.c_str(), "/xyz/openbmc_project/mctp");
+                service.c_str(), mctpObjMgrPath.data());
 
             for (const auto& [objectPath, interfaces] : objects)
             {
@@ -650,115 +637,6 @@ void publishDBusRecoveryObject()
 }
 
 /**
- * @brief Callback for CSM service state change message
- *
- * @param[in] msg The D-Bus message
- *
- * @return None
- */
-void onMCTPServiceStateChangeMsg(sdbusplus::message::message& msg)
-{
-    std::string iface;
-    std::map<std::string, std::variant<std::string, bool, uint8_t>>
-        changedProperties;
-    std::vector<std::string> invalidatedProperties;
-
-    msg.read(iface, changedProperties, invalidatedProperties);
-
-    if (iface == csmFeatureReadyStateIntfName &&
-        changedProperties.find("State") != changedProperties.end())
-    {
-        checkEntityManagerAvailability();
-    }
-}
-
-/**
- * @brief Add a match if it doesn't already exist
- *
- * @param[in] objectPath The D-Bus object path
- * @param[in] interfaceName The D-Bus interface name
- * @param[in] callback The callback function to be called on match
- *
- * @return None
- */
-void addServiceStateMatch(
-    const std::string& objectPath, const std::string& interfaceName,
-    std::function<void(sdbusplus::message::message&)> callback)
-{
-    try
-    {
-        csmServiceStateMatch = std::make_unique<sdbusplus::bus::match_t>(
-            getBus(), MatchRules::propertiesChanged(objectPath, interfaceName),
-            callback);
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error(
-            "D-Bus error while creating propertiesChanged event for {OBJPATH}: {ERROR} ",
-            "OBJPATH", objectPath, "ERROR", e.what());
-    }
-}
-
-/**
- * @brief Try to publish the D-Bus recovery object
- *
- * @param[in] createInterfaceAddedEvent If true, sets up a match to listen for
- *                                      `InterfacesAdded` events.
- * @return None
- */
-void tryPublishDBusRecoveryObject(bool createInterfaceAddedEvent = true)
-{
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    bool servicesEnabled = false;
-
-    if (createInterfaceAddedEvent)
-    {
-        csmServiceMatch = std::make_unique<sdbusplus::bus::match_t>(
-            getBus(), MatchRules::interfacesAdded(configurableStateManagerPath),
-            [](sdbusplus::message::message& msg) {
-                sdbusplus::message::object_path objPath;
-                std::map<std::string, std::map<std::string, Value>> interfaces;
-                msg.read(objPath, interfaces);
-
-                if (objPath.str == configurableStateManagerMctpPath)
-                {
-                    tryPublishDBusRecoveryObject(false);
-                }
-            });
-    }
-
-    try
-    {
-        auto state = dbusUtil.getProperty<std::string>(
-            configurableStateManagerService, configurableStateManagerMctpPath,
-            csmFeatureReadyStateIntfName, "State");
-
-        servicesEnabled = (state == csmFeatureReadyStateEnabled);
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error(
-            "D-Bus error while fetching state property for {SERVICE}, {OBJPATH}: {ERROR} ",
-            "SERVICE", configurableStateManagerService, "OBJPATH",
-            configurableStateManagerMctpPath, "ERROR", e.what());
-        return;
-    }
-
-    csmServiceMatch.reset();
-
-    if (servicesEnabled)
-    {
-        checkEntityManagerAvailability();
-    }
-    else
-    {
-        addServiceStateMatch(configurableStateManagerMctpPath,
-                             csmFeatureReadyStateIntfName,
-                             onMCTPServiceStateChangeMsg);
-    }
-}
-
-/**
  * @brief Get recovery configurations from the D-Bus
  *
  * @return True when configurations are available on D-Bus,
@@ -858,7 +736,7 @@ int main()
             std::initializer_list<mctp_vdm::MctpDiscoveryHandlerIntf*>{
                 mctpVdmHelper.get()});
 
-    tryPublishDBusRecoveryObject();
+    checkEntityManagerAvailability();
 
     event.loop();
 }

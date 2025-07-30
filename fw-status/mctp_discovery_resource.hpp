@@ -27,13 +27,15 @@
 
 constexpr static auto mctpEndpointIntfName{"xyz.openbmc_project.MCTP.Endpoint"};
 constexpr static auto mctpEndpointEnableIntfName{
-    "xyz.openbmc_project.Object.Enable"};
+    "au.com.codeconstruct.MCTP.Endpoint1"};
 constexpr static auto uuidIntfName{"xyz.openbmc_project.Common.UUID"};
 constexpr auto mapperService = "xyz.openbmc_project.ObjectMapper";
 constexpr auto mapperPath = "/xyz/openbmc_project/object_mapper";
 constexpr auto mapperInterface = "xyz.openbmc_project.ObjectMapper";
 constexpr static std::string_view mctpObjPathPrefix =
-    "/xyz/openbmc_project/mctp/0/";
+    "/au/com/codeconstruct/mctp1/networks/1/endpoints/";
+constexpr static std::string_view mctpObjMgrPath =
+    "/au/com/codeconstruct/mctp1";
 
 using namespace phosphor::logging;
 
@@ -57,8 +59,7 @@ class MCTPDiscoveryResource : public BaseResource
      */
     MCTPDiscoveryResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                           const std::string& uuid) :
-        BaseResource(bus, objPath),
-        uuid(uuid)
+        BaseResource(bus, objPath), uuid(uuid)
     {
         // Don't update health on startup because the inherited resource
         // will do that in its constructor

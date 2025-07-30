@@ -56,8 +56,7 @@ class APResource : public BaseResource
      */
     APResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                uint8_t apEid, ERoTResource<T>* erotResource) :
-        BaseResource(bus, objPath),
-        eid(apEid), erotResource(erotResource)
+        BaseResource(bus, objPath), eid(apEid), erotResource(erotResource)
     {
         startWatchingApEid();
         initializeHealth().detach();
@@ -138,10 +137,10 @@ class APResource : public BaseResource
             std::string(mctpObjPathPrefix) + std::to_string(eid);
         auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
 
-        auto ret =
-            dbusUtil.getProperty<bool>(apMCTPService.c_str(), objPath.c_str(),
-                                       mctpEndpointEnableIntfName, "Enabled");
-        return ret;
+        auto ret = dbusUtil.getProperty<std::string>(
+            apMCTPService.c_str(), objPath.c_str(), mctpEndpointEnableIntfName,
+            "Connectivity");
+        return ret == "Available";
     }
 
     /**@brief Checks whether the associated MCTP EID object is enumerated

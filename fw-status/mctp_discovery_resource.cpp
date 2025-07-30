@@ -29,7 +29,7 @@ std::unordered_set<std::string>
     {
         auto method = bus.new_method_call(mapperService, mapperPath,
                                           mapperInterface, "GetSubTree");
-        method.append("/xyz/openbmc_project/mctp", 0, ifaceList);
+        method.append(mctpObjPathPrefix.data(), 0, ifaceList);
         auto reply = bus.call(method);
         reply.read(getSubTreeResponse);
     }
@@ -59,8 +59,8 @@ std::unordered_map<std::string, std::string>
     for (const auto& serviceName : mctpCtrlServices)
     {
         auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-        const auto objects = dbusUtil.getManagedObjects(
-            serviceName.c_str(), "/xyz/openbmc_project/mctp");
+        const auto objects = dbusUtil.getManagedObjects(serviceName.c_str(),
+                                                        mctpObjMgrPath.data());
 
         for (const auto& [objectPath, interfaces] : objects)
         {
@@ -87,7 +87,7 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects(bool needUpdateHealth)
     if (mctpEidObjects.empty())
     {
         mctpObjManagerMatch.emplace_back(
-            bus, MatchRules::interfacesAdded("/xyz/openbmc_project/mctp"),
+            bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
             [&]([[maybe_unused]] sdbusplus::message::message& msg) {
                 startWatchingMCTPObjects(true);
             });
@@ -124,16 +124,16 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects(bool needUpdateHealth)
 bool MCTPDiscoveryResource::checkForEnabledMCTPEids() const noexcept
 {
     auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-    bool ret = false;
+    std::string ret{};
     for (const auto& [service, mctpObject] : mctpEidObjects)
     {
         try
         {
-            ret = ret or dbusUtil.getProperty<bool>(
-                             service.c_str(), mctpObject.c_str(),
-                             mctpEndpointEnableIntfName, "Enabled");
+            ret = dbusUtil.getProperty<std::string>(
+                service.c_str(), mctpObject.c_str(), mctpEndpointEnableIntfName,
+                "Connectivity");
             // return true if any of the MCTP EIDs are enabled
-            if (ret)
+            if (ret == "Available")
             {
                 return true;
             }
@@ -141,9 +141,9 @@ bool MCTPDiscoveryResource::checkForEnabledMCTPEids() const noexcept
         catch (const std::exception& e)
         {
             lg2::error(
-                "Failed to get Enabled property for {OBJECT} on service {SERVICE}. Error: {ERROR}",
+                "Failed to get Connectivity property for {OBJECT} on service {SERVICE}. Error: {ERROR}",
                 "OBJECT", mctpObject, "SERVICE", service, "ERROR", e.what());
         }
     }
-    return ret;
+    return ret == "Available";
 }
