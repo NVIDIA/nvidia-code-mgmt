@@ -60,8 +60,7 @@ class Handler
     explicit Handler(sdeventplus::Event& event,
                      mctp_vdm::requester::Handler<T>& handler,
                      mctp_socket::Manager& manager) :
-        event(event),
-        handler(handler), manager(manager)
+        event(event), handler(handler), manager(manager)
     {}
 
     /** @brief Register MCTP endpoint with socket information

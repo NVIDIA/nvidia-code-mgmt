@@ -25,8 +25,8 @@ ERoTResource<T>::ERoTResource(
     const std::string& uuid, const uint64_t apEid,
     const std::string chassisObjPath, const std::string apObjPath,
     const bool isRecoverable, std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
-    MCTPDiscoveryResource(bus, objPath, uuid),
-    sdEvent(event), mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
+    MCTPDiscoveryResource(bus, objPath, uuid), sdEvent(event),
+    mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
 {
     glacierRecoveryObj =
         std::make_unique<glacier_recovery_tool::glacier_recovery_commands::
@@ -58,8 +58,8 @@ ERoTResource<T>::ERoTResource(sdbusplus::bus::bus& bus,
                               const std::string chassisObjPath,
                               const bool isRecoverable,
                               std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
-    MCTPDiscoveryResource(bus, objPath, uuid),
-    sdEvent(event), mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
+    MCTPDiscoveryResource(bus, objPath, uuid), sdEvent(event),
+    mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
 {
     bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
     bootStatus->bootStatus({0});

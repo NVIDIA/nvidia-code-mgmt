@@ -290,8 +290,7 @@ std::vector<uint8_t>
 
 OCPRecoveryCommands::OCPRecoveryCommands(int busAddr, int slaveAddr, bool verb,
                                          bool emul) :
-    busAddress(busAddr),
-    slaveAddress(slaveAddr), verbose(verb), emulation(emul)
+    busAddress(busAddr), slaveAddress(slaveAddr), verbose(verb), emulation(emul)
 {}
 
 std::tuple<bool, std::vector<uint8_t>, std::string>

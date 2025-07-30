@@ -64,8 +64,7 @@ class BaseItemUpdater :
                     const std::string& inventoryIface, const std::string& name,
                     const std::string& busName, const std::string& serviceName,
                     bool updateTogether, const std::string& inventoryBusName) :
-        DBUSUtils(bus),
-        _name(name), busName(busName), serviceName(serviceName),
+        DBUSUtils(bus), _name(name), busName(busName), serviceName(serviceName),
         inventoryIface(inventoryIface), updateTogether(updateTogether),
         inventoryBusName(inventoryBusName), publicKey("")
     {

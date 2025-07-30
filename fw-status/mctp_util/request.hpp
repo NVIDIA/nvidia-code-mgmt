@@ -66,8 +66,7 @@ class RequestRetryTimer
     explicit RequestRetryTimer(sdeventplus::Event& event, uint8_t numRetries,
                                std::chrono::milliseconds timeout) :
 
-        event(event),
-        numRetries(numRetries), timeout(timeout),
+        event(event), numRetries(numRetries), timeout(timeout),
         timer(event.get(), std::bind_front(&RequestRetryTimer::callback, this))
     {}
 
@@ -169,8 +168,8 @@ class DaemonRequest final : public RequestRetryTimer
     explicit DaemonRequest(int fd, uint8_t eid, sdeventplus::Event& event,
                            mctp::Request&& requestMsg, uint8_t numRetries,
                            std::chrono::milliseconds timeout) :
-        RequestRetryTimer(event, numRetries, timeout),
-        fd(fd), eid(eid), requestMsg(std::move(requestMsg))
+        RequestRetryTimer(event, numRetries, timeout), fd(fd), eid(eid),
+        requestMsg(std::move(requestMsg))
     {}
 
   private:
@@ -242,8 +241,8 @@ class InKernelRequest final : public RequestRetryTimer
     explicit InKernelRequest(int fd, uint8_t eid, sdeventplus::Event& event,
                              mctp::Request&& requestMsg, uint8_t numRetries,
                              std::chrono::milliseconds timeout) :
-        RequestRetryTimer(event, numRetries, timeout),
-        fd(fd), eid(eid), requestMsg(std::move(requestMsg))
+        RequestRetryTimer(event, numRetries, timeout), fd(fd), eid(eid),
+        requestMsg(std::move(requestMsg))
     {}
 
   private:

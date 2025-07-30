@@ -47,9 +47,7 @@ class CECDevice : public fpga_ceccommonutils::Util
      * @param name
      */
     CECDevice(const std::string& objPath, uint8_t busN, uint8_t address,
-              const std::string& name) :
-        name(name),
-        inventoryPath(objPath)
+              const std::string& name) : name(name), inventoryPath(objPath)
     {
         b = busN;
         d = address;

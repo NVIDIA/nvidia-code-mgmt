@@ -46,9 +46,7 @@ class RTDevice : public rtcommonutils::Util
 
   public:
     RTDevice(const std::string& objPath, int busN, int address,
-             const std::string& name) :
-        name(name),
-        inventoryPath(objPath)
+             const std::string& name) : name(name), inventoryPath(objPath)
     {
         b = busN;
         d = address;

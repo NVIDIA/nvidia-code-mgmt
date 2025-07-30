@@ -40,12 +40,11 @@ template <typename T>
 MctpDiscovery<T>::MctpDiscovery(
     sdbusplus::bus::bus& bus, mctp_socket::Handler<T>& handler,
     std::initializer_list<MctpDiscoveryHandlerIntf*> list) :
-    bus(bus),
-    mctpEndpointAddedSignal(
-        bus,
-        sdbusplus::bus::match::rules::interfacesAdded(
-            "/xyz/openbmc_project/mctp"),
-        std::bind_front(&MctpDiscovery::discoverEndpoints, this)),
+    bus(bus), mctpEndpointAddedSignal(
+                  bus,
+                  sdbusplus::bus::match::rules::interfacesAdded(
+                      "/xyz/openbmc_project/mctp"),
+                  std::bind_front(&MctpDiscovery::discoverEndpoints, this)),
     handler(handler), handlers(list)
 {
     dbus::ObjectValueTree objects;

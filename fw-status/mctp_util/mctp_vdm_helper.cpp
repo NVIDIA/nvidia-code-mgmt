@@ -31,8 +31,7 @@ MCTPVdmHelper<T>::MCTPVdmHelper(sdbusplus::bus::bus& bus,
                                 mctp_vdm::requester::Handler<T>& reqHandler,
                                 mctp_socket::Handler<T>& sockHandler,
                                 mctp_vdm::InstanceIdMgr& instanceIdMgr) :
-    bus(bus),
-    reqHandler(reqHandler), sockHandler(sockHandler),
+    bus(bus), reqHandler(reqHandler), sockHandler(sockHandler),
     instanceIdMgr(instanceIdMgr)
 {}
 

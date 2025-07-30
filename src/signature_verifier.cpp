@@ -62,8 +62,7 @@ std::vector<uint8_t> signatureToDerFormat(const uint8_t* signature)
 
 SignatureVerifier::SignatureVerifier(const std::string& filename,
                                      const std::string& publicKey) :
-    initialized(false),
-    publicKey(publicKey)
+    initialized(false), publicKey(publicKey)
 {
     if (publicKey.empty())
     {

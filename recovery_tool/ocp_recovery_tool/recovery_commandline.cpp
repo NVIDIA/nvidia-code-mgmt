@@ -10,8 +10,7 @@ namespace ocp_recovery_commandline
 OCPRecoveryCommandLine::OCPRecoveryCommandLine(const std::string_view device,
                                                int busAddr, int slaveAddr,
                                                bool verb, bool emul) :
-    verbose(verb),
-    device(device),
+    verbose(verb), device(device),
     recoveryCommands(
         std::make_unique<recovery_tool::recovery_commands::OCPRecoveryCommands>(
             busAddr, slaveAddr, verb, emul)),
