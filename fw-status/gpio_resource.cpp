@@ -305,7 +305,12 @@ mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
     auto eid = fetchEid();
     if (eid == invalidEid)
     {
-        lg2::error("Cannot get EID of {PATH}", "PATH", path);
+        lg2::error("Cannot get EID for {PATH}", "PATH", path);
+        mctpObjManagerMatch.emplace_back(
+            bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
+            [&]([[maybe_unused]] sdbusplus::message::message& msg) {
+                updateBootStatus();
+            });
         co_return 0;
     }
 
@@ -316,6 +321,8 @@ mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
                    "EID", eid);
         co_return 0;
     }
+
+    mctpObjManagerMatch.clear();
 
     const mctp_vdm::Message* responseMsg = nullptr;
     size_t responseLen = 0;
