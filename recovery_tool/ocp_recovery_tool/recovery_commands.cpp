@@ -207,8 +207,8 @@ bool OCPRecoveryCommands::isDeviceReadyForTx()
 }
 
 bool OCPRecoveryCommands::writeRecoveryChunk(
-    const std::string_view imageName, const std::vector<uint8_t>& imageData,
-    const size_t offset)
+    const std::string_view imageName, const std::string_view targetName,
+    const std::vector<uint8_t>& imageData, const size_t offset)
 {
     static uint8_t lastLoggedProgress = 0;
     size_t imageSize = imageData.size();
@@ -230,8 +230,9 @@ bool OCPRecoveryCommands::writeRecoveryChunk(
     {
         lastLoggedProgress = progress;
         std::string progressMessage = fmt::format(
-            "Writing Image ({}), Progress: {}% ({} / {} bytes)", imageName,
-            progress, (offset + currentChunkSize), imageSize);
+            "Writing Image ({} to {}), Progress: {}% ({} / {} bytes)",
+            imageName, targetName, progress, (offset + currentChunkSize),
+            imageSize);
         std::cout << progressMessage << "\n";
     }
 
@@ -254,14 +255,15 @@ bool OCPRecoveryCommands::writeRecoveryChunk(
 }
 
 bool OCPRecoveryCommands::writeRecoveryImage(
-    const std::string& imageName, const std::vector<uint8_t>& imageData)
+    const std::string& imageName, const std::string& targetName,
+    const std::vector<uint8_t>& imageData)
 {
     size_t imageSize = imageData.size();
     std::cout << "Initiating recovery image write process...\n";
 
     for (size_t offset = 0; offset < imageSize; offset += chunkSize)
     {
-        if (!writeRecoveryChunk(imageName, imageData, offset))
+        if (!writeRecoveryChunk(imageName, targetName, imageData, offset))
         {
             return false;
         }
@@ -416,50 +418,55 @@ std::tuple<bool, std::string> OCPRecoveryCommands::performRecoveryCommand(
     std::string errorMsg = "";
     try
     {
-
         for (size_t index = 0; index < imagePaths.size(); ++index)
         {
-            const auto& path = imagePaths[index];
-            if (!std::filesystem::exists(path))
+            const auto& imagePath = imagePaths[index];
+
+            // Check if image file exists
+            if (!std::filesystem::exists(imagePath))
             {
-                errorMsg = "Image does not exist: " + path;
+                errorMsg = "Image does not exist: " + imagePath;
                 return {false, errorMsg};
             }
 
-            std::vector<uint8_t> imageBytes = readFirmwareImage(path);
-
+            // Read image data
+            std::vector<uint8_t> imageBytes = readFirmwareImage(imagePath);
             if (imageBytes.empty())
             {
                 errorMsg =
                     "Failed to read data from the image file or file is empty: " +
-                    path;
+                    imagePath;
                 return {false, errorMsg};
             }
-            ImageType imageType = static_cast<ImageType>(index);
-            if (!setRecoveryControlRegisterCommand(imageType, false))
+            // Configure recovery control register
+            if (!setRecoveryControlRegisterCommand(ImageType::CMS0, false))
+            {
+                errorMsg = "Writing to RecoveryControlRegister failed for " +
+                           imagePath;
+                return {false, errorMsg};
+            }
+
+            // Configure indirect control register
+            if (!setIndirectControlRegisterCommand(ImageType::CMS0))
+            {
+                errorMsg = "Writing to IndirectControlRegister failed for " +
+                           imagePath;
+                return {false, errorMsg};
+            }
+            auto targetName = "CMS0";
+            if (!writeRecoveryImage(imagePath, targetName, imageBytes))
+            {
+                errorMsg = "Writing " + imagePath + " recovery image failed";
+                return {false, errorMsg};
+            }
+            if (!setRecoveryControlRegisterCommand(ImageType::CMS0, true))
             {
                 errorMsg =
-                    "Writing to RecoveryControlRegister failed for " + path;
-                return {false, errorMsg};
-            }
-            if (!setIndirectControlRegisterCommand(imageType))
-            {
-                errorMsg =
-                    "Writing to IndirectControlRegister failed for " + path;
-                return {false, errorMsg};
-            }
-            auto imageName = "CMS" + std::to_string(index);
-            if (!writeRecoveryImage(imageName, imageBytes))
-            {
-                errorMsg = "Writing recovery image failed for " + path;
+                    "Activating " + imagePath + " recovery image failed.";
                 return {false, errorMsg};
             }
         }
-        if (!setRecoveryControlRegisterCommand(ImageType::CMS0, true))
-        {
-            errorMsg = "Activating recovery image failed.";
-            return {false, errorMsg};
-        }
+
         return {true, ""};
     }
     catch (const std::exception& e)

@@ -308,8 +308,21 @@ nlohmann::json OCPRecoveryTool::getRecoveryStatusJson()
 
         if (success)
         {
-            jsonResponse["Device Recovery Status"] =
-                recoveryStatusToStr(static_cast<RecoveryStatus>(hexData[1]));
+            // Extract recovery status from bits [3:0] of hexData[1]
+            constexpr uint8_t recoveryStatusMask = 0x0F;
+            uint8_t recoveryStatus = hexData[1] & recoveryStatusMask;
+
+            // Extract recovery image index from bits [7:4] of hexData[1]
+            constexpr uint8_t recoveryImageIndexMask = 0xF0;
+            constexpr uint8_t recoveryImageIndexShift = 4;
+            uint8_t recoveryImageIndex =
+                (hexData[1] & recoveryImageIndexMask) >>
+                recoveryImageIndexShift;
+
+            jsonResponse["Device Recovery Status"] = recoveryStatusToStr(
+                static_cast<RecoveryStatus>(recoveryStatus));
+            jsonResponse["Recovery Image Index"] =
+                std::to_string(recoveryImageIndex);
             jsonResponse["Vendor Specific Status"] = std::to_string(hexData[2]);
         }
         else

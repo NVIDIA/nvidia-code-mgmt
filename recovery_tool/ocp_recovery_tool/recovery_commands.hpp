@@ -174,21 +174,25 @@ class OCPRecoveryCommands
     /**
      * @brief Writes a chunk of recovery image to the device
      * @param imageName The type of image.
+     * @param targetName The target CMS.
      * @param imageData The data of the recovery image.
      * @param offset The offset indicating the beginning of chunk
      * @return true if successful, false otherwise.
      */
     bool writeRecoveryChunk(const std::string_view imageName,
+                            const std::string_view targetName,
                             const std::vector<uint8_t>& imageData,
                             const size_t offset);
 
     /**
      * @brief Writes the recovery image to the device.
      * @param imageName The type of image.
+     * @param target The target CMS.
      * @param imageData The data of the recovery image.
      * @return true if successful, false otherwise.
      */
     bool writeRecoveryImage(const std::string& imageName,
+                            const std::string& targetName,
                             const std::vector<uint8_t>& imageData);
 
     /**

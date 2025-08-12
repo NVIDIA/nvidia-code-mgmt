@@ -174,7 +174,7 @@ class PerformRecovery : public CommandInterface
     {
         app->add_option(
             "-i,--images", imagePaths,
-            "List of image paths (e.g., -i /path/to/cms0 /path/to/cms1)");
+            "List of image paths (e.g., -i /path/to/image0 /path/to/image1)");
     }
 
     void exec() override
