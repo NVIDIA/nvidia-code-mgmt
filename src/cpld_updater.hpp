@@ -294,6 +294,28 @@ class CPLDItemUpdater : public BaseItemUpdater
 
         // The systemd unit shall be escaped
         std::string args = "";
+        nlohmann::json cfgJson =
+            cpldcommonutils::loadJSONFile(configFile.c_str());
+        std::string targetCpldDeviceNo = "";
+        for (const auto& component : cfgJson.at("CPLD"))
+        {
+            try
+            {
+                std::string name = component.at("Name");
+                if (std::find(targetFilter.targets.begin(),
+                              targetFilter.targets.end(),
+                              name) != targetFilter.targets.end())
+                {
+                    targetCpldDeviceNo = component.at("CPLDDeviceNo").dump();
+                    break;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << e.what() << std::endl;
+            }
+        }
+
         for (auto& inv : invs)
         {
             if (inv->getInventoryPath() == inventoryPath)
@@ -314,6 +336,20 @@ class CPLDItemUpdater : public BaseItemUpdater
                 args += inv->getCPLDDeviceNum();
                 args += "\\x20";
                 args += version; // for Message Registry
+                if (targetFilter.type == TargetFilterType::UpdateAll ||
+                    targetCpldDeviceNo == inv->getCPLDDeviceNum())
+                {
+                    // The TargetFilterType is UpdateAll or component target is
+                    // in targets, execute the update
+                    args += "\\x20";
+                    args += "EXECUTE";
+                }
+                else
+                {
+                    // Not fulfill the conditions, ignore this update
+                    args += "\\x20";
+                    args += "IGNORE";
+                }
                 break;
             }
         }

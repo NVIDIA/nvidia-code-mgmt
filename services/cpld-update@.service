@@ -1,4 +1,3 @@
-
 [Unit]
 Description=Update CPLD %I
 
@@ -6,4 +5,12 @@ Description=Update CPLD %I
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=cpldupdate $ARGS /usr/share/nvidia-power-manager/cpld_config.json
+ExecStart=/bin/sh -c '\
+    CHECK_ARGS=\"$ARGS\";\
+    ARGS=$(echo \"$ARGS\" | sed \'s/ [^ ]*$//\');\
+    if [[ \"$CHECK_ARGS\" =~ IGNORE$ ]] ; then\
+        echo \"cpld-update (IGNORE) $ARGS\";\
+    else\
+        cpldupdate $ARGS /usr/share/nvidia-power-manager/cpld_config.json;\
+    fi;\
+    '
