@@ -26,18 +26,34 @@ namespace updater
 std::string SMCUItemUpdater::getVersion(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
+    if (inventoryPath.ends_with("/ASMCU"))
+    {
+        return "ASMCU";
+    }
+    if (inventoryPath.ends_with("/RSMCU"))
+    {
+        return "RSMCU";
+    }
     return "";
 }
 
 std::string SMCUItemUpdater::getManufacturer(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
-    return "";
+    return "NVIDIA";
 }
 
 std::string SMCUItemUpdater::getModel(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
+    if (inventoryPath.ends_with("/ASMCU"))
+    {
+        return "ASMCU";
+    }
+    if (inventoryPath.ends_with("/RSMCU"))
+    {
+        return "RSMCU";
+    }
     return "";
 }
 

@@ -3,7 +3,7 @@ Description=NVIDIA IGX SMCU Firmware Version
 After=bmc-boot-complete.service
 
 [Service]
-Restart=always
+Restart=300
 Type=dbus
 ExecStart=/usr/bin/env igx-smcu-version
 SyslogIdentifier=igx-smcu-version

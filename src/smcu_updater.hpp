@@ -14,11 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #pragma once
 #include "config.h"
 
 #include "base_item_updater.hpp"
+
+#include <filesystem>
+#include <tuple>
 
 namespace nvidia
 {
@@ -34,6 +36,11 @@ namespace updater
  */
 class SMCUItemUpdater : public BaseItemUpdater
 {
+    /** @brief Tracks the model detected from the current image being
+     *         processed
+     */
+    std::string currentModelToken;
+
   public:
     /**
      * @brief Construct a new SMCUItemUpdater object
@@ -90,6 +97,28 @@ class SMCUItemUpdater : public BaseItemUpdater
         std::string args = inventoryPath;
         args += "\\x20";
         args += imagePath;
+
+        try
+        {
+            const std::string uuid = std::filesystem::path(imagePath)
+                                         .parent_path()
+                                         .filename()
+                                         .string();
+            auto mapSMCUEntry = deviceIds.find(uuid);
+            if (mapSMCUEntry != deviceIds.end())
+            {
+                const std::string& model = std::get<0>(mapSMCUEntry->second);
+                if (!model.empty())
+                {
+                    args += "\\x20";
+                    args += model; // pass model name as 3rd arg
+                }
+            }
+        }
+        catch (...)
+        {
+            // Ignore and proceed without third arg
+        }
         std::replace(args.begin(), args.end(), '/', '-');
 
         return args;
@@ -100,17 +129,96 @@ class SMCUItemUpdater : public BaseItemUpdater
      *
      * @return std::vector<std::string>
      */
+
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
-        std::string invPath = std::string(SOFTWARE_OBJPATH) + "/SMCU";
-        ret.emplace_back(invPath);
+        if (currentModelToken == "ASMCU")
+        {
+            ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/ASMCU");
+            return ret;
+        }
+        if (currentModelToken == "RSMCU")
+        {
+            ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/RSMCU");
+            return ret;
+        }
+        // Default: expose both if model not yet known
+        ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/ASMCU");
+        ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/RSMCU");
         return ret;
     }
 
     bool inventorySupported() override
     {
         return false; // default is supported
+    }
+
+    /**
+     * @brief Generate stable IDs per model.
+     *        ASMCU  -> Aurix_SMCU
+     *        RSMCU  -> Renesas_SMCU
+     *        Others -> fallback unique by UUID
+     */
+    std::string getIdProperty(const std::string& uniqueIdentifier) override
+    {
+        if (uniqueIdentifier == "ASMCU")
+        {
+            return "Aurix_SMCU";
+        }
+        if (uniqueIdentifier == "RSMCU")
+        {
+            return "Renesas_SMCU";
+        }
+
+        std::string model;
+        auto it = deviceIds.find(uniqueIdentifier);
+        if (it != deviceIds.end())
+        {
+            model = std::get<0>(it->second);
+        }
+        if (model == "ASMCU")
+        {
+            return "Aurix_SMCU";
+        }
+        if (model == "RSMCU")
+        {
+            return "Renesas_SMCU";
+        }
+
+        // Fallback to unique ID to avoid collisions
+        if (uniqueIdentifier.empty())
+        {
+            return getName();
+        }
+        std::string id = getName();
+        id += "_";
+        std::string sanitized = uniqueIdentifier;
+        std::replace(sanitized.begin(), sanitized.end(), '/', '_');
+        id += sanitized;
+        return id;
+    }
+
+    int processImage(std::filesystem::path& filePath) override
+    {
+        try
+        {
+            const std::string uuid = filePath.parent_path().filename().string();
+            auto it = deviceIds.find(uuid);
+            if (it != deviceIds.end())
+            {
+                currentModelToken = std::get<0>(it->second);
+            }
+            else
+            {
+                currentModelToken.clear();
+            }
+        }
+        catch (...)
+        {
+            currentModelToken.clear();
+        }
+        return BaseItemUpdater::processImage(filePath);
     }
 };
 
