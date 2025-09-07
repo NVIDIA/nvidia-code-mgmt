@@ -89,6 +89,10 @@ if get_option('IGX_FUSE_SUPPORT').enabled()
     ]
 endif
 
+if get_option('FLASHROM_WRAPPER_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.FlashromWrapper.service']
+endif
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.Nvidia.DebugTokenInstall.Updater.service',

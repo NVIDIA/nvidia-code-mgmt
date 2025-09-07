@@ -78,6 +78,26 @@ option('SPI_WRITE_PROTECT_APP_SUPPORT',
        value: 'disabled',
        description: 'Enables presence of write protect assert/deassert for Renesas chip')
 
+option('FLASHROM_WRAPPER_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables flashrom-wrapper support')
+
+option('FLASHROM_WRITE_SKIP_VERIFY',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Skip write verification for SPI Programmer operations')
+
+option('FLASHROM_WRITE_USE_REF_FILE',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Use reference file for SPI Programmer write operations')
+
+option('FLASHROM_WRITE_REF_FILE',
+       type: 'string',
+       value: '',
+       description: 'Reference file path for SPI Programmer write operations')
+
 option('ORIN_SUPPORTED_MODEL',
        type: 'string',
        value: '',
