@@ -72,10 +72,6 @@ class APResource : public BaseResource
 
         if (co)
         {
-            if (co.done())
-            {
-                co.destroy();
-            }
             co = nullptr;
         }
         auto rc = updateHealthAsync();

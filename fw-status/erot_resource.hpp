@@ -115,10 +115,6 @@ class ERoTResource : public MCTPDiscoveryResource
 
         if (co)
         {
-            if (co.done())
-            {
-                co.destroy();
-            }
             co = nullptr;
         }
 
