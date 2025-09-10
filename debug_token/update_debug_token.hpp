@@ -78,12 +78,14 @@ static constexpr uint8_t mctpTypeVDMIANA = 0x7f;
 constexpr auto erasePolicyIntfName = "com.nvidia.DebugToken.ErasePolicy";
 constexpr auto erasePolicyPath = "/com/nvidia/debug_token/";
 constexpr auto mctpPCIeService = "xyz.openbmc_project.MCTP.Control.PCIe";
-constexpr auto mctpPath = "/xyz/openbmc_project/mctp";
+constexpr auto mctpPath = "/au/com/codeconstruct/mctp1";
 constexpr auto objectMapperService = "xyz.openbmc_project.ObjectMapper";
 constexpr auto objectMapperIntfName = "xyz.openbmc_project.ObjectMapper";
 constexpr auto objectMapperPath = "/xyz/openbmc_project/object_mapper";
 constexpr auto mctpEndpointIntfName = "xyz.openbmc_project.MCTP.Endpoint";
 constexpr auto objectEnableIntfName = "xyz.openbmc_project.Object.Enable";
+constexpr auto mctpEndpointEnableIntfName =
+    "au.com.codeconstruct.MCTP.Endpoint1";
 constexpr auto uuidEndpointIntfName = "xyz.openbmc_project.Common.UUID";
 constexpr auto mctpBindingIntfName = "xyz.openbmc_project.MCTP.Binding";
 constexpr auto pldmService = "xyz.openbmc_project.PLDM";

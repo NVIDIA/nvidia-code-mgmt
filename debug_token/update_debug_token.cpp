@@ -346,7 +346,7 @@ MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(
     {
         supportedMsgTypes = std::get<SupportedMessageTypes>(
             eidProperties.at("SupportedMessageTypes"));
-        eid = std::get<size_t>(eidProperties.at("EID"));
+        eid = std::get<uint8_t>(eidProperties.at("EID"));
     }
 
     if (eidProperties.contains("MediumType"))
@@ -364,24 +364,35 @@ MctpEidInfo UpdateDebugToken::fetchEidInfoFromObject(
                 std::get<MctpBinding>(bindingProperties.at("BindingType"));
         }
     }
-
-    if (interfaces.contains(objectEnableIntfName))
+    // Check for Connectivity property in the new MCTP endpoint interface
+    if (interfaces.contains(mctpEndpointEnableIntfName))
     {
-        const auto& enabledProperties = interfaces.at(objectEnableIntfName);
-        if (enabledProperties.contains("Enabled"))
+        const auto& connectivityProperties =
+            interfaces.at(mctpEndpointEnableIntfName);
+        if (connectivityProperties.contains("Connectivity"))
         {
-            enabled = std::get<bool>(enabledProperties.at("Enabled"));
+            std::string connectivity = std::get<std::string>(
+                connectivityProperties.at("Connectivity"));
+            enabled = (connectivity == "Available");
             if (!enabled)
             {
                 log<level::INFO>(
-                    ("MCTP endpoint is disabled - EID=" + std::to_string(eid))
+                    ("MCTP endpoint connectivity is not available - EID=" +
+                     std::to_string(eid) + ", connectivity=" + connectivity)
                         .c_str());
             }
+        }
+        else
+        {
+            log<level::ERR>(
+                ("Failed to get MCTP endpoint Connectivity property - EID=" +
+                 std::to_string(eid))
+                    .c_str());
         }
     }
     else
     {
-        log<level::ERR>(("Failed to get MCTP endpoint Enabled property - EID=" +
+        log<level::ERR>(("Failed to get MCTP endpoint interface - EID=" +
                          std::to_string(eid))
                             .c_str());
     }
