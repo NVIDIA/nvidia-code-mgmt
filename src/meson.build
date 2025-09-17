@@ -28,6 +28,10 @@ if get_option('RT_SUPPORT').enabled()
     source_files += 'retimer_updater.cpp'
 endif
 
+if get_option('NVME_SUPPORT').enabled()
+    source_files += 'nvme_updater.cpp'
+endif
+
 if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
     source_files += 'ocp_recovery.cpp'
 endif

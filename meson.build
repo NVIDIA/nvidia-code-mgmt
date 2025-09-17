@@ -208,6 +208,28 @@ if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
     endif
 endif
 
+if get_option('NVME_SUPPORT').enabled()
+    add_project_arguments('-DNVME_SUPPORT', language: ['c', 'cpp'])
+    cdata.set_quoted(
+        'NVME_INVENTORY_IFACE',
+        'xyz.openbmc_project.Inventory.Item.Drive',
+    )
+    cdata.set_quoted('NVME_BUSNAME_UPDATER', 'com.Nvidia.Software.NVMe.Updater')
+    cdata.set_quoted('NVME_BUSNAME_INVENTORY', 'xyz.openbmc_project.NVMeDevice')
+    cdata.set_quoted('NVME_UPDATE_SERVICE', 'nvme-update@.service')
+    cdata.set_quoted(
+        'NVME_INVENTORY_PATH',
+        '/xyz/openbmc_project/inventory/system/nvme/NVMe_SSD_',
+    )
+    cdata.set_quoted(
+        'NVME_INV_PATH_FORMAT',
+        '/xyz/openbmc_project/inventory/system/nvme/NVMe_SSD_%u',
+    )
+    cdata.set_quoted('NVME_NAME', 'NVMe_SSD')
+    cdata.set_quoted('FW_NVME_NAME_FORMAT', 'FW_NVMe_SSD_%u')
+    cdata.set('NVME_UPDATE_TIMEOUT', get_option('NVME_UPDATE_TIMEOUT'))
+endif
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     add_project_arguments('-DDEBUG_TOKEN_SUPPORT', language: ['c', 'cpp'])
     cdata.set_quoted(

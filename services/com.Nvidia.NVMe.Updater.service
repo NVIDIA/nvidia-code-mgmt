@@ -1,0 +1,33 @@
+[Unit]
+Description=OpenBMC NVMe Code Manager
+After=nvidia-fpga-ready.target
+Conflicts=nvidia-fpga-notready.target
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+EnvironmentFile=/usr/share/nvme/nvmemodels.env
+ExecStart=/bin/sh -c '\
+  target=0; \
+  for line in $(env | grep "NVMeMODEL="); do \
+    model=$(echo "$line" | cut -d= -f2-); \
+    if [ -n "$model" ]; then \
+      echo "Starting code-manager for model: $model (instance: $target)"; \
+      /usr/bin/code-manager -u NVMe -i $target -m "$model" & \
+      target=$((target + 1)); \
+    fi; \
+  done; \
+  if [ -z "$(env | grep "NVMeMODEL=")" ]; then \
+    echo "Error: No NVMe models found in environment file"; \
+    exit 1; \
+  fi; \
+  echo "All code-manager instances started"; \
+  sleep infinity'
+Restart=always
+Type=simple
+BusName=com.Nvidia.Software.NVMe.Updater
+
+[Install]
+WantedBy=nvidia-fpga-ready.target 

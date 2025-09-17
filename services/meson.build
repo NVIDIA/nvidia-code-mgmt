@@ -40,6 +40,13 @@ if get_option('RT_SUPPORT').enabled()
     ]
 endif
 
+if get_option('NVME_SUPPORT').enabled()
+    unit_files = unit_files + [
+        'com.Nvidia.NVMe.Updater.service',
+        'nvme-update@.service',
+    ]
+endif
+
 if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.Nvidia.OCP.GPU.Recovery.service',

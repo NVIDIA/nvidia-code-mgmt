@@ -365,3 +365,18 @@ option(
        value: 'disabled',
        description: 'Use the in-kernel MCTP stack instead of the demux daemon'
 )
+
+option('NVME_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables NVMe drive firmware update support')
+
+option('NVME_BUSNAME_INVENTORY',
+       type: 'string',
+       value: '',
+       description: 'Service name for NVMe Inventory Objects')
+
+option('NVME_UPDATE_TIMEOUT',
+       type: 'integer',
+       value: 300,
+       description: 'NVMe update timeout in seconds. Default of 300s for firmware update operations.')

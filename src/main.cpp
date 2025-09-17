@@ -30,6 +30,9 @@
 #ifdef RT_SUPPORT
 #include "retimer_updater.hpp"
 #endif
+#ifdef NVME_SUPPORT
+#include "nvme_updater.hpp"
+#endif
 #ifdef GPU_OCP_RECOVERY_SUPPORT
 #include "ocp_recovery.hpp"
 #endif
@@ -158,6 +161,15 @@ int main(int argc, char** argv)
         /* default option is to do update together, if fallback is specified
            then we use the single updater */
         itemUpdater = std::make_unique<ReTimerItemUpdater>(bus, !useFallback);
+    }
+#endif
+#if NVME_SUPPORT
+    if (updater == "NVMe")
+    {
+        /* default option is to do update together, if fallback is specified
+           then we use the single updater */
+        itemUpdater = std::make_unique<NVMeItemUpdater>(bus, !useFallback,
+                                                        modelName, targetName);
     }
 #endif
 #if GPU_OCP_RECOVERY_SUPPORT
