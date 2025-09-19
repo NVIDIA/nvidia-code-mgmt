@@ -378,5 +378,5 @@ option('NVME_BUSNAME_INVENTORY',
 
 option('NVME_UPDATE_TIMEOUT',
        type: 'integer',
-       value: 300,
+       value: 600,
        description: 'NVMe update timeout in seconds. Default of 300s for firmware update operations.')
