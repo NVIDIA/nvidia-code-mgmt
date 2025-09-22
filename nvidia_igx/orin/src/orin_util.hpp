@@ -42,6 +42,12 @@ inline std::string readVersionFile(const std::string& cmd)
         output += buffer.data();
     }
 
+    // Remove trailing newline if present
+    if (!output.empty() && output.back() == '\n')
+    {
+        output.pop_back();
+    }
+
     return output;
 }
 
@@ -64,6 +70,21 @@ class Util
         }
 
         return version;
+    }
+
+    virtual std::string getPlatformName() const
+    {
+        try
+        {
+            std::string cmd = "/usr/bin/igx-platform-detection.py";
+            std::string platform = readVersionFile(cmd);
+            return platform.empty() ? "Host" : platform;
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("Failed to fetch platform name: ", "ERROR", e.what());
+            return "Host";
+        }
     }
 };
 

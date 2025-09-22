@@ -90,11 +90,26 @@ class Orin : public OrinInherit, public Util
     }
 
     void registerSoftwareVersion(sdbusplus::bus::bus& bus,
-                                 const std::string& ifPath)
+                                 const std::string& /* ifPath */)
     {
         std::string swpath = SW_INV_PATH;
-        std::string fName = std::filesystem::path(ifPath).filename().string();
-        swpath += "/" + fName;
+
+        // Get platform name dynamically from IGX host
+        std::string platformName = getPlatformName();
+
+        if (platformName == "Thor")
+        {
+            swpath += "/IGX_Thor_BaseOS";
+        }
+        else if (platformName == "Orin")
+        {
+            swpath += "/IGX_Orin_BaseOS";
+        }
+        else
+        {
+            swpath += "/IGX_Host";
+        }
+
         std::string orinVersion = getVersion();
         VersionObj =
             std::make_unique<VersionInterface>(bus, swpath, orinVersion);
