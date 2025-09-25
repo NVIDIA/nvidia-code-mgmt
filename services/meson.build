@@ -234,6 +234,13 @@ if get_option('CX8_RECOVERY_SUPPORT').enabled()
     ]
 endif
 
+if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
+    unit_files = unit_files + [
+        'com.Nvidia.SpiProgrammer.Updater.service',
+        'spi-programmer@.service',
+    ]
+endif
+
 foreach unit : unit_files
     configure_file(
         input: unit,

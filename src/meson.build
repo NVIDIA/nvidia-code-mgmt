@@ -89,6 +89,10 @@ if get_option('CX8_RECOVERY_SUPPORT').enabled()
     source_files += 'cx8_recovery.cpp'
 endif
 
+if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
+    source_files += 'spi_programmer.cpp'
+endif
+
 executable(
     'code-manager',
     sources: source_files,

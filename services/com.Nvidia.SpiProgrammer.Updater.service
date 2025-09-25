@@ -1,0 +1,15 @@
+[Unit]
+Description=SPI Programmer Updater
+Wants=xyz.openbmc_project.EntityManager
+After=xyz.openbmc_project.EntityManager
+Wants=pldmd.service
+After=pldmd.service
+
+[Service]
+ExecStart=/usr/bin/code-manager -u SPIProgrammer
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.SPIProgrammer.Updater
+
+[Install]
+WantedBy=multi-user.target

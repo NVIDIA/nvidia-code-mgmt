@@ -76,6 +76,9 @@
 #ifdef CX8_RECOVERY_SUPPORT
 #include "cx8_recovery.hpp"
 #endif
+#ifdef SPI_PROGRAMMER_SUPPORT
+#include "spi_programmer.hpp"
+#endif
 
 #include "watch.hpp"
 
@@ -268,6 +271,12 @@ int main(int argc, char** argv)
     if (updater == "CX8Recovery")
     {
         itemUpdater = std::make_unique<CX8RecoveryUpdater>(bus);
+    }
+#endif
+#if SPI_PROGRAMMER_SUPPORT
+    if (updater == "SPIProgrammer")
+    {
+        itemUpdater = std::make_unique<SPIProgrammer>(bus);
     }
 #endif
 

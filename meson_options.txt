@@ -256,6 +256,20 @@ option('CX8_RECOVERY_TIMEOUT',
        value: 300,
        description: 'CX8 Recovery update timeout in seconds')
 
+option('SPI_PROGRAMMER_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables SPI Programmer support')
+
+option('SPI_PROGRAMMER_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'SPI Programmer supported models')
+
+option('SPI_PROGRAMMER_TIMEOUT',
+       type: 'integer',
+       description: 'SPI Programmer update timeout in seconds')
+
 option('INVENTORY_PATH_BASE',
        type: 'string',
        value: '/xyz/openbmc_project/inventory/system',

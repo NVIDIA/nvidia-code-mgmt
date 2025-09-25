@@ -419,6 +419,29 @@ if get_option('MCU_RECOVERY_SUPPORT').enabled()
     cdata.set('MCU_RECOVERY_TIMEOUT', get_option('MCU_RECOVERY_TIMEOUT'))
 endif
 
+if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
+    add_project_arguments('-DSPI_PROGRAMMER_SUPPORT', language: ['c', 'cpp'])
+    cdata.set_quoted(
+        'SPI_PROGRAMMER_SUPPORTED_MODEL',
+        get_option('SPI_PROGRAMMER_SUPPORTED_MODEL'),
+    )
+    cdata.set_quoted(
+        'SPI_PROGRAMMER_INVENTORY_IFACE',
+        'xyz.openbmc_project.Inventory.Decorator.Asset',
+    )
+    cdata.set_quoted(
+        'SPI_PROGRAMMER_BUSNAME_UPDATER',
+        'com.Nvidia.Software.SPIProgrammer.Updater',
+    )
+    cdata.set_quoted(
+        'SPI_PROGRAMMER_BUSNAME_INVENTORY',
+        'xyz.openbmc_project.PLDM',
+    )
+    cdata.set_quoted('SPI_PROGRAMMER_NAME', 'SPIProgrammer')
+    cdata.set_quoted('SPI_PROGRAMMER_UPDATE_SERVICE', 'spi-programmer@.service')
+    cdata.set('SPI_PROGRAMMER_TIMEOUT', get_option('SPI_PROGRAMMER_TIMEOUT'))
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 
