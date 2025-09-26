@@ -24,16 +24,15 @@ class SPIProgrammer : public BaseItemUpdater
 {
   public:
     /**
-     * @brief Construct a new Glacier Recovery Item Updater object
+     * @brief Construct a new SPI Programmer Item Updater object
      *
      * @param bus dbus reference
-     * @param together update everything together
      */
     SPIProgrammer(sdbusplus::bus::bus& bus) :
         BaseItemUpdater(bus, SPI_PROGRAMMER_SUPPORTED_MODEL,
                         SPI_PROGRAMMER_INVENTORY_IFACE, SPI_PROGRAMMER_NAME,
                         SPI_PROGRAMMER_BUSNAME_UPDATER,
-                        SPI_PROGRAMMER_UPDATE_SERVICE, false,
+                        SPI_PROGRAMMER_UPDATE_SERVICE, true,
                         SPI_PROGRAMMER_BUSNAME_INVENTORY)
     {
         // Try to populate SPI Software objects as EM objects might not be
@@ -69,7 +68,7 @@ class SPIProgrammer : public BaseItemUpdater
 
     std::string getIdProperty(const std::string& identifier) override
     {
-        return (getName() + "/" + identifier);
+        return identifier;
     }
 
     /**
@@ -88,12 +87,15 @@ class SPIProgrammer : public BaseItemUpdater
         [[maybe_unused]] const std::string& version,
         [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
-
         // The systemd unit shall be escaped
         std::string args = "";
-        args += "\\x20";
-        // return the chip name
-        args += inventoryMap.at(inventoryPath).first;
+        // put all the SPI chip names in the args
+        for (const auto& [inventoryPath, pair] : inventoryMap)
+        {
+            auto [chip, fwTarget] = pair;
+            args += chip;
+            args += "\\x20";
+        }
         args += "\\x20";
         args += imagePath;
         std::replace(args.begin(), args.end(), '/', '-');
@@ -121,7 +123,6 @@ class SPIProgrammer : public BaseItemUpdater
      */
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
-        lg2::info("SPIProgrammer:: Getting Item Updater Inventory Paths");
         std::vector<std::string> paths;
         for (const auto& [inventoryPath, pair] : inventoryMap)
         {
@@ -133,7 +134,7 @@ class SPIProgrammer : public BaseItemUpdater
     }
 
     /**
-     * @brief Get timeout for glacier recovery
+     * @brief Get timeout for SPI programmer
      *
      * @return uint32_t
      */
@@ -148,11 +149,10 @@ class SPIProgrammer : public BaseItemUpdater
      * @brief method to check if inventory is supported, if inventory is not
      * supported then D-Bus calls to check compatibility can be ignored
      *
-     * @return false - for glacier recovery inventory check is not required
+     * @return false - for SPI programmer inventory check is not required
      */
     bool inventorySupported() override
     {
-        lg2::info("Inventory supported return false");
         return false; // default is supported
     }
 

@@ -21,16 +21,12 @@ std::string SPIProgrammer::getVersion(
 std::string SPIProgrammer::getManufacturer(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
-    lg2::info("Getting version for {INVENTORY_PATH}", "INVENTORY_PATH",
-              inventoryPath);
     return "";
 }
 
 std::string SPIProgrammer::getModel(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
-    lg2::info("Getting model for {INVENTORY_PATH}", "INVENTORY_PATH",
-              inventoryPath);
     return "";
 }
 
