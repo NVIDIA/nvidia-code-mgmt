@@ -12,6 +12,8 @@
 #include <sdbusplus/bus/match.hpp>
 #include <sdbusplus/server.hpp>
 #include <xyz/openbmc_project/Common/Progress/server.hpp>
+#include <xyz/openbmc_project/Software/ApplyTime/server.hpp>
+#include <xyz/openbmc_project/Software/Update/server.hpp>
 
 #include <exception>
 #include <filesystem>
@@ -21,8 +23,13 @@
 #include <string>
 #include <vector>
 
-using SpiIntf =
-    sdbusplus::server::object_t<sdbusplus::com::nvidia::server::GraceSPI>;
+using ApplyTimeIntf =
+    sdbusplus::xyz::openbmc_project::Software::server::ApplyTime;
+using SpiIntf = sdbusplus::server::object_t<
+    sdbusplus::com::nvidia::server::GraceSPI,
+    sdbusplus::xyz::openbmc_project::Software::server::Update>;
+using UpdateIntf = sdbusplus::server::object_t<
+    sdbusplus::xyz::openbmc_project::Software::server::Update>;
 
 using SpiProgress = sdbusplus::server::object_t<
     sdbusplus::server::xyz::openbmc_project::common::Progress,
@@ -30,8 +37,7 @@ using SpiProgress = sdbusplus::server::object_t<
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto inventoryRootPath = "/xyz/openbmc_project/inventory";
-constexpr auto spiObjectInterfaces =
-    "xyz.openbmc_project.Configuration.VeraSPI";
+constexpr auto spiObjectInterfaces = "xyz.openbmc_project.Configuration.SPI";
 constexpr auto spiStatusPath = "/xyz/openbmc_project/status/SPI_Operation";
 constexpr size_t maxProgressHistory = 3;
 constexpr auto maxSpiDumps = 3;
@@ -97,13 +103,24 @@ class Spi : public SpiIntf
     sdbusplus::message::object_path readSpi();
 
     /**
-     * @brief D-Bus method to write SPI flash memory
+     * @brief D-Bus method to write/update SPI flash memory with new firmware
+     * image
      *
-     * @param filePath The file path to write to SPI
+     * @param image File descriptor of the firmware image to be written to SPI
+     * flash
+     * @param applyTime Requested time to apply the update (currently unused)
+     * @param forceUpdate Flag to force update even if version check fails
+     * (currently unused)
+     * @param targets List of target object paths for the update (currently
+     * unused)
      * @return sdbusplus::message::object_path The object path of the progress
      * tracking object
      */
-    sdbusplus::message::object_path writeSpi(std::string filePath);
+    sdbusplus::message::object_path startUpdate(
+        sdbusplus::message::unix_fd image,
+        ApplyTimeIntf::RequestedApplyTimes applyTime [[maybe_unused]],
+        bool forceUpdate [[maybe_unused]],
+        std::vector<sdbusplus::message::object_path> targets [[maybe_unused]]);
 
     /**
      * @brief function to prepare command line arguments for flashrom operation

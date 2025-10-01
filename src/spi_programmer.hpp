@@ -9,8 +9,7 @@
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto inventoryRootPath = "/xyz/openbmc_project/inventory";
-constexpr auto spiObjectInterfaces =
-    "xyz.openbmc_project.Configuration.VeraSPI";
+constexpr auto spiObjectInterfaces = "xyz.openbmc_project.Configuration.SPI";
 
 namespace MatchRules = sdbusplus::bus::match::rules;
 

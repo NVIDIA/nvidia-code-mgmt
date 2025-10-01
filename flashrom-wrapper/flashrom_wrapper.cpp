@@ -252,16 +252,79 @@ int Spi::getExpectedTime(Operation ops) const
     }
 }
 
-sdbusplus::message::object_path Spi::writeSpi(std::string filePath)
+sdbusplus::message::object_path Spi::startUpdate(
+    sdbusplus::message::unix_fd image,
+    ApplyTimeIntf::RequestedApplyTimes applyTime [[maybe_unused]],
+    bool forceUpdate [[maybe_unused]],
+    std::vector<sdbusplus::message::object_path> targets [[maybe_unused]])
 {
+    // Extract file descriptor from unix_fd
+    int imageFd = image;
+
+    // Create temporary file path as flashrom only supports file path
+    std::string tempFilePath =
+        "/tmp/spi_image_" + name + "_" + std::to_string(objIndex) + ".bin";
+
+    // Open temporary file for writing
+    int outputFd =
+        open(tempFilePath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (outputFd < 0)
+    {
+        lg2::error("[SPI: {NAME}] Failed to create temp file {FILE}: {ERR}",
+                   "NAME", name, "FILE", tempFilePath, "ERR", strerror(errno));
+        throw sdbusplus::error::xyz::openbmc_project::common::InternalFailure{};
+    }
+
+    // Reset file pointer to the beginning
+    lseek(imageFd, 0, SEEK_SET);
+
+    // Copy data in chunks using buffer
+    char buffer[4096];
+    ssize_t bytesRead;
+    ssize_t totalBytes = 0;
+
+    while ((bytesRead = read(imageFd, buffer, sizeof(buffer))) > 0)
+    {
+        ssize_t bytesWritten = write(outputFd, buffer, bytesRead);
+        if (bytesWritten != bytesRead)
+        {
+            lg2::error("[SPI: {NAME}] Failed to write to temp file: {ERR}",
+                       "NAME", name, "ERR", strerror(errno));
+            close(outputFd);
+            unlink(tempFilePath.c_str()); // Delete incomplete file
+            throw sdbusplus::error::xyz::openbmc_project::common::
+                InternalFailure{};
+        }
+        totalBytes += bytesWritten;
+    }
+
+    close(outputFd);
+
+    if (bytesRead < 0)
+    {
+        lg2::error("[SPI: {NAME}] Failed to read from image fd: {ERR}", "NAME",
+                   name, "ERR", strerror(errno));
+        unlink(tempFilePath.c_str()); // Delete incomplete file
+        throw sdbusplus::error::xyz::openbmc_project::common::InternalFailure{};
+    }
+
+    lg2::info(
+        "[SPI: {NAME}] Successfully wrote {SIZE} bytes to temp file {FILE}",
+        "NAME", name, "SIZE", totalBytes, "FILE", tempFilePath);
+
+    // Check if operation can be started
     if (!startSpiOperation(Operation::Write))
     {
         lg2::error("[SPI: {NAME}] Cannot start write operation.", "NAME", name);
+        unlink(tempFilePath.c_str()); // Delete temporary file
         throw sdbusplus::error::xyz::openbmc_project::common::Unavailable{};
     }
-    this->filePath = filePath;
+
+    // Set file path and execute flashrom
+    this->filePath = tempFilePath;
     std::vector<std::string> args = prepareArgs(Operation::Write);
     executeFlashrom(args, Operation::Write);
+
     // Return the path to the progress object
     return sdbusplus::message::object_path(std::string(spiStatusPath) + "_" +
                                            std::to_string(objIndex - 1));
@@ -337,6 +400,8 @@ std::vector<std::string> Spi::prepareArgs(Operation ops)
                 "/var/emmc/user-logs/logging/spi_dumps/sbios_boot_flash.layout",
                 "-i",
                 "slot0:" + filePath};
+            lg2::info("[SPI: {NAME}] Writing to SPI flash memory: {FILE}",
+                      "NAME", name, "FILE", filePath);
 #ifdef FLASHROM_WRITE_USE_REF_FILE
             std::cout << "[SPI: " << name
                       << "] Using reference file: " << FLASHROM_WRITE_REF_FILE
@@ -529,6 +594,23 @@ void Spi::finishSpiOperation(SpiProgress::OperationStatus opStatus)
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch())
                 .count());
+    }
+
+    // Clean up temporary file for Write operation
+    if (!filePath.empty())
+    {
+        if (unlink(filePath.c_str()) == 0)
+        {
+            lg2::info("[SPI: {NAME}] Deleted temporary file {FILE}", "NAME",
+                      name, "FILE", filePath);
+        }
+        else
+        {
+            lg2::warning(
+                "[SPI: {NAME}] Failed to delete temporary file {FILE}: {ERR}",
+                "NAME", name, "FILE", filePath, "ERR", strerror(errno));
+        }
+        filePath.clear();
     }
 
     // Release USB port
@@ -779,6 +861,8 @@ void populateSpiObjects()
                 getString(interfaces, spiObjectInterfaces, "Type");
             const auto chipSelect = std::to_string(
                 getUint64(interfaces, spiObjectInterfaces, "ChipSelect"));
+            const auto inventoryObjPath =
+                getString(interfaces, spiObjectInterfaces, "InventoryObjPath");
 
             auto activeGpios = std::vector<std::pair<std::string, bool>>();
             auto deactiveGpios = std::vector<std::pair<std::string, bool>>();
@@ -806,9 +890,12 @@ void populateSpiObjects()
                 }
             }
 
+            auto objPath = inventoryObjPath + "/" + name;
+            lg2::info("[SPI: {NAME}] Creating SPI object: {OBJ_PATH}", "NAME",
+                      name, "OBJ_PATH", objPath);
             spiDevices.push_back(std::make_unique<Spi>(
-                getBus(), emObjectPath.str, usbPort, name, programmer, chip,
-                type, chipSelect, activeGpios, deactiveGpios));
+                getBus(), objPath, usbPort, name, programmer, chip, type,
+                chipSelect, activeGpios, deactiveGpios));
         }
     }
 }
