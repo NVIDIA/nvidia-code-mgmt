@@ -27,7 +27,7 @@ ORINManager::ORINManager(sdbusplus::bus::bus& bus, std::string basePath) :
 {
     try
     {
-        const auto baseinvInvPath = basePath + "/" + "ORIN";
+        const auto baseinvInvPath = basePath + "/" + "IGX_Host";
 
         orinInvs = std::make_unique<Orin>(bus, baseinvInvPath);
     }
