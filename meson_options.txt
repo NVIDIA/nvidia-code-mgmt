@@ -396,7 +396,7 @@ option('MCU_RECOVERY_SUPPORT',
 option(
        'ENABLE_IN_KERNEL_MCTP',
        type: 'feature',
-       value: 'disabled',
+       value: 'enabled',
        description: 'Use the in-kernel MCTP stack instead of the demux daemon'
 )
 
