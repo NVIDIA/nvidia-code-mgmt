@@ -118,7 +118,7 @@ void MctpDiscovery<T>::populateMctpInfo(const dbus::InterfaceMap& interfaces,
 
             if (intfName == unixSocketIntfName)
             {
-                type = std::get<size_t>(properties.at("Type"));
+                type = std::get<uint8_t>(properties.at("Type"));
                 protocol = std::get<size_t>(properties.at("Protocol"));
                 address =
                     std::get<std::vector<uint8_t>>(properties.at("Address"));

@@ -224,7 +224,7 @@ std::string getMctpUUID(uint32_t eid)
                     continue;
                 }
 
-                const auto& mctpEID = std::get<uint32_t>(
+                const auto& mctpEID = std::get<uint8_t>(
                     interfaces.at(mctpEndpointIntfName).at("EID"));
 
                 if (eid == mctpEID)

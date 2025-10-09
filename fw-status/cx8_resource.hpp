@@ -172,7 +172,7 @@ class Cx8Resource : public MCTPDiscoveryResource
                     continue;
                 }
 
-                const auto& mctpEID = std::get<uint32_t>(
+                const auto& mctpEID = std::get<uint8_t>(
                     interfaces.at(mctpEndpointIntfName).at("EID"));
 
                 if (mctpEID != smaEid)
