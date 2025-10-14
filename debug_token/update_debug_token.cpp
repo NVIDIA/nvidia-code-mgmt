@@ -19,28 +19,25 @@
 
 #include "update_debug_token.hpp"
 
+#include "tlv/tlv.h"
+
+#include <endian.h>
+
 #include <boost/container/flat_map.hpp>
 
+#include <cctype>
+#include <cstring>
 #include <filesystem>
+#include <iomanip>
+#include <sstream>
 
 DebugTokenInstallStatus
     UpdateDebugToken::installDebugToken(const std::string& debugTokenPath)
 {
     DebugTokenInstallStatus status =
         DebugTokenInstallStatus::DebugTokenInstallNone;
-    int queryStatus =
-        static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
     TokenMap tokens;
-    if (updateEndPoints() != 0)
-    {
-        log<level::ERR>("discovery failed");
-        status = DebugTokenInstallStatus::DebugTokenInstallFailed;
-        createMessageRegistryResourceErrors(
-            resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
-            OperationType::Common,
-            static_cast<int>(CommonErrorCodes::MCTPDiscoveryFailed));
-        return status;
-    }
+
     if (updateTokenMap(debugTokenPath, tokens) != 0)
     {
         log<level::ERR>("Error while parsing tokens");
@@ -51,91 +48,17 @@ DebugTokenInstallStatus
             static_cast<int>(CommonErrorCodes::TokenParseFailure));
         return status;
     }
-    for (auto& device : devices)
+
+    if (nsmTokenInstallV2(tokens) != 0)
     {
-        if (tokens.find(device.second) != tokens.end())
-        {
-            queryStatus = queryDebugToken(device.first);
-            if (queryStatus < 0)
-            {
-                continue;
-            }
-            else if (queryStatus ==
-                     static_cast<int>(
-                         DebugTokenQueryErrorCodes::DebugTokenInstalled))
-            {
-                log<level::ERR>(("debug token already installed on EID " +
-                                 std::to_string(device.first))
-                                    .c_str());
-                // skip install token for this device since token is already
-                // installed
-                if (status != DebugTokenInstallStatus::DebugTokenInstallFailed)
-                {
-                    status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
-                }
-                continue;
-            }
-            if (disableBackgroundCopy(device.first) != 0)
-            {
-                log<level::ERR>(("Disable BackgroundCopy failed for EID " +
-                                 std::to_string(device.first))
-                                    .c_str());
-                status = DebugTokenInstallStatus::DebugTokenInstallFailed;
-                std::string deviceName;
-                if (deviceNameMap.contains(device.first))
-                {
-                    deviceName = deviceNameMap[device.first];
-                }
-                createMessageRegistryResourceErrors(
-                    resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
-                    OperationType::BackgroundCopy,
-                    static_cast<int>(
-                        BackgroundCopyErrorCodes::BackgroundDisableFail),
-                    deviceName);
-                // abort install token for this device if disabling background
-                // copy is failed
-                continue;
-            }
-            else
-            {
-                log<level::INFO>(("Disable BackgroundCopy success for EID " +
-                                  std::to_string(device.first))
-                                     .c_str());
-            }
-            int installErrorCode =
-                installToken(device.first, tokens[device.second]);
-            if (static_cast<InstallErrorCodes>(installErrorCode) !=
-                InstallErrorCodes::InstallSuccess)
-            {
-                log<level::ERR>(("DebugToken Install failed for EID " +
-                                 std::to_string(device.first))
-                                    .c_str());
-                status = DebugTokenInstallStatus::DebugTokenInstallFailed;
-            }
-            else
-            {
-                log<level::INFO>(("DebugToken Install success for EID " +
-                                  std::to_string(device.first))
-                                     .c_str());
-                if (status != DebugTokenInstallStatus::DebugTokenInstallFailed)
-                {
-                    status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
-                }
-            }
-        }
-    }
-    if (nsmTokenInstall(tokens) != 0)
-    {
-        log<level::ERR>("NSM token installation failed");
+        log<level::ERR>("NSM V2 token installation failed");
         status = DebugTokenInstallStatus::DebugTokenInstallFailed;
         return status;
     }
     else
     {
-        if (status == DebugTokenInstallStatus::DebugTokenInstallNone)
-        {
-            status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
-        }
+        log<level::INFO>("NSM V2 token installation succeeded");
+        status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
     }
     return status;
 }
@@ -143,81 +66,21 @@ DebugTokenInstallStatus
 int UpdateDebugToken::eraseDebugToken()
 {
     int status = 0;
-    int queryStatus =
-        static_cast<int>(DebugTokenQueryErrorCodes::DebugTokenNotInstalled);
     if (getErasePolicy() == "Manual")
     {
         log<level::INFO>("Erase policy set to manual, skipping operation.");
         return status;
     }
-    if (updateEndPoints() != 0)
+
+    if (nsmTokenEraseV2() != 0)
     {
-        log<level::ERR>("discovery failed");
-        status = -1;
-        createMessageRegistryResourceErrors(
-            debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
-            OperationType::Common,
-            static_cast<int>(CommonErrorCodes::MCTPDiscoveryFailed));
-        return status;
-    }
-    for (auto& [uuid, mctpEidInfo] : mctpInfo)
-    {
-        queryStatus = queryDebugToken(mctpEidInfo.eid);
-        if (queryStatus < 0 ||
-            queryStatus ==
-                static_cast<int>(
-                    DebugTokenQueryErrorCodes::DebugTokenNotInstalled))
-        {
-            // skip erase token for this device since token is not installed OR
-            // there was an error with querying debug token status
-            // Query v2 returns DebugTokenNotInstalled if any other token type
-            // is installed. Don't erase in that case.
-            continue;
-        }
-        if (eraseToken(mctpEidInfo.eid) != 0)
-        {
-            log<level::ERR>(("DebugToken Erase failed for EID=" +
-                             std::to_string(mctpEidInfo.eid))
-                                .c_str());
-            status = -1;
-            return status;
-        }
-        else
-        {
-            log<level::INFO>(("DebugToken Erase success for EID=" +
-                              std::to_string(mctpEidInfo.eid))
-                                 .c_str());
-        }
-        if (enableBackgroundCopy(mctpEidInfo.eid) != 0)
-        {
-            log<level::ERR>(("Enable BackgroundCopy failed for EID " +
-                             std::to_string(mctpEidInfo.eid))
-                                .c_str());
-            status = -1;
-            std::string deviceName;
-            if (deviceNameMap.contains(mctpEidInfo.eid))
-            {
-                deviceName = deviceNameMap[mctpEidInfo.eid];
-            }
-            createMessageRegistryResourceErrors(
-                debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
-                OperationType::BackgroundCopy,
-                static_cast<int>(
-                    BackgroundCopyErrorCodes::BackgroundEnableFail),
-                deviceName);
-        }
-        else
-        {
-            log<level::INFO>(("Enable BackgroundCopy success for EID " +
-                              std::to_string(mctpEidInfo.eid))
-                                 .c_str());
-        }
-    }
-    if ((status = nsmTokenErase()) != 0)
-    {
-        log<level::ERR>("NSM token erase failed");
+        log<level::ERR>("NSM V2 token erase failed");
         status = -1;
         return status;
+    }
+    else
+    {
+        log<level::INFO>("NSM V2 token erase succeeded");
     }
     return status;
 }
@@ -547,11 +410,19 @@ int UpdateDebugToken::updateTokenMap(const std::string& debugTokenPath,
                                      TokenMap& tokens)
 {
     int status = 0;
+
+    if (!std::filesystem::exists(debugTokenPath))
+    {
+        log<level::ERR>("Debug token file does not exist");
+        status = -1;
+        return status;
+    }
+
     std::ifstream debugTokenPackage(
         debugTokenPath, std::ios::binary | std::ios::in | std::ios::ate);
     if (!debugTokenPackage.is_open())
     {
-        log<level::ERR>("Error while opening the file");
+        log<level::ERR>("Error opening debug token file");
         status = -1;
         return status;
     }
@@ -563,45 +434,56 @@ int UpdateDebugToken::updateTokenMap(const std::string& debugTokenPath,
         status = -1;
         return status;
     }
-    uint32_t tokenOffset = headerInfo->offsetToListOfStructs;
-    for (uint16_t i = 0; i < headerInfo->numberOfRecords; i++)
+
+    if (headerInfo->version == 2)
     {
-        std::vector<uint8_t> tokenData;
-        std::vector<uint8_t> serialNumber;
-        auto token = getNextDebugToken(debugTokenPackage, tokenOffset,
-                                       tokenData, serialNumber);
-        if (token)
+        log<level::INFO>("TLV-based token detected (version 2.0)");
+        debugTokenPackage.seekg(0, std::ios::end);
+        std::streamsize fileSize = debugTokenPackage.tellg();
+        debugTokenPackage.seekg(0, std::ios::beg);
+        std::vector<uint8_t> fullFile(static_cast<size_t>(fileSize));
+        debugTokenPackage.read(reinterpret_cast<char*>(fullFile.data()),
+                               fileSize);
+        return TokenUtility::parseTlvTokens(fullFile, headerInfo, tokens);
+    }
+    else
+    {
+        // Non-TLV format: use existing logic
+        uint32_t tokenOffset = headerInfo->offsetToListOfStructs;
+        for (uint16_t i = 0; i < headerInfo->numberOfRecords; i++)
         {
-            if (token->structSize != tokenData.size())
+            std::vector<uint8_t> tokenData;
+            std::vector<uint8_t> serialNumber;
+            auto token = getNextDebugToken(debugTokenPackage, tokenOffset,
+                                           tokenData, serialNumber);
+            if (token)
             {
-                log<level::ERR>("Invalid token size");
+                if (token->structSize != tokenData.size())
+                {
+                    log<level::ERR>("Invalid token size");
+                    status = -1;
+                    return status;
+                }
+                std::string formattedSerialNumber =
+                    TokenUtility::formatSerialNumber(serialNumber);
+                std::string logEntry{"Read token - "};
+                logEntry += std::string{token->identifier, 4};
+                logEntry += " - ";
+                logEntry += std::to_string(token->versionMajor);
+                logEntry += ".";
+                logEntry += std::to_string(token->versionMinor);
+                logEntry += " - ";
+                logEntry += formattedSerialNumber;
+                log<level::INFO>(logEntry.c_str());
+                tokens.emplace(formattedSerialNumber, tokenData);
+                tokenOffset += token->structSize;
+            }
+            else
+            {
+                log<level::ERR>("Invalid debug token");
                 status = -1;
                 return status;
             }
-            std::stringstream serialNumberStream;
-            serialNumberStream << std::hex;
-            for (const auto& byte : serialNumber)
-            {
-                serialNumberStream << std::uppercase << std::setw(2)
-                                   << std::setfill('0') << (int)byte;
-            }
-            std::string logEntry{"Read token - "};
-            logEntry += std::string{token->identifier, 4};
-            logEntry += " - ";
-            logEntry += std::to_string(token->versionMajor);
-            logEntry += ".";
-            logEntry += std::to_string(token->versionMinor);
-            logEntry += " - ";
-            logEntry += serialNumberStream.str();
-            log<level::INFO>(logEntry.c_str());
-            tokens.emplace(("0x" + serialNumberStream.str()), tokenData);
-            tokenOffset += token->structSize;
-        }
-        else
-        {
-            log<level::ERR>("Invalid debug token");
-            status = -1;
-            return status;
         }
     }
     return status;

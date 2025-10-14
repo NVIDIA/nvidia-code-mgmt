@@ -1,7 +1,12 @@
 configure_file(output: 'config.h', configuration: cdata)
 debug_token_inc = include_directories('.')
 
-source_files = ['main.cpp', 'update_debug_token.cpp', 'nsm_debug_token.cpp']
+source_files = [
+    'main.cpp',
+    'update_debug_token.cpp',
+    'nsm_debug_token.cpp',
+    'tlv/tlv_decoder.cpp',
+]
 
 executable(
     'updateDebugToken',

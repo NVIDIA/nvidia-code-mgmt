@@ -17,12 +17,22 @@
 
 #include "config.h"
 
+#include "tlv/error.h"
+#include "tlv/tlv.h"
+
 #include "update_debug_token.hpp"
+
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include <boost/container/flat_map.hpp>
 
+#include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
+#include <iomanip>
+#include <sstream>
 
 int UpdateDebugToken::enumerateNsmDebugTokenEndpoints(
     NSMEndpoints& nsmEndpoints)
@@ -102,11 +112,24 @@ void UpdateDebugToken::logAsyncError(const std::string& path,
     {
         auto errorValue = getAsyncValue(path);
         auto& [errorCode, errorMessage] = std::get<NSMErrorTuple>(errorValue);
-        log<level::ERR>((path + ": " + methodName +
-                         " failed with status: " + asyncStatus +
-                         ", error code: " + std::to_string(errorCode) +
-                         ", message: " + errorMessage)
-                            .c_str());
+
+        // NotInstalled (0x100F) is expected in some scenarios
+        if (errorCode == debug_token::NotInstalled)
+        {
+            log<level::INFO>((path + ": " + methodName +
+                              " status: " + asyncStatus +
+                              ", error code: " + std::to_string(errorCode) +
+                              " (NotInstalled), message: " + errorMessage)
+                                 .c_str());
+        }
+        else
+        {
+            log<level::ERR>((path + ": " + methodName +
+                             " failed with status: " + asyncStatus +
+                             ", error code: " + std::to_string(errorCode) +
+                             ", message: " + errorMessage)
+                                .c_str());
+        }
     }
     catch (const std::exception& e)
     {
@@ -381,5 +404,443 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             continue;
         }
     }
+    return status;
+}
+
+/**
+ * @brief Enumerate NSM V2 debug token endpoints using DebugToken.Action
+ * interface
+ * @param nsmEndpoints Vector to store discovered endpoint paths
+ * @return 0 on success, -1 on failure
+ */
+int UpdateDebugToken::enumerateNsmDebugTokenEndpointsV2(
+    NSMEndpoints& nsmEndpoints)
+{
+    dbus::GetSubTreeResponse objects{};
+    const dbus::Interfaces ifaceList{nsmDebugTokenActionIntfName};
+    try
+    {
+        auto method = bus.new_method_call(objectMapperService, objectMapperPath,
+                                          objectMapperIntfName, "GetSubTree");
+        method.append(nsmDebugTokenPath, 0, ifaceList);
+        auto reply = bus.call(method);
+        reply.read(objects);
+        for ([[maybe_unused]] const auto& [objectPath, mapperServiceMap] :
+             objects)
+        {
+            nsmEndpoints.push_back(objectPath);
+        }
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>(
+            ("NSM V2 Command Exception DBUS_ERROR: " + std::string(e.what()))
+                .c_str());
+        return -1;
+    }
+    return 0;
+}
+
+std::string UpdateDebugToken::handleAsyncCallInstallV2(const std::string& path,
+                                                       int memfd)
+{
+    std::string asyncObjectPath, status;
+    std::unique_ptr<sdbusplus::bus::match_t> statusMatch;
+    std::string matchRule =
+        sdbusplus::bus::match::rules::propertiesChangedNamespace(
+            nsmAsyncBasePath, nsmAsyncStatusIntfName);
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        statusMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus, matchRule,
+            [this, &asyncObjectPath, &status](sdbusplus::message_t& msg) {
+                if (msg.get_path() != asyncObjectPath)
+                {
+                    return;
+                }
+                std::string interface;
+                std::map<std::string, std::variant<std::string>> properties;
+                msg.read(interface, properties);
+                auto it = properties.find("Status");
+                if (it != properties.end())
+                {
+                    std::unique_lock<std::mutex> lock(mtx);
+                    status = std::get<std::string>(it->second);
+                    status = status.substr(status.find_last_of('.') + 1);
+                }
+            });
+    }
+
+    try
+    {
+        auto installMethod =
+            bus.new_method_call(nsmService, path.c_str(),
+                                nsmDebugTokenActionIntfName, "InstallToken");
+        installMethod.append(sdbusplus::message::unix_fd(memfd));
+        auto installReply = bus.call(installMethod);
+
+        sdbusplus::message::object_path asyncPath;
+        installReply.read(asyncPath);
+        asyncObjectPath = std::string(asyncPath);
+
+        if (asyncObjectPath.empty())
+        {
+            log<level::ERR>(
+                (path + ": InstallToken returned empty async path").c_str());
+            return "";
+        }
+
+        try
+        {
+            auto method = bus.new_method_call(
+                nsmService, asyncObjectPath.c_str(), propertiesIntfName, "Get");
+            method.append(nsmAsyncStatusIntfName, "Status");
+            auto reply = bus.call(method);
+            std::variant<std::string> dbusStatus;
+            reply.read(dbusStatus);
+            status = std::get<std::string>(dbusStatus);
+            status = status.substr(status.find_last_of('.') + 1);
+            if (status != "InProgress")
+            {
+                if (status != "Success")
+                {
+                    logAsyncError(asyncObjectPath, "InstallToken", status);
+                    return "";
+                }
+                return asyncObjectPath;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>((path + ": failed to get initial async status: " +
+                             std::string(e.what()))
+                                .c_str());
+            return "";
+        }
+
+        auto maxIterations = std::chrono::seconds(propertyChangeSignalTimeout) /
+                             std::chrono::milliseconds(100);
+        for (auto i = 0; i < maxIterations; ++i)
+        {
+            bus.process_discard();
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                if (status != "InProgress")
+                {
+                    break;
+                }
+            }
+            bus.wait(std::chrono::milliseconds(100));
+        }
+
+        if (status != "Success")
+        {
+            logAsyncError(asyncObjectPath, "InstallToken", status);
+            return "";
+        }
+
+        return asyncObjectPath;
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>(
+            (path + ": InstallToken exception: " + std::string(e.what()))
+                .c_str());
+        return "";
+    }
+}
+
+std::string UpdateDebugToken::handleAsyncCallEraseV2(const std::string& path,
+                                                     uint32_t eraseType)
+{
+    std::string asyncObjectPath, status;
+    std::unique_ptr<sdbusplus::bus::match_t> statusMatch;
+    std::string matchRule =
+        sdbusplus::bus::match::rules::propertiesChangedNamespace(
+            nsmAsyncBasePath, nsmAsyncStatusIntfName);
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        statusMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus, matchRule,
+            [this, &asyncObjectPath, &status](sdbusplus::message_t& msg) {
+                if (msg.get_path() != asyncObjectPath)
+                {
+                    return;
+                }
+                std::string interface;
+                std::map<std::string, std::variant<std::string>> properties;
+                msg.read(interface, properties);
+                auto it = properties.find("Status");
+                if (it != properties.end())
+                {
+                    std::unique_lock<std::mutex> lock(mtx);
+                    status = std::get<std::string>(it->second);
+                    status = status.substr(status.find_last_of('.') + 1);
+                }
+            });
+    }
+
+    try
+    {
+        auto eraseMethod =
+            bus.new_method_call(nsmService, path.c_str(),
+                                nsmDebugTokenActionIntfName, "EraseToken");
+        eraseMethod.append(eraseType);
+        auto eraseReply = bus.call(eraseMethod);
+
+        sdbusplus::message::object_path asyncPath;
+        eraseReply.read(asyncPath);
+        asyncObjectPath = std::string(asyncPath);
+
+        if (asyncObjectPath.empty())
+        {
+            log<level::ERR>(
+                (path + ": EraseToken returned empty async path").c_str());
+            return "";
+        }
+
+        try
+        {
+            auto method = bus.new_method_call(
+                nsmService, asyncObjectPath.c_str(), propertiesIntfName, "Get");
+            method.append(nsmAsyncStatusIntfName, "Status");
+            auto reply = bus.call(method);
+            std::variant<std::string> dbusStatus;
+            reply.read(dbusStatus);
+            status = std::get<std::string>(dbusStatus);
+            status = status.substr(status.find_last_of('.') + 1);
+            if (status != "InProgress")
+            {
+                if (status != "Success")
+                {
+                    logAsyncError(asyncObjectPath, "EraseToken", status);
+
+                    // Check if error is NotInstalled (0x100F)
+                    try
+                    {
+                        auto errorValue = getAsyncValue(asyncObjectPath);
+                        auto& [errorCode, errorMessage] =
+                            std::get<NSMErrorTuple>(errorValue);
+                        if (errorCode == debug_token::NotInstalled)
+                        {
+                            return asyncObjectPath;
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log<level::ERR>((path +
+                                         ": Failed to get error value: " +
+                                         std::string(e.what()))
+                                            .c_str());
+                    }
+
+                    return "";
+                }
+                return asyncObjectPath;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>((path + ": failed to get initial async status: " +
+                             std::string(e.what()))
+                                .c_str());
+            return "";
+        }
+
+        auto maxIterations = std::chrono::seconds(propertyChangeSignalTimeout) /
+                             std::chrono::milliseconds(100);
+        for (auto i = 0; i < maxIterations; ++i)
+        {
+            bus.process_discard();
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                if (status != "InProgress")
+                {
+                    break;
+                }
+            }
+            bus.wait(std::chrono::milliseconds(100));
+        }
+
+        if (status != "Success")
+        {
+            logAsyncError(asyncObjectPath, "EraseToken", status);
+
+            // Check if error is NotInstalled (0x100F)
+            // In this case, return the async path with error details
+            // instead of treating it as a hard failure
+            try
+            {
+                auto errorValue = getAsyncValue(asyncObjectPath);
+                auto& [errorCode, errorMessage] =
+                    std::get<NSMErrorTuple>(errorValue);
+                if (errorCode == debug_token::NotInstalled)
+                {
+                    return asyncObjectPath;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                log<level::ERR>((path + ": Failed to get error value: " +
+                                 std::string(e.what()))
+                                    .c_str());
+            }
+
+            return "";
+        }
+
+        return asyncObjectPath;
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>(
+            (path + ": EraseToken exception: " + std::string(e.what()))
+                .c_str());
+        return "";
+    }
+}
+
+/**
+ * @brief Install debug tokens using NSM V2 async D-Bus interface with file
+ * descriptors
+ * @param tokens Map of serial numbers to token data
+ * @return 0 on success, -1 on failure
+ */
+int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
+{
+    int status = 0;
+    NSMEndpoints nsmEndpoints;
+
+    if (enumerateNsmDebugTokenEndpointsV2(nsmEndpoints) != 0)
+    {
+        log<level::ERR>("NSM V2 Endpoints enumeration error");
+        return -1;
+    }
+
+    if (nsmEndpoints.size() == 0)
+    {
+        log<level::ERR>("No NSM V2 debug token endpoints found.");
+        return -1;
+    }
+
+    for (const auto& path : nsmEndpoints)
+    {
+        try
+        {
+            auto method = bus.new_method_call(nsmService, path.c_str(),
+                                              propertiesIntfName, "Get");
+            method.append(nsmDebugTokenStatusIntfName, "TokenDeviceID");
+            auto reply = bus.call(method);
+            std::variant<std::string> property;
+            reply.read(property);
+            const std::string serialNumber = std::get<std::string>(property);
+
+            if (tokens.find(serialNumber) == tokens.end())
+            {
+                log<level::INFO>(
+                    (path + ": No token for serial number: " + serialNumber)
+                        .c_str());
+                continue;
+            }
+
+            log<level::INFO>(
+                (path + ": Found token for serial number: " + serialNumber)
+                    .c_str());
+
+            const Token& token = tokens[serialNumber];
+
+            int memfd = memfd_create("debug_token", MFD_CLOEXEC);
+            if (memfd < 0)
+            {
+                log<level::ERR>((path + ": Failed to create memfd: " +
+                                 std::string(strerror(errno)))
+                                    .c_str());
+                status = -1;
+                continue;
+            }
+
+            if (write(memfd, token.data(), token.size()) !=
+                static_cast<ssize_t>(token.size()))
+            {
+                log<level::ERR>((path + ": Failed to write token to memfd: " +
+                                 std::string(strerror(errno)))
+                                    .c_str());
+                close(memfd);
+                status = -1;
+                continue;
+            }
+
+            lseek(memfd, 0, SEEK_SET);
+
+            std::string asyncPath = handleAsyncCallInstallV2(path, memfd);
+            close(memfd);
+
+            if (asyncPath.empty())
+            {
+                log<level::ERR>((path + ": Token install failed").c_str());
+                status = -1;
+            }
+            else
+            {
+                log<level::INFO>((path + ": Token install succeeded").c_str());
+            }
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>(
+                (path + ": NSM V2 D-Bus Exception: " + std::string(e.what()))
+                    .c_str());
+            status = -1;
+        }
+    }
+
+    return status;
+}
+
+/**
+ * @brief Erase debug tokens using NSM V2 async D-Bus interface
+ * @return 0 on success, -1 on failure
+ */
+int UpdateDebugToken::nsmTokenEraseV2()
+{
+    int status = 0;
+    NSMEndpoints nsmEndpoints;
+
+    if (enumerateNsmDebugTokenEndpointsV2(nsmEndpoints) != 0)
+    {
+        log<level::ERR>("NSM V2 Endpoints enumeration error");
+        return -1;
+    }
+
+    if (nsmEndpoints.size() == 0)
+    {
+        log<level::ERR>("No NSM V2 debug token endpoints found.");
+        return -1;
+    }
+
+    for (const auto& path : nsmEndpoints)
+    {
+        try
+        {
+            std::string asyncPath = handleAsyncCallEraseV2(path);
+            if (asyncPath.empty())
+            {
+                log<level::ERR>((path + ": Token erase failed").c_str());
+                status = -1;
+            }
+            else
+            {
+                log<level::INFO>((path + ": Token erase succeeded").c_str());
+            }
+        }
+        catch (const std::exception& e)
+        {
+            log<level::ERR>(
+                (path + ": NSM V2 D-Bus Exception: " + std::string(e.what()))
+                    .c_str());
+            status = -1;
+        }
+    }
+
     return status;
 }

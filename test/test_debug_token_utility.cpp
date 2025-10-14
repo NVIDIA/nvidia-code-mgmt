@@ -15,11 +15,15 @@
  * limitations under the License.
  */
 
+#include "../debug_token/tlv/tlv.h"
+
+#include "../debug_token/token_utility.hpp"
 #include "../debug_token/update_debug_token.hpp"
 
 #include <stdlib.h>
 
 #include <cstdint>
+#include <cstring>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -86,4 +90,77 @@ TEST_F(TestDebugTokenUtility, DebugTokenQueryResponse)
     auto tokenInstallStatus =
         std::stoi(rxBytes[rxBytes.size() - 10], nullptr, 16);
     EXPECT_EQ(tokenInstallStatus, 0);
+}
+// Test formatSerialNumber utility function
+TEST_F(TestDebugTokenUtility, FormatSerialNumberValidInput)
+{
+    std::vector<uint8_t> serialBytes = {0x12, 0x34, 0xAB, 0xCD,
+                                        0xEF, 0x56, 0x78, 0x90};
+    std::string result = TokenUtility::formatSerialNumber(serialBytes);
+    EXPECT_EQ(result, "0x1234ABCDEF567890");
+}
+TEST_F(TestDebugTokenUtility, FormatSerialNumberEmptyInput)
+{
+    std::vector<uint8_t> serialBytes = {};
+    std::string result = TokenUtility::formatSerialNumber(serialBytes);
+    EXPECT_EQ(result, "0x");
+}
+TEST_F(TestDebugTokenUtility, FormatSerialNumberSingleByte)
+{
+    std::vector<uint8_t> serialBytes = {0x0F};
+    std::string result = TokenUtility::formatSerialNumber(serialBytes);
+    EXPECT_EQ(result, "0x0F");
+}
+TEST_F(TestDebugTokenUtility, FormatSerialNumberLeadingZeros)
+{
+    std::vector<uint8_t> serialBytes = {0x00, 0x01, 0x0A, 0x0B};
+    std::string result = TokenUtility::formatSerialNumber(serialBytes);
+    EXPECT_EQ(result, "0x00010A0B");
+}
+// Test extractSerialNumberFromTlv with missing serial number
+TEST_F(TestDebugTokenUtility, ExtractSerialNumberFromTlvMissingItem)
+{
+    // Create minimal TLV structure without serial number
+    std::vector<uint8_t> tlvData(32 + 4, 0);
+    std::memcpy(tlvData.data(), "TLV1", 4);
+    uint16_t version = htole16(2);
+    std::memcpy(tlvData.data() + 4, &version, 2);
+    std::memcpy(tlvData.data() + 6, &version, 2);
+    uint32_t size = htole32(0);
+    std::memcpy(tlvData.data() + 8, &size, 4);
+    try
+    {
+        debug_token::tlv_decoder::Structure tlvStructure(tlvData);
+        std::string result =
+            TokenUtility::extractSerialNumberFromTlv(tlvStructure);
+        EXPECT_EQ(result, "");
+    }
+    catch (const std::exception&)
+    {
+        FAIL() << "Should not throw exception for missing serial number";
+    }
+}
+// Test parseSingleTlvRecord with insufficient data
+TEST_F(TestDebugTokenUtility, ParseSingleTlvRecordInsufficientData)
+{
+    std::vector<uint8_t> tokenData = {0x01, 0x02, 0x03};
+    TokenMap tokens;
+    size_t recordSize = 0;
+    int result =
+        TokenUtility::parseSingleTlvRecord(tokenData, 0, tokens, recordSize);
+    EXPECT_EQ(result, -1);
+    EXPECT_TRUE(tokens.empty());
+}
+// Test parseTlvTokens with empty token file
+TEST_F(TestDebugTokenUtility, ParseTlvTokensNoValidTokens)
+{
+    DebugTokenHeader header;
+    header.version = 2;
+    header.numberOfRecords = 0;
+    header.offsetToListOfStructs = 16;
+    std::vector<uint8_t> fullFile(16, 0);
+    TokenMap tokens;
+    int result = TokenUtility::parseTlvTokens(fullFile, &header, tokens);
+    EXPECT_EQ(result, -1);
+    EXPECT_TRUE(tokens.empty());
 }

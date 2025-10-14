@@ -18,12 +18,19 @@
 #pragma once
 #include "config.h"
 
+#include "tlv/tlv.h"
+#include "tlv/types.h"
+
+#include <endian.h>
+
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/log.hpp>
 
 #include <fstream>
+#include <iomanip>
+#include <map>
 #include <sstream>
 
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
@@ -63,6 +70,11 @@ struct TokenHeader
     uint32_t ecFWVersion;
     uint8_t nonce[16];
 } __attribute__((packed));
+
+// Type aliases for token handling
+using SerialNumber = std::string;
+using Token = std::vector<uint8_t>;
+using TokenMap = std::map<SerialNumber, Token>;
 
 struct TokenUtility
 {
@@ -208,5 +220,193 @@ struct TokenUtility
             }
         }
         return rxBytes;
+    }
+
+    /**
+     * @brief Format serial number bytes as hex string with 0x prefix
+     *
+     * @param[in] serialBytes Vector of bytes representing serial number
+     *
+     * @return std::string Serial number in format "0x1234ABCD..."
+     */
+    static std::string
+        formatSerialNumber(const std::vector<uint8_t>& serialBytes)
+    {
+        std::stringstream serialNumberStream;
+        serialNumberStream << "0x" << std::hex << std::uppercase;
+        for (const auto& byte : serialBytes)
+        {
+            serialNumberStream << std::setw(2) << std::setfill('0')
+                               << static_cast<int>(byte);
+        }
+        return serialNumberStream.str();
+    }
+
+    /**
+     * @brief Extract serial number from TLV structure
+     *
+     * @param[in] tlvStructure Parsed TLV structure
+     *
+     * @return std::string Serial number in hex format (e.g., "0x1234ABCD"),
+     *         empty string if not found
+     */
+    static std::string extractSerialNumberFromTlv(
+        const debug_token::tlv_decoder::Structure& tlvStructure)
+    {
+        try
+        {
+            const auto& serialItem = tlvStructure.get(
+                debug_token::types::Common::DeviceSerialNumber);
+            auto serialBytes = serialItem.getValue<std::vector<uint8_t>>();
+            return formatSerialNumber(serialBytes);
+        }
+        catch (const std::runtime_error&)
+        {
+            return "";
+        }
+    }
+
+    /**
+     * @brief Parse a single TLV record and add to token map
+     *
+     * @param[in] tokenData TLV payload data
+     * @param[in] offset Current offset in tokenData
+     * @param[out] tokens Map to store parsed token
+     * @param[out] recordSize Size of parsed record (for offset advancement)
+     *
+     * @return int status code (0 on success, -1 on failure)
+     */
+    static int parseSingleTlvRecord(const std::vector<uint8_t>& tokenData,
+                                    size_t offset, TokenMap& tokens,
+                                    size_t& recordSize)
+    {
+        if (offset + sizeof(debug_token::StructureHeader) > tokenData.size())
+        {
+            log<level::ERR>(("Insufficient data for TLV header at offset " +
+                             std::to_string(offset))
+                                .c_str());
+            return -1;
+        }
+
+        constexpr size_t headerSize = sizeof(debug_token::StructureHeader);
+        const auto* tlvHeader =
+            reinterpret_cast<const debug_token::StructureHeader*>(
+                tokenData.data() + offset);
+
+        uint32_t payloadSize = le32toh(tlvHeader->size);
+        size_t totalStructSizeInFile = headerSize + payloadSize;
+        recordSize = totalStructSizeInFile;
+
+        if (offset + totalStructSizeInFile > tokenData.size())
+        {
+            log<level::ERR>(("Insufficient data for TLV structure at offset " +
+                             std::to_string(offset))
+                                .c_str());
+            return -1;
+        }
+
+        std::vector<uint8_t> singleTlvData(tokenData.begin() + offset,
+                                           tokenData.begin() + offset +
+                                               totalStructSizeInFile);
+
+        debug_token::tlv_decoder::Structure tlvStructure(singleTlvData);
+        std::string serialNumber = extractSerialNumberFromTlv(tlvStructure);
+
+        if (serialNumber.empty())
+        {
+            log<level::WARNING>("Token missing DeviceSerialNumber, skipping");
+            return 0;
+        }
+
+        tokens.emplace(serialNumber, singleTlvData);
+        return 0;
+    }
+
+    /**
+     * @brief Parse TLV v2.0 token format from file data
+     *
+     * @param[in] fullFile Complete file data
+     * @param[in] headerInfo Token header information
+     * @param[out] tokens Map to store parsed tokens (serial number -> token
+     * data)
+     *
+     * @return int status code (0 on success, -1 on failure)
+     */
+    static int parseTlvTokens(const std::vector<uint8_t>& fullFile,
+                              const DebugTokenHeader* headerInfo,
+                              TokenMap& tokens)
+    {
+        int status = 0;
+        uint32_t tlvOffset = headerInfo->offsetToListOfStructs;
+        std::vector<uint8_t> tokenData(fullFile.begin() + tlvOffset,
+                                       fullFile.end());
+
+        size_t offset = 0;
+        for (uint16_t i = 0; i < headerInfo->numberOfRecords; i++)
+        {
+            if (offset >= tokenData.size())
+            {
+                log<level::ERR>(("Reached end of data at record " +
+                                 std::to_string(i) + " of " +
+                                 std::to_string(headerInfo->numberOfRecords))
+                                    .c_str());
+                status = -1;
+                break;
+            }
+
+            size_t recordSize = 0;
+            try
+            {
+                int result =
+                    parseSingleTlvRecord(tokenData, offset, tokens, recordSize);
+                if (result != 0)
+                {
+                    status = -1;
+                    break;
+                }
+                offset += recordSize;
+            }
+            catch (const std::exception& e)
+            {
+                log<level::ERR>(
+                    ("Failed to parse TLV token: " + std::string(e.what()))
+                        .c_str());
+
+                if (recordSize > 0)
+                {
+                    offset += recordSize;
+                }
+                else if (offset + sizeof(debug_token::StructureHeader) <=
+                         tokenData.size())
+                {
+                    constexpr size_t headerSize =
+                        sizeof(debug_token::StructureHeader);
+                    const auto* tlvHeader =
+                        reinterpret_cast<const debug_token::StructureHeader*>(
+                            tokenData.data() + offset);
+                    uint32_t payloadSize = le32toh(tlvHeader->size);
+                    offset += headerSize + payloadSize;
+                }
+                else
+                {
+                    log<level::ERR>(
+                        "Cannot determine record size, aborting parse");
+                    status = -1;
+                    break;
+                }
+                status = -1;
+            }
+        }
+
+        if (tokens.empty())
+        {
+            log<level::ERR>("No valid tokens found in TLV file");
+            return -1;
+        }
+
+        log<level::INFO>(("Successfully parsed " +
+                          std::to_string(tokens.size()) + " TLV token(s)")
+                             .c_str());
+        return status;
     }
 };

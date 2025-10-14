@@ -18,6 +18,8 @@
 #pragma once
 #include "config.h"
 
+#include "tlv/tlv.h"
+
 #include "token_utility.hpp"
 
 #include <fmt/format.h>
@@ -52,10 +54,7 @@ using UUID = std::string;
 using EID = uint8_t;
 using SupportedMessageTypes = std::vector<uint8_t>;
 using DeviceName = std::string;
-using SerialNumber = std::string;
-using Token = std::vector<uint8_t>;
 using DeviceMap = std::map<EID, SerialNumber>;
-using TokenMap = std::map<SerialNumber, Token>;
 using DeviceNameMap = std::map<EID, DeviceName>;
 using NSMStatusMap = std::map<DeviceName, int>;
 using MctpMedium = std::string;
@@ -95,6 +94,8 @@ constexpr auto pldmInventoryIntfName =
 
 constexpr auto nsmService = "xyz.openbmc_project.NSM";
 constexpr auto nsmDebugTokenIntfName = "com.nvidia.DebugToken";
+constexpr auto nsmDebugTokenActionIntfName = "com.nvidia.DebugToken.Action";
+constexpr auto nsmDebugTokenStatusIntfName = "com.nvidia.DebugToken.Status";
 constexpr auto nsmAsyncStatusIntfName = "com.nvidia.Async.Status";
 constexpr auto nsmAsyncValueIntfName = "com.nvidia.Async.Value";
 constexpr auto nsmAsyncBasePath = "/com/nvidia/nsmd/AsyncOperation";
@@ -102,6 +103,7 @@ constexpr auto nsmDebugTokenPath = "/";
 constexpr auto propertiesIntfName = "org.freedesktop.DBus.Properties";
 
 constexpr auto nsmTokenTypeCRDT = "com.nvidia.DebugToken.TokenTypes.CRDT";
+constexpr uint32_t EraseAll = 0xFFFFFFFF;
 constexpr auto nsmTokenStatusDebugSessionActive =
     "com.nvidia.DebugToken.TokenStatus.DebugSessionActive";
 constexpr auto nsmTokenStatusTokenTimeout =
@@ -412,12 +414,13 @@ class UpdateDebugToken : public TokenUtility
      */
     int eraseDebugToken();
     /**
-     * @brief update token map which has mapping of serial number to EID
+     * @brief Parse and update token map with serial number to token data
+     * mapping. Supports both TLV v2.0 and legacy token formats.
      *
      * @param[in] debugTokenPath - debug token file path
-     * @param[in] tokens - token map
+     * @param[out] tokens - token map (serial number -> token data)
      *
-     * @return int
+     * @return int status code (0 on success, -1 on failure)
      */
     int updateTokenMap(const std::string& debugTokenPath, TokenMap& tokens);
     /**
@@ -684,11 +687,26 @@ class UpdateDebugToken : public TokenUtility
     int nsmTokenInstall(TokenMap& tokens);
 
     /**
+     * @brief debug token install for NSM endpoints V2 (TLV-based).
+     *
+     * @param[in] tokens - token map
+     * @return int
+     */
+    int nsmTokenInstallV2(TokenMap& tokens);
+
+    /**
      * @brief debug token erase for NSM endpoints.
      *
      * @return int
      */
     int nsmTokenErase();
+
+    /**
+     * @brief debug token erase for NSM endpoints V2.
+     *
+     * @return int
+     */
+    int nsmTokenEraseV2();
 
     /**
      * @brief Enumerate endpoints that support debug token over NSM.
@@ -698,6 +716,32 @@ class UpdateDebugToken : public TokenUtility
      * @return int
      */
     int enumerateNsmDebugTokenEndpoints(NSMEndpoints& nsmEndpoint);
+
+    /**
+     * @brief Enumerate endpoints that support debug token over NSM V2.
+     * Uses DebugTokenAction interface instead of DebugToken interface.
+     *
+     * @param[in] nsmEndpoint - paths to be added by the function.
+     *
+     * @return int
+     */
+    int enumerateNsmDebugTokenEndpointsV2(NSMEndpoints& nsmEndpoint);
+    /**
+     * @brief Handle async D-Bus call for NSM V2 token installation
+     *
+     * @param path NSM endpoint D-Bus object path
+     * @param memfd Memory file descriptor containing token data
+     * @return Async operation object path on success, empty string on failure
+     */
+    std::string handleAsyncCallInstallV2(const std::string& path, int memfd);
+    /**
+     * @brief Handle async D-Bus call for NSM V2 token erase
+     *
+     * @param path NSM endpoint D-Bus object path
+     * @return Async operation object path on success, empty string on failure
+     */
+    std::string handleAsyncCallEraseV2(const std::string& path,
+                                       uint32_t eraseType = EraseAll);
 
     /**
      * Helper function to make com.nvidia.DebugToken method calls
