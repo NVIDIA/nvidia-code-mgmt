@@ -1,7 +1,8 @@
 #pragma once
 
 #include <boost/asio.hpp>
-#include <boost/process/v2.hpp>
+#include <boost/process/v2/process.hpp>
+#include <boost/process/v2/stdio.hpp>
 #include <com/nvidia/GraceSPI/server.hpp>
 #include <com/nvidia/GraceSPIData/server.hpp>
 #include <gpiod.hpp>
