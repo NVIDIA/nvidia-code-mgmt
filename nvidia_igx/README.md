@@ -1,1 +1,1 @@
-This app is to manage IGX inventories
+# This app is to manage IGX inventories
