@@ -55,21 +55,13 @@ void SPIProgrammer::populateSpiSwObjects()
     {
         if (interfaces.contains(spiObjectInterfaces))
         {
-            const auto name =
-                getString(interfaces, spiObjectInterfaces, "Name");
-
-            lg2::info("SPI Programmer: {NAME}", "NAME", name);
-
-            // check if name contains "BootSPI" as it is the only SPI device
-            // that stores the firmware
-            if (name.find("BootSPI") != std::string::npos)
+            const auto targetFirmware =
+                getString(interfaces, spiObjectInterfaces, "TargetFirmware");
+            if (!targetFirmware.empty())
             {
-                const auto targetFirmware = getString(
-                    interfaces, spiObjectInterfaces, "TargetFirmware");
-                lg2::info("Target Firmware: {TARGET_FIRMWARE}",
-                          "TARGET_FIRMWARE", targetFirmware);
+                const auto chassisName = emObjectPath.parent_path().filename();
                 inventoryMap[emObjectPath.str] =
-                    std::make_pair(name, targetFirmware);
+                    std::make_pair(chassisName, targetFirmware);
             }
         }
     }

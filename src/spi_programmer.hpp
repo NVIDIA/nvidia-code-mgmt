@@ -82,19 +82,20 @@ class SPIProgrammer : public BaseItemUpdater
      */
     virtual std::string getServiceArgs(
         [[maybe_unused]] const std::string& inventoryPath,
-        const std::string& imagePath,
-        [[maybe_unused]] const std::string& version,
+        const std::string& imagePath, const std::string& version,
         [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
         // The systemd unit shall be escaped
         std::string args = "";
         // put all the SPI chip names in the args
-        for (const auto& [inventoryPath, pair] : inventoryMap)
+        for (const auto& [invObjPath, pair] : inventoryMap)
         {
-            auto [chip, fwTarget] = pair;
-            args += chip;
+            auto [chassisName, fwTarget] = pair;
+            args += chassisName;
             args += "\\x20";
         }
+        args += "\\x20";
+        args += version;
         args += "\\x20";
         args += imagePath;
         std::replace(args.begin(), args.end(), '/', '-');
