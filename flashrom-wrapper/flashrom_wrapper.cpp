@@ -890,11 +890,12 @@ void populateSpiObjects()
                 }
             }
 
-            auto objPath = inventoryObjPath + "/" + name;
+            auto chassisName = emObjectPath.parent_path().filename();
+            auto objPath = inventoryObjPath + "/" + chassisName + "/SPI";
             lg2::info("[SPI: {NAME}] Creating SPI object: {OBJ_PATH}", "NAME",
-                      name, "OBJ_PATH", objPath);
+                      chassisName, "OBJ_PATH", objPath);
             spiDevices.push_back(std::make_unique<Spi>(
-                getBus(), objPath, usbPort, name, programmer, chip, type,
+                getBus(), objPath, usbPort, chassisName, programmer, chip, type,
                 chipSelect, activeGpios, deactiveGpios));
         }
     }
