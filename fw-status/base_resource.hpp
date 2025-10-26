@@ -18,11 +18,14 @@
 #pragma once
 
 #include "com/nvidia/RoT/BootStatus/server.hpp"
+#include "com/nvidia/SetRecoveryMode/server.hpp"
+#include "xyz/openbmc_project/Common/error.hpp"
 #include "xyz/openbmc_project/State/Decorator/Health/server.hpp"
 #include "xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 
+#include <functional>
 #include <memory>
 
 using ResourceInterfacesInherit = sdbusplus::server::object_t<
@@ -32,6 +35,9 @@ using ResourceInterfacesInherit = sdbusplus::server::object_t<
 
 using BootStatusInterfaceInherit = sdbusplus::server::object_t<
     sdbusplus::com::nvidia::RoT::server::BootStatus>;
+
+using SetRecoveryModeInterfaceInherit = sdbusplus::server::object_t<
+    sdbusplus::com::nvidia::server::SetRecoveryMode>;
 
 using HealthServer =
     sdbusplus::xyz::openbmc_project::State::Decorator::server::Health;
@@ -69,6 +75,53 @@ class BootStatus : public BootStatusInterfaceInherit
         BootStatusInterfaceInherit(sdbus, objPath.c_str(),
                                    action::emit_interface_added)
     {}
+};
+
+/**@class SetRecoveryModeInterface
+ *
+ *  Concrete implementation of com.nvidia.SetRecoveryMode
+ *  D-Bus interface for triggering device force recovery
+ *
+ */
+class SetRecoveryModeInterface : public SetRecoveryModeInterfaceInherit
+{
+  public:
+    /**@brief Constructor for the SetRecoveryModeInterface Class
+     *
+     * @param sdbus - SystemD bus to publish the object
+     * @param path - Path of D-Bus object to publish
+     * @param recoveryCallback - Callback function to perform the actual
+     * recovery
+     *
+     */
+    SetRecoveryModeInterface(sdbusplus::bus::bus& sdbus,
+                             const std::string& path,
+                             std::function<void()> recoveryCallback) :
+        SetRecoveryModeInterfaceInherit(sdbus, path.c_str(),
+                                        action::emit_interface_added),
+        setForceRecovery(std::move(recoveryCallback))
+    {}
+
+    /**@brief D-Bus method implementation for SetRecoveryMode
+     *
+     * Invokes the recovery callback provided at construction time.
+     * Throws InternalFailure on recovery errors.
+     */
+    void setRecoveryMode() override
+    {
+        try
+        {
+            setForceRecovery();
+        }
+        catch (const std::exception&)
+        {
+            throw sdbusplus::xyz::openbmc_project::Common::Error::
+                InternalFailure();
+        }
+    }
+
+  private:
+    std::function<void()> setForceRecovery;
 };
 
 /**@class BaseResource

@@ -56,6 +56,8 @@ class GpuResource : public MCTPDiscoveryResource
         bootStatus->bootStatusType(
             BootStatusServer::BootStatusTypes::OCPDeviceStatus);
 
+        createRecoveryModeInterface(bus, chassisObjPath);
+
         updateHealth();
     }
 
@@ -83,6 +85,8 @@ class GpuResource : public MCTPDiscoveryResource
         bootStatus->bootStatusType(
             BootStatusServer::BootStatusTypes::OCPDeviceStatus);
 
+        createRecoveryModeInterface(bus, chassisObjPath);
+
         updateHealth();
 
         monitorSMAEndpoint();
@@ -92,10 +96,41 @@ class GpuResource : public MCTPDiscoveryResource
     std::unique_ptr<recovery_tool::recovery_commands::OCPRecoveryCommands>
         ocpRecoveryCommands;
     std::unique_ptr<BootStatus> bootStatus;
+    std::unique_ptr<SetRecoveryModeInterface> recoveryModeInterface;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointAddedMatch;
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
     uint8_t smaEid{};
+
+    /**@brief Creates the SetRecoveryMode D-Bus interface on the chassis path
+     *
+     * @param bus - SystemD bus to publish the object
+     * @param chassisObjPath - Path of D-Bus object to publish
+     */
+    void createRecoveryModeInterface(sdbusplus::bus::bus& bus,
+                                     const std::string& chassisObjPath)
+    {
+        lg2::info("Creating SetRecoveryMode interface on {PATH}", "PATH",
+                  chassisObjPath);
+
+        recoveryModeInterface = std::make_unique<SetRecoveryModeInterface>(
+            bus, chassisObjPath, [this, chassisObjPath]() {
+                lg2::info("Performing OCP force recovery for {PATH}", "PATH",
+                          chassisObjPath);
+
+                auto [success, error] =
+                    ocpRecoveryCommands->setForceRecoveryMode();
+                if (!success)
+                {
+                    lg2::error("OCP force recovery failed for {PATH}: {ERR}",
+                               "PATH", chassisObjPath, "ERR", error);
+                    throw std::runtime_error(error);
+                }
+
+                lg2::info("OCP force recovery successful for {PATH}", "PATH",
+                          chassisObjPath);
+            });
+    }
 
     /* @brief Override function for updating Health and Status of D-Bus object
      * based on Device Status and MCTP enumeration
