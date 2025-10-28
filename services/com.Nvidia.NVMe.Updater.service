@@ -1,7 +1,5 @@
 [Unit]
 Description=OpenBMC NVMe Code Manager
-After=nvidia-fpga-ready.target
-Conflicts=nvidia-fpga-notready.target
 Wants=pldmd.service
 After=pldmd.service
 Wants=obmc-mapper.target
@@ -30,4 +28,4 @@ Type=simple
 BusName=com.Nvidia.Software.NVMe.Updater
 
 [Install]
-WantedBy=nvidia-fpga-ready.target 
+WantedBy=multi-user.target
