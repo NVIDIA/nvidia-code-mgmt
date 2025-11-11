@@ -6,7 +6,7 @@ Wants=obmc-mapper.target
 After=obmc-mapper.target
 
 [Service]
-EnvironmentFile=/usr/share/nvme/nvmemodels.env
+EnvironmentFile=/etc/nvme/nvmemodels.env
 ExecStart=/bin/sh -c '\
   target=0; \
   for line in $(env | grep "NVMeMODEL="); do \

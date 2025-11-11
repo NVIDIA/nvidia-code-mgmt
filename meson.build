@@ -219,14 +219,14 @@ if get_option('NVME_SUPPORT').enabled()
     cdata.set_quoted('NVME_UPDATE_SERVICE', 'nvme-update@.service')
     cdata.set_quoted(
         'NVME_INVENTORY_PATH',
-        '/xyz/openbmc_project/inventory/system/nvme/NVMe_SSD_',
+        '/xyz/openbmc_project/inventory/system/nvme/NVMe_E1S_',
     )
     cdata.set_quoted(
         'NVME_INV_PATH_FORMAT',
-        '/xyz/openbmc_project/inventory/system/nvme/NVMe_SSD_%u',
+        '/xyz/openbmc_project/inventory/system/nvme/NVMe_E1S_%u',
     )
     cdata.set_quoted('NVME_NAME', 'NVMe_SSD')
-    cdata.set_quoted('FW_NVME_NAME_FORMAT', 'FW_NVMe_SSD_%u')
+    cdata.set_quoted('FW_NVME_NAME_FORMAT', 'FW_NVMe_E1S_%u')
     cdata.set('NVME_UPDATE_TIMEOUT', get_option('NVME_UPDATE_TIMEOUT'))
 endif
 
