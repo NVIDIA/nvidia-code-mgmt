@@ -19,8 +19,12 @@
 
 #include "base_item_updater.hpp"
 
+#include <phosphor-logging/lg2.hpp>
+#include <sdbusplus/bus.hpp>
+
 #include <filesystem>
 #include <tuple>
+#include <variant>
 
 namespace nvidia
 {
@@ -41,6 +45,64 @@ class SMCUItemUpdater : public BaseItemUpdater
      */
     std::string currentModelToken;
 
+    /** @brief Tracks the SMCU type detected from the platform at startup */
+    std::string detectedPlatformSmcu;
+
+  private:
+    /**
+     * @brief Detect platform SMCU type using D-Bus FRU query
+     *
+     * @return std::string "ASMCU" for Orin, "RSMCU" for Thor, "" if unknown
+     */
+    std::string detectPlatformSmcu()
+    {
+        try
+        {
+            auto bus = sdbusplus::bus::new_default();
+            auto method = bus.new_method_call(
+                "xyz.openbmc_project.FruDevice",
+                "/xyz/openbmc_project/FruDevice/P3809",
+                "org.freedesktop.DBus.Properties", "Get");
+            method.append("xyz.openbmc_project.FruDevice",
+                          "PRODUCT_PRODUCT_NAME");
+
+            auto reply = bus.call(method);
+            std::variant<std::string> productNameVariant;
+            reply.read(productNameVariant);
+            std::string productName =
+                std::get<std::string>(productNameVariant);
+
+            if (productName == "P5840" || productName == "P5940")
+            {
+                lg2::info(
+                    "Detected Thor platform ({PRODUCT}), using Renesas SMCU",
+                    "PRODUCT", productName);
+                return "RSMCU";
+            }
+            else if (productName == "P3840" || productName == "P3940")
+            {
+                lg2::info(
+                    "Detected Orin platform ({PRODUCT}), using Aurix SMCU",
+                    "PRODUCT", productName);
+                return "ASMCU";
+            }
+            else
+            {
+                lg2::warning("Unknown platform product name: {PRODUCT}, will "
+                             "expose both SMCU types",
+                             "PRODUCT", productName);
+                return "";
+            }
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("Failed to detect platform: {ERROR}, will expose both "
+                       "SMCU types",
+                       "ERROR", e.what());
+            return "";
+        }
+    }
+
   public:
     /**
      * @brief Construct a new SMCUItemUpdater object
@@ -51,7 +113,9 @@ class SMCUItemUpdater : public BaseItemUpdater
         BaseItemUpdater(bus, SMCU_SUPPORTED_MODEL, SMCU_INVENTORY_IFACE, "SMCU",
                         SMCU_BUSNAME_UPDATER, SMCU_UPDATE_SERVICE, false,
                         SMCU_BUSNAME_INVENTORY)
-    {}
+    {
+        detectedPlatformSmcu = detectPlatformSmcu();
+    }
     /**
      * @brief Get the Version object
      *
@@ -133,6 +197,7 @@ class SMCUItemUpdater : public BaseItemUpdater
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
+        // Priority 1: Use model token from firmware image if available
         if (currentModelToken == "ASMCU")
         {
             ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/ASMCU");
@@ -143,7 +208,14 @@ class SMCUItemUpdater : public BaseItemUpdater
             ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/RSMCU");
             return ret;
         }
-        // Default: expose both if model not yet known
+        // Priority 2: Use platform-detected SMCU type if available
+        if (!detectedPlatformSmcu.empty())
+        {
+            ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/" +
+                             detectedPlatformSmcu);
+            return ret;
+        }
+        // Priority 3 (fallback): expose both if detection unavailable
         ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/ASMCU");
         ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/RSMCU");
         return ret;
