@@ -59,18 +59,17 @@ class SMCUItemUpdater : public BaseItemUpdater
         try
         {
             auto bus = sdbusplus::bus::new_default();
-            auto method = bus.new_method_call(
-                "xyz.openbmc_project.FruDevice",
-                "/xyz/openbmc_project/FruDevice/P3809",
-                "org.freedesktop.DBus.Properties", "Get");
+            auto method =
+                bus.new_method_call("xyz.openbmc_project.FruDevice",
+                                    "/xyz/openbmc_project/FruDevice/P3809",
+                                    "org.freedesktop.DBus.Properties", "Get");
             method.append("xyz.openbmc_project.FruDevice",
                           "PRODUCT_PRODUCT_NAME");
 
             auto reply = bus.call(method);
             std::variant<std::string> productNameVariant;
             reply.read(productNameVariant);
-            std::string productName =
-                std::get<std::string>(productNameVariant);
+            std::string productName = std::get<std::string>(productNameVariant);
 
             if (productName == "P5840" || productName == "P5940")
             {
