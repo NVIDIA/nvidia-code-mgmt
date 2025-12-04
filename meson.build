@@ -549,3 +549,6 @@ if get_option('FLASHROM_WRAPPER_SUPPORT').enabled()
         )
     endif
 endif
+
+# USB RCM Recovery Tool (standalone)
+subdir('recovery_tool/usbrcm_recovery_tool')
