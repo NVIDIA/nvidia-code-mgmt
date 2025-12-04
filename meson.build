@@ -442,6 +442,32 @@ if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
     cdata.set('SPI_PROGRAMMER_TIMEOUT', get_option('SPI_PROGRAMMER_TIMEOUT'))
 endif
 
+if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
+    add_project_arguments('-DUSBRCM_RECOVERY_SUPPORT', language: 'cpp')
+    cdata.set_quoted(
+        'USBRCM_RECOVERY_SUPPORTED_MODEL',
+        get_option('USBRCM_RECOVERY_SUPPORTED_MODEL'),
+    )
+    cdata.set_quoted(
+        'USBRCM_RECOVERY_INVENTORY_IFACE',
+        'xyz.openbmc_project.Inventory.Decorator.Asset',
+    )
+    cdata.set_quoted(
+        'USBRCM_RECOVERY_BUSNAME_UPDATER',
+        'com.Nvidia.Software.USBRCMRecovery.Updater',
+    )
+    cdata.set_quoted(
+        'USBRCM_RECOVERY_BUSNAME_INVENTORY',
+        'xyz.openbmc_project.PLDM',
+    )
+    cdata.set_quoted('USBRCM_RECOVERY_NAME', 'USBRCMRecovery')
+    cdata.set_quoted(
+        'USBRCM_RECOVERY_UPDATE_SERVICE',
+        'usb-rcm-recovery@.service',
+    )
+    cdata.set('USBRCM_RECOVERY_TIMEOUT', get_option('USBRCM_RECOVERY_TIMEOUT'))
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 
@@ -550,5 +576,6 @@ if get_option('FLASHROM_WRAPPER_SUPPORT').enabled()
     endif
 endif
 
-# USB RCM Recovery Tool (standalone)
-subdir('recovery_tool/usbrcm_recovery_tool')
+if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
+    subdir('recovery_tool/usbrcm_recovery_tool')
+endif

@@ -1,0 +1,8 @@
+[Unit]
+Description=USB RCM Recovery Utility for Vera
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/usb-rcm-recovery $ARGS

@@ -79,6 +79,9 @@
 #ifdef SPI_PROGRAMMER_SUPPORT
 #include "spi_programmer.hpp"
 #endif
+#ifdef USBRCM_RECOVERY_SUPPORT
+#include "usb_rcm_recovery.hpp"
+#endif
 
 #include "watch.hpp"
 
@@ -277,6 +280,12 @@ int main(int argc, char** argv)
     if (updater == "SPIProgrammer")
     {
         itemUpdater = std::make_unique<SPIProgrammer>(bus);
+    }
+#endif
+#if USBRCM_RECOVERY_SUPPORT
+    if (updater == "USBRCMRecovery")
+    {
+        itemUpdater = std::make_unique<USBRCMRecovery>(bus);
     }
 #endif
 

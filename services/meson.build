@@ -241,6 +241,13 @@ if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
     ]
 endif
 
+if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
+    unit_files = unit_files + [
+        'com.Nvidia.USBRCMRecovery.Updater.service',
+        'usb-rcm-recovery@.service',
+    ]
+endif
+
 foreach unit : unit_files
     configure_file(
         input: unit,

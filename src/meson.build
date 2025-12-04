@@ -93,6 +93,10 @@ if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
     source_files += 'spi_programmer.cpp'
 endif
 
+if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
+    source_files += 'usb_rcm_recovery.cpp'
+endif
+
 executable(
     'code-manager',
     sources: source_files,

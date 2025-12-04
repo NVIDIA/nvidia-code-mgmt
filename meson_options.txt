@@ -414,3 +414,18 @@ option('NVME_UPDATE_TIMEOUT',
        type: 'integer',
        value: 600,
        description: 'NVMe update timeout in seconds. Default of 300s for firmware update operations.')
+
+option('USBRCM_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables USB RCM recovery tool support')
+
+option('USBRCM_RECOVERY_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'USB RCM Recovery supported models')
+
+option('USBRCM_RECOVERY_TIMEOUT',
+       type: 'integer',
+       value: 600,
+       description: 'USB RCM Recovery timeout in seconds')

@@ -1,0 +1,16 @@
+[Unit]
+Description=USB RCM Recovery Updater for Vera/TB500
+Wants=pldmd.service
+After=pldmd.service
+
+[Service]
+ExecStart=/usr/bin/code-manager -u USBRCMRecovery
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.USBRCMRecovery.Updater
+
+[Install]
+WantedBy=multi-user.target
+
+
+

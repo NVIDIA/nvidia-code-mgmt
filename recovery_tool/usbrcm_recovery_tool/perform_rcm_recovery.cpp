@@ -6,6 +6,7 @@
 #include "perform_rcm_recovery.hpp"
 
 #include "ecid_parser.hpp"
+#include "message_registry.hpp"
 #include "progress_code_parser.hpp"
 #include "progress_code_queue.hpp"
 #include "usb_device_manager.hpp"
@@ -43,7 +44,166 @@ enum class ProgressStatus
     Error      ///< Error detected
 };
 
-// Read file into memory buffer
+/**
+ * @brief Convert PSC ROM error operation code to USBRCMRecoveryErrorCode
+ * @param operation PSC ROM error operation code (bits 5:0)
+ * @return Corresponding USBRCMRecoveryErrorCode
+ */
+[[nodiscard]] USBRCMRecoveryErrorCode
+    pscRomErrorToRecoveryErrorCode(uint8_t operation) noexcept
+{
+    switch (operation)
+    {
+        case 0x01:
+            return USBRCMRecoveryErrorCode::PscRomI2cExtMsgFail;
+        case 0x02:
+            return USBRCMRecoveryErrorCode::PscRomBootModeSelFail;
+        case 0x03:
+            return USBRCMRecoveryErrorCode::PscRomUsbExtMsgFail;
+        case 0x04:
+            return USBRCMRecoveryErrorCode::PscRomErotGrantFail;
+        case 0x05:
+            return USBRCMRecoveryErrorCode::PscRomQspi0DevFail;
+        case 0x06:
+            return USBRCMRecoveryErrorCode::PscRomUsb2DevFail;
+        case 0x07:
+            return USBRCMRecoveryErrorCode::PscRomOcprcDevFail;
+        case 0x08:
+            return USBRCMRecoveryErrorCode::PscRomBootChainExhaust;
+        case 0x09:
+            return USBRCMRecoveryErrorCode::PscRomBootImageLoadFail;
+        case 0x0A:
+            return USBRCMRecoveryErrorCode::PscRomDotSlotExhaust;
+        case 0x0B:
+            return USBRCMRecoveryErrorCode::PscRomS2aHeaderCheckFail;
+        case 0x0C:
+            return USBRCMRecoveryErrorCode::PscRomS2aSanityFail;
+        case 0x0D:
+            return USBRCMRecoveryErrorCode::PscRomS2aIntegrityFail;
+        case 0x0E:
+            return USBRCMRecoveryErrorCode::PscRomS2aKeyRevoked;
+        case 0x0F:
+            return USBRCMRecoveryErrorCode::PscRomMutableDotHeaderCheckFail;
+        case 0x10:
+            return USBRCMRecoveryErrorCode::PscRomMutableDotIntegrityFail;
+        case 0x11:
+            return USBRCMRecoveryErrorCode::PscRomMutableDotSanityFail;
+        case 0x12:
+            return USBRCMRecoveryErrorCode::PscRomVolatileDotParityFail;
+        case 0x13:
+            return USBRCMRecoveryErrorCode::PscRomVolatileDotHeaderCheckFail;
+        case 0x14:
+            return USBRCMRecoveryErrorCode::PscRomVolatileDotSanityFail;
+        case 0x15:
+            return USBRCMRecoveryErrorCode::PscRomCaliptraAckFail;
+        case 0x16:
+            return USBRCMRecoveryErrorCode::PscRomFmcCshSanityFail;
+        case 0x17:
+            return USBRCMRecoveryErrorCode::PscRomFmcCshAuthz1Fail;
+        case 0x18:
+            return USBRCMRecoveryErrorCode::PscRomFmcCshAuthz2Fail;
+        case 0x19:
+            return USBRCMRecoveryErrorCode::PscRomFmcCshBinListIntegrityFail;
+        case 0x1A:
+            return USBRCMRecoveryErrorCode::PscRomFmcImageSanityFail;
+        case 0x1B:
+            return USBRCMRecoveryErrorCode::PscRomFmcImageIntegrityFail;
+        case 0x1C:
+            return USBRCMRecoveryErrorCode::PscRomFmcImageDecryptionFail;
+        case 0x1D:
+            return USBRCMRecoveryErrorCode::PscRomFmcImageOemRatchetFail;
+        case 0x1E:
+            return USBRCMRecoveryErrorCode::
+                PscRomFmcImageMutDotSvnFuseRatchetFail;
+        case 0x1F:
+            return USBRCMRecoveryErrorCode::
+                PscRomFmcImageMutDotSvnCshRatchetFail;
+        case 0x20:
+            return USBRCMRecoveryErrorCode::
+                PscRomFmcImageVolDotSvnFuseRatchetFail;
+        case 0x21:
+            return USBRCMRecoveryErrorCode::
+                PscRomFmcImageVolDotSvnCshRatchetFail;
+        case 0x22:
+            return USBRCMRecoveryErrorCode::PscRomFmcImageVolDotCshRatchetFail;
+        default:
+            return USBRCMRecoveryErrorCode::ImageTransferFailed;
+    }
+}
+
+/**
+ * @brief Convert PSC FMC error operation code to USBRCMRecoveryErrorCode
+ * @param operation PSC FMC error operation code (bits 5:0)
+ * @return Corresponding USBRCMRecoveryErrorCode
+ */
+[[nodiscard]] USBRCMRecoveryErrorCode
+    pscFmcErrorToRecoveryErrorCode(uint8_t operation) noexcept
+{
+    switch (operation)
+    {
+        case 0x01:
+            return USBRCMRecoveryErrorCode::PscFmcFuseCrcFailed;
+        case 0x02:
+            return USBRCMRecoveryErrorCode::PscFmcLpiLsLinkFailed;
+        case 0x03:
+            return USBRCMRecoveryErrorCode::PscFmcBootChainLedgerInvalid;
+        case 0x04:
+            return USBRCMRecoveryErrorCode::PscFmcBootChainLedgerNotBootable;
+        case 0x05:
+            return USBRCMRecoveryErrorCode::PscFmcBootChainLedgerMismatch;
+        case 0x06:
+            return USBRCMRecoveryErrorCode::PscFmcDebugTokenSanityFail;
+        case 0x07:
+            return USBRCMRecoveryErrorCode::PscFmcDebugTokenAuthenticationFail;
+        case 0x08:
+            return USBRCMRecoveryErrorCode::PscFmcSanityFailed;
+        case 0x09:
+            return USBRCMRecoveryErrorCode::PscFmcStage1AuthenticationFailed;
+        case 0x0A:
+            return USBRCMRecoveryErrorCode::PscFmcStage2AuthenticationFailed;
+        case 0x0B:
+            return USBRCMRecoveryErrorCode::PscFmcSvnCheckFailed;
+        case 0x0C:
+            return USBRCMRecoveryErrorCode::PscFmcHaltDisabledSocket;
+        case 0x0D:
+            return USBRCMRecoveryErrorCode::PscFmcMemFuseCrcFailed;
+        case 0x0E:
+            return USBRCMRecoveryErrorCode::PscFmcCaliptraMailboxFailed;
+        case 0x0F:
+            return USBRCMRecoveryErrorCode::PscFmcCsaFailed;
+        case 0x10:
+            return USBRCMRecoveryErrorCode::PscFmcDotFailed;
+        default:
+            return USBRCMRecoveryErrorCode::ImageTransferFailed;
+    }
+}
+
+/**
+ * @brief Convert progress code error to USBRCMRecoveryErrorCode
+ * @param progressCode 32-bit progress code
+ * @return Corresponding USBRCMRecoveryErrorCode
+ */
+[[nodiscard]] USBRCMRecoveryErrorCode
+    progressCodeToRecoveryErrorCode(uint32_t progressCode) noexcept
+{
+    const auto info = ProgressCodeParser::getProgressCodeInfo(progressCode);
+
+    if (info.type != ProgressCodeParser::CodeType::Error)
+    {
+        return USBRCMRecoveryErrorCode::ImageTransferFailed;
+    }
+
+    switch (info.subClass)
+    {
+        case ProgressCodeParser::SubClass::PSC_ROM:
+            return pscRomErrorToRecoveryErrorCode(info.operation);
+        case ProgressCodeParser::SubClass::PSC_FMC:
+            return pscFmcErrorToRecoveryErrorCode(info.operation);
+        default:
+            return USBRCMRecoveryErrorCode::ImageTransferFailed;
+    }
+}
+
 [[nodiscard]] bool readFileToBuffer(const std::string& filePath,
                                     std::vector<uint8_t>& buffer, bool verbose)
 {
@@ -121,7 +281,6 @@ enum class ProgressStatus
             return false;
         }
 
-        // Defensive check: ensure progress is made
         if (actualLength <= 0)
         {
             if (verbose)
@@ -165,16 +324,16 @@ enum class ProgressStatus
  * updated as new codes are processed
  * @param errorDetail Reference to error message string; populated if error code
  * detected
+ * @param errorCode Reference to error code; populated if error detected
  * @param verbose Enable diagnostic output to stdout/stderr
  *
  * @return ProgressStatus::Completed if recovery completion code detected
  * @return ProgressStatus::Error if error code detected
  * @return ProgressStatus::Continue if no completion or error found
  */
-[[nodiscard]] ProgressStatus
-    checkForNewProgressCodes(libusb_device_handle* handle,
-                             uint32_t& lastProcessedTimestamp,
-                             std::string& errorDetail, bool verbose)
+[[nodiscard]] ProgressStatus checkForNewProgressCodes(
+    libusb_device_handle* handle, uint32_t& lastProcessedTimestamp,
+    std::string& errorDetail, USBRCMRecoveryErrorCode& errorCode, bool verbose)
 {
     std::vector<progress_queue::CPUProgressLogEntry> entries;
 
@@ -227,6 +386,7 @@ enum class ProgressStatus
         if (info.type == ProgressCodeParser::CodeType::Error)
         {
             errorDetail = std::format("Recovery failed: {}", info.name);
+            errorCode = progressCodeToRecoveryErrorCode(entry.progressCode);
             return ProgressStatus::Error;
         }
 
@@ -248,6 +408,7 @@ enum class ProgressStatus
  * updated as new codes are processed
  * @param errorDetail Reference to error message string; populated if error code
  * detected
+ * @param errorCode Reference to error code; populated if error detected
  * @param verbose Enable diagnostic output to stdout/stderr
  *
  * @return ProgressStatus::Completed if recovery completion detected
@@ -255,10 +416,9 @@ enum class ProgressStatus
  * @return ProgressStatus::Continue if monitoring period elapses without
  * completion/error
  */
-[[nodiscard]] ProgressStatus
-    monitorProgressAfterImageTransfer(libusb_device_handle* handle,
-                                      uint32_t& lastProcessedTimestamp,
-                                      std::string& errorDetail, bool verbose)
+[[nodiscard]] ProgressStatus monitorProgressAfterImageTransfer(
+    libusb_device_handle* handle, uint32_t& lastProcessedTimestamp,
+    std::string& errorDetail, USBRCMRecoveryErrorCode& errorCode, bool verbose)
 {
     using namespace std::chrono;
 
@@ -267,7 +427,7 @@ enum class ProgressStatus
         std::this_thread::sleep_for(milliseconds(PROGRESS_CHECK_INTERVAL_MS));
 
         ProgressStatus status = checkForNewProgressCodes(
-            handle, lastProcessedTimestamp, errorDetail, verbose);
+            handle, lastProcessedTimestamp, errorDetail, errorCode, verbose);
         if (status != ProgressStatus::Continue)
         {
             return status;
@@ -286,11 +446,12 @@ bool performUsbRecovery(const std::string& portPath,
 {
     jsonOutput = nlohmann::json::object();
 
-    // Validate inputs
     if (portPath.empty())
     {
         jsonOutput["Status"] = "Failed";
         jsonOutput["Error"] = "Port path cannot be empty";
+        jsonOutput["ErrorCode"] =
+            static_cast<uint8_t>(USBRCMRecoveryErrorCode::DeviceNotFound);
         return false;
     }
 
@@ -298,6 +459,8 @@ bool performUsbRecovery(const std::string& portPath,
     {
         jsonOutput["Status"] = "Failed";
         jsonOutput["Error"] = "At least one recovery image must be provided";
+        jsonOutput["ErrorCode"] =
+            static_cast<uint8_t>(USBRCMRecoveryErrorCode::InvalidImageOrder);
         return false;
     }
 
@@ -308,6 +471,8 @@ bool performUsbRecovery(const std::string& portPath,
         {
             jsonOutput["Status"] = "Failed";
             jsonOutput["Error"] = "Failed to initialize USB subsystem";
+            jsonOutput["ErrorCode"] = static_cast<uint8_t>(
+                USBRCMRecoveryErrorCode::InitializationFailed);
             return false;
         }
 
@@ -317,6 +482,8 @@ bool performUsbRecovery(const std::string& portPath,
             jsonOutput["Status"] = "Failed";
             jsonOutput["Error"] =
                 std::format("Device not found at port path: {}", portPath);
+            jsonOutput["ErrorCode"] =
+                static_cast<uint8_t>(USBRCMRecoveryErrorCode::DeviceNotFound);
             return false;
         }
 
@@ -328,6 +495,8 @@ bool performUsbRecovery(const std::string& portPath,
             jsonOutput["Error"] = std::format(
                 "Failed to open USB device and claim RCM interface {}",
                 usb::INTERFACE_RECOVERY);
+            jsonOutput["ErrorCode"] = static_cast<uint8_t>(
+                USBRCMRecoveryErrorCode::USBCommunicationError);
             return false;
         }
 
@@ -340,7 +509,6 @@ bool performUsbRecovery(const std::string& portPath,
                 portPath, usb::INTERFACE_RECOVERY);
         }
 
-        // Determine images to send (DOT blob + recovery images if needed)
         std::vector<std::string> finalImagePaths;
 
         if (auto ecid = usb_io::readDeviceEcid(rawHandle, verbose))
@@ -351,6 +519,8 @@ bool performUsbRecovery(const std::string& portPath,
             {
                 jsonOutput["Status"] = "Failed";
                 jsonOutput["Error"] = "S2A blob required - not supported";
+                jsonOutput["ErrorCode"] = static_cast<uint8_t>(
+                    USBRCMRecoveryErrorCode::S2ABlobNotSupported);
                 return false;
             }
 
@@ -360,6 +530,8 @@ bool performUsbRecovery(const std::string& portPath,
                 {
                     jsonOutput["Status"] = "Failed";
                     jsonOutput["Error"] = "DOT blob required but not provided";
+                    jsonOutput["ErrorCode"] = static_cast<uint8_t>(
+                        USBRCMRecoveryErrorCode::DOTBlobRequired);
                     return false;
                 }
 
@@ -392,6 +564,8 @@ bool performUsbRecovery(const std::string& portPath,
 
         uint32_t lastProcessedTimestamp = 0;
         std::string errorDetail;
+        USBRCMRecoveryErrorCode errorCode =
+            USBRCMRecoveryErrorCode::ImageTransferFailed;
 
         for (size_t i = 0; i < finalImagePaths.size(); ++i)
         {
@@ -409,6 +583,8 @@ bool performUsbRecovery(const std::string& portPath,
                 jsonOutput["Status"] = "Failed";
                 jsonOutput["Error"] =
                     std::format("Failed to read image file: {}", imagePath);
+                jsonOutput["ErrorCode"] = static_cast<uint8_t>(
+                    USBRCMRecoveryErrorCode::FileOpenFailure);
                 return false;
             }
 
@@ -424,6 +600,8 @@ bool performUsbRecovery(const std::string& portPath,
                 jsonOutput["Status"] = "Failed";
                 jsonOutput["Error"] =
                     std::format("Failed to send image: {}", imagePath);
+                jsonOutput["ErrorCode"] = static_cast<uint8_t>(
+                    USBRCMRecoveryErrorCode::ImageTransferFailed);
                 return false;
             }
 
@@ -435,11 +613,13 @@ bool performUsbRecovery(const std::string& portPath,
                     "Monitoring progress after image {}...\n", i + 1);
             }
             ProgressStatus status = monitorProgressAfterImageTransfer(
-                rawHandle, lastProcessedTimestamp, errorDetail, verbose);
+                rawHandle, lastProcessedTimestamp, errorDetail, errorCode,
+                verbose);
             if (status == ProgressStatus::Error)
             {
                 jsonOutput["Status"] = "Failed";
                 jsonOutput["Error"] = errorDetail;
+                jsonOutput["ErrorCode"] = static_cast<uint8_t>(errorCode);
                 return false;
             }
             if (status == ProgressStatus::Completed)
@@ -448,7 +628,6 @@ bool performUsbRecovery(const std::string& portPath,
                 return true;
             }
 
-            // Brief pause between images
             if (i < finalImagePaths.size() - 1)
             {
                 std::this_thread::sleep_for(
@@ -456,7 +635,6 @@ bool performUsbRecovery(const std::string& portPath,
             }
         }
 
-        // All images sent successfully, no errors detected during monitoring
         jsonOutput["Status"] = "Successful";
         return true;
     }
@@ -464,6 +642,8 @@ bool performUsbRecovery(const std::string& portPath,
     {
         jsonOutput["Status"] = "Failed";
         jsonOutput["Error"] = std::format("Exception: {}", e.what());
+        jsonOutput["ErrorCode"] =
+            static_cast<uint8_t>(USBRCMRecoveryErrorCode::ImageTransferFailed);
         return false;
     }
 }
