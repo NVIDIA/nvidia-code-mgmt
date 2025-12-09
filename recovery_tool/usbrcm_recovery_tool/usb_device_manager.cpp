@@ -271,6 +271,74 @@ namespace
 }
 } // anonymous namespace
 
+UsbControlSession::UsbControlSession(libusb_device* device,
+                                     const UsbContext& ctx) noexcept
+{
+    if (!device)
+    {
+        std::cerr << "Cannot open null USB device\n";
+        return;
+    }
+
+    if (!ctx.isValid())
+    {
+        std::cerr << "Cannot open device with invalid USB context\n";
+        return;
+    }
+
+    // Get device info before opening
+    portPath = getDevicePortPath(device);
+
+    // Open device
+    int ret = libusb_open(device, &handle);
+    if (ret != LIBUSB_SUCCESS)
+    {
+        if (portPath.empty())
+        {
+            std::cerr << std::format(
+                "Failed to open USB device: {} ({})\n", libusb_error_name(ret),
+                libusb_strerror(static_cast<libusb_error>(ret)));
+        }
+        else
+        {
+            std::cerr << std::format(
+                "Failed to open USB device at port {}: {} ({})\n", portPath,
+                libusb_error_name(ret),
+                libusb_strerror(static_cast<libusb_error>(ret)));
+        }
+        handle = nullptr;
+        return;
+    }
+}
+
+UsbControlSession::~UsbControlSession() noexcept
+{
+    if (handle)
+    {
+        libusb_close(handle);
+        handle = nullptr;
+    }
+}
+
+UsbControlSession&
+    UsbControlSession::operator=(UsbControlSession&& other) noexcept
+{
+    if (this != &other)
+    {
+        if (handle)
+        {
+            libusb_close(handle);
+        }
+
+        handle = other.handle;
+        portPath = std::move(other.portPath);
+
+        other.handle = nullptr;
+        other.portPath.clear();
+    }
+    return *this;
+}
+
 // ============================================================================
 // UsbDeviceHandle Implementation (RAII wrapper for libusb_devicehandle*)
 // ============================================================================

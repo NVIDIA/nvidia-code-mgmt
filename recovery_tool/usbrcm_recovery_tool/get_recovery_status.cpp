@@ -45,10 +45,9 @@ static json processDevice(const usb::UsbDevice& deviceInfo,
     deviceEntry["Last Progress Code"] = "";
     deviceEntry["Last Error Code"] = "";
 
-    // Open device handle with control interface for status reads
-    usb::UsbDeviceHandle deviceHandle(deviceInfo.get(), ctx,
-                                      usb::INTERFACE_CONTROL);
-    if (!deviceHandle.isValid())
+    // Open control session for control transfers
+    usb::UsbControlSession controlSession(deviceInfo.get(), ctx);
+    if (!controlSession.isValid())
     {
         if (verbose)
         {
@@ -61,7 +60,7 @@ static json processDevice(const usb::UsbDevice& deviceInfo,
 
     // Read progress codes
     std::vector<progress_queue::CPUProgressLogEntry> entries{};
-    if (!progress_queue::readCpuPcqEntries(deviceHandle.get(), entries,
+    if (!progress_queue::readCpuPcqEntries(controlSession.get(), entries,
                                            verbose))
     {
         if (verbose)
@@ -200,7 +199,7 @@ static json processDevice(const usb::UsbDevice& deviceInfo,
     }
 
     // Read ECID for DOT blob requirement using modern usb_io API
-    if (auto ecid = usb_io::readDeviceEcid(deviceHandle.get(), verbose))
+    if (auto ecid = usb_io::readDeviceEcid(controlSession.get(), verbose))
     {
         bool needsDotBlob = EcidParser::isDOTBlobRequired(ecid->data());
         deviceEntry["DOT Blob Required"] = needsDotBlob ? "Yes" : "No";

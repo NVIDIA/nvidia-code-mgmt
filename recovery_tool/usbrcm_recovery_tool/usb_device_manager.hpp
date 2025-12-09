@@ -54,20 +54,84 @@ class UsbContext
     libusb_context* context = nullptr;
 };
 
+/// USB interface constant for RCM image transfers
+constexpr int INTERFACE_RECOVERY =
+    3; ///< Recovery interface for RCM image transfers
+
 /**
- * @brief RAII wrapper for USB device handle
+ * @brief Lightweight USB control session for control transfers
+ *
+ * Opens device but does NOT claim any interface.
+ * Use for operations that only need endpoint 0 (control transfers):
+ * - Progress code register reads
+ * - ECID reads (string descriptors)
+ *
+ * For bulk/interrupt transfers that require claiming an interface,
+ * use UsbDeviceHandle instead.
+ */
+class UsbControlSession
+{
+  public:
+    /**
+     * @brief Open USB control session for control transfers
+     * @param device USB device to open
+     * @param ctx USB context (must remain valid for control session lifetime)
+     */
+    UsbControlSession(libusb_device* device, const UsbContext& ctx) noexcept;
+    ~UsbControlSession() noexcept;
+
+    // Non-copyable
+    UsbControlSession(const UsbControlSession&) = delete;
+    UsbControlSession& operator=(const UsbControlSession&) = delete;
+
+    // Movable
+    UsbControlSession(UsbControlSession&& other) noexcept :
+        handle(other.handle), portPath(std::move(other.portPath))
+    {
+        other.handle = nullptr;
+        other.portPath.clear();
+    }
+    UsbControlSession& operator=(UsbControlSession&& other) noexcept;
+
+    [[nodiscard]] bool isValid() const noexcept
+    {
+        return handle != nullptr;
+    }
+    [[nodiscard]] explicit operator bool() const noexcept
+    {
+        return isValid();
+    }
+    [[nodiscard]] libusb_device_handle* get() const noexcept
+    {
+        return handle;
+    }
+
+    /**
+     * @brief Get USB port path (e.g., "1-1.3")
+     * @return Port path string cached at construction time
+     */
+    [[nodiscard]] const std::string& getPortPath() const noexcept
+    {
+        return portPath;
+    }
+
+  private:
+    libusb_device_handle* handle = nullptr;
+    std::string portPath;
+};
+
+/**
+ * @brief RAII wrapper for USB device handle with interface claim
  *
  * Manages libusb_device_handle lifetime with automatic cleanup. Opens device,
  * claims interface on construction. Releases interface and closes device on
  * destruction. Also caches the USB port path at construction time for efficient
  * access.
+ *
+ * Use this class when you need to perform bulk/interrupt transfers on a
+ * specific interface (e.g., RCM image transfers on INTERFACE_RECOVERY).
+ * For control transfers only, prefer UsbControlSession instead.
  */
-/// USB interface constants
-constexpr int INTERFACE_CONTROL =
-    0; ///< Control interface for status/ECID reads
-constexpr int INTERFACE_RECOVERY =
-    3; ///< Recovery interface for RCM image transfers
-
 class UsbDeviceHandle
 {
   public:
@@ -75,8 +139,7 @@ class UsbDeviceHandle
      * @brief Construct USB device handle and claim specified interface
      * @param device USB device to open
      * @param ctx USB context
-     * @param interfaceNum Interface number to claim (use INTERFACE_CONTROL or
-     * INTERFACE_RECOVERY)
+     * @param interfaceNum Interface number to claim (e.g., INTERFACE_RECOVERY)
      */
     UsbDeviceHandle(libusb_device* device, const UsbContext& ctx,
                     int interfaceNum) noexcept;
