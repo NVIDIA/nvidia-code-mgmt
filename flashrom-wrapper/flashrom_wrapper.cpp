@@ -8,12 +8,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <boost/asio/readable_pipe.hpp>
 #include <boost/process/v2/process.hpp>
 #include <boost/process/v2/stdio.hpp>
 #include <sdbusplus/exception.hpp>
 
 #include <map>
 #include <mutex>
+#include <regex>
+#include <sstream>
 
 using namespace phosphor::logging;
 using namespace nvidia::software::updater;
@@ -524,6 +527,21 @@ bool Spi::startSpiOperation(Operation ops)
         return false;
     }
 
+    // Dynamically detect chip model
+    std::string detectedChip = detectChipModel();
+    if (detectedChip.empty())
+    {
+        lg2::error("[SPI: {NAME}] Failed to detect chip model", "NAME", name);
+        releaseUsb(usbPort);
+        resetSpiMux();
+        return false;
+    }
+
+    // Update chip member variable with detected model
+    chip = detectedChip;
+    lg2::info("[SPI: {NAME}] Using detected chip model: {CHIP}", "NAME", name,
+              "CHIP", chip);
+
     // Remove oldest entry if we've reached max size
     if (progressHistory.size() >= maxProgressHistory)
     {
@@ -721,6 +739,121 @@ bool Spi::checkDumpFiles()
     return true;
 }
 
+std::string Spi::detectChipModel()
+{
+    lg2::info("[SPI: {NAME}] Detecting chip model...", "NAME", name);
+
+    // Build flashrom command without -c parameter to auto-detect chip
+    std::string programmerWithDevInfo = programmer + ":cs=" + chipSelect +
+                                        ",bus=" + usbBusNum +
+                                        ",devnum=" + usbDevNum;
+
+    std::vector<std::string> args = {"-p", programmerWithDevInfo};
+
+    lg2::info("[SPI: {NAME}] Running detection with programmer: {PROG}", "NAME",
+              name, "PROG", programmerWithDevInfo);
+
+    try
+    {
+        // Create pipe for capturing stdout
+        boost::asio::readable_pipe stdoutPipe(
+            getAsioConnection()->get_io_context());
+
+        // Execute flashrom process with output capture
+        boost::process::v2::process proc(
+            getAsioConnection()->get_io_context(), "/usr/sbin/flashrom", args,
+            boost::process::v2::process_stdio{
+                .in = nullptr, .out = stdoutPipe, .err = nullptr});
+
+        // Create timeout timer
+        constexpr int detectionTimeoutSec = 10;
+        boost::asio::steady_timer timeoutTimer(
+            getAsioConnection()->get_io_context());
+        timeoutTimer.expires_after(std::chrono::seconds(detectionTimeoutSec));
+
+        bool timedOut = false;
+        timeoutTimer.async_wait([&proc, &timedOut, detectionTimeoutSec,
+                                 this](const boost::system::error_code& ec) {
+            if (!ec)
+            {
+                lg2::error(
+                    "[SPI: {NAME}] Chip detection timed out after {TIMEOUT} seconds",
+                    "NAME", name, "TIMEOUT", detectionTimeoutSec);
+                timedOut = true;
+                proc.terminate();
+            }
+        });
+
+        // Read output synchronously
+        std::string output;
+        std::array<char, 1024> buffer;
+        boost::system::error_code ec;
+
+        while (true)
+        {
+            std::size_t n =
+                stdoutPipe.read_some(boost::asio::buffer(buffer), ec);
+            if (ec)
+            {
+                if (ec == boost::asio::error::eof ||
+                    ec == boost::asio::error::broken_pipe)
+                {
+                    break; // End of data
+                }
+                lg2::error("[SPI: {NAME}] Error reading stdout: {ERR}", "NAME",
+                           name, "ERR", ec.message());
+                break;
+            }
+            if (n > 0)
+            {
+                output.append(buffer.data(), n);
+            }
+        }
+
+        // Wait for process to complete
+        proc.wait();
+
+        // Cancel timeout timer if process completed successfully
+        timeoutTimer.cancel();
+
+        // Check if we timed out
+        if (timedOut)
+        {
+            lg2::error(
+                "[SPI: {NAME}] Chip detection was terminated due to timeout",
+                "NAME", name);
+            return "";
+        }
+
+        lg2::info("[SPI: {NAME}] Flashrom detection output: {OUTPUT}", "NAME",
+                  name, "OUTPUT", output);
+
+        // Parse output to find chip model
+        // Looking for pattern: Found ... flash chip "CHIP_MODEL"
+        std::regex chipPattern(R"(Found .* flash chip \"([^\"]+)\")");
+        std::smatch matches;
+
+        if (std::regex_search(output, matches, chipPattern))
+        {
+            std::string detectedChip = matches[1].str();
+            lg2::info("[SPI: {NAME}] Detected chip model: {CHIP}", "NAME", name,
+                      "CHIP", detectedChip);
+            return detectedChip;
+        }
+
+        lg2::error(
+            "[SPI: {NAME}] Failed to parse chip model from flashrom output",
+            "NAME", name);
+        return "";
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("[SPI: {NAME}] Exception during chip detection: {ERR}",
+                   "NAME", name, "ERR", e.what());
+        return "";
+    }
+}
+
 /**
  * @brief function to initialize dump folder globally
  *
@@ -855,8 +988,6 @@ void populateSpiObjects()
                 getString(interfaces, spiObjectInterfaces, "Name");
             const auto programmer =
                 getString(interfaces, spiObjectInterfaces, "Programmer");
-            const auto chip =
-                getString(interfaces, spiObjectInterfaces, "Chip");
             const auto type =
                 getString(interfaces, spiObjectInterfaces, "Type");
             const auto chipSelect = std::to_string(
@@ -895,7 +1026,7 @@ void populateSpiObjects()
             lg2::info("[SPI: {NAME}] Creating SPI object: {OBJ_PATH}", "NAME",
                       chassisName, "OBJ_PATH", objPath);
             spiDevices.push_back(std::make_unique<Spi>(
-                getBus(), objPath, usbPort, chassisName, programmer, chip, type,
+                getBus(), objPath, usbPort, chassisName, programmer, type,
                 chipSelect, activeGpios, deactiveGpios));
         }
     }

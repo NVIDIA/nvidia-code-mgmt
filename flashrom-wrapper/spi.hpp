@@ -70,12 +70,12 @@ class Spi : public SpiIntf
   public:
     Spi(sdbusplus::bus::bus& bus, const std::string& objPath,
         const std::string& usbPort, const std::string& name,
-        const std::string& programmer, const std::string& chip,
-        const std::string& type, const std::string& chipSelect,
+        const std::string& programmer, const std::string& type,
+        const std::string& chipSelect,
         const std::vector<std::pair<std::string, bool>>& activeGpios,
         const std::vector<std::pair<std::string, bool>>& deactiveGpios) :
         SpiIntf(bus, objPath.c_str(), action::emit_interface_added),
-        usbPort(usbPort), name(name), programmer(programmer), chip(chip),
+        usbPort(usbPort), name(name), programmer(programmer), chip(""),
         type(type), chipSelect(chipSelect), activeGpios(activeGpios),
         deactiveGpios(deactiveGpios)
     {
@@ -204,6 +204,15 @@ class Spi : public SpiIntf
      * @return bool True if cleanup successful, false otherwise
      */
     bool checkDumpFiles();
+
+    /**
+     * @brief function to dynamically detect the SPI chip model by running
+     * flashrom without -c parameter
+     *
+     * @return std::string The detected chip model name, empty string if
+     * detection failed
+     */
+    std::string detectChipModel();
 
   private:
     std::deque<std::unique_ptr<SpiProgress>> progressHistory;
