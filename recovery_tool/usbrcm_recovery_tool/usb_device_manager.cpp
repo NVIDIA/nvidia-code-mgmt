@@ -315,15 +315,8 @@ UsbDeviceHandle::UsbDeviceHandle(libusb_device* device, const UsbContext& ctx,
         return;
     }
 
-    // Set configuration (configuration 1)
-    ret = libusb_set_configuration(handle, 1);
-    if (ret != LIBUSB_SUCCESS && ret != LIBUSB_ERROR_BUSY)
-    {
-        std::cerr << std::format("Warning: Failed to set configuration 1: {}\n",
-                                 libusb_error_name(ret));
-    }
-
     // Detach kernel driver if active on specified interface
+    // Must be done before set_configuration to avoid LIBUSB_ERROR_BUSY
     if (libusb_kernel_driver_active(handle, claimedInterface) == 1)
     {
         ret = libusb_detach_kernel_driver(handle, claimedInterface);
@@ -333,6 +326,14 @@ UsbDeviceHandle::UsbDeviceHandle(libusb_device* device, const UsbContext& ctx,
                 "Warning: Failed to detach kernel driver from interface {}: {}\n",
                 claimedInterface, libusb_error_name(ret));
         }
+    }
+
+    // Set configuration (configuration 1)
+    ret = libusb_set_configuration(handle, 1);
+    if (ret != LIBUSB_SUCCESS && ret != LIBUSB_ERROR_BUSY)
+    {
+        std::cerr << std::format("Warning: Failed to set configuration 1: {}\n",
+                                 libusb_error_name(ret));
     }
 
     // Claim specified interface
