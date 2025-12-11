@@ -480,6 +480,7 @@ cdata.set_quoted('MAPPER_PATH', '/xyz/openbmc_project/object_mapper')
 
 cdata.set_quoted('ITEM_IFACE', 'xyz.openbmc_project.Inventory.Item')
 cdata.set_quoted('ASSET_IFACE', 'xyz.openbmc_project.Inventory.Decorator.Asset')
+cdata.set_quoted('SKU_IFACE', 'xyz.openbmc_project.Inventory.Decorator.SKU')
 cdata.set_quoted('VERSION_IFACE', 'xyz.openbmc_project.Software.Version')
 cdata.set_quoted('FILEPATH_IFACE', 'xyz.openbmc_project.Common.FilePath')
 cdata.set_quoted('ACTIVATION_FWD_ASSOCIATION', 'inventory')
@@ -493,7 +494,6 @@ cdata.set_quoted('UPDATEABLE_REV_ASSOCIATION', 'software_version')
 cdata.set_quoted('VERSION', 'Version')
 cdata.set_quoted('PRESENT', 'Present')
 cdata.set_quoted('MANUFACTURER', 'Manufacturer')
-cdata.set_quoted('SKU', 'SKU')
 cdata.set_quoted('MODEL', 'Model')
 
 

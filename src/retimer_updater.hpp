@@ -402,17 +402,16 @@ class ReTimerItemUpdater : public BaseItemUpdater
         // Subscribe to the Inventory Object's PropertiesChanged signal
         deviceMatches.emplace_back(
             bus,
-            MatchRules::propertiesChanged(inventoryObjPath.c_str(),
-                                          ASSET_IFACE),
+            MatchRules::propertiesChanged(inventoryObjPath.c_str(), SKU_IFACE),
             std::bind(&ReTimerItemUpdater::onSWInventoryChangedMsg, this,
-                      std::placeholders::_1)); // For present
+                      std::placeholders::_1)); // For SKU
 
         // Subscribe to the Inventory Object's InterfacesAdded signal
         // for when the object is created
         deviceMatches.emplace_back(
             bus, MatchRules::interfacesAdded(inventoryObjPath.c_str()),
             std::bind(&ReTimerItemUpdater::onSWInventoryChangedMsg, this,
-                      std::placeholders::_1)); // For present
+                      std::placeholders::_1)); // For SKU
     }
 };
 

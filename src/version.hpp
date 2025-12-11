@@ -35,6 +35,7 @@
 #include <sdbusplus/timer.hpp>
 #include <xyz/openbmc_project/Common/FilePath/server.hpp>
 #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
+#include <xyz/openbmc_project/Inventory/Decorator/SKU/server.hpp>
 #include <xyz/openbmc_project/Software/Activation/server.hpp>
 #include <xyz/openbmc_project/Software/ActivationProgress/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
@@ -78,8 +79,8 @@ using DeleteInherit = sdbusplus::server::object::object<
 using UpdatePolicyInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Software::server::UpdatePolicy>;
 
-using InventoryInherit = sdbusplus::server::object::object<
-    sdbusplus::xyz::openbmc_project::Inventory::Decorator::server::Asset>;
+using SKUInherit = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::Inventory::Decorator::server::SKU>;
 
 using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 using namespace phosphor::logging;
@@ -220,11 +221,11 @@ class UpdatePolicy : public UpdatePolicyInherit
 
 /**@class DeviceSKU
  *
- *  Concrete implementation of xyz.openbmc_project.Inventory.Decorator.Asset
+ *  Concrete implementation of xyz.openbmc_project.Inventory.Decorator.SKU
  * D-Bus interface
  *
  */
-class DeviceSKU : public InventoryInherit
+class DeviceSKU : public SKUInherit
 {
   public:
     /** @brief Constructor
@@ -233,7 +234,7 @@ class DeviceSKU : public InventoryInherit
      *  @param[in] objPath - D-Bus object path
      */
     DeviceSKU(sdbusplus::bus::bus& bus, const std::string& objPath) :
-        InventoryInherit(bus, objPath.c_str(), action::emit_interface_added)
+        SKUInherit(bus, objPath.c_str(), action::emit_interface_added)
 
     {}
 };

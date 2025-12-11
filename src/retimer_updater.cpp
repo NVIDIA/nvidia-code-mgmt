@@ -80,7 +80,7 @@ std::string ReTimerItemUpdater::getSKU() const
     try
     {
         ret = getProperty<std::string>(RT_BUSNAME_INVENTORY, swPath.c_str(),
-                                       ASSET_IFACE, "SKU");
+                                       SKU_IFACE, "SKU");
     }
     catch (const std::exception& e)
     {
