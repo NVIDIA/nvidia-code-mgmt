@@ -90,6 +90,7 @@ class NVMeItemUpdater : public BaseItemUpdater
 {
     const std::string targetName;
     const std::string objPath;
+    const std::string modelName;
 
   public:
     /**
@@ -105,7 +106,8 @@ class NVMeItemUpdater : public BaseItemUpdater
                         together, NVME_BUSNAME_INVENTORY),
         targetName(target),
         objPath(std::string(SOFTWARE_OBJPATH) + "/" + std::string(NVME_NAME) +
-                (target.empty() ? "" : "_" + target))
+                (target.empty() ? "" : "_" + target)),
+        modelName(model)
     {}
 
     /**
@@ -180,6 +182,7 @@ class NVMeItemUpdater : public BaseItemUpdater
             "xyz.openbmc_project.Inventory.Item.StorageController";
         try
         {
+
             auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
                                               MAPPER_INTERFACE, "GetObject");
             mapper.append(p.c_str(), std::vector<std::string>({interface}));
@@ -190,11 +193,15 @@ class NVMeItemUpdater : public BaseItemUpdater
             mapperResponseMsg.read(mapperResponse);
 
             // If we get a response and it's not empty, the path is valid
-            return !mapperResponse.empty();
+            bool isValid = !mapperResponse.empty();
+            return isValid;
         }
         catch (const sdbusplus::exception::SdBusError& ex)
         {
             // If GetObject call fails, the path is not valid
+            lg2::error(
+                "pathIsValidDevice: Path {PATH} is INVALID - D-Bus error: {ERROR}",
+                "PATH", p, "ERROR", ex.what());
             return false;
         }
     }

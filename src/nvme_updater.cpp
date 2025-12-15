@@ -117,6 +117,70 @@ std::string NVMeItemUpdater::getModel(
     }
     return ret;
 }
+
+/**
+ * @brief Extract model name from composite format
+ *
+ * Handles both simple model format and composite format.
+ * Composite format: "Manufacturer:Model:UUID"
+ * Simple format: "Model"
+ *
+ * @param compositeModel The model string (may be composite or simple)
+ * @return std::string The extracted model name
+ */
+static std::string extractModelFromComposite(const std::string& compositeModel)
+{
+    if (compositeModel.empty())
+    {
+        return "";
+    }
+
+    // Check if it's in composite format (contains colons)
+    size_t firstColon = compositeModel.find(':');
+    if (firstColon == std::string::npos)
+    {
+        // Simple format, return as-is
+        return compositeModel;
+    }
+
+    // Composite format: extract middle part between first and second colon
+    size_t secondColon = compositeModel.find(':', firstColon + 1);
+    if (secondColon == std::string::npos)
+    {
+        // Only one colon, return everything after it
+        return compositeModel.substr(firstColon + 1);
+    }
+
+    // Extract "Model" from "Manufacturer:Model:UUID"
+    return compositeModel.substr(firstColon + 1, secondColon - firstColon - 1);
+}
+
+/**
+ * @brief Check if device model matches the filter model
+ *
+ * Compares the device model (from D-Bus) with the filter model.
+ * The filter model may be in composite format "Manufacturer:Model:UUID"
+ * and will be automatically extracted for comparison.
+ *
+ * @param deviceModel The model from the device (from getModel())
+ * @param filterModel The filter model (may be composite or simple)
+ * @return bool True if models match or no filter, false otherwise
+ */
+static bool isModelMatch(const std::string& deviceModel,
+                         const std::string& filterModel)
+{
+    // No filter means match everything
+    if (filterModel.empty())
+    {
+        return true;
+    }
+
+    // Extract model from composite format if needed
+    std::string modelToMatch = extractModelFromComposite(filterModel);
+
+    // Compare
+    return deviceModel == modelToMatch;
+}
 /**
  * @brief Get retimer the devices to update object based on target filters
  *
@@ -131,15 +195,67 @@ std::string
     std::string eidList;
     if (targetFilter.type == TargetFilterType::UpdateSelected)
     {
-        for (auto& target : targetFilter.targets)
+        // Get all drive objects from inventory to check model names
+        try
         {
-            uint deviceId;
-            int ret =
-                std::sscanf(target.c_str(), FW_NVME_NAME_FORMAT, &deviceId);
-            if (ret > 0)
+            ObjectValueTree objects =
+                getManagedObjects(NVME_BUSNAME_INVENTORY,
+                                  "/xyz/openbmc_project/inventory/system/nvme");
+
+            for (auto& target : targetFilter.targets)
             {
-                eidList += std::to_string(deviceId) + "\\x20";
+                uint deviceId;
+                int ret =
+                    std::sscanf(target.c_str(), FW_NVME_NAME_FORMAT, &deviceId);
+                if (ret > 0)
+                {
+                    // Find the corresponding drive object for this device ID
+                    for (auto& [path, interfaces] : objects)
+                    {
+                        // Check if this object implements the Drive interface
+                        if (interfaces.find(NVME_INVENTORY_IFACE) ==
+                            interfaces.end())
+                        {
+                            continue;
+                        }
+
+                        std::string pathStr = path.str;
+                        uint pathDeviceId;
+                        int pathRet =
+                            std::sscanf(pathStr.c_str(), NVME_INV_PATH_FORMAT,
+                                        &pathDeviceId);
+                        if (pathRet > 0 && pathDeviceId == deviceId)
+                        {
+                            // Get the model property
+                            try
+                            {
+                                std::string driveModel = getModel(pathStr);
+
+                                // Check if model matches
+                                if (isModelMatch(driveModel, modelName))
+                                {
+                                    eidList +=
+                                        std::to_string(deviceId) + "\\x20";
+                                }
+                            }
+                            catch (const std::exception& e)
+                            {
+                                lg2::error("Failed to get model for device "
+                                           "{DEVICE_ID}: {ERROR}",
+                                           "DEVICE_ID", deviceId, "ERROR",
+                                           e.what());
+                            }
+                            break;
+                        }
+                    }
+                }
             }
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error(
+                "Failed to get NVMe device paths for UpdateSelected: {ERROR}",
+                "ERROR", e.what());
         }
     }
     else if (targetFilter.type == TargetFilterType::UpdateAll)
@@ -152,28 +268,46 @@ std::string
 
             for (auto& [path, interfaces] : objects)
             {
+                std::string pathStr = path.str;
+
                 // Check if this object implements the Drive interface
                 if (interfaces.find(NVME_INVENTORY_IFACE) == interfaces.end())
                 {
                     continue;
                 }
-                std::string pathStr = path.str;
+
                 uint deviceId;
                 int ret = std::sscanf(pathStr.c_str(), NVME_INV_PATH_FORMAT,
                                       &deviceId);
                 if (ret > 0)
                 {
-                    eidList += std::to_string(deviceId) + "\\x20";
+                    // Get the model property and check if it matches
+                    try
+                    {
+                        std::string driveModel = getModel(pathStr);
+
+                        // Check if model matches
+                        if (isModelMatch(driveModel, modelName))
+                        {
+                            eidList += std::to_string(deviceId) + "\\x20";
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        lg2::error(
+                            "UpdateAll: Failed to get model for device EID {EID} at {PATH}: {ERROR}",
+                            "EID", deviceId, "PATH", pathStr, "ERROR",
+                            e.what());
+                    }
                 }
             }
         }
         catch (const std::exception& e)
         {
-            lg2::error("Failed to get NVMe device paths for UpdateAll: {ERROR}",
+            lg2::error("UpdateAll: Failed to get NVMe device paths: {ERROR}",
                        "ERROR", e.what());
         }
     }
-    lg2::info("eidList: {EID}", "EID", eidList);
     return eidList;
 }
 
