@@ -251,11 +251,11 @@ struct ProgressCodeInfo
     }
 };
 
-// Recovery complete codes
+// Recovery complete codes (PSC_FMC_PC_PLDM_T5_READY)
 namespace RecoveryCompleteCodes
 {
-constexpr uint32_t CPU0 = 0x70C1C788;
-constexpr uint32_t CPU1 = 0x71C1C788;
+constexpr uint32_t CPU0 = 0x70C1C00C;
+constexpr uint32_t CPU1 = 0x71C1C00C;
 } // namespace RecoveryCompleteCodes
 
 // Lookup tables for PSC ROM codes
