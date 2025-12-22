@@ -115,6 +115,21 @@ std::vector<GpioCommand> getGpioConfigSequence(ConfigType type,
     };
 }
 
+std::vector<GpioCommand> getDefaultPinStatesConfigSequence(ConfigType type,
+                                                           int boardInstance)
+{
+    std::string prefix = getGpioPrefix(type, boardInstance);
+
+    return {
+        {prefix + "_FORCED_RECOVERY_L-O", 1, "Deassert CPU forced recovery"},
+        {prefix + "_BOOT_DEV_SEL0-O", 0, "Boot device select bit 0"},
+        {prefix + "_BOOT_DEV_SEL1-O", 0, "Boot device select bit 1"},
+        {prefix + "_BOOT_DEV_SEL2-O", 0, "Boot device select bit 2"},
+        {prefix + "_RECOVERY_TYPE0-O", 0, "Recovery type bit 0"},
+        {prefix + "_RECOVERY_TYPE1-O", 1, "Recovery type bit 1"},
+    };
+}
+
 // Common reset commands (same for all configs)
 GpioCommand getResetAssert(ConfigType type, int boardInstance) noexcept
 {
@@ -277,5 +292,73 @@ void forceRecoveryMode(const std::string& configTypeStr,
     }
 
     // Set top-level status
+    jsonOutput["Status"] = allSuccess ? "Successful" : "Failed";
+}
+
+/**
+ * @brief Set GPIO default pin states for a single board instance
+ * @param configType Config type (C2, C1G2, or C2G4)
+ * @param boardInstance Board instance number (0 or 1)
+ * @param jsonOutput Output JSON object with board operation status
+ */
+static void
+    setGPIODefaultPinStatesBoardInstance(GpioConfig::ConfigType configType,
+                                         int boardInstance,
+                                         nlohmann::json& jsonOutput)
+{
+    jsonOutput.clear();
+
+    bool boardSuccess = true;
+    std::string boardError;
+    auto configSeq = GpioConfig::getDefaultPinStatesConfigSequence(
+        configType, boardInstance);
+    for (const auto& cmd : configSeq)
+    {
+        if (!setGpio(cmd.pinName, cmd.value))
+        {
+            boardSuccess = false;
+            boardError = cmd.description;
+            break;
+        }
+    }
+
+    // Output JSON
+    jsonOutput["Status"] = boardSuccess ? "Successful" : "Failed";
+    if (!boardSuccess && !boardError.empty())
+    {
+        jsonOutput["Error"] = boardError;
+    }
+}
+
+void setGPIODefaultPinStates(const std::string& configTypeStr,
+                             nlohmann::json& jsonOutput)
+{
+    jsonOutput.clear();
+
+    auto configType = GpioConfig::parseConfigType(configTypeStr);
+    if (!configType)
+    {
+        jsonOutput["Status"] = "Failed";
+        jsonOutput["Error"] = "Invalid config type. Supported: c2, c1g2, c2g4";
+        return;
+    }
+
+    const int boardCount = GpioConfig::getBoardCount(*configType);
+
+    bool allSuccess = true;
+    for (int i = 0; i < boardCount; ++i)
+    {
+        nlohmann::json boardResult;
+        setGPIODefaultPinStatesBoardInstance(*configType, i, boardResult);
+
+        std::string boardKey = "Board" + std::to_string(i);
+        jsonOutput[boardKey] = boardResult;
+
+        if (boardResult.contains("Status") && boardResult["Status"] == "Failed")
+        {
+            allSuccess = false;
+        }
+    }
+
     jsonOutput["Status"] = allSuccess ? "Successful" : "Failed";
 }

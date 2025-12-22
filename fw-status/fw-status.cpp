@@ -28,6 +28,7 @@
 #include "mcu_recovery_manager.hpp"
 #include "mcu_resource.hpp"
 #include "usb_i2c_mapper.hpp"
+#include "usbrcm_recovery_manager.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
@@ -35,6 +36,7 @@
 #include <sdbusplus/server/manager.hpp>
 #include <sdeventplus/event.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <optional>
 
@@ -50,6 +52,8 @@ constexpr auto mcuObjInterface =
     "xyz.openbmc_project.Configuration.MCURecovery";
 constexpr auto cx8ObjInterface =
     "xyz.openbmc_project.Configuration.CX8Recovery";
+constexpr auto usbRcmForceRecoveryObjInterface =
+    "xyz.openbmc_project.Configuration.USBRCMForceRecovery";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/";
 constexpr auto recoveryConfigIntfName =
@@ -62,6 +66,9 @@ using namespace mctp_vdm;
 std::vector<std::unique_ptr<BaseResource>> resources;
 
 std::unique_ptr<sdbusplus::bus::match_t> entityManagerServiceMatch;
+
+std::vector<std::unique_ptr<nvidia::recovery::RecoveryModeManagerBase>>
+    recoveryModeManagers;
 
 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
 std::shared_ptr<mcu_recovery_manager::MCURecoveryManager> mcuRecoveryManager;
@@ -596,6 +603,37 @@ void publishDBusRecoveryObject()
 
             resources.push_back(std::make_unique<MCUResource>(
                 getBus(), objPath, eid, usbPort, mcuRecoveryManager));
+        }
+        else if (interfaces.contains(usbRcmForceRecoveryObjInterface))
+        {
+            if (!hasProperty(interfaces, usbRcmForceRecoveryObjInterface,
+                             "ChassisName") ||
+                !hasProperty(interfaces, usbRcmForceRecoveryObjInterface,
+                             "ConfigType"))
+            {
+                lg2::error(
+                    "USBRCMForceRecovery config missing ChassisName or ConfigType: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            auto chassisName = getString(
+                interfaces, usbRcmForceRecoveryObjInterface, "ChassisName");
+            auto configType = getString(
+                interfaces, usbRcmForceRecoveryObjInterface, "ConfigType");
+            auto chassisObjPath = getChassisObjPath(chassisName);
+
+            try
+            {
+                recoveryModeManagers.push_back(
+                    std::make_unique<nvidia::recovery::USBRCMRecoveryManager>(
+                        getBus(), chassisName, chassisObjPath, configType));
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error("Failed to create USBRCMRecoveryManager: {ERR}",
+                           "ERR", e.what());
+            }
         }
     }
 }
