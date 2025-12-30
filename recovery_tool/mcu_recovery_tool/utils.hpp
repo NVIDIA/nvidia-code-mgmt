@@ -36,6 +36,11 @@ using json = nlohmann::json;
 namespace mcu_recovery_manager
 {
 std::map<std::string, MCUInfo> parseJsonFile(const std::string& jsonFilePath);
+std::map<std::string, MCUInfo>
+    getMCUConfigByTargetFromDbus(const std::string& target);
+std::map<std::string, MCUInfo> getAllMCUConfigFromDbus();
+std::map<std::string, MCUInfo>
+    getMCUConfigByChassisFromDbus(const std::string& chassisName);
 std::string toHexString(uint16_t value);
 std::string executeCommand(const std::string& cmd);
 bool isCommandSuccessful(const std::string& output);
