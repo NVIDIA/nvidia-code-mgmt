@@ -19,6 +19,9 @@
 
 #include <CLI/CLI.hpp>
 
+#include <chrono>
+#include <thread>
+
 using namespace mcu_recovery_manager;
 
 int main(int argc, char* argv[])
@@ -65,6 +68,17 @@ int main(int argc, char* argv[])
     updateDeviceInfo->add_option("-t,--target", target,
                                  "Target MCU type (e.g., CX9, HPM)");
     updateDeviceInfo->add_option("-c,--chassis", chassisName,
+                                 "Chassis name (e.g., IO_Board_SMA_0)");
+
+    auto setForceRecovery = app.add_subcommand(
+        "SetForceRecovery",
+        "Force all MCUs into recovery mode (requires GPIO control)");
+    setForceRecovery->add_option(
+        "-j,--json", jsonFilePath,
+        "JSON configuration file (default: use Entity Manager D-Bus)");
+    setForceRecovery->add_option(
+        "-t,--target", target, "Target MCU type (optional, default: all MCUs)");
+    setForceRecovery->add_option("-c,--chassis", chassisName,
                                  "Chassis name (e.g., IO_Board_SMA_0)");
 
     MCURecoveryManager recoveryManager;
@@ -214,6 +228,95 @@ int main(int argc, char* argv[])
         }
         recoveryManager.updateAllDeviceInfo();
         recoveryManager.showAllDeviceStatus();
+    });
+
+    // Add callback for SetForceRecovery
+    setForceRecovery->callback([&]() {
+        std::map<std::string, MCUInfo> mcuConfig;
+
+        if (!jsonFilePath.empty())
+        {
+            // Use JSON file if specified
+            mcuConfig = parseJsonFile(jsonFilePath);
+        }
+        else
+        {
+            // Default: Use D-Bus Entity Manager
+            // Priority: chassis > target > all
+            if (!chassisName.empty())
+            {
+                mcuConfig = getMCUConfigByChassisFromDbus(chassisName);
+                if (mcuConfig.size() != 1)
+                {
+                    lg2::error(
+                        "Expected exactly 1 MCU for chassis {CHASSIS}, found {COUNT}",
+                        "CHASSIS", chassisName, "COUNT", mcuConfig.size());
+                    return;
+                }
+            }
+            else if (!target.empty())
+            {
+                mcuConfig = getMCUConfigByTargetFromDbus(target);
+            }
+            else
+            {
+                mcuConfig = getAllMCUConfigFromDbus();
+            }
+        }
+
+        if (mcuConfig.empty())
+        {
+            lg2::error("No MCU configuration found");
+            return;
+        }
+
+        if (!recoveryManager.initialize(mcuConfig, nullptr, true))
+        {
+            lg2::error("Failed to initialize recovery manager");
+            return;
+        }
+
+        lg2::info("Forcing {COUNT} MCU device(s) into recovery mode", "COUNT",
+                  mcuConfig.size());
+
+        // Step 1: Force all MCUs into recovery mode
+        for (const auto& [usbPort, mcuInfo] : mcuConfig)
+        {
+            try
+            {
+                lg2::info("Forcing {DEV} into recovery mode", "DEV",
+                          mcuInfo.device);
+                recoveryManager.enterRecoveryMode(usbPort);
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error("Failed to force {DEV} into recovery mode: {ERR}",
+                           "DEV", mcuInfo.device, "ERR", e.what());
+            }
+        }
+
+        // Step 2: Wait for USB re-enumeration
+        lg2::info("Waiting for USB re-enumeration...");
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+
+        // Step 3: Update device info
+        recoveryManager.updateAllDeviceInfo();
+
+        // Step 4: Verify all MCUs entered recovery mode
+        for (const auto& [usbPort, mcuInfo] : mcuConfig)
+        {
+            if (recoveryManager.isInRecoveryMode(usbPort))
+            {
+                lg2::info("{DEV} successfully entered recovery mode", "DEV",
+                          mcuInfo.device);
+            }
+            else
+            {
+                lg2::error(
+                    "{DEV} failed to enter recovery mode (verification failed)",
+                    "DEV", mcuInfo.device);
+            }
+        }
     });
 
     try
