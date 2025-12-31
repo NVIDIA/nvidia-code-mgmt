@@ -191,6 +191,14 @@ class MCURecoveryManager
     void enterRecoveryMode(const std::string& usbPort);
 
     /**
+     * @brief Enters the recovery mode for all MCU devices at once.
+     * This is more efficient than calling enterRecoveryMode() for each device
+     * individually, as it applies GPIO changes to all devices in coordinated
+     * phases (recovery pins low, reset pins low, reset pins high).
+     */
+    void enterRecoveryModeAll();
+
+    /**
      * @brief Exits the recovery mode for a specific MCU device.
      *
      * @param usbPort The USB port of the MCU device.

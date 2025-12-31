@@ -112,6 +112,39 @@ void MCURecoveryManager::enterRecoveryMode(const std::string& usbPort)
     sleep(mcuResetDelaySec);
 }
 
+void MCURecoveryManager::enterRecoveryModeAll()
+{
+    lg2::info("Entering recovery mode for all MCU devices...");
+
+    if (mcuDevices.empty())
+    {
+        lg2::warning(
+            "No MCU devices to operate on (mcuDevices is empty). GPIO initialization may have failed.");
+        return;
+    }
+
+    // Step 1: Set all recovery pins LOW
+    for (auto& [usbPort, device] : mcuDevices)
+    {
+        device.recoveryPin.set_value(0);
+    }
+    usleep(mcuResetActiveUs);
+
+    // Step 2: Set all reset pins LOW
+    for (auto& [usbPort, device] : mcuDevices)
+    {
+        device.resetPin.set_value(0);
+    }
+    usleep(mcuResetActiveUs);
+
+    // Step 3: Set all reset pins HIGH
+    for (auto& [usbPort, device] : mcuDevices)
+    {
+        device.resetPin.set_value(1);
+    }
+    sleep(mcuResetDelaySec);
+}
+
 void MCURecoveryManager::exitRecoveryMode(const std::string& usbPort)
 {
     lg2::info("{DEV} exiting recovery mode...", "DEV", mcuMap[usbPort].device);

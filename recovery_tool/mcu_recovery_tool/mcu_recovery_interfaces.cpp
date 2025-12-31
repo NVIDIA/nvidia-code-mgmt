@@ -280,19 +280,15 @@ int main(int argc, char* argv[])
                   mcuConfig.size());
 
         // Step 1: Force all MCUs into recovery mode
-        for (const auto& [usbPort, mcuInfo] : mcuConfig)
+        try
         {
-            try
-            {
-                lg2::info("Forcing {DEV} into recovery mode", "DEV",
-                          mcuInfo.device);
-                recoveryManager.enterRecoveryMode(usbPort);
-            }
-            catch (const std::exception& e)
-            {
-                lg2::error("Failed to force {DEV} into recovery mode: {ERR}",
-                           "DEV", mcuInfo.device, "ERR", e.what());
-            }
+            recoveryManager.enterRecoveryModeAll();
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("Failed to force MCUs into recovery mode: {ERR}", "ERR",
+                       e.what());
+            return;
         }
 
         // Step 2: Wait for USB re-enumeration
