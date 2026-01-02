@@ -306,11 +306,14 @@ mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
     if (eid == invalidEid)
     {
         lg2::error("Cannot get EID for {PATH}", "PATH", path);
-        mctpObjManagerMatch.emplace_back(
-            bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
-            [&]([[maybe_unused]] sdbusplus::message::message& msg) {
-                updateBootStatus();
-            });
+        if (mctpObjManagerMatch.empty())
+        {
+            mctpObjManagerMatch.emplace_back(
+                bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
+                [&]([[maybe_unused]] sdbusplus::message::message& msg) {
+                    updateBootStatus();
+                });
+        }
         co_return 0;
     }
 

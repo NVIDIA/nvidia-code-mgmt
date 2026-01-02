@@ -70,7 +70,7 @@ std::unordered_map<std::string, std::string>
             }
             const auto& mctpUUID =
                 std::get<std::string>(interfaces.at(uuidIntfName).at("UUID"));
-            if (mctpUUID.c_str() != uuid)
+            if (mctpUUID != uuid)
             {
                 continue;
             }
@@ -86,11 +86,14 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects(bool needUpdateHealth)
     mctpEidObjects = getMCTPObjects();
     if (mctpEidObjects.empty())
     {
-        mctpObjManagerMatch.emplace_back(
-            bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
-            [&]([[maybe_unused]] sdbusplus::message::message& msg) {
-                startWatchingMCTPObjects(true);
-            });
+        if (mctpObjManagerMatch.empty())
+        {
+            mctpObjManagerMatch.emplace_back(
+                bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
+                [&]([[maybe_unused]] sdbusplus::message::message& msg) {
+                    startWatchingMCTPObjects(true);
+                });
+        }
         return;
     }
 
