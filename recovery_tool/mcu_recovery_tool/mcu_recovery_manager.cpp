@@ -104,6 +104,12 @@ bool MCURecoveryManager::initGpioLines()
 void MCURecoveryManager::enterRecoveryMode(const std::string& usbPort)
 {
     lg2::info("{DEV} entering recovery mode...", "DEV", mcuMap[usbPort].device);
+    if (!mcuDevices[usbPort].recoveryPin || !mcuDevices[usbPort].resetPin)
+    {
+        lg2::error("Skipping {PORT}: GPIO lines not initialized", "PORT",
+                   usbPort);
+        return;
+    }
     mcuDevices[usbPort].recoveryPin.set_value(0);
     usleep(mcuResetActiveUs);
     mcuDevices[usbPort].resetPin.set_value(0);
@@ -126,6 +132,12 @@ void MCURecoveryManager::enterRecoveryModeAll()
     // Step 1: Set all recovery pins LOW
     for (auto& [usbPort, device] : mcuDevices)
     {
+        if (!device.recoveryPin || !device.resetPin)
+        {
+            lg2::error("Skipping {PORT}: GPIO lines not initialized", "PORT",
+                       usbPort);
+            continue;
+        }
         device.recoveryPin.set_value(0);
     }
     usleep(mcuResetActiveUs);
@@ -133,6 +145,10 @@ void MCURecoveryManager::enterRecoveryModeAll()
     // Step 2: Set all reset pins LOW
     for (auto& [usbPort, device] : mcuDevices)
     {
+        if (!device.recoveryPin || !device.resetPin)
+        {
+            continue;
+        }
         device.resetPin.set_value(0);
     }
     usleep(mcuResetActiveUs);
@@ -140,6 +156,10 @@ void MCURecoveryManager::enterRecoveryModeAll()
     // Step 3: Set all reset pins HIGH
     for (auto& [usbPort, device] : mcuDevices)
     {
+        if (!device.recoveryPin || !device.resetPin)
+        {
+            continue;
+        }
         device.resetPin.set_value(1);
     }
     sleep(mcuResetDelaySec);
@@ -149,6 +169,13 @@ void MCURecoveryManager::exitRecoveryMode(const std::string& usbPort)
 {
     lg2::info("{DEV} exiting recovery mode...", "DEV", mcuMap[usbPort].device);
 
+    if (!mcuDevices[usbPort].recoveryPin || !mcuDevices[usbPort].resetPin)
+    {
+        lg2::error(
+            "Cannot exit recovery mode for {PORT}: GPIO lines not initialized",
+            "PORT", usbPort);
+        return;
+    }
     mcuDevices[usbPort].recoveryPin.set_value(1);
     usleep(mcuResetActiveUs);
     mcuDevices[usbPort].resetPin.set_value(0);
@@ -667,16 +694,24 @@ void MCURecoveryManager::performResetFlow()
 
     for (int i = 0; i < 10 && !mcuList.empty(); ++i)
     {
-        // Put all MCUs into reset state
+        // Put all MCUs into reset state (only for valid GPIO lines)
         for (const auto& [usbPort, device] : mcuDevices)
         {
+            if (!device.resetPin)
+            {
+                continue;
+            }
             device.resetPin.set_value(0);
         }
         usleep(mcuResetActiveUs);
 
-        // Release all MCU reset pins
+        // Release all MCU reset pins (only for valid GPIO lines)
         for (const auto& [usbPort, device] : mcuDevices)
         {
+            if (!device.resetPin)
+            {
+                continue;
+            }
             device.resetPin.set_value(1);
         }
         sleep(mcuResetDelaySec);
@@ -693,9 +728,17 @@ void MCURecoveryManager::performResetFlow()
                     // Remove MCU from list if MCU is healthy
                     it = mcuList.erase(it);
                     // Release and remove the GPIO line to prevent
-                    // unnecessary reset
-                    mcuDevices[usbPort].resetPin.release();
-                    mcuDevices[usbPort].recoveryPin.release();
+                    // unnecessary reset (only if lines were initialized)
+                    if (mcuDevices[usbPort].resetPin)
+                    {
+                        mcuDevices[usbPort].resetPin.release();
+                        mcuDevices[usbPort].resetPin = {};
+                    }
+                    if (mcuDevices[usbPort].recoveryPin)
+                    {
+                        mcuDevices[usbPort].recoveryPin.release();
+                        mcuDevices[usbPort].recoveryPin = {};
+                    }
                     continue;
                 }
                 else
@@ -726,11 +769,19 @@ void MCURecoveryManager::performResetFlow()
         }
     }
 
-    // Release all GPIO lines
-    for (const auto& [usbPort, device] : mcuDevices)
+    // Release all GPIO lines (only for lines that were actually requested)
+    for (auto& [usbPort, device] : mcuDevices)
     {
-        device.resetPin.release();
-        device.recoveryPin.release();
+        if (device.resetPin)
+        {
+            device.resetPin.release();
+            device.resetPin = {};
+        }
+        if (device.recoveryPin)
+        {
+            device.recoveryPin.release();
+            device.recoveryPin = {};
+        }
     }
 }
 
