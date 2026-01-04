@@ -18,7 +18,6 @@
 #pragma once
 
 #include "com/nvidia/RoT/BootStatus/server.hpp"
-#include "xyz/openbmc_project/Common/UUID/server.hpp"
 #include "xyz/openbmc_project/State/Decorator/Health/server.hpp"
 #include "xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp"
 
@@ -27,7 +26,6 @@
 #include <memory>
 
 using ResourceInterfacesInherit = sdbusplus::server::object_t<
-    sdbusplus::xyz::openbmc_project::Common::server::UUID,
     sdbusplus::xyz::openbmc_project::State::Decorator::server::Health,
     sdbusplus::xyz::openbmc_project::State::Decorator::server::
         OperationalStatus>;
@@ -45,8 +43,7 @@ namespace MatchRules = sdbusplus::bus::match::rules;
 
 /**@class ResourceInterface
  *
- *  Concrete implementation of xyz.openbmc_project.Common.UUID,
- *  xyz.openbmc_project.State.Decorator.Health, and
+ *  Concrete implementation of xyz.openbmc_project.State.Decorator.Health and
  * xyz.openbmc_project.State.Decorator.OperationalStatus D-Bus interfaces
  *
  */
