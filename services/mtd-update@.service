@@ -6,11 +6,14 @@ Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
 ExecStart=/bin/sh -c '\
-    CHECK_ARGS=\"$ARGS\";\
-    ARGS=$(echo \"$ARGS\" | sed \'s/ [^ ]*$//\');\
-    if [[ \"$CHECK_ARGS\" =~ IGNORE$ ]] ; then\
-        echo \"mtd-update (IGNORE) $ARGS\";\
-    else\
-        mtdupdate.sh $ARGS;\
-    fi;\
-    '
+  case "$ARGS" in\
+    *" IGNORE")\
+      CHECK_ARGS="$${ARGS%% IGNORE}";\
+      echo "mtd-update (IGNORE) $CHECK_ARGS";;\
+    *" EXECUTE")\
+      CHECK_ARGS="$${ARGS%% EXECUTE}";\
+      mtdupdate.sh $CHECK_ARGS;;\
+    *)\
+      mtdupdate.sh $ARGS;;\
+  esac\
+  '
