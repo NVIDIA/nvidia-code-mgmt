@@ -5,4 +5,15 @@ Description=Update mtd partition
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=mtdupdate.sh $ARGS
+ExecStart=/bin/sh -c '\
+  case "$ARGS" in\
+    *" IGNORE")\
+      CHECK_ARGS="$${ARGS%% IGNORE}";\
+      echo "mtd-update (IGNORE) $CHECK_ARGS";;\
+    *" EXECUTE")\
+      CHECK_ARGS="$${ARGS%% EXECUTE}";\
+      mtdupdate.sh $CHECK_ARGS;;\
+    *)\
+      mtdupdate.sh $ARGS;;\
+  esac\
+  '

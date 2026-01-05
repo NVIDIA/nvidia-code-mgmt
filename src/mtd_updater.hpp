@@ -245,6 +245,22 @@ class MTDItemUpdater : public BaseItemUpdater
                       << std::endl;
             args += "\\x20";
             args += inventory;
+            if (targetFilter.type == TargetFilterType::UpdateAll ||
+                std::find(targetFilter.targets.begin(),
+                          targetFilter.targets.end(),
+                          inventory) != targetFilter.targets.end())
+            {
+                // The TargetFilterType is UpdateAll or component target is
+                // in targets, execute the update
+                args += "\\x20";
+                args += "EXECUTE";
+            }
+            else
+            {
+                // Not fulfill the conditions, ignore this update
+                args += "\\x20";
+                args += "IGNORE";
+            }
         }
         std::replace(args.begin(), args.end(), '/', '-');
         return args;
