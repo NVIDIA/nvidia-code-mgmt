@@ -20,6 +20,7 @@
 #include <CLI/CLI.hpp>
 
 #include <chrono>
+#include <stdexcept>
 #include <thread>
 
 using namespace mcu_recovery_manager;
@@ -41,11 +42,13 @@ int main(int argc, char* argv[])
     performRecovery->add_option("-f,--force", forceUpdate, "Force recovery");
     performRecovery->add_option(
         "-j,--json", jsonFilePath,
-        "JSON configuration file (default: use Entity Manager D-Bus)");
-    performRecovery->add_option("-t,--target", target,
-                                "Target MCU type (e.g., CX9, HPM)");
-    performRecovery->add_option("-c,--chassis", chassisName,
-                                "Chassis name (e.g., IO_Board_SMA_0)");
+        "JSON configuration file (overrides -t/--target and -c/--chassis)");
+    performRecovery->add_option(
+        "-t,--target", target,
+        "Target MCU type (e.g., CX9, HPM; ignored when using -j)");
+    performRecovery->add_option(
+        "-c,--chassis", chassisName,
+        "Chassis name (e.g., IO_Board_SMA_0; ignored when using -j)");
     performRecovery
         ->add_option("-i,--image", binaryFilePath,
                      "Recovery image path (e.g., /path/to/image.bin)")
@@ -54,76 +57,114 @@ int main(int argc, char* argv[])
     auto forceReset = app.add_subcommand("ForceReset", "Force reset the MCU");
     forceReset->add_option(
         "-j,--json", jsonFilePath,
-        "JSON configuration file (default: use Entity Manager D-Bus)");
-    forceReset->add_option("-t,--target", target,
-                           "Target MCU type (e.g., CX9, HPM)");
-    forceReset->add_option("-c,--chassis", chassisName,
-                           "Chassis name (e.g., IO_Board_SMA_0)");
+        "JSON configuration file (overrides -t/--target and -c/--chassis)");
+    forceReset->add_option(
+        "-t,--target", target,
+        "Target MCU type (e.g., CX9, HPM; ignored when using -j)");
+    forceReset->add_option(
+        "-c,--chassis", chassisName,
+        "Chassis name (e.g., IO_Board_SMA_0; ignored when using -j)");
 
     auto updateDeviceInfo =
         app.add_subcommand("GetDeviceStatus", "Get all device status");
     updateDeviceInfo->add_option(
         "-j,--json", jsonFilePath,
-        "JSON configuration file (default: use Entity Manager D-Bus)");
-    updateDeviceInfo->add_option("-t,--target", target,
-                                 "Target MCU type (e.g., CX9, HPM)");
-    updateDeviceInfo->add_option("-c,--chassis", chassisName,
-                                 "Chassis name (e.g., IO_Board_SMA_0)");
+        "JSON configuration file (overrides -t/--target and -c/--chassis)");
+    updateDeviceInfo->add_option(
+        "-t,--target", target,
+        "Target MCU type (e.g., CX9, HPM; ignored when using -j)");
+    updateDeviceInfo->add_option(
+        "-c,--chassis", chassisName,
+        "Chassis name (e.g., IO_Board_SMA_0; ignored when using -j)");
 
-    auto setForceRecovery = app.add_subcommand(
-        "SetForceRecovery",
-        "Force all MCUs into recovery mode (requires GPIO control)");
+    auto setForceRecovery =
+        app.add_subcommand("SetForceRecovery", "Force MCU into recovery mode");
     setForceRecovery->add_option(
         "-j,--json", jsonFilePath,
-        "JSON configuration file (default: use Entity Manager D-Bus)");
+        "JSON configuration file (overrides -t/--target and -c/--chassis)");
     setForceRecovery->add_option(
-        "-t,--target", target, "Target MCU type (optional, default: all MCUs)");
-    setForceRecovery->add_option("-c,--chassis", chassisName,
-                                 "Chassis name (e.g., IO_Board_SMA_0)");
+        "-t,--target", target,
+        "Target MCU type (optional, default: all MCUs; ignored when using -j)");
+    setForceRecovery->add_option(
+        "-c,--chassis", chassisName,
+        "Chassis name (e.g., IO_Board_SMA_0; ignored when using -j)");
 
-    MCURecoveryManager recoveryManager;
-
-    // Add callbacks for PerformRecovery
-    performRecovery->callback([&]() {
+    // Helper function to get MCU configuration based on CLI options
+    auto getMCUConfig = [&](bool allowAll) -> std::map<std::string, MCUInfo> {
         std::map<std::string, MCUInfo> mcuConfig;
 
         if (!jsonFilePath.empty())
         {
             // Use JSON file if specified
+            // Warn if user also specified target or chassis filters
+            if (!target.empty() || !chassisName.empty())
+            {
+                lg2::warning(
+                    "Using JSON configuration file; -t/--target and -c/--chassis options are ignored");
+            }
             mcuConfig = parseJsonFile(jsonFilePath);
         }
         else
         {
             // Default: Use D-Bus Entity Manager
-            // Priority: chassis > target > error
+            // Priority: chassis > target > all (if allowed)
             if (!chassisName.empty())
             {
                 mcuConfig = getMCUConfigByChassisFromDbus(chassisName);
                 if (mcuConfig.size() != 1)
                 {
                     lg2::error(
-                        "Expected exactly 1 MCU for chassis {CHASSIS}, found {COUNT}",
+                        "Expected exactly 1 MCU for chassis {CHASSIS}, found {COUNT}. "
+                        "Check Entity Manager configuration.",
                         "CHASSIS", chassisName, "COUNT", mcuConfig.size());
-                    return;
+                    throw std::runtime_error("Invalid MCU configuration");
                 }
             }
             else if (!target.empty())
             {
                 mcuConfig = getMCUConfigByTargetFromDbus(target);
             }
+            else if (allowAll)
+            {
+                mcuConfig = getAllMCUConfigFromDbus();
+            }
             else
             {
                 lg2::error(
-                    "--target or --chassis is required for PerformRecovery (unless using -j)");
-                return;
+                    "--target or --chassis is required (unless using -j)");
+                throw std::runtime_error("Missing required option");
             }
         }
 
         if (mcuConfig.empty())
         {
-            lg2::error("No MCU configuration found");
-            return;
+            if (!jsonFilePath.empty())
+            {
+                lg2::error("No MCU configuration found in JSON file {FILE}",
+                           "FILE", jsonFilePath);
+            }
+            else if (!target.empty())
+            {
+                lg2::error("No MCU configuration found for target {TARGET}",
+                           "TARGET", target);
+            }
+            else
+            {
+                lg2::error("No MCU configuration found");
+            }
+            throw std::runtime_error("No MCU configuration found");
         }
+
+        return mcuConfig;
+    };
+
+    MCURecoveryManager recoveryManager;
+
+    // Add callbacks for PerformRecovery
+    performRecovery->callback([&]() {
+        // PerformRecovery requires explicit targeting (no "all devices"
+        // fallback)
+        auto mcuConfig = getMCUConfig(false);
 
         if (!recoveryManager.initialize(mcuConfig, nullptr, true))
         {
@@ -135,43 +176,8 @@ int main(int argc, char* argv[])
 
     // Add callback for ForceReset
     forceReset->callback([&]() {
-        std::map<std::string, MCUInfo> mcuConfig;
-
-        if (!jsonFilePath.empty())
-        {
-            // Use JSON file if specified
-            mcuConfig = parseJsonFile(jsonFilePath);
-        }
-        else
-        {
-            // Default: Use D-Bus Entity Manager
-            // Priority: chassis > target > all
-            if (!chassisName.empty())
-            {
-                mcuConfig = getMCUConfigByChassisFromDbus(chassisName);
-                if (mcuConfig.size() != 1)
-                {
-                    lg2::error(
-                        "Expected exactly 1 MCU for chassis {CHASSIS}, found {COUNT}",
-                        "CHASSIS", chassisName, "COUNT", mcuConfig.size());
-                    return;
-                }
-            }
-            else if (!target.empty())
-            {
-                mcuConfig = getMCUConfigByTargetFromDbus(target);
-            }
-            else
-            {
-                mcuConfig = getAllMCUConfigFromDbus();
-            }
-        }
-
-        if (mcuConfig.empty())
-        {
-            lg2::error("No MCU configuration found");
-            return;
-        }
+        // ForceReset allows "all devices" fallback
+        auto mcuConfig = getMCUConfig(true);
 
         if (!recoveryManager.initialize(mcuConfig, nullptr, true))
         {
@@ -183,43 +189,8 @@ int main(int argc, char* argv[])
 
     // Add callback for GetDeviceStatus
     updateDeviceInfo->callback([&]() {
-        std::map<std::string, MCUInfo> mcuConfig;
-
-        if (!jsonFilePath.empty())
-        {
-            // Use JSON file if specified
-            mcuConfig = parseJsonFile(jsonFilePath);
-        }
-        else
-        {
-            // Default: Use D-Bus Entity Manager
-            // Priority: chassis > target > all
-            if (!chassisName.empty())
-            {
-                mcuConfig = getMCUConfigByChassisFromDbus(chassisName);
-                if (mcuConfig.size() != 1)
-                {
-                    lg2::error(
-                        "Expected exactly 1 MCU for chassis {CHASSIS}, found {COUNT}",
-                        "CHASSIS", chassisName, "COUNT", mcuConfig.size());
-                    return;
-                }
-            }
-            else if (!target.empty())
-            {
-                mcuConfig = getMCUConfigByTargetFromDbus(target);
-            }
-            else
-            {
-                mcuConfig = getAllMCUConfigFromDbus();
-            }
-        }
-
-        if (mcuConfig.empty())
-        {
-            lg2::error("No MCU configuration found");
-            return;
-        }
+        // GetDeviceStatus allows "all devices" fallback
+        auto mcuConfig = getMCUConfig(true);
 
         if (!recoveryManager.initialize(mcuConfig))
         {
@@ -232,43 +203,8 @@ int main(int argc, char* argv[])
 
     // Add callback for SetForceRecovery
     setForceRecovery->callback([&]() {
-        std::map<std::string, MCUInfo> mcuConfig;
-
-        if (!jsonFilePath.empty())
-        {
-            // Use JSON file if specified
-            mcuConfig = parseJsonFile(jsonFilePath);
-        }
-        else
-        {
-            // Default: Use D-Bus Entity Manager
-            // Priority: chassis > target > all
-            if (!chassisName.empty())
-            {
-                mcuConfig = getMCUConfigByChassisFromDbus(chassisName);
-                if (mcuConfig.size() != 1)
-                {
-                    lg2::error(
-                        "Expected exactly 1 MCU for chassis {CHASSIS}, found {COUNT}",
-                        "CHASSIS", chassisName, "COUNT", mcuConfig.size());
-                    return;
-                }
-            }
-            else if (!target.empty())
-            {
-                mcuConfig = getMCUConfigByTargetFromDbus(target);
-            }
-            else
-            {
-                mcuConfig = getAllMCUConfigFromDbus();
-            }
-        }
-
-        if (mcuConfig.empty())
-        {
-            lg2::error("No MCU configuration found");
-            return;
-        }
+        // SetForceRecovery allows "all devices" fallback
+        auto mcuConfig = getMCUConfig(true);
 
         if (!recoveryManager.initialize(mcuConfig, nullptr, true))
         {
@@ -291,14 +227,43 @@ int main(int argc, char* argv[])
             return;
         }
 
-        // Step 2: Wait for USB re-enumeration
+        // Step 2: Wait for USB re-enumeration with polling
         lg2::info("Waiting for USB re-enumeration...");
-        std::this_thread::sleep_for(std::chrono::seconds(2));
+        constexpr int maxRetries = 3;
+        constexpr int retryIntervalMs = 1000;
+        bool allDevicesReady = false;
 
-        // Step 3: Update device info
-        recoveryManager.updateAllDeviceInfo();
+        for (int attempt = 1; attempt <= maxRetries; ++attempt)
+        {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(retryIntervalMs));
+            recoveryManager.updateAllDeviceInfo();
 
-        // Step 4: Verify all MCUs entered recovery mode
+            size_t detectedCount = 0;
+            for (const auto& [usbPort, mcuInfo] : mcuConfig)
+            {
+                if (recoveryManager.isInRecoveryMode(usbPort))
+                {
+                    ++detectedCount;
+                }
+            }
+
+            if (detectedCount == mcuConfig.size())
+            {
+                allDevicesReady = true;
+                lg2::info("All {COUNT} device(s) detected after {TIME}s",
+                          "COUNT", mcuConfig.size(), "TIME", attempt);
+                break;
+            }
+        }
+
+        if (!allDevicesReady)
+        {
+            lg2::warning("USB re-enumeration timeout after {TIME}s", "TIME",
+                         maxRetries);
+        }
+
+        // Step 3: Verify all MCUs entered recovery mode
         for (const auto& [usbPort, mcuInfo] : mcuConfig)
         {
             if (recoveryManager.isInRecoveryMode(usbPort))
