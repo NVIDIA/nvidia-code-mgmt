@@ -31,8 +31,6 @@
 #include <memory>
 #include <unordered_set>
 
-constexpr static int invalidEid = 255;
-
 /** @class GPIOResource
  *  Represents a BaseResource whose healthy status is updated by monitoring GPIO
  */
@@ -52,17 +50,17 @@ class GPIOResource : public BaseResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
-     * @param event - sdevnt
+     * @param event - sdevent
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
-     * @param uuid - MCTP UUID of the Resource
+     * @param eid - MCTP Endpoint ID of the Resource
      * @param gpio - GPIO line name
      * @param target - systemd unit to be executed when ERoT is recovered
      *
      */
     GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                  sdeventplus::Event& event, const uint64_t i2cBus,
-                 const uint64_t i2cAddress, const std::string& uuid,
+                 const uint64_t i2cAddress, uint8_t eid,
                  const std::string& gpio, const std::string& target);
 
     /** @brief Constructor for the GPIOResource Class - Monitoring GPIO
@@ -71,8 +69,8 @@ class GPIOResource : public BaseResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
-     * @param event - sdevnt
-     * @param uuid - MCTP UUID of the Resource
+     * @param event - sdevent
+     * @param eid - MCTP Endpoint ID of the Resource
      * @param gpio - GPIO line name
      * @param risingTarget - systemd unit to be executed when rising event
      * triggered
@@ -84,7 +82,7 @@ class GPIOResource : public BaseResource
      * @param mctpVdmHelper - MCTP VDM helper object
      */
     GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                 sdeventplus::Event& event, const std::string& uuid,
+                 sdeventplus::Event& event, uint8_t eid,
                  const std::string& gpio, const std::string& risingTarget,
                  const std::string& fallingTarget,
                  const std::string& gpioPolarity,
@@ -93,7 +91,7 @@ class GPIOResource : public BaseResource
 
   private:
     sdeventplus::Event& sdEvent;
-    std::string uuid;
+    uint8_t eid;
     std::vector<sdbusplus::bus::match_t> mctpObjManagerMatch;
     std::string gpioLineName;
     std::string systemTarget;

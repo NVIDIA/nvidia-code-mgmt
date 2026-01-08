@@ -28,7 +28,6 @@
 constexpr static auto mctpEndpointIntfName{"xyz.openbmc_project.MCTP.Endpoint"};
 constexpr static auto mctpEndpointEnableIntfName{
     "au.com.codeconstruct.MCTP.Endpoint1"};
-constexpr static auto uuidIntfName{"xyz.openbmc_project.Common.UUID"};
 constexpr auto mapperService = "xyz.openbmc_project.ObjectMapper";
 constexpr auto mapperPath = "/xyz/openbmc_project/object_mapper";
 constexpr auto mapperInterface = "xyz.openbmc_project.ObjectMapper";
@@ -53,13 +52,11 @@ class MCTPDiscoveryResource : public BaseResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
-     * @param uuid - UUID of the Resource //TODO: Duplicated from Entity
-     * Manager, probably not needed
+     * @param eid - MCTP Endpoint ID of the Resource
      *
      */
     MCTPDiscoveryResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                          const std::string& uuid) :
-        BaseResource(bus, objPath), uuid(uuid)
+                          uint8_t eid) : BaseResource(bus, objPath), eid(eid)
     {
         // Don't update health on startup because the inherited resource
         // will do that in its constructor
@@ -73,11 +70,7 @@ class MCTPDiscoveryResource : public BaseResource
      */
     uint8_t fetchEid() const noexcept
     {
-        for (const auto& [_, mctpObjPath] : mctpEidObjects)
-        {
-            return std::stoi(std::filesystem::path(mctpObjPath).stem());
-        }
-        return 0;
+        return eid;
     }
 
     /**@brief Checks whether any of the associated MCTP endpoints are enabled
@@ -125,7 +118,7 @@ class MCTPDiscoveryResource : public BaseResource
     std::unordered_set<std::string> getMctpServices() const noexcept;
 
   private:
-    std::string uuid;
+    const uint8_t eid;
     std::vector<sdbusplus::bus::match_t> mctpObjManagerMatch;
 
     /**@brief Fetches a mapping of MCTP service to the list of EIDs associated

@@ -34,20 +34,20 @@ class MCUResource : public MCTPDiscoveryResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
-     * @param uuid - UUID of the Resource
+     * @param eid - MCTP Endpoint ID of the Resource
      * @param usbPort - USB port identifier for the resource
      * @param mcuRecoveryManager - Shared pointer to MCU Recovery Manager
      *
      */
     MCUResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                const std::string& uuid, const std::string& usbPort,
+                uint8_t eid, const std::string& usbPort,
                 std::shared_ptr<mcu_recovery_manager::MCURecoveryManager>
                     mcuRecoveryManager) :
-        MCTPDiscoveryResource(bus, objPath, uuid), usbPort(usbPort),
+        MCTPDiscoveryResource(bus, objPath, eid), usbPort(usbPort),
         mcuRecoveryManager(mcuRecoveryManager)
     {
-        lg2::info("Creating MCU Resource: UUID={UUID}, USB_PORT={PORT}", "UUID",
-                  uuid, "PORT", usbPort);
+        lg2::info("Creating MCU Resource: EID={EID}, USB_PORT={PORT}", "EID",
+                  eid, "PORT", usbPort);
 
         updateHealth();
     }

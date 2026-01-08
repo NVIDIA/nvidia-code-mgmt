@@ -36,6 +36,7 @@
 #include <sdeventplus/event.hpp>
 
 #include <filesystem>
+#include <optional>
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
@@ -153,6 +154,30 @@ bool getBool(const InterfaceMap& interfaces, const Interface& interface,
     }
 }
 
+std::optional<uint8_t> getUint8(const InterfaceMap& interfaces,
+                                const Interface& interface,
+                                const Property& property)
+{
+    try
+    {
+        // Entity Manager stores small integers as uint64_t
+        auto value = std::get<uint64_t>(interfaces.at(interface).at(property));
+        if (value > 0xFF)
+        {
+            lg2::error("Property {NAME} value {VALUE} exceeds uint8_t range",
+                       "NAME", property, "VALUE", value);
+            return std::nullopt;
+        }
+        return static_cast<uint8_t>(value);
+    }
+    catch (std::exception& e)
+    {
+        lg2::error("Failed to get property {NAME}. {ERR}", "NAME", property,
+                   "ERR", e.what());
+        return std::nullopt;
+    }
+}
+
 /**
  * @brief Check if a property exists in a D-Bus interface
  *
@@ -175,68 +200,6 @@ bool hasProperty(const InterfaceMap& interfaces, const Interface& interface,
                    "ERR", e.what());
         return false;
     }
-}
-
-/**
- * @brief Retrieves the UUID of an MCTP endpoint given its EID (Endpoint ID)
- *
- * This function queries the D-Bus to find the MCTP endpoint with the specified
- * EID and returns its associated UUID. It searches through all MCTP services
- * and their managed objects to find a matching endpoint.
- *
- * @param[in] eid - The MCTP Endpoint ID to look up
- *
- * @return std::string - The UUID of the MCTP endpoint if found, empty string if
- * not found
- */
-std::string getMctpUUID(uint32_t eid)
-{
-    nvidia::software::updater::GetSubTreeResponse getSubTreeResponse{};
-    const nvidia::software::updater::Interfaces ifaceList{mctpEndpointIntfName};
-    try
-    {
-        auto method = getBus().new_method_call(mapperService, mapperPath,
-                                               mapperInterface, "GetSubTree");
-        method.append(mctpObjPathPrefix.data(), 0, ifaceList);
-        auto reply = getBus().call(method);
-        reply.read(getSubTreeResponse);
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error(
-            "D-Bus error calling Subtrees method on ObjectMapper: {ERROR}",
-            "ERROR", e.what());
-    }
-
-    for (const auto& [objPath, mapperServiceMap] : getSubTreeResponse)
-    {
-        for (const auto& [service, interfaces] : mapperServiceMap)
-        {
-            auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-            const auto objects = dbusUtil.getManagedObjects(
-                service.c_str(), mctpObjMgrPath.data());
-
-            for (const auto& [objectPath, interfaces] : objects)
-            {
-                if (!interfaces.contains(uuidIntfName) ||
-                    !interfaces.contains(mctpEndpointIntfName))
-                {
-                    continue;
-                }
-
-                const auto& mctpEID = std::get<uint8_t>(
-                    interfaces.at(mctpEndpointIntfName).at("EID"));
-
-                if (eid == mctpEID)
-                {
-                    const auto& mctpUUID = std::get<std::string>(
-                        interfaces.at(uuidIntfName).at("UUID"));
-                    return mctpUUID;
-                }
-            }
-        }
-    }
-    return {};
 }
 
 /**
@@ -364,40 +327,17 @@ void publishDBusRecoveryObject()
             const auto i2cAddress =
                 getUint64(interfaces, ocpObjInterface, "I2CAddress");
 
-            std::string uuid;
+            const auto eidOpt =
+                getUint8(interfaces, ocpObjInterface, "MctpEID");
+            if (!eidOpt.has_value())
+            {
+                lg2::error("Error in Entity Manager configuration: No MctpEID "
+                           "found in OCP recovery config Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
 
-            if (hasProperty(interfaces, ocpObjInterface, "MctpUUID"))
-            {
-                uuid = getString(interfaces, ocpObjInterface, "MctpUUID");
-            }
-            else
-            {
-                lg2::info(
-                    "MctpUUID not found in OCP recovery config Object: {PATH}",
-                    "PATH", emObjectPath);
-                if (hasProperty(interfaces, ocpObjInterface, "MctpEID"))
-                {
-                    const auto eid =
-                        getUint64(interfaces, ocpObjInterface, "MctpEID");
-                    uuid = getMctpUUID(eid);
-                    if (uuid.empty())
-                    {
-                        lg2::error(
-                            "Failed to get MCTP UUID for EID {EID} in OCP recovery config "
-                            "Object: {PATH}",
-                            "EID", eid, "PATH", emObjectPath);
-                        continue;
-                    }
-                }
-                else
-                {
-                    lg2::error(
-                        "Error in Entity Manager configuration: No MctpUUID or MctpEID "
-                        "found in OCP recovery config Object: {PATH}",
-                        "PATH", emObjectPath);
-                    continue;
-                }
-            }
+            const auto eid = eidOpt.value();
 
             const auto chassisName =
                 getString(interfaces, ocpObjInterface, "ChassisName");
@@ -437,18 +377,27 @@ void publishDBusRecoveryObject()
 
             if (hasProperty(interfaces, ocpObjInterface, "SMAEID"))
             {
-                const auto smaEID =
-                    getUint64(interfaces, ocpObjInterface, "SMAEID");
+                const auto smaEidOpt =
+                    getUint8(interfaces, ocpObjInterface, "SMAEID");
+                if (!smaEidOpt.has_value())
+                {
+                    lg2::error(
+                        "Failed to get SMAEID in OCP recovery config Object: {PATH}",
+                        "PATH", emObjectPath);
+                    continue;
+                }
+
+                const auto smaEID = smaEidOpt.value();
 
                 resources.push_back(std::make_unique<GpuResource>(
-                    getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, uuid,
+                    getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, eid,
                     smaEID));
             }
             else
             {
                 resources.push_back(std::make_unique<GpuResource>(
                     getBus(), objPath, chassisObjPath, i2cBus, i2cAddress,
-                    uuid));
+                    eid));
             }
         }
         else if (interfaces.contains(cx8ObjInterface))
@@ -456,16 +405,15 @@ void publishDBusRecoveryObject()
             lg2::info("Found CX8 recovery config Object: {PATH}", "PATH",
                       emObjectPath);
 
-            const auto eid = getUint64(interfaces, cx8ObjInterface, "EID");
-            const auto uuid = getMctpUUID(eid);
-            if (uuid.empty())
+            const auto eidOpt = getUint8(interfaces, cx8ObjInterface, "EID");
+            if (!eidOpt.has_value())
             {
-                lg2::error(
-                    "Failed to get MCTP UUID for EID {EID} in CX8 recovery config "
-                    "Object: {PATH}",
-                    "EID", eid, "PATH", emObjectPath);
+                lg2::error("No EID found in CX8 recovery config Object: {PATH}",
+                           "PATH", emObjectPath);
                 continue;
             }
+
+            const auto eid = eidOpt.value();
 
             if (!hasProperty(interfaces, cx8ObjInterface, "I2CBus"))
             {
@@ -493,12 +441,21 @@ void publishDBusRecoveryObject()
                 getString(interfaces, cx8ObjInterface, "ChassisName");
             const auto chassisObjPath = getChassisObjPath(chassisName);
 
-            const auto smaEID =
-                getUint64(interfaces, cx8ObjInterface, "SMAEID");
+            const auto smaEidOpt =
+                getUint8(interfaces, cx8ObjInterface, "SMAEID");
+            if (!smaEidOpt.has_value())
+            {
+                lg2::error(
+                    "Failed to get SMAEID in CX8 recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
 
-            resources.push_back(std::make_unique<Cx8Resource>(
-                getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, uuid,
-                smaEID));
+            const auto smaEID = smaEidOpt.value();
+
+            resources.push_back(
+                std::make_unique<Cx8Resource>(getBus(), objPath, chassisObjPath,
+                                              i2cBus, i2cAddress, eid, smaEID));
         }
         else if (interfaces.contains(glacierCrisisObjInterface))
         {
@@ -507,7 +464,7 @@ void publishDBusRecoveryObject()
             const auto isRecoverable =
                 getBool(interfaces, glacierCrisisObjInterface, "isRecoverable");
 
-            uint64_t i2cBus, i2cAddress;
+            uint64_t i2cBus = 0, i2cAddress = 0;
             if (isRecoverable)
             {
                 i2cBus =
@@ -515,8 +472,18 @@ void publishDBusRecoveryObject()
                 i2cAddress = getUint64(interfaces, glacierCrisisObjInterface,
                                        "I2CAddress");
             }
-            const auto uuid =
-                getString(interfaces, glacierCrisisObjInterface, "MctpUUID");
+
+            const auto eidOpt =
+                getUint8(interfaces, glacierCrisisObjInterface, "MctpEID");
+            if (!eidOpt.has_value())
+            {
+                lg2::error(
+                    "No MctpEID found in Glacier Crisis recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto eid = eidOpt.value();
             const auto apBootStatusType = getString(
                 interfaces, glacierCrisisObjInterface, "APBootStatusType");
             const auto chassisName =
@@ -529,14 +496,23 @@ void publishDBusRecoveryObject()
                     "PATH", emObjectPath);
                 if (isRecoverable)
                 {
-                    const auto apEid = getUint64(
+                    const auto apEidOpt = getUint8(
                         interfaces, glacierCrisisObjInterface, "APEID");
+                    if (!apEidOpt.has_value())
+                    {
+                        lg2::error(
+                            "No APEID found in Glacier Crisis recovery config Object: {PATH}",
+                            "PATH", emObjectPath);
+                        continue;
+                    }
+
+                    const auto apEid = apEidOpt.value();
                     const auto apName = getString(
                         interfaces, glacierCrisisObjInterface, "APName");
                     const auto apObjPath = getSoftwareDBusObjectPath(apName);
                     resources.push_back(
                         std::make_unique<ERoTResource<TRequest>>(
-                            getBus(), objPath, event, i2cBus, i2cAddress, uuid,
+                            getBus(), objPath, event, i2cBus, i2cAddress, eid,
                             apEid, chassisObjPath, apObjPath, isRecoverable,
                             mctpVdmHelper));
                 }
@@ -544,15 +520,24 @@ void publishDBusRecoveryObject()
                 {
                     resources.push_back(
                         std::make_unique<ERoTResource<TRequest>>(
-                            getBus(), objPath, event, uuid, chassisObjPath,
+                            getBus(), objPath, event, eid, chassisObjPath,
                             isRecoverable, mctpVdmHelper));
                 }
             }
         }
         else if (interfaces.contains(gpioObjInterface))
         {
-            const auto uuid =
-                getString(interfaces, gpioObjInterface, "MctpUUID");
+            const auto eidOpt =
+                getUint8(interfaces, gpioObjInterface, "MctpEID");
+            if (!eidOpt.has_value())
+            {
+                lg2::error(
+                    "No MctpEID found in GPIO recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto eid = eidOpt.value();
             const auto gpio = getString(interfaces, gpioObjInterface, "GPIO");
             const auto isErot = getBool(interfaces, gpioObjInterface, "IsERoT");
             if (isErot)
@@ -566,7 +551,7 @@ void publishDBusRecoveryObject()
                 const auto target =
                     getString(interfaces, gpioObjInterface, "Target");
                 resources.push_back(std::make_unique<GPIOResource<TRequest>>(
-                    getBus(), objPath, event, i2cBus, i2cAddress, uuid, gpio,
+                    getBus(), objPath, event, i2cBus, i2cAddress, eid, gpio,
                     target));
             }
             else
@@ -591,7 +576,7 @@ void publishDBusRecoveryObject()
                     chassisObjPath = getChassisObjPath(chassisName);
                 }
                 resources.push_back(std::make_unique<GPIOResource<TRequest>>(
-                    getBus(), objPath, event, uuid, gpio, risingTarget,
+                    getBus(), objPath, event, eid, gpio, risingTarget,
                     fallingTarget, polarity, chassisObjPath, mctpVdmHelper));
             }
         }
@@ -611,27 +596,19 @@ void publishDBusRecoveryObject()
             const auto usbPort =
                 getString(interfaces, mcuObjInterface, "USBPort");
 
-            if (!hasProperty(interfaces, mcuObjInterface, "EID"))
+            const auto eidOpt = getUint8(interfaces, mcuObjInterface, "EID");
+            if (!eidOpt.has_value())
             {
-                lg2::error("Failed to get EID in SMA recovery config "
+                lg2::error("Failed to get EID in MCU recovery config "
                            "Object: {PATH}",
                            "PATH", emObjectPath);
                 continue;
             }
 
-            const auto eid = getUint64(interfaces, mcuObjInterface, "EID");
-            const auto uuid = getMctpUUID(eid);
-            if (uuid.empty())
-            {
-                lg2::error(
-                    "Failed to get MCTP UUID for EID {EID} in SMA recovery config "
-                    "Object: {PATH}",
-                    "EID", eid, "PATH", emObjectPath);
-                continue;
-            }
+            const auto eid = eidOpt.value();
 
             resources.push_back(std::make_unique<MCUResource>(
-                getBus(), objPath, uuid, usbPort, mcuRecoveryManager));
+                getBus(), objPath, eid, usbPort, mcuRecoveryManager));
         }
     }
 }

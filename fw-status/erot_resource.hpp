@@ -59,7 +59,7 @@ class ERoTResource : public MCTPDiscoveryResource
      * @param event - sdevent
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
-     * @param uuid - UUID of the Resource
+     * @param eid - MCTP Endpoint ID of the Resource
      * @param apEid - EID of the AP associated with the ERoT
      * @param chassisObjPath - Path of the Chassis D-Bus object to publish
      * BootStatus
@@ -71,9 +71,9 @@ class ERoTResource : public MCTPDiscoveryResource
      */
     ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                  sdeventplus::Event& event, const uint64_t i2cBus,
-                 const uint64_t i2cAddress, const std::string& uuid,
-                 const uint64_t apEid, const std::string chassisObjPath,
-                 const std::string apObjPath, const bool isRecoverable,
+                 const uint64_t i2cAddress, uint8_t eid, uint8_t apEid,
+                 const std::string chassisObjPath, const std::string apObjPath,
+                 const bool isRecoverable,
                  std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper);
 
     /**@brief Constructor for the ERoTResource Class
@@ -82,14 +82,14 @@ class ERoTResource : public MCTPDiscoveryResource
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
      * @param event - sdevent
-     * @param uuid - UUID of the Resource
+     * @param eid - MCTP Endpoint ID of the Resource
      * @param mctpVdmHelper - MCTP VDM helper object
      * @param isRecoverable - Indicates whether recovery can be performed on the
      * Resource
      *
      */
     ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                 sdeventplus::Event& event, const std::string& uuid,
+                 sdeventplus::Event& event, uint8_t eid,
                  const std::string chassisObjPath, const bool isRecoverable,
                  std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper);
 

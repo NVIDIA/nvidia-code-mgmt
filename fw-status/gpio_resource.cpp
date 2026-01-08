@@ -22,10 +22,10 @@ template <typename T>
 GPIOResource<T>::GPIOResource(sdbusplus::bus::bus& bus,
                               const std::string& objPath,
                               sdeventplus::Event& event, const uint64_t i2cBus,
-                              const uint64_t i2cAddress,
-                              const std::string& uuid, const std::string& gpio,
+                              const uint64_t i2cAddress, uint8_t eid,
+                              const std::string& gpio,
                               const std::string& target) :
-    BaseResource(bus, objPath), sdEvent(event), uuid(uuid), gpioLineName(gpio),
+    BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
     systemTarget(target), isEROT(true)
 {
     isFirmwareInRecovery = false;
@@ -43,11 +43,11 @@ GPIOResource<T>::GPIOResource(sdbusplus::bus::bus& bus,
 template <typename T>
 GPIOResource<T>::GPIOResource(
     sdbusplus::bus::bus& bus, const std::string& objPath,
-    sdeventplus::Event& event, const std::string& uuid, const std::string& gpio,
+    sdeventplus::Event& event, uint8_t eid, const std::string& gpio,
     const std::string& risingTarget, const std::string& fallingTarget,
     const std::string& gpioPolarity, const std::string chassisObjPath,
     std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
-    BaseResource(bus, objPath), sdEvent(event), uuid(uuid), gpioLineName(gpio),
+    BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
     risingTarget(risingTarget), fallingTarget(fallingTarget), isEROT(false),
     mctpVdmHelper(mctpVdmHelper)
 {
@@ -303,19 +303,6 @@ template <typename T>
 mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
 {
     auto eid = fetchEid();
-    if (eid == invalidEid)
-    {
-        lg2::error("Cannot get EID for {PATH}", "PATH", path);
-        if (mctpObjManagerMatch.empty())
-        {
-            mctpObjManagerMatch.emplace_back(
-                bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
-                [&]([[maybe_unused]] sdbusplus::message::message& msg) {
-                    updateBootStatus();
-                });
-        }
-        co_return 0;
-    }
 
     std::unique_lock<std::mutex> lock(mtx, std::try_to_lock);
     if (!lock.owns_lock())
@@ -344,46 +331,7 @@ mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
 template <typename T>
 uint8_t GPIOResource<T>::fetchEid() const noexcept
 {
-    // Get MCTP endpoint list
-    nvidia::software::updater::GetSubTreeResponse getSubTreeResponse{};
-    std::unordered_set<std::string> mctpCtrlServices{};
-    const nvidia::software::updater::Interfaces ifaceList{mctpEndpointIntfName};
-    try
-    {
-        auto method = bus.new_method_call(mapperService, mapperPath,
-                                          mapperInterface, "GetSubTree");
-        method.append(mctpObjPathPrefix.data(), 0, ifaceList);
-        auto reply = bus.call(method);
-        reply.read(getSubTreeResponse);
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error(
-            "D-Bus error calling Subtrees method on ObjectMapper: {ERROR}",
-            "ERROR", e.what());
-    }
-
-    // Check if it has UUID interface and if it is same as the UUID from JSON
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-    for (const auto& [objPath, mapperServiceMap] : getSubTreeResponse)
-    {
-        for (const auto& [service, interfaces] : mapperServiceMap)
-        {
-            auto it =
-                std::find(interfaces.begin(), interfaces.end(), uuidIntfName);
-            if (it != interfaces.end())
-            {
-                auto mctpUuid = dbusUtil.getProperty<std::string>(
-                    service.c_str(), objPath.c_str(), uuidIntfName, "UUID");
-                if (mctpUuid == uuid)
-                {
-                    return std::stoi(std::filesystem::path(objPath).stem());
-                }
-            }
-        }
-    }
-
-    return invalidEid;
+    return eid;
 }
 
 #ifdef MCTP_IN_KERNEL

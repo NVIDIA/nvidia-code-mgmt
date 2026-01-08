@@ -64,13 +64,13 @@ std::unordered_map<std::string, std::string>
 
         for (const auto& [objectPath, interfaces] : objects)
         {
-            if (!interfaces.contains(uuidIntfName))
+            if (!interfaces.contains(mctpEndpointIntfName))
             {
                 continue;
             }
-            const auto& mctpUUID =
-                std::get<std::string>(interfaces.at(uuidIntfName).at("UUID"));
-            if (mctpUUID != uuid)
+            const auto& mctpEID = std::get<uint8_t>(
+                interfaces.at(mctpEndpointIntfName).at("EID"));
+            if (mctpEID != eid)
             {
                 continue;
             }

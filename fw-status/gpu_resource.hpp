@@ -40,13 +40,13 @@ class GpuResource : public MCTPDiscoveryResource
      * @param chassisObjPath - Path of D-Bus object to publish
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
-     * @param uuid - UUID of the Resource
+     * @param eid - MCTP Endpoint ID of the Resource
      *
      */
     GpuResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                 const std::string& chassisObjPath, const uint64_t i2cBus,
-                const uint64_t i2cAddress, const std::string& uuid) :
-        MCTPDiscoveryResource(bus, objPath, uuid)
+                const uint64_t i2cAddress, uint8_t eid) :
+        MCTPDiscoveryResource(bus, objPath, eid)
     {
         ocpRecoveryCommands = std::make_unique<
             recovery_tool::recovery_commands::OCPRecoveryCommands>(
@@ -67,14 +67,13 @@ class GpuResource : public MCTPDiscoveryResource
      * @param chassisObjPath - Path of D-Bus object to publish
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
-     * @param uuid - UUID of the Resource
+     * @param eid - MCTP Endpoint ID of the Resource
      * @param smaEid - EID of the SMA
      */
     GpuResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                 const std::string& chassisObjPath, const uint64_t i2cBus,
-                const uint64_t i2cAddress, const std::string& uuid,
-                const uint32_t smaEid) :
-        MCTPDiscoveryResource(bus, objPath, uuid), smaEid(smaEid)
+                const uint64_t i2cAddress, uint8_t eid, uint8_t smaEid) :
+        MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid)
     {
         ocpRecoveryCommands = std::make_unique<
             recovery_tool::recovery_commands::OCPRecoveryCommands>(
@@ -96,7 +95,7 @@ class GpuResource : public MCTPDiscoveryResource
     std::vector<sdbusplus::bus::match_t> mctpSMAObjManagerMatch;
     std::unordered_map<std::string, std::string> mctpSMAEidObjects;
     std::vector<sdbusplus::bus::match_t> deviceSMAMatches;
-    uint32_t smaEid;
+    uint8_t smaEid;
 
     /* @brief Override function for updating Health and Status of D-Bus object
      * based on Device Status and MCTP enumeration

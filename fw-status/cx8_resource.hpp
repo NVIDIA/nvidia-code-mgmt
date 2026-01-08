@@ -41,14 +41,13 @@ class Cx8Resource : public MCTPDiscoveryResource
      * @param chassisObjPath - Path of D-Bus object to publish
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
-     * @param uuid - UUID of the Resource
+     * @param eid - MCTP Endpoint ID of the Resource
      * @param smaEid - EID of the SMA
      */
     Cx8Resource(sdbusplus::bus::bus& bus, const std::string& objPath,
                 const std::string& chassisObjPath, const uint64_t i2cBus,
-                const uint64_t i2cAddress, const std::string& uuid,
-                const uint32_t smaEid) :
-        MCTPDiscoveryResource(bus, objPath, uuid), smaEid(smaEid),
+                const uint64_t i2cAddress, uint8_t eid, uint8_t smaEid) :
+        MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid),
         busAddress(i2cBus), slaveAddress(i2cAddress)
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
@@ -73,7 +72,7 @@ class Cx8Resource : public MCTPDiscoveryResource
         "xyz.openbmc_project.State.Chassis.PowerState.On";
     int const cx8PublishDelayInSeconds = 5;
 
-    uint32_t smaEid;
+    uint8_t smaEid;
     int busAddress;
     int slaveAddress;
 
