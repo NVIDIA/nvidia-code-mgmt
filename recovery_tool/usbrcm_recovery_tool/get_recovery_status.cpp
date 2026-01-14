@@ -100,12 +100,8 @@ static json processDevice(const usb::UsbDevice& deviceInfo,
         return std::format("0x{:08X} -> {}", code, info.name);
     };
 
-    // Check for recovery complete status first (highest priority)
-    bool isRecoveryComplete = false;
     if (snapshot.latestProgressCode.has_value())
     {
-        isRecoveryComplete = ProgressCodeParser::isRecoveryComplete(
-            *snapshot.latestProgressCode);
         deviceEntry["Last Progress Code"] =
             formatProgressCode(*snapshot.latestProgressCode);
 
@@ -114,13 +110,6 @@ static json processDevice(const usb::UsbDevice& deviceInfo,
             *snapshot.latestProgressCode);
         deviceEntry["CPU Instance"] =
             ProgressCodeParser::packageClassToCpuId(progressInfo.cpuId);
-
-        // If the last progress code matches the recovery complete codes, set
-        // recovery status
-        if (isRecoveryComplete)
-        {
-            deviceEntry["Recovery Status"] = "Recovery Complete";
-        }
     }
 
     if (snapshot.latestErrorCode.has_value())
@@ -130,6 +119,7 @@ static json processDevice(const usb::UsbDevice& deviceInfo,
     }
 
     // Determine recovery status from BOOT_MODE_SEL_DONE
+    bool isInRecoveryBootMode = false;
     if (snapshot.latestBootModeSelDone.has_value())
     {
         auto bootSelInfo = ProgressCodeParser::getProgressCodeInfo(
@@ -147,16 +137,23 @@ static json processDevice(const usb::UsbDevice& deviceInfo,
                     ProgressCodeParser::packageClassToCpuId(bootSelInfo.cpuId);
             }
 
-            // Determine recovery status based on boot mode (if not already set
-            // to Recovery Complete)
-            if (deviceEntry["Recovery Status"] == "Unknown" &&
-                bootSelInfo.bootSelectionInfo.has_value() &&
-                bootSelInfo.bootSelectionInfo->bootMode ==
-                    ProgressCodeParser::BootMode::Recovery)
+            isInRecoveryBootMode = (bootSelInfo.bootSelectionInfo->bootMode ==
+                                    ProgressCodeParser::BootMode::Recovery);
+
+            if (isInRecoveryBootMode)
             {
-                deviceEntry["Recovery Status"] = "In Recovery";
+                if (snapshot.latestProgressCode.has_value() &&
+                    ProgressCodeParser::isRecoveryComplete(
+                        *snapshot.latestProgressCode))
+                {
+                    deviceEntry["Recovery Status"] = "Recovery Complete";
+                }
+                else
+                {
+                    deviceEntry["Recovery Status"] = "In Recovery";
+                }
             }
-            else if (deviceEntry["Recovery Status"] == "Unknown")
+            else
             {
                 deviceEntry["Recovery Status"] = "Not in Recovery";
             }
@@ -164,37 +161,32 @@ static json processDevice(const usb::UsbDevice& deviceInfo,
     }
 
     // Cross-validate RCM mode (hardware state) with recovery status from
-    // progress codes This detects inconsistent device states that indicate
-    // hardware or firmware issues
+    // progress codes. This detects inconsistent device states that indicate
+    // hardware or firmware issues.
     const bool isInRcmMode = usb::isDeviceInRcmMode(deviceInfo.get(), verbose);
-    const std::string recoveryStatus =
-        deviceEntry["Recovery Status"].get<std::string>();
-    const bool isInRecoveryFromProgressCode =
-        (recoveryStatus == "In Recovery" ||
-         recoveryStatus == "Recovery Complete");
 
-    if (isInRecoveryFromProgressCode && !isInRcmMode)
+    if (isInRecoveryBootMode && !isInRcmMode)
     {
         deviceEntry["Error"] =
-            "Device reports recovery status but is not in RCM mode";
+            "Boot mode indicates recovery but device lacks RCM endpoints";
         deviceEntry["Recovery Status"] = "Unknown";
         if (verbose)
         {
             std::cerr << std::format(
-                "Warning: Device at port {} reports recovery status '{}' but lacks RCM endpoints\n",
-                portPath, recoveryStatus);
+                "Warning: Device at port {} has recovery boot mode but lacks RCM endpoints\n",
+                portPath);
         }
     }
-    else if (!isInRecoveryFromProgressCode && isInRcmMode)
+    else if (!isInRecoveryBootMode && isInRcmMode)
     {
         deviceEntry["Error"] =
-            "Device is in RCM mode but reports not in recovery progress code";
+            "Device has RCM endpoints but boot mode is not recovery";
         deviceEntry["Recovery Status"] = "Unknown";
         if (verbose)
         {
             std::cerr << std::format(
-                "Warning: Device at port {} has RCM endpoints but reports status '{}'\n",
-                portPath, recoveryStatus);
+                "Warning: Device at port {} has RCM endpoints but boot mode is not recovery\n",
+                portPath);
         }
     }
 
