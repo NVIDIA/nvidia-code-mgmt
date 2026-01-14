@@ -170,7 +170,7 @@ mctp_vdm::requester::Coroutine ERoTResource<T>::updateBootStatusAsync()
         auto eid = fetchEid();
         co_await mctpVdmHelper->queryBootStatus(eid, responseMsg, responseLen);
 
-        if (responseMsg != nullptr)
+        if (responseMsg != nullptr && responseLen > 1)
         {
             std::vector<uint8_t> status(responseMsg->payload + 1,
                                         responseMsg->payload + responseLen);

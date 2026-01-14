@@ -318,7 +318,7 @@ mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
     size_t responseLen = 0;
     co_await mctpVdmHelper->queryBootStatus(eid, responseMsg, responseLen);
 
-    if (responseMsg != nullptr)
+    if (responseMsg != nullptr && responseLen > 1)
     {
         std::vector<uint8_t> status(responseMsg->payload + 1,
                                     responseMsg->payload + responseLen);
