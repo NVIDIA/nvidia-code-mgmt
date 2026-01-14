@@ -92,10 +92,10 @@ class GpuResource : public MCTPDiscoveryResource
     std::unique_ptr<recovery_tool::recovery_commands::OCPRecoveryCommands>
         ocpRecoveryCommands;
     std::unique_ptr<BootStatus> bootStatus;
-    std::vector<sdbusplus::bus::match_t> mctpSMAObjManagerMatch;
-    std::unordered_map<std::string, std::string> mctpSMAEidObjects;
-    std::vector<sdbusplus::bus::match_t> deviceSMAMatches;
-    uint8_t smaEid;
+    std::unique_ptr<sdbusplus::bus::match_t> mctpSMAObjManagerMatch;
+    std::string smaMctpObjectPath;
+    std::unique_ptr<sdbusplus::bus::match_t> deviceSMAMatch;
+    uint8_t smaEid{};
 
     /* @brief Override function for updating Health and Status of D-Bus object
      * based on Device Status and MCTP enumeration
@@ -157,41 +157,33 @@ class GpuResource : public MCTPDiscoveryResource
         return;
     }
 
-    /**@brief Fetches a mapping of MCTP service to the list of EIDs associated
-     * with the SMA resource
+    /**@brief Fetches the MCTP object path for the SMA EID
      *
-     * @return Map between service name and mctp object path
+     * @return string - MCTP object path, empty if not found
      *
      */
-    std::unordered_map<std::string, std::string> getSMAMCTPObjects()
+    std::string getSMAMCTPObjectPath()
     {
-        std::unordered_map<std::string, std::string> mctpObjects{};
-        const auto& mctpCtrlServices = getMctpServices();
-        for (const auto& serviceName : mctpCtrlServices)
+        auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+        const auto objects =
+            dbusUtil.getManagedObjects(mctpService, mctpObjMgrPath.data());
+
+        for (const auto& [objectPath, interfaces] : objects)
         {
-            auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-            const auto objects = dbusUtil.getManagedObjects(
-                serviceName.c_str(), mctpObjMgrPath.data());
-
-            for (const auto& [objectPath, interfaces] : objects)
+            if (!interfaces.contains(mctpEndpointIntfName))
             {
-                if (!interfaces.contains(mctpEndpointIntfName))
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                const auto& mctpEID = std::get<uint8_t>(
-                    interfaces.at(mctpEndpointIntfName).at("EID"));
+            const auto& mctpEID = std::get<uint8_t>(
+                interfaces.at(mctpEndpointIntfName).at("EID"));
 
-                if (mctpEID != smaEid)
-                {
-                    continue;
-                }
-                mctpObjects[serviceName] = objectPath;
-                break;
+            if (mctpEID == smaEid)
+            {
+                return objectPath;
             }
         }
-        return mctpObjects;
+        return {};
     }
 
     /**@brief Start watching for events on SMA MCTP objects
@@ -204,13 +196,13 @@ class GpuResource : public MCTPDiscoveryResource
     void startWatchingSMAMCTPObjects(bool needUpdateHealth)
     {
         // Clear any existing matches first to prevent accumulation
-        mctpSMAObjManagerMatch.clear();
-        deviceSMAMatches.clear();
+        mctpSMAObjManagerMatch.reset();
+        deviceSMAMatch.reset();
 
-        mctpSMAEidObjects = getSMAMCTPObjects();
-        if (mctpSMAEidObjects.empty())
+        smaMctpObjectPath = getSMAMCTPObjectPath();
+        if (smaMctpObjectPath.empty())
         {
-            mctpSMAObjManagerMatch.emplace_back(
+            mctpSMAObjManagerMatch = std::make_unique<sdbusplus::bus::match_t>(
                 bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
                 [&]([[maybe_unused]] sdbusplus::message::message& msg) {
                     startWatchingSMAMCTPObjects(true);
@@ -218,22 +210,14 @@ class GpuResource : public MCTPDiscoveryResource
             return;
         }
 
-        mctpSMAObjManagerMatch.clear();
+        mctpSMAObjManagerMatch.reset();
 
-        for (const auto& [service, mctpObject] : mctpSMAEidObjects)
-        {
-            deviceSMAMatches.emplace_back(
-                bus,
-                MatchRules::propertiesChanged(mctpObject.c_str(),
-                                              mctpEndpointEnableIntfName),
-                std::bind(&GpuResource::onMCTPDiscoveryMsg, this,
-                          std::placeholders::_1));
-
-            deviceSMAMatches.emplace_back(
-                bus, MatchRules::interfacesAdded(mctpObject.c_str()),
-                std::bind(&GpuResource::onMCTPDiscoveryMsg, this,
-                          std::placeholders::_1));
-        }
+        deviceSMAMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            MatchRules::propertiesChanged(smaMctpObjectPath.c_str(),
+                                          mctpEndpointEnableIntfName),
+            std::bind(&GpuResource::onMCTPDiscoveryMsg, this,
+                      std::placeholders::_1));
 
         if (needUpdateHealth)
         {

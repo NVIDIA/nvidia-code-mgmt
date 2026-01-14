@@ -22,15 +22,13 @@
 #include <phosphor-logging/elog.hpp>
 #include <phosphor-logging/lg2.hpp>
 
+#include <memory>
 #include <string_view>
-#include <unordered_set>
 
 constexpr static auto mctpEndpointIntfName{"xyz.openbmc_project.MCTP.Endpoint"};
 constexpr static auto mctpEndpointEnableIntfName{
     "au.com.codeconstruct.MCTP.Endpoint1"};
-constexpr auto mapperService = "xyz.openbmc_project.ObjectMapper";
-constexpr auto mapperPath = "/xyz/openbmc_project/object_mapper";
-constexpr auto mapperInterface = "xyz.openbmc_project.ObjectMapper";
+constexpr static auto mctpService{"au.com.codeconstruct.MCTP1"};
 constexpr static std::string_view mctpObjPathPrefix =
     "/au/com/codeconstruct/mctp1/networks/1/endpoints/";
 constexpr static std::string_view mctpObjMgrPath =
@@ -40,15 +38,15 @@ using namespace phosphor::logging;
 
 /**@class MCTPDiscoveryResource
  *
- *  Represents a resource which is expected to have one or more associated MCTP
- * Endpoints, and is capable of triggering MCTP Discovery based on its health
+ *  Represents a resource which is expected to have a single associated MCTP
+ * Endpoint, and is capable of triggering MCTP Discovery based on its health
  *
  */
 class MCTPDiscoveryResource : public BaseResource
 {
   public:
     /**@brief Constructor for the MCTPDiscoveryResource class
-     * Creates watchers for MCTP EIDs associated with the resource
+     * Creates a watcher for the MCTP EID associated with the resource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
@@ -73,29 +71,29 @@ class MCTPDiscoveryResource : public BaseResource
         return eid;
     }
 
-    /**@brief Checks whether any of the associated MCTP endpoints are enabled
+    /**@brief Checks whether the associated MCTP endpoint is enabled
      *
-     * @return bool - True if any of the MCTP EIDs are enabled,
+     * @return bool - True if the MCTP EID is enabled,
      *                False otherwise
      *
      */
     bool checkForEnabledMCTPEids() const noexcept;
 
-    /**@brief Checks whether the resource has any associated MCTP endpoints
+    /**@brief Checks whether the resource has an associated MCTP endpoint
      * enumerated
      *
-     * @return bool - True if any of the MCTP EIDs are enumerated,
+     * @return bool - True if the MCTP EID is enumerated,
      *                False otherwise
      *
      */
     inline bool isDeviceEnumerated() const noexcept
     {
-        return !mctpEidObjects.empty();
+        return !mctpObjectPath.empty();
     }
 
   protected:
-    std::unordered_map<std::string, std::string> mctpEidObjects;
-    std::vector<sdbusplus::bus::match_t> deviceMatches;
+    std::string mctpObjectPath;
+    std::unique_ptr<sdbusplus::bus::match_t> deviceMatch;
 
     /**@brief Callback function for MCTP event listeners
      * Updates Health and State of the D-Bus object
@@ -110,24 +108,16 @@ class MCTPDiscoveryResource : public BaseResource
         updateHealth();
     }
 
-    /**@brief Fetches the list of currently active MCTP Services
-     *
-     * @return set<string> - Set containing the currently active MCTP services
-     *
-     */
-    std::unordered_set<std::string> getMctpServices() const noexcept;
-
   private:
     const uint8_t eid;
-    std::vector<sdbusplus::bus::match_t> mctpObjManagerMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> mctpObjManagerMatch;
 
-    /**@brief Fetches a mapping of MCTP service to the list of EIDs associated
-     * with the resource
+    /**@brief Fetches the MCTP object path for the resource's EID
      *
-     * @return Map between service name and mctp object path
+     * @return string - MCTP object path, empty if not found
      *
      */
-    std::unordered_map<std::string, std::string> getMCTPObjects();
+    std::string getMCTPObjectPath();
 
     /**@brief Updates the Health and State of the D-Bus Object
      *

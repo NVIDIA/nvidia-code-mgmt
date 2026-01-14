@@ -19,76 +19,40 @@
 
 #include "dbusutils.hpp"
 
-std::unordered_set<std::string>
-    MCTPDiscoveryResource::getMctpServices() const noexcept
+std::string MCTPDiscoveryResource::getMCTPObjectPath()
 {
-    nvidia::software::updater::GetSubTreeResponse getSubTreeResponse{};
-    std::unordered_set<std::string> mctpCtrlServices{};
-    const nvidia::software::updater::Interfaces ifaceList{mctpEndpointIntfName};
-    try
-    {
-        auto method = bus.new_method_call(mapperService, mapperPath,
-                                          mapperInterface, "GetSubTree");
-        method.append(mctpObjPathPrefix.data(), 0, ifaceList);
-        auto reply = bus.call(method);
-        reply.read(getSubTreeResponse);
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error(
-            "D-Bus error calling Subtrees method on ObjectMapper: {ERROR}",
-            "ERROR", e.what());
-    }
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+    const auto objects =
+        dbusUtil.getManagedObjects(mctpService, mctpObjMgrPath.data());
 
-    for (const auto& [objPath, mapperServiceMap] : getSubTreeResponse)
+    for (const auto& [objectPath, interfaces] : objects)
     {
-        for (const auto& [service, interfaces] : mapperServiceMap)
+        if (!interfaces.contains(mctpEndpointIntfName))
         {
-            mctpCtrlServices.insert(service);
+            continue;
+        }
+        const auto* mctpEID = std::get_if<uint8_t>(
+            &interfaces.at(mctpEndpointIntfName).at("EID"));
+        if (!mctpEID)
+        {
+            continue;
+        }
+        if (*mctpEID == eid)
+        {
+            return objectPath;
         }
     }
-
-    return mctpCtrlServices;
-}
-
-std::unordered_map<std::string, std::string>
-    MCTPDiscoveryResource::getMCTPObjects()
-{
-    std::unordered_map<std::string, std::string> mctpObjects{};
-    const auto& mctpCtrlServices = getMctpServices();
-    for (const auto& serviceName : mctpCtrlServices)
-    {
-        auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-        const auto objects = dbusUtil.getManagedObjects(serviceName.c_str(),
-                                                        mctpObjMgrPath.data());
-
-        for (const auto& [objectPath, interfaces] : objects)
-        {
-            if (!interfaces.contains(mctpEndpointIntfName))
-            {
-                continue;
-            }
-            const auto& mctpEID = std::get<uint8_t>(
-                interfaces.at(mctpEndpointIntfName).at("EID"));
-            if (mctpEID != eid)
-            {
-                continue;
-            }
-            mctpObjects[serviceName] = objectPath;
-            break;
-        }
-    }
-    return mctpObjects;
+    return {};
 }
 
 void MCTPDiscoveryResource::startWatchingMCTPObjects(bool needUpdateHealth)
 {
-    mctpEidObjects = getMCTPObjects();
-    if (mctpEidObjects.empty())
+    mctpObjectPath = getMCTPObjectPath();
+    if (mctpObjectPath.empty())
     {
-        if (mctpObjManagerMatch.empty())
+        if (!mctpObjManagerMatch)
         {
-            mctpObjManagerMatch.emplace_back(
+            mctpObjManagerMatch = std::make_unique<sdbusplus::bus::match_t>(
                 bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
                 [&]([[maybe_unused]] sdbusplus::message::message& msg) {
                     startWatchingMCTPObjects(true);
@@ -97,22 +61,14 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects(bool needUpdateHealth)
         return;
     }
 
-    mctpObjManagerMatch.clear();
+    mctpObjManagerMatch.reset();
 
-    for (const auto& [service, mctpObject] : mctpEidObjects)
-    {
-        deviceMatches.emplace_back(
-            bus,
-            MatchRules::propertiesChanged(mctpObject.c_str(),
-                                          mctpEndpointEnableIntfName),
-            std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
-                      std::placeholders::_1));
-
-        deviceMatches.emplace_back(
-            bus, MatchRules::interfacesAdded(mctpObject.c_str()),
-            std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
-                      std::placeholders::_1));
-    }
+    deviceMatch = std::make_unique<sdbusplus::bus::match_t>(
+        bus,
+        MatchRules::propertiesChanged(mctpObjectPath.c_str(),
+                                      mctpEndpointEnableIntfName),
+        std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
+                  std::placeholders::_1));
 
     if (needUpdateHealth)
     {
@@ -126,27 +82,24 @@ void MCTPDiscoveryResource::startWatchingMCTPObjects(bool needUpdateHealth)
 
 bool MCTPDiscoveryResource::checkForEnabledMCTPEids() const noexcept
 {
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-    std::string ret{};
-    for (const auto& [service, mctpObject] : mctpEidObjects)
+    if (mctpObjectPath.empty())
     {
-        try
-        {
-            ret = dbusUtil.getProperty<std::string>(
-                service.c_str(), mctpObject.c_str(), mctpEndpointEnableIntfName,
-                "Connectivity");
-            // return true if any of the MCTP EIDs are enabled
-            if (ret == "Available")
-            {
-                return true;
-            }
-        }
-        catch (const std::exception& e)
-        {
-            lg2::error(
-                "Failed to get Connectivity property for {OBJECT} on service {SERVICE}. Error: {ERROR}",
-                "OBJECT", mctpObject, "SERVICE", service, "ERROR", e.what());
-        }
+        return false;
     }
-    return ret == "Available";
+
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+    try
+    {
+        auto ret = dbusUtil.getProperty<std::string>(
+            mctpService, mctpObjectPath.c_str(), mctpEndpointEnableIntfName,
+            "Connectivity");
+        return ret == "Available";
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "Failed to get Connectivity property for EID {EID} at {OBJECT}. Error: {ERROR}",
+            "EID", eid, "OBJECT", mctpObjectPath, "ERROR", e.what());
+    }
+    return false;
 }

@@ -37,14 +37,14 @@ constexpr static int maxBootCompleteTimeout =
 
 /**@class APResource
  *
- *  Represents a resource which is expected to have one or more associated MCTP
- * Endpoints, and is capable of triggering MCTP Discovery based on its health
+ *  Represents a resource for Application Processor firmware monitoring
  *
+ *  - Extends MCTPDiscoveryResource for MCTP endpoint discovery
  *  - Updates Health/State of the resource based on MCTP Events and BootStatus
  *
  */
 template <typename T = mctp_vdm::requester::RequestRetryTimer>
-class APResource : public BaseResource
+class APResource : public MCTPDiscoveryResource
 {
   public:
     /**@brief Constructor for the APResource class
@@ -52,13 +52,14 @@ class APResource : public BaseResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
+     * @param apEid - MCTP Endpoint ID of the AP
+     * @param erotResource - Pointer to the associated ERoT resource
      *
      */
     APResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                uint8_t apEid, ERoTResource<T>* erotResource) :
-        BaseResource(bus, objPath), eid(apEid), erotResource(erotResource)
+        MCTPDiscoveryResource(bus, objPath, apEid), erotResource(erotResource)
     {
-        startWatchingApEid();
         initializeHealth().detach();
     }
 
@@ -80,75 +81,9 @@ class APResource : public BaseResource
     }
 
   private:
-    uint8_t eid;
-    std::string apMCTPService{};
     std::unique_ptr<sdbusplus::Timer> timer;
-    std::vector<sdbusplus::bus::match_t> mctpApObjManagerMatch;
     ERoTResource<T>* erotResource;
-    std::vector<sdbusplus::bus::match_t> deviceMatches;
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
-
-    /**@brief Callback function for MCTP event listeners
-     * Updates Health and State of the D-Bus object
-     *
-     * @return void
-     *
-     */
-    inline void onMCTPDiscoveryMsg(sdbusplus::message::message& msg)
-    {
-        lg2::info("MCTP Event received from Object: {OBJECT}, Updating Health",
-                  "OBJECT", msg.get_path());
-        updateHealth();
-    }
-
-    /**@brief Starts listening for events on AP MCTP EID object
-     *
-     * @return void
-     *
-     */
-    void startWatchingApEid() noexcept;
-
-    /**@brief Populates the MCTP service for the EID
-     *
-     * @param objPath D-Bus object path of MCTP EID
-     *
-     * @return void
-     */
-    void populateService(const std::string& objPath) noexcept;
-
-    /**@brief Checks whether the associated MCTP EID object is Enabled
-     *
-     * @return bool returns True when the EID is Enabled,
-     *              false otherwise
-     *
-     */
-    bool checkForEnabledApEid() const noexcept
-    {
-        if (apMCTPService.empty())
-        {
-            return false;
-        }
-
-        const auto objPath =
-            std::string(mctpObjPathPrefix) + std::to_string(eid);
-        auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-
-        auto ret = dbusUtil.getProperty<std::string>(
-            apMCTPService.c_str(), objPath.c_str(), mctpEndpointEnableIntfName,
-            "Connectivity");
-        return ret == "Available";
-    }
-
-    /**@brief Checks whether the associated MCTP EID object is enumerated
-     *
-     * @return bool returns True when the EID is enumerated,
-     *              false otherwise
-     *
-     */
-    inline bool isApEnumerated() const noexcept
-    {
-        return !apMCTPService.empty();
-    }
 
     /**@brief Checks whether the AP FW is healthy based on the associated MCTP
      * EID object
@@ -159,7 +94,7 @@ class APResource : public BaseResource
      */
     inline bool isApHealthy() const noexcept
     {
-        return isApEnumerated() and checkForEnabledApEid();
+        return isDeviceEnumerated() and checkForEnabledMCTPEids();
     }
 
     /**@brief Checks whether the EC FW is healthy based on the ERoT MCTP EID

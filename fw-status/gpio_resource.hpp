@@ -92,7 +92,6 @@ class GPIOResource : public BaseResource
   private:
     sdeventplus::Event& sdEvent;
     uint8_t eid;
-    std::vector<sdbusplus::bus::match_t> mctpObjManagerMatch;
     std::string gpioLineName;
     std::string systemTarget;
     std::string risingTarget;

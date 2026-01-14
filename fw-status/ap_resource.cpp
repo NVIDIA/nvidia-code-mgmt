@@ -28,31 +28,6 @@
 using namespace phosphor::logging;
 
 template <typename T>
-void APResource<T>::populateService(const std::string& objPath) noexcept
-{
-    try
-    {
-        auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
-                                          MAPPER_INTERFACE, "GetObject");
-
-        mapper.append(objPath.c_str(),
-                      std::vector<std::string>({mctpEndpointEnableIntfName}));
-        auto mapperResponseMsg = bus.call(mapper);
-        std::vector<std::pair<std::string, std::vector<std::string>>>
-            mapperResponse;
-        mapperResponseMsg.read(mapperResponse);
-
-        apMCTPService = mapperResponse.at(0).first;
-    }
-    catch (const sdbusplus::exception::SdBusError& ex)
-    {
-        lg2::error(
-            "Could not find {PATH}. MCTP EID for AP is not enumerated now",
-            "PATH", objPath, "INTERFACE", mctpEndpointEnableIntfName);
-    }
-}
-
-template <typename T>
 mctp_vdm::requester::Coroutine APResource<T>::initializeHealth()
 {
     if (isERoTHealthy())
@@ -81,36 +56,6 @@ mctp_vdm::requester::Coroutine APResource<T>::initializeHealth()
     }
 
     co_return 0;
-}
-
-template <typename T>
-void APResource<T>::startWatchingApEid() noexcept
-{
-    const auto objPath = std::string(mctpObjPathPrefix) + std::to_string(eid);
-    populateService(objPath);
-
-    if (apMCTPService.empty())
-    {
-
-        mctpApObjManagerMatch.emplace_back(
-            bus, MatchRules::interfacesAdded("/xyz/openbmc_project/mctp"),
-            [&]([[maybe_unused]] sdbusplus::message::message& msg) {
-                startWatchingApEid();
-            });
-        return;
-    }
-
-    mctpApObjManagerMatch.clear();
-
-    deviceMatches.emplace_back(bus,
-                               MatchRules::propertiesChanged(
-                                   objPath.c_str(), mctpEndpointEnableIntfName),
-                               std::bind(&APResource::onMCTPDiscoveryMsg, this,
-                                         std::placeholders::_1));
-    deviceMatches.emplace_back(bus,
-                               MatchRules::interfacesAdded(objPath.c_str()),
-                               std::bind(&APResource::onMCTPDiscoveryMsg, this,
-                                         std::placeholders::_1));
 }
 
 template <typename T>

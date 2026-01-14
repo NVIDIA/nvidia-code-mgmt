@@ -312,8 +312,6 @@ mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
         co_return 0;
     }
 
-    mctpObjManagerMatch.clear();
-
     const mctp_vdm::Message* responseMsg = nullptr;
     size_t responseLen = 0;
     co_await mctpVdmHelper->queryBootStatus(eid, responseMsg, responseLen);
