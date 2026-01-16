@@ -90,8 +90,7 @@ mctp_vdm::requester::Coroutine APResource<T>::updateHealthAsync()
 template <typename T>
 bool APResource<T>::isERoTHealthy() const noexcept
 {
-    return erotResource->isDeviceEnumerated() and
-           erotResource->checkForEnabledMCTPEids();
+    return erotResource->isDeviceEnumerated();
 }
 
 template <typename T>

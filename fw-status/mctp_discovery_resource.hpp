@@ -26,8 +26,6 @@
 #include <string_view>
 
 constexpr static auto mctpEndpointIntfName{"xyz.openbmc_project.MCTP.Endpoint"};
-constexpr static auto mctpEndpointEnableIntfName{
-    "au.com.codeconstruct.MCTP.Endpoint1"};
 constexpr static auto mctpService{"au.com.codeconstruct.MCTP1"};
 constexpr static std::string_view mctpObjPathPrefix =
     "/au/com/codeconstruct/mctp1/networks/1/endpoints/";
@@ -56,9 +54,7 @@ class MCTPDiscoveryResource : public BaseResource
     MCTPDiscoveryResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                           uint8_t eid) : BaseResource(bus, objPath), eid(eid)
     {
-        // Don't update health on startup because the inherited resource
-        // will do that in its constructor
-        startWatchingMCTPObjects(false);
+        monitorMCTPEndpoint();
     }
 
     /**@brief Fetches EID for the resource
@@ -71,15 +67,7 @@ class MCTPDiscoveryResource : public BaseResource
         return eid;
     }
 
-    /**@brief Checks whether the associated MCTP endpoint is enabled
-     *
-     * @return bool - True if the MCTP EID is enabled,
-     *                False otherwise
-     *
-     */
-    bool checkForEnabledMCTPEids() const noexcept;
-
-    /**@brief Checks whether the resource has an associated MCTP endpoint
+    /**@brief Checks whether the resource has any associated MCTP endpoints
      * enumerated
      *
      * @return bool - True if the MCTP EID is enumerated,
@@ -93,7 +81,6 @@ class MCTPDiscoveryResource : public BaseResource
 
   protected:
     std::string mctpObjectPath;
-    std::unique_ptr<sdbusplus::bus::match_t> deviceMatch;
 
     /**@brief Callback function for MCTP event listeners
      * Updates Health and State of the D-Bus object
@@ -110,7 +97,8 @@ class MCTPDiscoveryResource : public BaseResource
 
   private:
     const uint8_t eid;
-    std::unique_ptr<sdbusplus::bus::match_t> mctpObjManagerMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> endpointAddedMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> endpointRemovedMatch;
 
     /**@brief Fetches the MCTP object path for the resource's EID
      *
@@ -126,10 +114,7 @@ class MCTPDiscoveryResource : public BaseResource
      */
     virtual void updateHealth() = 0;
 
-    /**@brief Start listening for events on MCTP objects
-     *
-     * @return void
-     *
+    /**@brief Monitor MCTP endpoint for add/remove events
      */
-    void startWatchingMCTPObjects(bool needUpdateHealth);
+    void monitorMCTPEndpoint();
 };

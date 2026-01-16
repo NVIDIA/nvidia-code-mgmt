@@ -45,61 +45,69 @@ std::string MCTPDiscoveryResource::getMCTPObjectPath()
     return {};
 }
 
-void MCTPDiscoveryResource::startWatchingMCTPObjects(bool needUpdateHealth)
+void MCTPDiscoveryResource::monitorMCTPEndpoint()
 {
     mctpObjectPath = getMCTPObjectPath();
-    if (mctpObjectPath.empty())
+
+    if (!endpointAddedMatch)
     {
-        if (!mctpObjManagerMatch)
-        {
-            mctpObjManagerMatch = std::make_unique<sdbusplus::bus::match_t>(
-                bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
-                [&]([[maybe_unused]] sdbusplus::message::message& msg) {
-                    startWatchingMCTPObjects(true);
-                });
-        }
-        return;
+        endpointAddedMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            MatchRules::interfacesAdded(mctpObjMgrPath.data()) +
+                MatchRules::sender(mctpService),
+            [this](sdbusplus::message::message& msg) {
+                try
+                {
+                    sdbusplus::message::object_path addedPath;
+                    nvidia::software::updater::InterfaceMap interfaces;
+                    msg.read(addedPath, interfaces);
+
+                    if (!interfaces.contains(mctpEndpointIntfName))
+                    {
+                        return;
+                    }
+
+                    const auto* mctpEID = std::get_if<uint8_t>(
+                        &interfaces.at(mctpEndpointIntfName).at("EID"));
+                    if (mctpEID && *mctpEID == eid)
+                    {
+                        mctpObjectPath = addedPath.str;
+                        updateHealth();
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    lg2::error(
+                        "Failed to process MCTP interfacesAdded signal: {ERROR}",
+                        "ERROR", e);
+                }
+            });
     }
 
-    mctpObjManagerMatch.reset();
-
-    deviceMatch = std::make_unique<sdbusplus::bus::match_t>(
-        bus,
-        MatchRules::propertiesChanged(mctpObjectPath.c_str(),
-                                      mctpEndpointEnableIntfName),
-        std::bind(&MCTPDiscoveryResource::onMCTPDiscoveryMsg, this,
-                  std::placeholders::_1));
-
-    if (needUpdateHealth)
+    if (!endpointRemovedMatch)
     {
-        // Force a health status update since we might have missed the signals
-        // during MCTP enumeration. The signals
-        // (propertiesChanged/interfacesAdded) could have been sent before we
-        // set up the matches above.
-        updateHealth();
-    }
-}
+        endpointRemovedMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            MatchRules::interfacesRemoved(mctpObjMgrPath.data()) +
+                MatchRules::sender(mctpService),
+            [this](sdbusplus::message::message& msg) {
+                try
+                {
+                    sdbusplus::message::object_path removedPath;
+                    msg.read(removedPath);
 
-bool MCTPDiscoveryResource::checkForEnabledMCTPEids() const noexcept
-{
-    if (mctpObjectPath.empty())
-    {
-        return false;
+                    if (removedPath.str == mctpObjectPath)
+                    {
+                        mctpObjectPath.clear();
+                        updateHealth();
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    lg2::error(
+                        "Failed to process MCTP interfacesRemoved signal: {ERROR}",
+                        "ERROR", e);
+                }
+            });
     }
-
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
-    try
-    {
-        auto ret = dbusUtil.getProperty<std::string>(
-            mctpService, mctpObjectPath.c_str(), mctpEndpointEnableIntfName,
-            "Connectivity");
-        return ret == "Available";
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error(
-            "Failed to get Connectivity property for EID {EID} at {OBJECT}. Error: {ERROR}",
-            "EID", eid, "OBJECT", mctpObjectPath, "ERROR", e.what());
-    }
-    return false;
 }

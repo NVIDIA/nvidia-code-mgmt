@@ -85,16 +85,16 @@ class GpuResource : public MCTPDiscoveryResource
 
         updateHealth();
 
-        startWatchingSMAMCTPObjects(false);
+        monitorSMAEndpoint();
     }
 
   private:
     std::unique_ptr<recovery_tool::recovery_commands::OCPRecoveryCommands>
         ocpRecoveryCommands;
     std::unique_ptr<BootStatus> bootStatus;
-    std::unique_ptr<sdbusplus::bus::match_t> mctpSMAObjManagerMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> smaEndpointAddedMatch;
     std::string smaMctpObjectPath;
-    std::unique_ptr<sdbusplus::bus::match_t> deviceSMAMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
     uint8_t smaEid{};
 
     /* @brief Override function for updating Health and Status of D-Bus object
@@ -128,10 +128,9 @@ class GpuResource : public MCTPDiscoveryResource
         bootStatus->bootStatus(
             std::vector<uint8_t>(output.begin() + 1, output.end()));
 
-        if (MCTPDiscoveryResource::isDeviceEnumerated() and
-            MCTPDiscoveryResource::checkForEnabledMCTPEids())
+        if (MCTPDiscoveryResource::isDeviceEnumerated())
         {
-            lg2::info("MCTP EID for {PATH} is enumerated and enabled", "PATH",
+            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
                       path.c_str());
             health(HealthServer::HealthType::OK);
             state(OperationalStatusServer::StateType::Enabled);
@@ -175,10 +174,10 @@ class GpuResource : public MCTPDiscoveryResource
                 continue;
             }
 
-            const auto& mctpEID = std::get<uint8_t>(
-                interfaces.at(mctpEndpointIntfName).at("EID"));
+            const auto* mctpEID = std::get_if<uint8_t>(
+                &interfaces.at(mctpEndpointIntfName).at("EID"));
 
-            if (mctpEID == smaEid)
+            if (mctpEID && (*mctpEID == smaEid))
             {
                 return objectPath;
             }
@@ -186,46 +185,72 @@ class GpuResource : public MCTPDiscoveryResource
         return {};
     }
 
-    /**@brief Start watching for events on SMA MCTP objects
-     *
-     * @param needUpdateHealth - Whether to force a health status update
-     *
-     * @return void
-     *
+    /**@brief Monitor SMA MCTP endpoint for add/remove events
      */
-    void startWatchingSMAMCTPObjects(bool needUpdateHealth)
+    void monitorSMAEndpoint()
     {
-        // Clear any existing matches first to prevent accumulation
-        mctpSMAObjManagerMatch.reset();
-        deviceSMAMatch.reset();
-
         smaMctpObjectPath = getSMAMCTPObjectPath();
-        if (smaMctpObjectPath.empty())
+
+        if (!smaEndpointAddedMatch)
         {
-            mctpSMAObjManagerMatch = std::make_unique<sdbusplus::bus::match_t>(
-                bus, MatchRules::interfacesAdded(mctpObjMgrPath.data()),
-                [&]([[maybe_unused]] sdbusplus::message::message& msg) {
-                    startWatchingSMAMCTPObjects(true);
+            smaEndpointAddedMatch = std::make_unique<sdbusplus::bus::match_t>(
+                bus,
+                MatchRules::interfacesAdded(mctpObjMgrPath.data()) +
+                    MatchRules::sender(mctpService),
+                [this](sdbusplus::message::message& msg) {
+                    try
+                    {
+                        sdbusplus::message::object_path addedPath;
+                        nvidia::software::updater::InterfaceMap interfaces;
+                        msg.read(addedPath, interfaces);
+
+                        if (!interfaces.contains(mctpEndpointIntfName))
+                        {
+                            return;
+                        }
+
+                        const auto* mctpEID = std::get_if<uint8_t>(
+                            &interfaces.at(mctpEndpointIntfName).at("EID"));
+                        if (mctpEID && (*mctpEID == smaEid))
+                        {
+                            smaMctpObjectPath = addedPath.str;
+                            updateHealth();
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        lg2::error(
+                            "Failed to process SMA MCTP interfacesAdded signal: {ERROR}",
+                            "ERROR", e);
+                    }
                 });
-            return;
         }
 
-        mctpSMAObjManagerMatch.reset();
-
-        deviceSMAMatch = std::make_unique<sdbusplus::bus::match_t>(
-            bus,
-            MatchRules::propertiesChanged(smaMctpObjectPath.c_str(),
-                                          mctpEndpointEnableIntfName),
-            std::bind(&GpuResource::onMCTPDiscoveryMsg, this,
-                      std::placeholders::_1));
-
-        if (needUpdateHealth)
+        if (!smaEndpointRemovedMatch)
         {
-            // Force a health status update since we might have missed the
-            // signals during MCTP enumeration. The signals
-            // (propertiesChanged/interfacesAdded) could have been sent before
-            // we set up the matches above.
-            updateHealth();
+            smaEndpointRemovedMatch = std::make_unique<sdbusplus::bus::match_t>(
+                bus,
+                MatchRules::interfacesRemoved(mctpObjMgrPath.data()) +
+                    MatchRules::sender(mctpService),
+                [this](sdbusplus::message::message& msg) {
+                    try
+                    {
+                        sdbusplus::message::object_path removedPath;
+                        msg.read(removedPath);
+
+                        if (removedPath.str == smaMctpObjectPath)
+                        {
+                            smaMctpObjectPath.clear();
+                            updateHealth();
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        lg2::error(
+                            "Failed to process SMA MCTP interfacesRemoved signal: {ERROR}",
+                            "ERROR", e);
+                    }
+                });
         }
     }
 };

@@ -94,7 +94,7 @@ class APResource : public MCTPDiscoveryResource
      */
     inline bool isApHealthy() const noexcept
     {
-        return isDeviceEnumerated() and checkForEnabledMCTPEids();
+        return isDeviceEnumerated();
     }
 
     /**@brief Checks whether the EC FW is healthy based on the ERoT MCTP EID

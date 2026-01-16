@@ -107,11 +107,9 @@ void ERoTResource<T>::updateERoTHealth()
         return;
     }
 
-    if (MCTPDiscoveryResource::isDeviceEnumerated() and
-        MCTPDiscoveryResource::checkForEnabledMCTPEids())
+    if (MCTPDiscoveryResource::isDeviceEnumerated())
     {
-        lg2::info("MCTP EID for {PATH} is enumerated and enabled", "PATH",
-                  path.c_str());
+        lg2::info("MCTP EID for {PATH} is enumerated", "PATH", path.c_str());
         health(HealthServer::HealthType::OK);
         state(OperationalStatusServer::StateType::Enabled);
         return;
@@ -162,8 +160,7 @@ mctp_vdm::requester::Coroutine ERoTResource<T>::updateBootStatusAsync()
                    "EID", fetchEid());
         co_return 0;
     }
-    if (MCTPDiscoveryResource::isDeviceEnumerated() and
-        MCTPDiscoveryResource::checkForEnabledMCTPEids())
+    if (MCTPDiscoveryResource::isDeviceEnumerated())
     {
         const mctp_vdm::Message* responseMsg = nullptr;
         size_t responseLen = 0;
