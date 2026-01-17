@@ -103,7 +103,6 @@ constexpr auto nsmDebugTokenPath = "/";
 constexpr auto propertiesIntfName = "org.freedesktop.DBus.Properties";
 
 constexpr auto nsmTokenTypeCRDT = "com.nvidia.DebugToken.TokenTypes.CRDT";
-constexpr uint32_t EraseAll = 0xFFFFFFFF;
 constexpr auto nsmTokenStatusDebugSessionActive =
     "com.nvidia.DebugToken.TokenStatus.DebugSessionActive";
 constexpr auto nsmTokenStatusTokenTimeout =
@@ -741,8 +740,7 @@ class UpdateDebugToken : public TokenUtility
      * @param path NSM endpoint D-Bus object path
      * @return Async operation object path on success, empty string on failure
      */
-    std::string handleAsyncCallEraseV2(const std::string& path,
-                                       uint32_t eraseType = EraseAll);
+    std::string handleAsyncCallEraseV2(const std::string& path);
 
     /**
      * Helper function to make com.nvidia.DebugToken method calls

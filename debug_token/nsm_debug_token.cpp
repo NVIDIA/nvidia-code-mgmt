@@ -550,11 +550,13 @@ std::string UpdateDebugToken::handleAsyncCallInstallV2(const std::string& path,
     }
 }
 
-std::string UpdateDebugToken::handleAsyncCallEraseV2(const std::string& path,
-                                                     uint32_t eraseType)
+std::string UpdateDebugToken::handleAsyncCallEraseV2(const std::string& path)
 {
     std::string asyncObjectPath, status;
     std::unique_ptr<sdbusplus::bus::match_t> statusMatch;
+    const std::string eraseType =
+        "com.nvidia.DebugToken.Action.EraseType.EraseAll";
+    const std::string tokenType = "com.nvidia.DebugToken.Common.Types.None";
     std::string matchRule =
         sdbusplus::bus::match::rules::propertiesChangedNamespace(
             nsmAsyncBasePath, nsmAsyncStatusIntfName);
@@ -585,7 +587,7 @@ std::string UpdateDebugToken::handleAsyncCallEraseV2(const std::string& path,
         auto eraseMethod =
             bus.new_method_call(nsmService, path.c_str(),
                                 nsmDebugTokenActionIntfName, "EraseToken");
-        eraseMethod.append(eraseType);
+        eraseMethod.append(eraseType, tokenType);
         auto eraseReply = bus.call(eraseMethod);
 
         sdbusplus::message::object_path asyncPath;
