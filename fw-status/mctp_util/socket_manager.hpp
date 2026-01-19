@@ -45,7 +45,7 @@ class Manager
     /** @brief Register MCTP endpoint
      *
      *  @param[in] eid - MCTP endpoint ID
-     *  @param[in] fd - File descriptor of MCTP demux daemon socket to do Tx/Rx
+     *  @param[in] fd - File descriptor of MCTP socket to do Tx/Rx
      *                  with the MCTP endpoint ID
      */
     void registerEndpoint(uint8_t eid, FileDesc fd)
@@ -53,16 +53,20 @@ class Manager
         eidToFd[eid] = fd;
     }
 
-    /** @brief Get the MCTP demux daemon socket file descriptor associated with
-     *         the uint8_t
+    /** @brief Get the MCTP socket file descriptor associated with the endpoint
      *
      *  @param[in] eid - MCTP endpoint ID
      *
-     *  @return MCTP demux daemon's file descriptor
+     *  @return MCTP socket file descriptor, or -1 if EID is not registered
      */
-    int getSocket(uint8_t eid)
+    int getSocket(uint8_t eid) const
     {
-        return eidToFd[eid];
+        auto it = eidToFd.find(eid);
+        if (it == eidToFd.end())
+        {
+            return -1;
+        }
+        return it->second;
     }
 
     /** @brief Clear all the MCTP endpoints

@@ -27,8 +27,7 @@
 
 using namespace phosphor::logging;
 
-template <typename T>
-mctp_vdm::requester::Coroutine APResource<T>::initializeHealth()
+mctp_vdm::requester::Coroutine APResource::initializeHealth()
 {
     if (isERoTHealthy())
     {
@@ -58,8 +57,7 @@ mctp_vdm::requester::Coroutine APResource<T>::initializeHealth()
     co_return 0;
 }
 
-template <typename T>
-mctp_vdm::requester::Coroutine APResource<T>::updateHealthAsync()
+mctp_vdm::requester::Coroutine APResource::updateHealthAsync()
 {
     if (isERoTHealthy())
     {
@@ -87,14 +85,12 @@ mctp_vdm::requester::Coroutine APResource<T>::updateHealthAsync()
     co_return 0;
 }
 
-template <typename T>
-bool APResource<T>::isERoTHealthy() const noexcept
+bool APResource::isERoTHealthy() const noexcept
 {
     return erotResource->isDeviceEnumerated();
 }
 
-template <typename T>
-bool APResource<T>::isAPInRecovery() const noexcept
+bool APResource::isAPInRecovery() const noexcept
 {
     if (isERoTHealthy())
     {
@@ -106,12 +102,3 @@ bool APResource<T>::isAPInRecovery() const noexcept
     }
     return !isApHealthy();
 }
-
-#ifdef MCTP_IN_KERNEL
-using TRequest = mctp_vdm::requester::InKernelRequest;
-#else
-using TRequest = mctp_vdm::requester::DaemonRequest;
-#endif
-
-// Explicit template instantiations
-template class APResource<TRequest>;

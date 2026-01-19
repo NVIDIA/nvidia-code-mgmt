@@ -37,10 +37,8 @@ using namespace sdeventplus::source;
 
 /** @class Handler
  *
- *  Base class for MCTP socket handlers that defines the interface for
- *  communication with MCTP endpoints.
+ *  Handler class for in-kernel MCTP socket communication with MCTP endpoints.
  */
-template <typename T = mctp_vdm::requester::RequestRetryTimer>
 class Handler
 {
   public:
@@ -49,16 +47,16 @@ class Handler
     Handler(Handler&&) = default;
     Handler& operator=(const Handler&) = delete;
     Handler& operator=(Handler&&) = default;
-    virtual ~Handler() = default;
+    ~Handler() = default;
 
     /** @brief Constructor
      *
-     *  @param[in] event - daemon's main event loop
+     *  @param[in] event - service's main event loop
      *  @param[in] handler - MCTP VDM request handler
      *  @param[in/out] manager - MCTP socket manager
      */
     explicit Handler(sdeventplus::Event& event,
-                     mctp_vdm::requester::Handler<T>& handler,
+                     mctp_vdm::requester::Handler& handler,
                      mctp_socket::Manager& manager) :
         event(event), handler(handler), manager(manager)
     {}
@@ -145,18 +143,23 @@ class Handler
         manager.clearMctpEndpoint(eid);
     }
 
-  protected:
+  private:
     sdeventplus::Event& event;
-    mctp_vdm::requester::Handler<T>& handler;
+    mctp_vdm::requester::Handler& handler;
     mctp_socket::Manager& manager;
 
-    /** @brief Socket information for MCTP Tx/Rx daemons */
+    /** @brief Socket information for MCTP Tx/Rx */
     std::map<std::vector<uint8_t>,
              std::tuple<std::unique_ptr<utils::CustomFD>, std::unique_ptr<IO>>>
         socketInfoMap;
 
-    /** @brief Socket information for MCTP Tx/Rx daemons */
+    /** @brief Endpoint to socket mapping */
     std::map<uint8_t, std::tuple<int, int, std::vector<uint8_t>>> eidToSockMap;
+
+    std::unique_ptr<IO> io;
+    int fd{-1};
+    int sendBufferSize{0};
+    bool isFdValid{false};
 
     /** @brief
      * Checks for active requests on the same communication path as the input
@@ -191,49 +194,23 @@ class Handler
      *  @param[in] pathName - socket path name
      *  @return socket file descriptor on success, negative value on failure
      */
-    virtual int initSocket(int type, int protocol,
-                           const std::vector<uint8_t>& pathName) = 0;
+    int initSocket(int type, int protocol,
+                   const std::vector<uint8_t>& pathName);
+
+    /** @brief Handle received MCTP message
+     *
+     *  @param[in] io - IO source reference
+     *  @param[in] fd - file descriptor
+     *  @param[in] revents - events
+     */
+    void handleReceivedMsg(IO& io, int fd, uint32_t revents);
 
     /** @brief Process received MCTP message
      *
+     *  @param[in] eid - endpoint ID
      *  @param[in] requestMsg - received message data
      */
     void processRxMsg(uint8_t eid, const std::vector<uint8_t>& requestMsg);
-};
-
-/** @class DaemonHandler
- *
- *  Handler implementation for MCTP communication via daemon
- */
-class DaemonHandler : public Handler<mctp_vdm::requester::DaemonRequest>
-{
-  public:
-    using Handler<mctp_vdm::requester::DaemonRequest>::Handler;
-
-  private:
-    int initSocket(int type, int protocol,
-                   const std::vector<uint8_t>& pathName) override;
-    void handleReceivedMsg(IO& io, int fd, uint32_t revents);
-};
-
-/** @class InKernelHandler
- *
- *  Handler implementation for in-kernel MCTP communication
- */
-class InKernelHandler : public Handler<mctp_vdm::requester::InKernelRequest>
-{
-  public:
-    using Handler<mctp_vdm::requester::InKernelRequest>::Handler;
-
-  private:
-    int initSocket(int type, int protocol,
-                   const std::vector<uint8_t>& pathName) override;
-    void handleReceivedMsg(IO& io, int fd, uint32_t revents);
-
-    std::unique_ptr<IO> io;
-    int fd{-1};
-    int sendBufferSize{0};
-    bool isFdValid{false};
 };
 
 } // namespace mctp_socket

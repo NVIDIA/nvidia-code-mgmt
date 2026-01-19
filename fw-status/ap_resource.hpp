@@ -26,7 +26,6 @@
 #include <coroutine>
 
 using namespace phosphor::logging;
-template <typename T>
 class ERoTResource;
 
 constexpr static int maxBootCompleteTimeoutPerAttempt = 120;
@@ -43,7 +42,6 @@ constexpr static int maxBootCompleteTimeout =
  *  - Updates Health/State of the resource based on MCTP Events and BootStatus
  *
  */
-template <typename T = mctp_vdm::requester::RequestRetryTimer>
 class APResource : public MCTPDiscoveryResource
 {
   public:
@@ -57,7 +55,7 @@ class APResource : public MCTPDiscoveryResource
      *
      */
     APResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-               uint8_t apEid, ERoTResource<T>* erotResource) :
+               uint8_t apEid, ERoTResource* erotResource) :
         MCTPDiscoveryResource(bus, objPath, apEid), erotResource(erotResource)
     {
         initializeHealth().detach();
@@ -82,7 +80,7 @@ class APResource : public MCTPDiscoveryResource
 
   private:
     std::unique_ptr<sdbusplus::Timer> timer;
-    ERoTResource<T>* erotResource;
+    ERoTResource* erotResource;
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
 
     /**@brief Checks whether the AP FW is healthy based on the associated MCTP

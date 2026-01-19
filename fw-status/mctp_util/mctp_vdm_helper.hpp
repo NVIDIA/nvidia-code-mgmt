@@ -75,7 +75,6 @@ class MctpDiscoveryHandlerIntf;
  *  communicate with the endpoint. The lookup APIs are used when processing MCTP
  *  VDM Rx messages and when sending MCTP VDM Tx messages.
  */
-template <typename T = mctp_vdm::requester::RequestRetryTimer>
 class MCTPVdmHelper : public mctp_vdm::MctpDiscoveryHandlerIntf
 {
   public:
@@ -90,12 +89,12 @@ class MCTPVdmHelper : public mctp_vdm::MctpDiscoveryHandlerIntf
      *
      *  @param[in] bus - reference to systemd bus
      *  @param[in] reqHandler - MCTP VDM requester handler
-     *  @param[in] sockHandler - MCTP demux daemon socket handler
+     *  @param[in] sockHandler - MCTP socket handler
      *  @param[in] instanceIdMgr - Instance ID Manager
      */
     explicit MCTPVdmHelper(sdbusplus::bus::bus& bus,
-                           mctp_vdm::requester::Handler<T>& reqHandler,
-                           mctp_socket::Handler<T>& sockHandler,
+                           mctp_vdm::requester::Handler& reqHandler,
+                           mctp_socket::Handler& sockHandler,
                            mctp_vdm::InstanceIdMgr& instanceIdMgr);
 
     mctp_vdm::requester::Coroutine
@@ -113,9 +112,9 @@ class MCTPVdmHelper : public mctp_vdm::MctpDiscoveryHandlerIntf
     /** @brief reference to the systemd bus */
     sdbusplus::bus::bus& bus;
 
-    mctp_vdm::requester::Handler<T>& reqHandler;
+    mctp_vdm::requester::Handler& reqHandler;
 
-    mctp_socket::Handler<T>& sockHandler;
+    mctp_socket::Handler& sockHandler;
 
     mctp::MctpInfoMap mctpInfoMap;
 

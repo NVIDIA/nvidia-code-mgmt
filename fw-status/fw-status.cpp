@@ -63,18 +63,7 @@ std::vector<std::unique_ptr<BaseResource>> resources;
 
 std::unique_ptr<sdbusplus::bus::match_t> entityManagerServiceMatch;
 
-#ifdef MCTP_IN_KERNEL
-using TRequest = mctp_vdm::requester::InKernelRequest;
-using TSocketHandler = mctp_socket::InKernelHandler;
-#else
-using TRequest = mctp_vdm::requester::DaemonRequest;
-using TSocketHandler = mctp_socket::DaemonHandler;
-#endif
-
-template class mctp_vdm::MctpDiscovery<TRequest>;
-template class mctp_socket::Handler<TRequest>;
-
-std::shared_ptr<MCTPVdmHelper<TRequest>> mctpVdmHelper;
+std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
 std::shared_ptr<mcu_recovery_manager::MCURecoveryManager> mcuRecoveryManager;
 
 void checkEntityManagerAvailability();
@@ -510,18 +499,16 @@ void publishDBusRecoveryObject()
                     const auto apName = getString(
                         interfaces, glacierCrisisObjInterface, "APName");
                     const auto apObjPath = getSoftwareDBusObjectPath(apName);
-                    resources.push_back(
-                        std::make_unique<ERoTResource<TRequest>>(
-                            getBus(), objPath, event, i2cBus, i2cAddress, eid,
-                            apEid, chassisObjPath, apObjPath, isRecoverable,
-                            mctpVdmHelper));
+                    resources.push_back(std::make_unique<ERoTResource>(
+                        getBus(), objPath, event, i2cBus, i2cAddress, eid,
+                        apEid, chassisObjPath, apObjPath, isRecoverable,
+                        mctpVdmHelper));
                 }
                 else
                 {
-                    resources.push_back(
-                        std::make_unique<ERoTResource<TRequest>>(
-                            getBus(), objPath, event, eid, chassisObjPath,
-                            isRecoverable, mctpVdmHelper));
+                    resources.push_back(std::make_unique<ERoTResource>(
+                        getBus(), objPath, event, eid, chassisObjPath,
+                        isRecoverable, mctpVdmHelper));
                 }
             }
         }
@@ -550,7 +537,7 @@ void publishDBusRecoveryObject()
                     getUint64(interfaces, gpioObjInterface, "I2CAddress");
                 const auto target =
                     getString(interfaces, gpioObjInterface, "Target");
-                resources.push_back(std::make_unique<GPIOResource<TRequest>>(
+                resources.push_back(std::make_unique<GPIOResource>(
                     getBus(), objPath, event, i2cBus, i2cAddress, eid, gpio,
                     target));
             }
@@ -575,7 +562,7 @@ void publishDBusRecoveryObject()
                         getString(interfaces, gpioObjInterface, "ChassisName");
                     chassisObjPath = getChassisObjPath(chassisName);
                 }
-                resources.push_back(std::make_unique<GPIOResource<TRequest>>(
+                resources.push_back(std::make_unique<GPIOResource>(
                     getBus(), objPath, event, eid, gpio, risingTarget,
                     fallingTarget, polarity, chassisObjPath, mctpVdmHelper));
             }
@@ -651,9 +638,6 @@ bool checkForRecoveryConfigEMObjects()
  * If the recovery configurations are already present, the function immediately
  * publishes the DBus recovery object without waiting for any interface to be
  * added.
- *
- * @param mctpVdmHelper A shared pointer to an 'MCTPVdmHelper' object, which is
- *        used in the process of publishing the D-Bus recovery object.
  */
 void checkEntityManagerAvailability()
 {
@@ -701,14 +685,14 @@ int main()
     mctp_socket::Manager sockManager;
     mctp_vdm::InstanceIdMgr instanceIdMgr;
 
-    requester::Handler<TRequest> reqHandler(event, instanceIdMgr, sockManager);
-    TSocketHandler sockHandler(event, reqHandler, sockManager);
+    requester::Handler reqHandler(event, instanceIdMgr, sockManager);
+    mctp_socket::Handler sockHandler(event, reqHandler, sockManager);
 
-    mctpVdmHelper = std::make_shared<MCTPVdmHelper<TRequest>>(
-        getBus(), reqHandler, sockHandler, instanceIdMgr);
+    mctpVdmHelper = std::make_shared<MCTPVdmHelper>(getBus(), reqHandler,
+                                                    sockHandler, instanceIdMgr);
 
-    std::unique_ptr<mctp_vdm::MctpDiscovery<TRequest>> mctpDiscoveryHandler =
-        std::make_unique<mctp_vdm::MctpDiscovery<TRequest>>(
+    std::unique_ptr<mctp_vdm::MctpDiscovery> mctpDiscoveryHandler =
+        std::make_unique<mctp_vdm::MctpDiscovery>(
             getBus(), sockHandler,
             std::initializer_list<mctp_vdm::MctpDiscoveryHandlerIntf*>{
                 mctpVdmHelper.get()});

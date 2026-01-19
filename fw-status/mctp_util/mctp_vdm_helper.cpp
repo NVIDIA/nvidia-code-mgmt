@@ -26,25 +26,23 @@
 
 using namespace mctp_vdm;
 
-template <typename T>
-MCTPVdmHelper<T>::MCTPVdmHelper(sdbusplus::bus::bus& bus,
-                                mctp_vdm::requester::Handler<T>& reqHandler,
-                                mctp_socket::Handler<T>& sockHandler,
-                                mctp_vdm::InstanceIdMgr& instanceIdMgr) :
+MCTPVdmHelper::MCTPVdmHelper(sdbusplus::bus::bus& bus,
+                             mctp_vdm::requester::Handler& reqHandler,
+                             mctp_socket::Handler& sockHandler,
+                             mctp_vdm::InstanceIdMgr& instanceIdMgr) :
     bus(bus), reqHandler(reqHandler), sockHandler(sockHandler),
     instanceIdMgr(instanceIdMgr)
 {}
 
-template <typename T>
-mctp_vdm::requester::Coroutine MCTPVdmHelper<T>::queryBootStatus(
+mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatus(
     uint8_t eid, const mctp_vdm::Message*& responseMsg, size_t& responseLen)
 {
     // Initialize MCTP sockets for the list of endpoints
     auto ret = sockHandler.activateSockets({eid});
     if (ret < 0)
     {
-        lg2::error("Activating MCTP demux daemon sockets failed. ret={RET}",
-                   "RET", unsigned(ret));
+        lg2::error("Activating MCTP sockets failed. ret={RET}", "RET",
+                   unsigned(ret));
         co_return ret;
     }
 
@@ -61,8 +59,7 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper<T>::queryBootStatus(
     co_return rc;
 }
 
-template <typename T>
-mctp_vdm::requester::Coroutine MCTPVdmHelper<T>::queryBootStatusImpl(
+mctp_vdm::requester::Coroutine MCTPVdmHelper::queryBootStatusImpl(
     uint8_t eid, const mctp_vdm::Message*& responseMsg, size_t& responseLen)
 {
     mctp::Request request(sizeof(mctp_vdm::MsgHeader));
@@ -74,9 +71,8 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper<T>::queryBootStatusImpl(
     requestMsg->commandCode = 0x05;
     requestMsg->msgVersion = nvidiaMsgVersion;
 
-    auto rc = co_await mctp_vdm::requester::SendRecvMctpVdmMsg<
-        mctp_vdm::requester::Handler<T>>(reqHandler, eid, request, &responseMsg,
-                                         &responseLen);
+    auto rc = co_await mctp_vdm::requester::SendRecvMctpVdmMsg(
+        reqHandler, eid, request, &responseMsg, &responseLen);
     if (rc)
     {
         co_return rc;
@@ -90,18 +86,8 @@ mctp_vdm::requester::Coroutine MCTPVdmHelper<T>::queryBootStatusImpl(
     co_return responseMsg->payload[0];
 }
 
-template <typename T>
-void MCTPVdmHelper<T>::handleMctpEndpoints(
+void MCTPVdmHelper::handleMctpEndpoints(
     [[maybe_unused]] const mctp::Infos& mctpInfos)
 {
     return;
 }
-
-// Explicit template instantiations
-#ifdef MCTP_IN_KERNEL
-using TRequest = mctp_vdm::requester::InKernelRequest;
-#else
-using TRequest = mctp_vdm::requester::DaemonRequest;
-#endif
-
-template class MCTPVdmHelper<TRequest>;

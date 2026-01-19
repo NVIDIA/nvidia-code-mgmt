@@ -47,7 +47,6 @@ inline bool getBit(const std::vector<uint8_t>& status, size_t bit)
  *
  *
  */
-template <typename T = mctp_vdm::requester::RequestRetryTimer>
 class ERoTResource : public MCTPDiscoveryResource
 {
   public:
@@ -74,7 +73,7 @@ class ERoTResource : public MCTPDiscoveryResource
                  const uint64_t i2cAddress, uint8_t eid, uint8_t apEid,
                  const std::string chassisObjPath, const std::string apObjPath,
                  const bool isRecoverable,
-                 std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper);
+                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
 
     /**@brief Constructor for the ERoTResource Class
      * when the resource is not recoverable but publishes BootStatus
@@ -91,7 +90,7 @@ class ERoTResource : public MCTPDiscoveryResource
     ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                  sdeventplus::Event& event, uint8_t eid,
                  const std::string chassisObjPath, const bool isRecoverable,
-                 std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper);
+                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
 
     /**@brief Updates the BootStatus of the AP on chassis D-Bus object
      *
@@ -135,8 +134,8 @@ class ERoTResource : public MCTPDiscoveryResource
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
     std::mutex mtx;
-    std::unique_ptr<APResource<T>> apResource;
-    std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper;
+    std::unique_ptr<APResource> apResource;
+    std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
     std::unique_ptr<BootStatus> bootStatus;
     bool isRecoverable;
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;

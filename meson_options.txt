@@ -393,13 +393,6 @@ option('MCU_RECOVERY_SUPPORT',
        value: 'disabled',
        description: 'Enables presence of mcu recovery tool in the build')
 
-option(
-       'ENABLE_IN_KERNEL_MCTP',
-       type: 'feature',
-       value: 'enabled',
-       description: 'Use the in-kernel MCTP stack instead of the demux daemon'
-)
-
 option('NVME_SUPPORT',
        type: 'feature',
        value: 'disabled',

@@ -18,15 +18,13 @@
 
 #include "erot_resource.hpp"
 
-template <typename T>
-ERoTResource<T>::ERoTResource(sdbusplus::bus::bus& bus,
-                              const std::string& objPath,
-                              sdeventplus::Event& event, const uint64_t i2cBus,
-                              const uint64_t i2cAddress, uint8_t eid,
-                              uint8_t apEid, const std::string chassisObjPath,
-                              const std::string apObjPath,
-                              const bool isRecoverable,
-                              std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
+ERoTResource::ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+                           sdeventplus::Event& event, const uint64_t i2cBus,
+                           const uint64_t i2cAddress, uint8_t eid,
+                           uint8_t apEid, const std::string chassisObjPath,
+                           const std::string apObjPath,
+                           const bool isRecoverable,
+                           std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
     MCTPDiscoveryResource(bus, objPath, eid), sdEvent(event),
     mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
 {
@@ -38,7 +36,7 @@ ERoTResource<T>::ERoTResource(sdbusplus::bus::bus& bus,
     bootStatus->bootStatus({0});
     bootStatus->bootStatusType(
         BootStatusServer::BootStatusTypes::ERoTBootStatus);
-    apResource = std::make_unique<APResource<T>>(bus, apObjPath, apEid, this);
+    apResource = std::make_unique<APResource>(bus, apObjPath, apEid, this);
 
     health(HealthServer::HealthType::OK);
     state(OperationalStatusServer::StateType::Enabled);
@@ -52,13 +50,11 @@ ERoTResource<T>::ERoTResource(sdbusplus::bus::bus& bus,
         });
 }
 
-template <typename T>
-ERoTResource<T>::ERoTResource(sdbusplus::bus::bus& bus,
-                              const std::string& objPath,
-                              sdeventplus::Event& event, uint8_t eid,
-                              const std::string chassisObjPath,
-                              const bool isRecoverable,
-                              std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
+ERoTResource::ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+                           sdeventplus::Event& event, uint8_t eid,
+                           const std::string chassisObjPath,
+                           const bool isRecoverable,
+                           std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
     MCTPDiscoveryResource(bus, objPath, eid), sdEvent(event),
     mctpVdmHelper(mctpVdmHelper), isRecoverable(isRecoverable)
 {
@@ -79,8 +75,7 @@ ERoTResource<T>::ERoTResource(sdbusplus::bus::bus& bus,
         });
 }
 
-template <typename T>
-bool ERoTResource<T>::isApBootFinished(const std::vector<uint8_t>& status)
+bool ERoTResource::isApBootFinished(const std::vector<uint8_t>& status)
 {
     bool isApBootCompleted = getBit(status, AP0_BOOT_COMPLETE_BIT);
     bool isApBootCompleteTimeout =
@@ -94,8 +89,7 @@ bool ERoTResource<T>::isApBootFinished(const std::vector<uint8_t>& status)
     return isApBootCompleted || isApBootCompleteTimeout;
 }
 
-template <typename T>
-void ERoTResource<T>::updateERoTHealth()
+void ERoTResource::updateERoTHealth()
 {
     if (bootStatus)
     {
@@ -150,8 +144,7 @@ void ERoTResource<T>::updateERoTHealth()
     return;
 }
 
-template <typename T>
-mctp_vdm::requester::Coroutine ERoTResource<T>::updateBootStatusAsync()
+mctp_vdm::requester::Coroutine ERoTResource::updateBootStatusAsync()
 {
     std::unique_lock<std::mutex> lock(mtx, std::try_to_lock);
     if (!lock.owns_lock())
@@ -189,17 +182,7 @@ mctp_vdm::requester::Coroutine ERoTResource<T>::updateBootStatusAsync()
     co_return 0;
 }
 
-template <typename T>
-std::vector<uint8_t> ERoTResource<T>::getBootStatus() const noexcept
+std::vector<uint8_t> ERoTResource::getBootStatus() const noexcept
 {
     return bootStatus->bootStatus();
 }
-
-#ifdef MCTP_IN_KERNEL
-using TRequest = mctp_vdm::requester::InKernelRequest;
-#else
-using TRequest = mctp_vdm::requester::DaemonRequest;
-#endif
-
-// Explicit template instantiations
-template class ERoTResource<TRequest>;

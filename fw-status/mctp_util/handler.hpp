@@ -88,10 +88,7 @@ using ResponseHandler = fu2::unique_function<void(
  *  with response once the MCTP VDM responder sends the response. If no response
  *  is received within the instance ID expiration interval or any other failure
  *  the response handler is invoked with the empty response.
- *
- * @tparam RequestInterface - Request class type
  */
-template <class RequestInterface>
 class Handler
 {
 
@@ -105,7 +102,7 @@ class Handler
 
     /** @brief Constructor
      *
-     *  @param[in] event - reference to daemon's main event loop
+     *  @param[in] event - reference to service's main event loop
      *  @param[in] requester - reference to Requester object
      *  @param[in] sockManager - MCTP socket manager
      *  @param[in] instanceIdExpiryInterval - instance ID expiration interval
@@ -142,6 +139,13 @@ class Handler
     {
         RequestKey key{eid, instanceId, type, command};
 
+        auto socketFd = sockManager.getSocket(eid);
+        if (socketFd < 0)
+        {
+            lg2::error("No socket registered for EID={EID}", "EID", eid);
+            return -1;
+        }
+
         auto instanceIdExpiryCallBack = [key, this](void) {
             if (this->handlers.contains(key))
             {
@@ -174,9 +178,9 @@ class Handler
             }
         };
 
-        auto request = std::make_unique<RequestInterface>(
-            sockManager.getSocket(eid), eid, event, std::move(requestMsg),
-            numRetries, responseTimeOut);
+        auto request = std::make_unique<InKernelRequest>(
+            socketFd, eid, event, std::move(requestMsg), numRetries,
+            responseTimeOut);
         auto timer = std::make_unique<sdbusplus::Timer>(
             event.get(), instanceIdExpiryCallBack);
 
@@ -283,7 +287,7 @@ class Handler
     }
 
   private:
-    sdeventplus::Event& event; //!< reference to daemon's main event loop
+    sdeventplus::Event& event; //!< reference to service's main event loop
     mctp_vdm::InstanceIdMgr& instanceIdMgr; //!< reference to Requester object
     mctp_socket::Manager& sockManager;
 
@@ -298,7 +302,7 @@ class Handler
      *         timer object for the Instance ID expiration
      */
     using RequestValue =
-        std::tuple<std::unique_ptr<RequestInterface>, ResponseHandler,
+        std::tuple<std::unique_ptr<InKernelRequest>, ResponseHandler,
                    std::unique_ptr<sdbusplus::Timer>>;
 
     /** @brief Container for storing the MCTP VDM request entries */
@@ -336,11 +340,8 @@ class Handler
  * An awaitable object needed by co_await operator to send/recv MCTP VDM message
  *
  * e.g.
- * rc = co_await SendRecvMctpVdmMsg<h>(h, eid, req, respMsg, respLen);
- *
- * @tparam RequesterHandler - Requester::handler class type
+ * rc = co_await SendRecvMctpVdmMsg(h, eid, req, respMsg, respLen);
  */
-template <class RequesterHandler>
 struct SendRecvMctpVdmMsg
 {
     /** @brief For recording the suspended coroutine where the co_await
@@ -352,7 +353,7 @@ struct SendRecvMctpVdmMsg
 
     /** @brief The RequesterHandler to send/recv MCTP VDM message.
      */
-    RequesterHandler& handler;
+    Handler& handler;
 
     /** @brief The EID where MCTP VDM message will be sent to.
      */
@@ -424,8 +425,7 @@ struct SendRecvMctpVdmMsg
     /** @brief Constructor of awaitable object to initialize necessary member
      * variables.
      */
-    SendRecvMctpVdmMsg(RequesterHandler& handler, uint8_t eid,
-                       mctp::Request& request,
+    SendRecvMctpVdmMsg(Handler& handler, uint8_t eid, mctp::Request& request,
                        const mctp_vdm::Message** responseMsg,
                        size_t* responseLen) :
         handler(handler), eid(eid), request(request), responseMsg(responseMsg),

@@ -34,7 +34,6 @@
 /** @class GPIOResource
  *  Represents a BaseResource whose healthy status is updated by monitoring GPIO
  */
-template <typename T = mctp_vdm::requester::RequestRetryTimer>
 class GPIOResource : public BaseResource
 {
     enum : uint8_t
@@ -87,7 +86,7 @@ class GPIOResource : public BaseResource
                  const std::string& fallingTarget,
                  const std::string& gpioPolarity,
                  const std::string chassisObjPath,
-                 std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper);
+                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
 
   private:
     sdeventplus::Event& sdEvent;
@@ -106,7 +105,7 @@ class GPIOResource : public BaseResource
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
     std::mutex mtx;
-    std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper;
+    std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
     std::unique_ptr<BootStatus> bootStatus;
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
 

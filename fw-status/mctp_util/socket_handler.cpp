@@ -20,12 +20,8 @@
 #include "constants.hpp"
 #include "utils.hpp"
 
-#include <libmctp-externals.h>
-#include <linux/if_arp.h>
 #include <linux/mctp.h>
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/un.h>
 
 #include <phosphor-logging/lg2.hpp>
 
@@ -34,9 +30,7 @@
 namespace mctp_socket
 {
 
-template <typename T>
-void Handler<T>::processRxMsg(uint8_t eid,
-                              const std::vector<uint8_t>& requestMsg)
+void Handler::processRxMsg(uint8_t eid, const std::vector<uint8_t>& requestMsg)
 {
     auto msg = reinterpret_cast<const mctp_vdm::Message*>(requestMsg.data());
     if (msg->hdr.request == 0)
@@ -49,117 +43,9 @@ void Handler<T>::processRxMsg(uint8_t eid,
     }
 }
 
-// DaemonHandler implementation
-int DaemonHandler::initSocket(int type, int protocol,
-                              const std::vector<uint8_t>& pathName)
-{
-    /* Create socket */
-    int rc = 0;
-    int sockFd = socket(AF_UNIX, type, protocol);
-    if (sockFd == -1)
-    {
-        rc = -errno;
-        lg2::error("Failed to create the socket, RC={RC}", "RC", strerror(-rc));
-        return rc;
-    }
-
-    auto fd = std::make_unique<utils::CustomFD>(sockFd);
-
-    /* Initiate a connection to the socket */
-    struct sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    memcpy(addr.sun_path, pathName.data(), pathName.size());
-    rc = connect(sockFd, reinterpret_cast<struct sockaddr*>(&addr),
-                 pathName.size() + sizeof(addr.sun_family));
-    if (rc == -1)
-    {
-        rc = -errno;
-        lg2::error("Failed to connect to the socket, RC={RC}", "RC",
-                   strerror(-rc));
-        return rc;
-    }
-
-    /* Register for MCTP VDM message type */
-    ssize_t result =
-        write(sockFd, &mctp_vdm::MessageType, sizeof(mctp_vdm::MessageType));
-    if (result == -1)
-    {
-        rc = -errno;
-        lg2::error(
-            "Failed to send message type as MCTP VDM to demux daemon, RC={RC}",
-            "RC", strerror(-rc));
-        return rc;
-    }
-
-    auto io = std::make_unique<IO>(
-        event, sockFd, EPOLLIN,
-        std::bind_front(&DaemonHandler::handleReceivedMsg, this));
-
-    socketInfoMap[pathName] = std::tuple(std::move(fd), std::move(io));
-
-    return sockFd;
-}
-
-void DaemonHandler::handleReceivedMsg(IO& io, int fd, uint32_t revents)
-{
-    if (!(revents & EPOLLIN))
-    {
-        return;
-    }
-
-    int returnCode = 0;
-    ssize_t peekedLength = recv(fd, nullptr, 0, MSG_PEEK | MSG_TRUNC);
-    if (peekedLength == 0)
-    {
-        // MCTP daemon has closed the socket this daemon is connected to.
-        // This may or may not be an error scenario, in either case the
-        // recovery mechanism for this daemon is to restart, and hence
-        // exit the event loop, that will cause this daemon to exit with a
-        // failure code.
-        lg2::error("Socket connection closed. Terminating.");
-        io.get_event().exit(0);
-    }
-    else if (peekedLength <= -1)
-    {
-        returnCode = -errno;
-        lg2::error("recv system call failed, RC={RC}", "RC", returnCode);
-    }
-    else
-    {
-        std::vector<uint8_t> requestMsg(peekedLength);
-        auto recvDataLength =
-            recv(fd, static_cast<void*>(requestMsg.data()), peekedLength, 0);
-        if (recvDataLength == peekedLength)
-        {
-            utils::printBuffer(utils::Rx, requestMsg);
-
-            if (mctp_vdm::MessageType != requestMsg[2])
-            {
-                // Skip this message and continue.
-                lg2::info("Skipping non-VDM message type: {TYPE}", "TYPE",
-                          requestMsg[2]);
-            }
-            else
-            {
-                processRxMsg(requestMsg[1],
-                             std::vector<uint8_t>(requestMsg.begin() + 3,
-                                                  requestMsg.end()));
-            }
-        }
-        else
-        {
-            lg2::error("Failure to read peeked length packet. peekedLength="
-                       "{PEEKEDLENGTH} recvDataLength={RECVDATALENGTH}",
-                       "PEEKEDLENGTH", peekedLength, "RECVDATALENGTH",
-                       recvDataLength);
-        }
-    }
-}
-
-// InKernelHandler implementation
-int InKernelHandler::initSocket(
-    [[maybe_unused]] int type, [[maybe_unused]] int protocol,
-    [[maybe_unused]] const std::vector<uint8_t>& pathName)
+int Handler::initSocket([[maybe_unused]] int type,
+                        [[maybe_unused]] int protocol,
+                        [[maybe_unused]] const std::vector<uint8_t>& pathName)
 {
     if (isFdValid)
     {
@@ -208,14 +94,13 @@ int InKernelHandler::initSocket(
     }
 
     io = std::make_unique<IO>(
-        event, fd, EPOLLIN,
-        std::bind_front(&InKernelHandler::handleReceivedMsg, this));
+        event, fd, EPOLLIN, std::bind_front(&Handler::handleReceivedMsg, this));
 
     isFdValid = true;
     return fd;
 }
 
-void InKernelHandler::handleReceivedMsg(IO& io, int fd, uint32_t revents)
+void Handler::handleReceivedMsg(IO& io, int fd, uint32_t revents)
 {
     if (!(revents & EPOLLIN))
     {

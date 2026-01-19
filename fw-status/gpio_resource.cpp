@@ -18,13 +18,10 @@
 
 #include "gpio_resource.hpp"
 
-template <typename T>
-GPIOResource<T>::GPIOResource(sdbusplus::bus::bus& bus,
-                              const std::string& objPath,
-                              sdeventplus::Event& event, const uint64_t i2cBus,
-                              const uint64_t i2cAddress, uint8_t eid,
-                              const std::string& gpio,
-                              const std::string& target) :
+GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+                           sdeventplus::Event& event, const uint64_t i2cBus,
+                           const uint64_t i2cAddress, uint8_t eid,
+                           const std::string& gpio, const std::string& target) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
     systemTarget(target), isEROT(true)
 {
@@ -40,13 +37,14 @@ GPIOResource<T>::GPIOResource(sdbusplus::bus::bus& bus,
     updateERoTHealth();
 }
 
-template <typename T>
-GPIOResource<T>::GPIOResource(
-    sdbusplus::bus::bus& bus, const std::string& objPath,
-    sdeventplus::Event& event, uint8_t eid, const std::string& gpio,
-    const std::string& risingTarget, const std::string& fallingTarget,
-    const std::string& gpioPolarity, const std::string chassisObjPath,
-    std::shared_ptr<MCTPVdmHelper<T>> mctpVdmHelper) :
+GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+                           sdeventplus::Event& event, uint8_t eid,
+                           const std::string& gpio,
+                           const std::string& risingTarget,
+                           const std::string& fallingTarget,
+                           const std::string& gpioPolarity,
+                           const std::string chassisObjPath,
+                           std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
     risingTarget(risingTarget), fallingTarget(fallingTarget), isEROT(false),
     mctpVdmHelper(mctpVdmHelper)
@@ -80,8 +78,7 @@ GPIOResource<T>::GPIOResource(
     registerGPIOEvent();
 }
 
-template <typename T>
-void GPIOResource<T>::waitForGPIOEvent()
+void GPIOResource::waitForGPIOEvent()
 {
     lineEvent = gpioLine.event_read();
     if (lineEvent.event_type == gpiod::line_event::RISING_EDGE)
@@ -98,8 +95,7 @@ void GPIOResource<T>::waitForGPIOEvent()
     }
 }
 
-template <typename T>
-void GPIOResource<T>::registerGPIOEvent()
+void GPIOResource::registerGPIOEvent()
 {
     lg2::info("Registering... event callback for {GPIO}", "GPIO", gpioLineName);
     gpioLine = gpiod::find_line(gpioLineName);
@@ -117,7 +113,7 @@ void GPIOResource<T>::registerGPIOEvent()
     catch (const std::exception& e)
     {
         lg2::error("Failed to request events for {GPIO}: {ERROR}", "GPIO",
-                   gpioLineName, "ERROR", e);
+                   gpioLineName, "ERROR", e.what());
         return;
     }
 
@@ -133,8 +129,7 @@ void GPIOResource<T>::registerGPIOEvent()
     gpioEvent->set_enabled(sdeventplus::source::Enabled::On);
 }
 
-template <typename T>
-void GPIOResource<T>::updateERoTHealth()
+void GPIOResource::updateERoTHealth()
 {
     const auto& status = glacierRecoveryObj->performInitialization();
 
@@ -171,8 +166,7 @@ void GPIOResource<T>::updateERoTHealth()
     return;
 }
 
-template <typename T>
-void GPIOResource<T>::updateAPHealth(uint8_t type)
+void GPIOResource::updateAPHealth(uint8_t type)
 {
     bool healthy = false;
     int val;
@@ -272,8 +266,7 @@ void GPIOResource<T>::updateAPHealth(uint8_t type)
     }
 }
 
-template <typename T>
-void GPIOResource<T>::initAPHealth()
+void GPIOResource::initAPHealth()
 {
     lg2::info("Initializing... {OBJ} status", "OBJ", path.c_str());
     gpioLine = gpiod::find_line(gpioLineName);
@@ -291,7 +284,7 @@ void GPIOResource<T>::initAPHealth()
     catch (const std::exception& e)
     {
         lg2::error("Failed to request line for {GPIO}: {ERROR}", "GPIO",
-                   gpioLineName, "ERROR", e);
+                   gpioLineName, "ERROR", e.what());
         return;
     }
     updateAPHealth(LEVEL_TRIGGER);
@@ -299,8 +292,7 @@ void GPIOResource<T>::initAPHealth()
     gpioLine.release();
 }
 
-template <typename T>
-mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
+mctp_vdm::requester::Coroutine GPIOResource::updateBootStatusAsync()
 {
     auto eid = fetchEid();
 
@@ -326,17 +318,7 @@ mctp_vdm::requester::Coroutine GPIOResource<T>::updateBootStatusAsync()
     co_return 0;
 }
 
-template <typename T>
-uint8_t GPIOResource<T>::fetchEid() const noexcept
+uint8_t GPIOResource::fetchEid() const noexcept
 {
     return eid;
 }
-
-#ifdef MCTP_IN_KERNEL
-using TRequest = mctp_vdm::requester::InKernelRequest;
-#else
-using TRequest = mctp_vdm::requester::DaemonRequest;
-#endif
-
-// Explicit template instantiations
-template class GPIOResource<TRequest>;

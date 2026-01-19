@@ -36,9 +36,8 @@ namespace mctp_vdm
 
 using namespace dbus;
 
-template <typename T>
-MctpDiscovery<T>::MctpDiscovery(
-    sdbusplus::bus::bus& bus, mctp_socket::Handler<T>& handler,
+MctpDiscovery::MctpDiscovery(
+    sdbusplus::bus::bus& bus, mctp_socket::Handler& handler,
     std::initializer_list<MctpDiscoveryHandlerIntf*> list) :
     bus(bus), mctpEndpointAddedSignal(
                   bus,
@@ -98,9 +97,8 @@ MctpDiscovery<T>::MctpDiscovery(
     handleMctpEndpoints(mctpInfos);
 }
 
-template <typename T>
-void MctpDiscovery<T>::populateMctpInfo(const dbus::InterfaceMap& interfaces,
-                                        mctp::Infos& mctpInfos)
+void MctpDiscovery::populateMctpInfo(const dbus::InterfaceMap& interfaces,
+                                     mctp::Infos& mctpInfos)
 {
     mctp::UUID uuid{};
     int type = 0;
@@ -159,8 +157,7 @@ void MctpDiscovery<T>::populateMctpInfo(const dbus::InterfaceMap& interfaces,
     }
 }
 
-template <typename T>
-void MctpDiscovery<T>::discoverEndpoints(sdbusplus::message::message& msg)
+void MctpDiscovery::discoverEndpoints(sdbusplus::message::message& msg)
 {
     mctp::Infos mctpInfos;
 
@@ -173,8 +170,7 @@ void MctpDiscovery<T>::discoverEndpoints(sdbusplus::message::message& msg)
     handleMctpEndpoints(mctpInfos);
 }
 
-template <typename T>
-void MctpDiscovery<T>::handleMctpEndpoints(const mctp::Infos& mctpInfos)
+void MctpDiscovery::handleMctpEndpoints(const mctp::Infos& mctpInfos)
 {
     for (MctpDiscoveryHandlerIntf* handler : handlers)
     {
@@ -186,11 +182,3 @@ void MctpDiscovery<T>::handleMctpEndpoints(const mctp::Infos& mctpInfos)
 }
 
 } // namespace mctp_vdm
-
-#ifdef MCTP_IN_KERNEL
-using TRequest = mctp_vdm::requester::InKernelRequest;
-#else
-using TRequest = mctp_vdm::requester::DaemonRequest;
-#endif
-
-template class mctp_vdm::MctpDiscovery<TRequest>;

@@ -22,8 +22,6 @@
 #include "types.hpp"
 #include "utils.hpp"
 
-#include <libmctp-externals.h>
-#include <linux/if_arp.h>
 #include <linux/mctp.h>
 #include <sys/socket.h>
 
@@ -134,82 +132,6 @@ class RequestRetryTimer
         {
             stop();
         }
-    }
-};
-
-/** @class DaemonRequest
- *
- *  The concrete implementation of RequestIntf. This class implements the send()
- *  to send the MCTP VDM request message over MCTP socket.
- *  This class encapsulates the MCTP VDM request message, the number of times
- *  the request needs to retried if the response is not received and the amount
- *  of time to wait between each retry. It provides APIs to start and stop the
- *  request flow.
- */
-class DaemonRequest final : public RequestRetryTimer
-{
-  public:
-    DaemonRequest() = delete;
-    DaemonRequest(const DaemonRequest&) = delete;
-    DaemonRequest(DaemonRequest&&) = default;
-    DaemonRequest& operator=(const DaemonRequest&) = delete;
-    DaemonRequest& operator=(DaemonRequest&&) = default;
-    ~DaemonRequest() = default;
-
-    /** @brief Constructor
-     *
-     *  @param[in] fd - fd of the MCTP communication socket
-     *  @param[in] eid - endpoint ID of the remote MCTP endpoint
-     *  @param[in] event - reference to daemon's main event loop
-     *  @param[in] requestMsg - MCTP VDM request message
-     *  @param[in] numRetries - number of request retries
-     *  @param[in] timeout - time to wait between each retry in milliseconds
-     */
-    explicit DaemonRequest(int fd, uint8_t eid, sdeventplus::Event& event,
-                           mctp::Request&& requestMsg, uint8_t numRetries,
-                           std::chrono::milliseconds timeout) :
-        RequestRetryTimer(event, numRetries, timeout), fd(fd), eid(eid),
-        requestMsg(std::move(requestMsg))
-    {}
-
-  private:
-    int fd;                   //!< file descriptor of MCTP communications socket
-    uint8_t eid;              //!< endpoint ID of the remote MCTP endpoint
-    mctp::Request requestMsg; //!< MCTP VDM request message
-
-    /** @brief Sends the MCTP VDM request message on the socket
-     *
-     *  @return return  0 on success and -errno on failure
-     */
-    int send() const
-    {
-
-        utils::printBuffer(utils::Tx, requestMsg, eid);
-
-        uint8_t hdr[3] = {LIBMCTP_TAG_OWNER_MASK | MCTP_TAG_VDM, eid,
-                          mctp_vdm::MessageType};
-
-        struct iovec iov[2];
-        iov[0].iov_base = hdr;
-        iov[0].iov_len = sizeof(hdr);
-        iov[1].iov_base = (uint8_t*)requestMsg.data();
-        iov[1].iov_len = requestMsg.size();
-
-        struct msghdr msg = {};
-        msg.msg_iov = iov;
-        msg.msg_iovlen = sizeof(iov) / sizeof(iov[0]);
-
-        int returnCode = 0;
-        ssize_t rc = sendmsg(fd, &msg, 0);
-        if (rc < 0)
-        {
-            int returnCode = -errno;
-            lg2::error(
-                "Failed to send MCTP VDM message. EID={EID}, RC={RC}, errno={ERRNO}",
-                "EID", eid, "RC", unsigned(rc), "ERRNO", strerror(errno));
-            return returnCode;
-        }
-        return returnCode;
     }
 };
 
