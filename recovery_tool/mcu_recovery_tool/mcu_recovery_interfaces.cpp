@@ -36,6 +36,7 @@ int main(int argc, char* argv[])
     std::string target;
     std::string chassisName;
     bool forceUpdate = false;
+    bool useDbus = false;
 
     auto performRecovery =
         app.add_subcommand("PerformRecovery", "Perform recovery on the MCU");
@@ -43,6 +44,9 @@ int main(int argc, char* argv[])
     performRecovery->add_option(
         "-j,--json", jsonFilePath,
         "JSON configuration file (overrides -t/--target and -c/--chassis)");
+    performRecovery->add_flag(
+        "-e,--entity-manager", useDbus,
+        "Use Entity Manager configuration on D-Bus (required when not using -j)");
     performRecovery->add_option(
         "-t,--target", target,
         "Target MCU type (e.g., CX9, HPM; ignored when using -j)");
@@ -58,6 +62,9 @@ int main(int argc, char* argv[])
     forceReset->add_option(
         "-j,--json", jsonFilePath,
         "JSON configuration file (overrides -t/--target and -c/--chassis)");
+    forceReset->add_flag(
+        "-e,--entity-manager", useDbus,
+        "Use Entity Manager configuration on D-Bus (required when not using -j)");
     forceReset->add_option(
         "-t,--target", target,
         "Target MCU type (e.g., CX9, HPM; ignored when using -j)");
@@ -70,6 +77,9 @@ int main(int argc, char* argv[])
     updateDeviceInfo->add_option(
         "-j,--json", jsonFilePath,
         "JSON configuration file (overrides -t/--target and -c/--chassis)");
+    updateDeviceInfo->add_flag(
+        "-e,--entity-manager", useDbus,
+        "Use Entity Manager configuration on D-Bus (required when not using -j)");
     updateDeviceInfo->add_option(
         "-t,--target", target,
         "Target MCU type (e.g., CX9, HPM; ignored when using -j)");
@@ -82,6 +92,9 @@ int main(int argc, char* argv[])
     setForceRecovery->add_option(
         "-j,--json", jsonFilePath,
         "JSON configuration file (overrides -t/--target and -c/--chassis)");
+    setForceRecovery->add_flag(
+        "-e,--entity-manager", useDbus,
+        "Use Entity Manager configuration on D-Bus (required when not using -j)");
     setForceRecovery->add_option(
         "-t,--target", target,
         "Target MCU type (optional, default: all MCUs; ignored when using -j)");
@@ -96,7 +109,14 @@ int main(int argc, char* argv[])
         if (!jsonFilePath.empty())
         {
             // Use JSON file if specified
-            // Warn if user also specified target or chassis filters
+            // Error if user also specified entity-manager; warn for
+            // target/chassis
+            if (useDbus)
+            {
+                lg2::error(
+                    "Specify exactly one of -j/--json or -e/--entity-manager");
+                throw std::runtime_error("Invalid option selection");
+            }
             if (!target.empty() || !chassisName.empty())
             {
                 lg2::warning(
@@ -106,7 +126,13 @@ int main(int argc, char* argv[])
         }
         else
         {
-            // Default: Use D-Bus Entity Manager
+            if (!useDbus)
+            {
+                lg2::error(
+                    "Specify exactly one of -j/--json or -e/--entity-manager");
+                throw std::runtime_error("Invalid option selection");
+            }
+            // Use D-Bus Entity Manager
             // Priority: chassis > target > all (if allowed)
             if (!chassisName.empty())
             {
