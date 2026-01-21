@@ -103,7 +103,7 @@ class Cx8Resource : public MCTPDiscoveryResource
 
             bootStatus->bootStatus({0});
             health(HealthServer::HealthType::Critical);
-            if (MCTPDiscoveryResource::isDeviceEnumerated())
+            if (MCTPDiscoveryResource::wasDeviceEnumeratedBefore())
             {
                 state(OperationalStatusServer::StateType::UnavailableOffline);
                 return;

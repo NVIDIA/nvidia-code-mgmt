@@ -79,8 +79,24 @@ class MCTPDiscoveryResource : public BaseResource
         return !mctpObjectPath.empty();
     }
 
+    /**@brief Checks whether the resource was ever enumerated at least once
+     *
+     * This is useful for distinguishing between:
+     * - Device never seen (absent from the beginning)
+     * - Device was seen before but is now offline (went offline later)
+     *
+     * @return bool - True if the MCTP EID was enumerated at least once,
+     *                False if it was never enumerated
+     *
+     */
+    inline bool wasDeviceEnumeratedBefore() const noexcept
+    {
+        return wasEnumeratedOnce;
+    }
+
   protected:
     std::string mctpObjectPath;
+    bool wasEnumeratedOnce = false;
 
     /**@brief Callback function for MCTP event listeners
      * Updates Health and State of the D-Bus object

@@ -120,7 +120,7 @@ void USBRcmResource::updateHealth()
         // "Unknown" or "USB Port Not Found"
         healthValue = HealthServer::HealthType::Critical;
         stateValue =
-            mctpEnumerated
+            MCTPDiscoveryResource::wasDeviceEnumeratedBefore()
                 ? OperationalStatusServer::StateType::UnavailableOffline
                 : OperationalStatusServer::StateType::Absent;
     }

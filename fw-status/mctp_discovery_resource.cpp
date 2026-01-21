@@ -48,6 +48,10 @@ std::string MCTPDiscoveryResource::getMCTPObjectPath()
 void MCTPDiscoveryResource::monitorMCTPEndpoint()
 {
     mctpObjectPath = getMCTPObjectPath();
+    if (!mctpObjectPath.empty())
+    {
+        wasEnumeratedOnce = true;
+    }
 
     if (!endpointAddedMatch)
     {
@@ -72,6 +76,7 @@ void MCTPDiscoveryResource::monitorMCTPEndpoint()
                     if (mctpEID && *mctpEID == eid)
                     {
                         mctpObjectPath = addedPath.str;
+                        wasEnumeratedOnce = true;
                         updateHealth();
                     }
                 }

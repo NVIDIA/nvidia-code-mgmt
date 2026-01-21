@@ -114,7 +114,7 @@ void ERoTResource::updateERoTHealth()
         lg2::error("Unable to unlock I2C for object {OBJECT}", "OBJECT",
                    path.c_str());
         health(HealthServer::HealthType::Critical);
-        if (MCTPDiscoveryResource::isDeviceEnumerated())
+        if (MCTPDiscoveryResource::wasDeviceEnumeratedBefore())
         {
             state(OperationalStatusServer::StateType::UnavailableOffline);
             return;
