@@ -29,6 +29,7 @@ source_files = [
     'ap_resource.cpp',
     'erot_resource.cpp',
     'gpio_resource.cpp',
+    'usb_rcm_resource.cpp',
     join_paths(mctp_util_dir, 'mctp_vdm_helper.cpp'),
     join_paths(mctp_util_dir, 'mctp_endpoint_discovery.cpp'),
     join_paths(mctp_util_dir, 'socket_handler.cpp'),

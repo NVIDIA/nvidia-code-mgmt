@@ -29,6 +29,7 @@
 #include "mcu_recovery_mode_manager.hpp"
 #include "mcu_resource.hpp"
 #include "usb_i2c_mapper.hpp"
+#include "usb_rcm_resource.hpp"
 #include "usbrcm_recovery_manager.hpp"
 
 #include <phosphor-logging/lg2.hpp>
@@ -55,6 +56,8 @@ constexpr auto cx8ObjInterface =
     "xyz.openbmc_project.Configuration.CX8Recovery";
 constexpr auto usbRcmForceRecoveryObjInterface =
     "xyz.openbmc_project.Configuration.USBRCMForceRecovery";
+constexpr auto usbRcmObjInterface =
+    "xyz.openbmc_project.Configuration.USBRCMRecovery";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/";
 constexpr auto recoveryConfigIntfName =
@@ -591,7 +594,8 @@ void publishDBusRecoveryObject()
             const auto usbPort =
                 getString(interfaces, mcuObjInterface, "USBPort");
 
-            const auto eidOpt = getUint8(interfaces, mcuObjInterface, "EID");
+            const auto eidOpt =
+                getUint8(interfaces, mcuObjInterface, "MctpEID");
             if (!eidOpt.has_value())
             {
                 lg2::error("Failed to get EID in MCU recovery config "
@@ -667,6 +671,92 @@ void publishDBusRecoveryObject()
                 lg2::error("Failed to create USBRCMRecoveryManager: {ERR}",
                            "ERR", e.what());
             }
+        }
+        else if (interfaces.contains(usbRcmObjInterface))
+        {
+            lg2::info("Found USB RCM recovery config Object: {PATH}", "PATH",
+                      emObjectPath);
+
+            if (!hasProperty(interfaces, usbRcmObjInterface, "USBPort"))
+            {
+                lg2::error("No USBPort found in USB RCM recovery config "
+                           "Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto usbPort =
+                getString(interfaces, usbRcmObjInterface, "USBPort");
+
+            if (usbPort.empty())
+            {
+                lg2::error("Empty USBPort in USB RCM recovery config "
+                           "Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto eidOpt =
+                getUint8(interfaces, usbRcmObjInterface, "MctpEID");
+            if (!eidOpt.has_value())
+            {
+                lg2::error("No EID found in USB RCM recovery config "
+                           "Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto eid = eidOpt.value();
+
+            if (!hasProperty(interfaces, usbRcmObjInterface,
+                             "FMCComponentName"))
+            {
+                lg2::error(
+                    "No FMCComponentName found in USB RCM recovery config "
+                    "Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto fmcComponentName =
+                getString(interfaces, usbRcmObjInterface, "FMCComponentName");
+
+            if (fmcComponentName.empty())
+            {
+                lg2::error("Empty FMCComponentName in USB RCM recovery config "
+                           "Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+
+            if (!hasProperty(interfaces, usbRcmObjInterface,
+                             "FWSComponentName"))
+            {
+                lg2::error(
+                    "No FWSComponentName found in USB RCM recovery config "
+                    "Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto fwsComponentName =
+                getString(interfaces, usbRcmObjInterface, "FWSComponentName");
+
+            if (fwsComponentName.empty())
+            {
+                lg2::error("Empty FWSComponentName in USB RCM recovery config "
+                           "Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+
+            const std::string softwareObjPath =
+                "/xyz/openbmc_project/software/";
+            const auto primaryObjPath = softwareObjPath + fmcComponentName;
+            const auto companionObjPath = softwareObjPath + fwsComponentName;
+
+            resources.push_back(std::make_unique<USBRcmResource>(
+                getBus(), primaryObjPath, eid, usbPort, companionObjPath));
         }
     }
 }
