@@ -290,6 +290,7 @@ int main(int argc, char* argv[])
         }
 
         // Step 3: Verify all MCUs entered recovery mode
+        bool anyFailure = false;
         for (const auto& [usbPort, mcuInfo] : mcuConfig)
         {
             if (recoveryManager.isInRecoveryMode(usbPort))
@@ -299,10 +300,26 @@ int main(int argc, char* argv[])
             }
             else
             {
+                anyFailure = true;
                 lg2::error(
                     "{DEV} failed to enter recovery mode (verification failed)",
                     "DEV", mcuInfo.device);
             }
+        }
+
+        if (anyFailure)
+        {
+            lg2::error(
+                "SetForceRecovery completed with one or more device failures. "
+                "Check per-device logs for details.");
+            throw std::runtime_error(
+                "SetForceRecovery verification failed for one or more devices");
+        }
+        else
+        {
+            lg2::info("Successfully forced {COUNT} MCU device(s) into "
+                      "recovery mode",
+                      "COUNT", mcuConfig.size());
         }
     });
 
