@@ -134,6 +134,7 @@ static constexpr size_t mctpDebugTokenQueryResponseLengthV2 =
 static constexpr size_t mctpDebugTokenQueryResponseLengthV3 =
     50; // Total length of MCTP response : Header (9) + Data (41)
 static constexpr uint64_t propertyChangeSignalTimeout = 5;
+static constexpr uint64_t eraseSignalTimeout = 3;
 
 // Token type bytes in v2 query command are bytes 19-22
 static constexpr int tokenTypeByteStartV2 = 19;

@@ -647,7 +647,7 @@ std::string UpdateDebugToken::handleAsyncCallEraseV2(const std::string& path,
             return "";
         }
 
-        auto maxIterations = std::chrono::seconds(propertyChangeSignalTimeout) /
+        auto maxIterations = std::chrono::seconds(eraseSignalTimeout) /
                              std::chrono::milliseconds(100);
         for (auto i = 0; i < maxIterations; ++i)
         {
