@@ -205,18 +205,25 @@ class MCURecoveryManager
      */
     void exitRecoveryMode(const std::string& usbPort);
 
-  private:
-    libusb_context* context;
-    std::map<std::string, MCUInfo> mcuMap;
-    std::map<std::string, MCUDevice> mcuDevices;
-    std::unique_ptr<MessageRegistry> messageRegistry;
-
     /**
      * @brief Initializes the GPIO lines for the MCU devices.
      *
      * @return True if the initialization is successful, false otherwise.
      */
     bool initGpioLines();
+
+    /**
+     * @brief Releases GPIO lines for all MCU devices.
+     *
+     * This should be called after recovery operations to free GPIO resources.
+     */
+    void releaseGpioLines();
+
+  private:
+    libusb_context* context;
+    std::map<std::string, MCUInfo> mcuMap;
+    std::map<std::string, MCUDevice> mcuDevices;
+    std::unique_ptr<MessageRegistry> messageRegistry;
 
     /**
      * @brief Gets the full port path for a specific MCU device.

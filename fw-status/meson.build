@@ -46,6 +46,7 @@ source_files = [
     join_paths(usbrcm_recovery_dir, 'usb_device_manager.cpp'),
     join_paths(usbrcm_recovery_dir, 'usb_io.cpp'),
     join_paths(usbrcm_recovery_dir, 'progress_code_queue.cpp'),
+    'force_recovery/mcu_recovery_mode_manager.cpp',
     'force_recovery/usbrcm_recovery_manager.cpp',
 ]
 

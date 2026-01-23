@@ -26,6 +26,7 @@
 #include "mctp_endpoint_discovery.hpp"
 #include "mctp_vdm_helper.hpp"
 #include "mcu_recovery_manager.hpp"
+#include "mcu_recovery_mode_manager.hpp"
 #include "mcu_resource.hpp"
 #include "usb_i2c_mapper.hpp"
 #include "usbrcm_recovery_manager.hpp"
@@ -601,8 +602,40 @@ void publishDBusRecoveryObject()
 
             const auto eid = eidOpt.value();
 
+            if (!hasProperty(interfaces, mcuObjInterface, "ChassisName"))
+            {
+                lg2::error("Failed to get Chassis Name in MCU recovery config "
+                           "Object: {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+            const auto chassisName =
+                getString(interfaces, mcuObjInterface, "ChassisName");
+
             resources.push_back(std::make_unique<MCUResource>(
                 getBus(), objPath, eid, usbPort, mcuRecoveryManager));
+
+            // Create MCURecoveryModeManager for D-Bus SetRecoveryMode interface
+            if (mcuRecoveryManager && !chassisName.empty() && !usbPort.empty())
+            {
+                try
+                {
+                    lg2::info(
+                        "Creating MCURecoveryModeManager: {CHASSIS}, USB port: {PORT}",
+                        "CHASSIS", chassisName, "PORT", usbPort);
+                    recoveryModeManagers.push_back(
+                        std::make_unique<
+                            nvidia::recovery::MCURecoveryModeManager>(
+                            getBus(), chassisName,
+                            getChassisObjPath(chassisName), mcuRecoveryManager,
+                            usbPort));
+                }
+                catch (const std::exception& e)
+                {
+                    lg2::error("Failed to create MCURecoveryModeManager: {ERR}",
+                               "ERR", e.what());
+                }
+            }
         }
         else if (interfaces.contains(usbRcmForceRecoveryObjInterface))
         {

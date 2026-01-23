@@ -101,6 +101,30 @@ bool MCURecoveryManager::initGpioLines()
     return true;
 }
 
+void MCURecoveryManager::releaseGpioLines()
+{
+    for (auto& [usbPort, device] : mcuDevices)
+    {
+        try
+        {
+            if (device.resetPin)
+            {
+                device.resetPin.release();
+            }
+            if (device.recoveryPin)
+            {
+                device.recoveryPin.release();
+            }
+        }
+        catch (const std::exception& e)
+        {
+            lg2::warning(
+                "Failed to release GPIO for {PORT}: {ERR}, continuing...",
+                "PORT", usbPort, "ERR", e.what());
+        }
+    }
+}
+
 void MCURecoveryManager::enterRecoveryMode(const std::string& usbPort)
 {
     lg2::info("{DEV} entering recovery mode...", "DEV", mcuMap[usbPort].device);
