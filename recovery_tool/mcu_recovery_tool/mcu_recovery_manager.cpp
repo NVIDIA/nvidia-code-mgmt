@@ -438,8 +438,8 @@ bool MCURecoveryManager::isSB3FileValid(const std::string& binaryFilePath)
 {
     // first 4 bytes are magic number "sbv3" and last 4 bytes are format
     // version "3.1"
-    const unsigned char expectedHdr[8] = {0x73, 0x62, 0x76, 0x33,
-                                          0x01, 0x00, 0x03, 0x00};
+    const unsigned char expectedSb3Hdr[8] = {0x73, 0x62, 0x76, 0x33,
+                                             0x01, 0x00, 0x03, 0x00};
     unsigned char hdr[8] = {0};
 
     std::ifstream file(binaryFilePath, std::ios::binary);
@@ -455,9 +455,16 @@ bool MCURecoveryManager::isSB3FileValid(const std::string& binaryFilePath)
         return false;
     }
 
-    if (memcmp(hdr, expectedHdr, 8) != 0)
+    if (memcmp(hdr, expectedSb3Hdr, 8) != 0)
     {
-        lg2::error("Header mismatch in {FILE}", "FILE", binaryFilePath);
+        // for sb4, the first byte should be 0x02 and the fourth byte
+        // should be 0x87
+        if (hdr[0] == 0x02 && hdr[3] == 0x87)
+        {
+            return true;
+        }
+
+        lg2::error("SB3/SB4 Header mismatch in {FILE}", "FILE", binaryFilePath);
         return false;
     }
     return true;
@@ -634,8 +641,8 @@ void MCURecoveryManager::performRecoveryFlow(const std::string& binaryFilePath,
         {
             messageRegistry->createMessageRegistryResourceErrors(
                 resourceErrorsDetected, RecoveryProtocol::MCURecovery,
-                static_cast<ErrorCode>(MCURecoveryErrorCode::InvalidSB3File),
-                "Invalid SB3 file");
+                static_cast<ErrorCode>(MCURecoveryErrorCode::InvalidSBFile),
+                "Invalid SB3/SB4 file");
         }
         return;
     }

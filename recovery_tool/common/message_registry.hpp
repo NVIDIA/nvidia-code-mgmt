@@ -119,7 +119,7 @@ enum class MCURecoveryErrorCode : uint8_t
     ReadMemoryFailed = 0x5,
     EncryptKeyNotSet = 0x6,
     SbFileWriteFailed = 0x7,
-    InvalidSB3File = 0x8,
+    InvalidSBFile = 0x8,
 };
 
 enum class USBRCMRecoveryErrorCode : uint8_t
@@ -421,9 +421,9 @@ static ErrorMapping mcuRecoveryErrorMapping{
     {static_cast<ErrorCode>(MCURecoveryErrorCode::SbFileWriteFailed),
      {"blhost receive-sb-file command execution failed",
       "Check if device is in ISP mode (recovery mode) or if the SB file is invalid, and try recovery again using the correct package."}},
-    {static_cast<ErrorCode>(MCURecoveryErrorCode::InvalidSB3File),
-     {"SB3 file header mismatch",
-      "Check if the SB3 file in fwpkg is valid, and try recovery again using the correct package."}},
+    {static_cast<ErrorCode>(MCURecoveryErrorCode::InvalidSBFile),
+     {"SB3/SB4 file header mismatch",
+      "Check if the SB3/SB4 file in fwpkg is valid, and try recovery again using the correct package."}},
     {deviceNotResponding,
      {"Device is not responding",
       "Check if device is in ISP mode (recovery mode) , and try recovery again using the correct package."}},
