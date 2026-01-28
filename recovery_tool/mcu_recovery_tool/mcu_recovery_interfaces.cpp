@@ -266,9 +266,9 @@ int main(int argc, char* argv[])
             recoveryManager.updateAllDeviceInfo();
 
             size_t detectedCount = 0;
-            for (const auto& [usbPort, mcuInfo] : mcuConfig)
+            for (const auto& [deviceId, mcuInfo] : mcuConfig)
             {
-                if (recoveryManager.isInRecoveryMode(usbPort))
+                if (recoveryManager.isInRecoveryMode(deviceId))
                 {
                     ++detectedCount;
                 }
@@ -291,9 +291,9 @@ int main(int argc, char* argv[])
 
         // Step 3: Verify all MCUs entered recovery mode
         bool anyFailure = false;
-        for (const auto& [usbPort, mcuInfo] : mcuConfig)
+        for (const auto& [deviceId, mcuInfo] : mcuConfig)
         {
-            if (recoveryManager.isInRecoveryMode(usbPort))
+            if (recoveryManager.isInRecoveryMode(deviceId))
             {
                 lg2::info("{DEV} successfully entered recovery mode", "DEV",
                           mcuInfo.device);

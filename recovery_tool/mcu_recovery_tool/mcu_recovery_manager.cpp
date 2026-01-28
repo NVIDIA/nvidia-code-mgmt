@@ -64,30 +64,30 @@ bool MCURecoveryManager::initialize(
 
 bool MCURecoveryManager::initGpioLines()
 {
-    for (auto& [usbPort, mcuInfo] : mcuMap)
+    for (auto& [deviceId, mcuInfo] : mcuMap)
     {
         try
         {
-            mcuDevices[usbPort].resetPin =
+            mcuDevices[deviceId].resetPin =
                 gpiod::find_line(mcuInfo.resetGpioName);
-            if (!mcuDevices[usbPort].resetPin)
+            if (!mcuDevices[deviceId].resetPin)
             {
                 lg2::error("GPIO line not found: {NAME}", "NAME",
                            mcuInfo.resetGpioName);
                 continue;
             }
-            mcuDevices[usbPort].recoveryPin =
+            mcuDevices[deviceId].recoveryPin =
                 gpiod::find_line(mcuInfo.recoveryGpioName);
-            if (!mcuDevices[usbPort].recoveryPin)
+            if (!mcuDevices[deviceId].recoveryPin)
             {
                 lg2::error("GPIO line not found: {NAME}", "NAME",
                            mcuInfo.recoveryGpioName);
                 continue;
             }
             // set the default value of the reset pin to 1
-            mcuDevices[usbPort].resetPin.request(
+            mcuDevices[deviceId].resetPin.request(
                 {"mcu_recovery", gpiod::line_request::DIRECTION_OUTPUT, 0}, 1);
-            mcuDevices[usbPort].recoveryPin.request(
+            mcuDevices[deviceId].recoveryPin.request(
                 {"mcu_recovery", gpiod::line_request::DIRECTION_OUTPUT, 0}, 1);
         }
         catch (const std::exception& e)
@@ -103,7 +103,7 @@ bool MCURecoveryManager::initGpioLines()
 
 void MCURecoveryManager::releaseGpioLines()
 {
-    for (auto& [usbPort, device] : mcuDevices)
+    for (auto& [deviceId, device] : mcuDevices)
     {
         try
         {
@@ -119,26 +119,27 @@ void MCURecoveryManager::releaseGpioLines()
         catch (const std::exception& e)
         {
             lg2::warning(
-                "Failed to release GPIO for {PORT}: {ERR}, continuing...",
-                "PORT", usbPort, "ERR", e.what());
+                "Failed to release GPIO for {DEV}: {ERR}, continuing...",
+                "DEV", mcuMap[deviceId].device, "ERR", e.what());
         }
     }
 }
 
-void MCURecoveryManager::enterRecoveryMode(const std::string& usbPort)
+void MCURecoveryManager::enterRecoveryMode(const std::string& deviceId)
 {
-    lg2::info("{DEV} entering recovery mode...", "DEV", mcuMap[usbPort].device);
-    if (!mcuDevices[usbPort].recoveryPin || !mcuDevices[usbPort].resetPin)
+    lg2::info("{DEV} entering recovery mode...", "DEV",
+              mcuMap[deviceId].device);
+    if (!mcuDevices[deviceId].recoveryPin || !mcuDevices[deviceId].resetPin)
     {
-        lg2::error("Skipping {PORT}: GPIO lines not initialized", "PORT",
-                   usbPort);
+        lg2::error("Skipping {DEV}: GPIO lines not initialized", "DEV",
+                   mcuMap[deviceId].device);
         return;
     }
-    mcuDevices[usbPort].recoveryPin.set_value(0);
+    mcuDevices[deviceId].recoveryPin.set_value(0);
     usleep(mcuResetActiveUs);
-    mcuDevices[usbPort].resetPin.set_value(0);
+    mcuDevices[deviceId].resetPin.set_value(0);
     usleep(mcuResetActiveUs);
-    mcuDevices[usbPort].resetPin.set_value(1);
+    mcuDevices[deviceId].resetPin.set_value(1);
     sleep(mcuResetDelaySec);
 }
 
@@ -154,12 +155,12 @@ void MCURecoveryManager::enterRecoveryModeAll()
     }
 
     // Step 1: Set all recovery pins LOW
-    for (auto& [usbPort, device] : mcuDevices)
+    for (auto& [deviceId, device] : mcuDevices)
     {
         if (!device.recoveryPin || !device.resetPin)
         {
-            lg2::error("Skipping {PORT}: GPIO lines not initialized", "PORT",
-                       usbPort);
+            lg2::error("Skipping {DEV}: GPIO lines not initialized", "DEV",
+                       mcuMap[deviceId].device);
             continue;
         }
         device.recoveryPin.set_value(0);
@@ -167,7 +168,7 @@ void MCURecoveryManager::enterRecoveryModeAll()
     usleep(mcuResetActiveUs);
 
     // Step 2: Set all reset pins LOW
-    for (auto& [usbPort, device] : mcuDevices)
+    for (auto& [deviceId, device] : mcuDevices)
     {
         if (!device.recoveryPin || !device.resetPin)
         {
@@ -178,7 +179,7 @@ void MCURecoveryManager::enterRecoveryModeAll()
     usleep(mcuResetActiveUs);
 
     // Step 3: Set all reset pins HIGH
-    for (auto& [usbPort, device] : mcuDevices)
+    for (auto& [deviceId, device] : mcuDevices)
     {
         if (!device.recoveryPin || !device.resetPin)
         {
@@ -189,33 +190,34 @@ void MCURecoveryManager::enterRecoveryModeAll()
     sleep(mcuResetDelaySec);
 }
 
-void MCURecoveryManager::exitRecoveryMode(const std::string& usbPort)
+void MCURecoveryManager::exitRecoveryMode(const std::string& deviceId)
 {
-    lg2::info("{DEV} exiting recovery mode...", "DEV", mcuMap[usbPort].device);
+    lg2::info("{DEV} exiting recovery mode...", "DEV",
+              mcuMap[deviceId].device);
 
-    if (!mcuDevices[usbPort].recoveryPin || !mcuDevices[usbPort].resetPin)
+    if (!mcuDevices[deviceId].recoveryPin || !mcuDevices[deviceId].resetPin)
     {
         lg2::error(
-            "Cannot exit recovery mode for {PORT}: GPIO lines not initialized",
-            "PORT", usbPort);
+            "Cannot exit recovery mode for {DEV}: GPIO lines not initialized",
+            "DEV", mcuMap[deviceId].device);
         return;
     }
-    mcuDevices[usbPort].recoveryPin.set_value(1);
+    mcuDevices[deviceId].recoveryPin.set_value(1);
     usleep(mcuResetActiveUs);
-    mcuDevices[usbPort].resetPin.set_value(0);
+    mcuDevices[deviceId].resetPin.set_value(0);
     usleep(mcuResetActiveUs);
-    mcuDevices[usbPort].resetPin.set_value(1);
+    mcuDevices[deviceId].resetPin.set_value(1);
     sleep(mcuResetDelaySec);
 }
 
-void MCURecoveryManager::handleRecoveryError(const std::string& usbPort)
+void MCURecoveryManager::handleRecoveryError(const std::string& deviceId)
 {
-    exitRecoveryMode(usbPort);
+    exitRecoveryMode(deviceId);
     if (messageRegistry)
     {
         messageRegistry->createMessageRegistryResourceErrors(
             resourceErrorsDetected, RecoveryProtocol::MCURecovery,
-            deviceRecoveryFailed, mcuMap[usbPort].device);
+            deviceRecoveryFailed, mcuMap[deviceId].device);
     }
 }
 
@@ -242,10 +244,10 @@ std::string MCURecoveryManager::getFullPortPath(libusb_device* dev)
     return path;
 }
 
-void MCURecoveryManager::updateDevHealth(const std::string& usbPort,
+void MCURecoveryManager::updateDevHealth(const std::string& deviceId,
                                          libusb_config_descriptor* config)
 {
-    mcuDevices[usbPort].hasMctpClass = false;
+    mcuDevices[deviceId].hasMctpClass = false;
     bool hasHidClass = false;
     for (int i = 0; i < config->bNumInterfaces; i++)
     {
@@ -259,8 +261,8 @@ void MCURecoveryManager::updateDevHealth(const std::string& usbPort,
                 &interface->altsetting[j];
             if (altsetting->bInterfaceClass == LIBUSB_CLASS_MCTP)
             {
-                mcuDevices[usbPort].inRecoveryMode = false;
-                mcuDevices[usbPort].hasMctpClass = true;
+                mcuDevices[deviceId].inRecoveryMode = false;
+                mcuDevices[deviceId].hasMctpClass = true;
                 return;
             }
             else if (altsetting->bInterfaceClass == LIBUSB_CLASS_HID)
@@ -272,19 +274,20 @@ void MCURecoveryManager::updateDevHealth(const std::string& usbPort,
 
     // only set it to true if there is a HID class, otherwise it is in an
     // unknown state
-    mcuDevices[usbPort].inRecoveryMode = hasHidClass;
+    mcuDevices[deviceId].inRecoveryMode = hasHidClass;
 }
 
-bool MCURecoveryManager::updateDevInfo(const std::string& usbPort)
+bool MCURecoveryManager::updateDevInfo(const std::string& deviceId)
 {
     const uint8_t maxRetries = 5;
     uint8_t retries = 0;
+    const auto& usbPort = mcuMap[deviceId].usbPort;
 
     while (retries < maxRetries)
     {
         libusb_device** deviceList = nullptr;
         ssize_t deviceCount = libusb_get_device_list(context, &deviceList);
-        mcuDevices[usbPort].curUsbDevice = nullptr;
+        mcuDevices[deviceId].curUsbDevice = nullptr;
 
         if (deviceCount < 0)
         {
@@ -301,15 +304,15 @@ bool MCURecoveryManager::updateDevInfo(const std::string& usbPort)
             if (usbPort == getFullPortPath(device))
             {
                 deviceFound = true;
-                mcuDevices[usbPort].curUsbDevice = device;
+                mcuDevices[deviceId].curUsbDevice = device;
 
                 int ret = libusb_get_device_descriptor(
-                    device, &mcuDevices[usbPort].curUsbDesc);
+                    device, &mcuDevices[deviceId].curUsbDesc);
                 if (ret != LIBUSB_SUCCESS)
                 {
                     lg2::error("Failed to get descriptor for {PORT}: {ERR}",
                                "PORT", usbPort, "ERR", libusb_error_name(ret));
-                    mcuDevices[usbPort].curUsbDevice = nullptr;
+                    mcuDevices[deviceId].curUsbDevice = nullptr;
                     retries++;
                     break;
                 }
@@ -321,11 +324,11 @@ bool MCURecoveryManager::updateDevInfo(const std::string& usbPort)
                     lg2::error(
                         "Failed to get config descriptor for {PORT}: {ERR}",
                         "PORT", usbPort, "ERR", libusb_error_name(ret));
-                    mcuDevices[usbPort].curUsbDevice = nullptr;
+                    mcuDevices[deviceId].curUsbDevice = nullptr;
                     retries++;
                     break;
                 }
-                updateDevHealth(usbPort, config);
+                updateDevHealth(deviceId, config);
                 libusb_free_config_descriptor(config);
                 break;
             }
@@ -333,7 +336,7 @@ bool MCURecoveryManager::updateDevInfo(const std::string& usbPort)
 
         libusb_free_device_list(deviceList, 1);
 
-        if (deviceFound && mcuDevices[usbPort].curUsbDevice != nullptr)
+        if (deviceFound && mcuDevices[deviceId].curUsbDevice != nullptr)
         {
             return true;
         }
@@ -349,42 +352,42 @@ bool MCURecoveryManager::updateDevInfo(const std::string& usbPort)
     }
 
     lg2::error("{DEV} not found on {PORT} after {MAX} attempts", "DEV",
-               mcuMap[usbPort].device, "PORT", usbPort, "MAX", maxRetries);
+               mcuMap[deviceId].device, "PORT", usbPort, "MAX", maxRetries);
     if (messageRegistry)
     {
         messageRegistry->createMessageRegistryResourceErrors(
             resourceErrorsDetected, RecoveryProtocol::MCURecovery,
-            noDevicesFound, mcuMap[usbPort].device);
+            noDevicesFound, mcuMap[deviceId].device);
     }
     return false;
 }
 
 void MCURecoveryManager::updateAllDeviceInfo()
 {
-    for (auto& [usbPort, mcuInfo] : mcuMap)
+    for (auto& [deviceId, mcuInfo] : mcuMap)
     {
-        updateDevInfo(usbPort);
+        updateDevInfo(deviceId);
     }
 }
 
 void MCURecoveryManager::showAllDeviceStatus()
 {
-    for (auto& [usbPort, mcuInfo] : mcuMap)
+    for (auto& [deviceId, mcuInfo] : mcuMap)
     {
-        if (isHealthy(usbPort))
+        if (isHealthy(deviceId))
         {
-            lg2::info("{DEV} is healthy", "DEV", mcuMap[usbPort].device);
+            lg2::info("{DEV} is healthy", "DEV", mcuMap[deviceId].device);
         }
-        else if (isInRecoveryMode(usbPort))
+        else if (isInRecoveryMode(deviceId))
         {
             lg2::error("{DEV} is in recovery mode", "DEV",
-                       mcuMap[usbPort].device);
+                       mcuMap[deviceId].device);
         }
         else
         {
             lg2::error("{DEV} is in unknown state: PID = 0x{PID}", "DEV",
-                       mcuMap[usbPort].device, "PID",
-                       toHexString(mcuDevices[usbPort].curUsbDesc.idProduct));
+                       mcuMap[deviceId].device, "PID",
+                       toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
         }
     }
 }
@@ -470,20 +473,21 @@ bool MCURecoveryManager::isSB3FileValid(const std::string& binaryFilePath)
     return true;
 }
 
-void MCURecoveryManager::performRecovery(const std::string& usbPort,
+void MCURecoveryManager::performRecovery(const std::string& deviceId,
                                          const std::string& binaryFilePath)
 {
-    std::string usbBusDev = std::to_string(getBusNumber(usbPort)) + ":" +
-                            std::to_string(getDeviceNumber(usbPort));
+    std::string usbBusDev = std::to_string(getBusNumber(deviceId)) + ":" +
+                            std::to_string(getDeviceNumber(deviceId));
     std::string usbVidPid =
-        toHexString(mcuDevices[usbPort].curUsbDesc.idVendor) + ":" +
-        toHexString(mcuDevices[usbPort].curUsbDesc.idProduct);
+        toHexString(mcuDevices[deviceId].curUsbDesc.idVendor) + ":" +
+        toHexString(mcuDevices[deviceId].curUsbDesc.idProduct);
 
-    lg2::info("Performing recovery on {DEV}", "DEV", mcuMap[usbPort].device);
+    lg2::info("Performing recovery on {DEV}", "DEV",
+              mcuMap[deviceId].device);
     if (messageRegistry)
     {
         messageRegistry->createMessageRegistry(recoveryStarted,
-                                               mcuMap[usbPort].device);
+                                               mcuMap[deviceId].device);
     }
 
     try
@@ -503,9 +507,9 @@ void MCURecoveryManager::performRecovery(const std::string& usbPort,
                     resourceErrorsDetected, RecoveryProtocol::MCURecovery,
                     static_cast<ErrorCode>(
                         MCURecoveryErrorCode::GetSecurityStateFailed),
-                    mcuMap[usbPort].device);
+                    mcuMap[deviceId].device);
             }
-            handleRecoveryError(usbPort);
+            handleRecoveryError(deviceId);
             return;
         }
 
@@ -513,14 +517,14 @@ void MCURecoveryManager::performRecovery(const std::string& usbPort,
         if (secStateOutput.find("UNSECURE") != std::string::npos)
         {
             lg2::error("{DEV} Security State = UNSECURE", "DEV",
-                       mcuMap[usbPort].device);
+                       mcuMap[deviceId].device);
             if (messageRegistry)
             {
                 messageRegistry->createMessageRegistryResourceErrors(
                     resourceErrorsDetected, RecoveryProtocol::MCURecovery,
                     static_cast<ErrorCode>(
                         MCURecoveryErrorCode::NotSecureDevice),
-                    mcuMap[usbPort].device);
+                    mcuMap[deviceId].device);
             }
 
             lg2::info("Checking if encrypt key is set...");
@@ -540,9 +544,9 @@ void MCURecoveryManager::performRecovery(const std::string& usbPort,
                         resourceErrorsDetected, RecoveryProtocol::MCURecovery,
                         static_cast<ErrorCode>(
                             MCURecoveryErrorCode::ReadMemoryFailed),
-                        mcuMap[usbPort].device);
+                        mcuMap[deviceId].device);
                 }
-                handleRecoveryError(usbPort);
+                handleRecoveryError(deviceId);
                 return;
             }
 
@@ -555,9 +559,9 @@ void MCURecoveryManager::performRecovery(const std::string& usbPort,
                         resourceErrorsDetected, RecoveryProtocol::MCURecovery,
                         static_cast<ErrorCode>(
                             MCURecoveryErrorCode::EncryptKeyNotSet),
-                        mcuMap[usbPort].device);
+                        mcuMap[deviceId].device);
                 }
-                handleRecoveryError(usbPort);
+                handleRecoveryError(deviceId);
                 return;
             }
         }
@@ -576,43 +580,43 @@ void MCURecoveryManager::performRecovery(const std::string& usbPort,
                 messageRegistry->createMessageRegistryResourceErrors(
                     resourceErrorsDetected, RecoveryProtocol::MCURecovery,
                     static_cast<ErrorCode>(MCURecoveryErrorCode::CmdExecFailed),
-                    mcuMap[usbPort].device);
+                    mcuMap[deviceId].device);
             }
-            handleRecoveryError(usbPort);
+            handleRecoveryError(deviceId);
             return;
         }
 
         // exit recovery mode
-        exitRecoveryMode(usbPort);
-        if (!updateDevInfo(usbPort))
+        exitRecoveryMode(deviceId);
+        if (!updateDevInfo(deviceId))
         {
-            handleRecoveryError(usbPort);
+            handleRecoveryError(deviceId);
             return;
         }
 
-        if (isHealthy(usbPort))
+        if (isHealthy(deviceId))
         {
             lg2::info("{DEV} successfully recovered, PID = 0x{PID} as expected",
-                      "DEV", mcuMap[usbPort].device, "PID",
-                      toHexString(mcuDevices[usbPort].curUsbDesc.idProduct));
+                      "DEV", mcuMap[deviceId].device, "PID",
+                      toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
             if (messageRegistry)
             {
                 messageRegistry->createMessageRegistry(recoverySuccessful,
-                                                       mcuMap[usbPort].device);
+                                                       mcuMap[deviceId].device);
             }
         }
         else
         {
             lg2::error(
                 "{DEV} Recovery failed, PID = 0x{ACTUAL} does not match expected 0x{EXPECTED}",
-                "DEV", mcuMap[usbPort].device, "ACTUAL",
-                toHexString(mcuDevices[usbPort].curUsbDesc.idProduct),
-                "EXPECTED", toHexString(mcuMap[usbPort].functionalPid));
+                "DEV", mcuMap[deviceId].device, "ACTUAL",
+                toHexString(mcuDevices[deviceId].curUsbDesc.idProduct),
+                "EXPECTED", toHexString(mcuMap[deviceId].functionalPid));
             if (messageRegistry)
             {
                 messageRegistry->createMessageRegistryResourceErrors(
                     resourceErrorsDetected, RecoveryProtocol::MCURecovery,
-                    deviceRecoveryFailed, mcuMap[usbPort].device);
+                    deviceRecoveryFailed, mcuMap[deviceId].device);
             }
         }
         return;
@@ -625,7 +629,7 @@ void MCURecoveryManager::performRecovery(const std::string& usbPort,
             messageRegistry->createMessageRegistryResourceErrors(
                 resourceErrorsDetected, RecoveryProtocol::MCURecovery,
                 static_cast<ErrorCode>(MCURecoveryErrorCode::CmdExecFailed),
-                mcuMap[usbPort].device);
+                mcuMap[deviceId].device);
         }
     }
 }
@@ -648,69 +652,69 @@ void MCURecoveryManager::performRecoveryFlow(const std::string& binaryFilePath,
     }
 
     // Go through all MCUs and perform recovery if needed
-    for (const auto& [usbPort, mcuInfo] : mcuMap)
+    for (const auto& [deviceId, mcuInfo] : mcuMap)
     {
-        if (!updateDevInfo(usbPort))
+        if (!updateDevInfo(deviceId))
         {
             continue;
         }
 
-        if (!isDeviceProvisioned(usbPort))
+        if (!isDeviceProvisioned(deviceId))
         {
             lg2::error(
                 "Non-provisioned device detected on {PORT}! (PID: 0x{PID}), skipping recovery",
-                "PORT", usbPort, "PID",
-                toHexString(mcuDevices[usbPort].curUsbDesc.idProduct));
+                "PORT", mcuInfo.usbPort, "PID",
+                toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
             if (messageRegistry)
             {
                 messageRegistry->createMessageRegistryResourceErrors(
                     resourceErrorsDetected, RecoveryProtocol::MCURecovery,
                     static_cast<ErrorCode>(
                         MCURecoveryErrorCode::DevNotProvisioned),
-                    mcuMap[usbPort].device);
+                    mcuMap[deviceId].device);
             }
             continue;
         }
 
-        if (isHealthy(usbPort))
+        if (isHealthy(deviceId))
         {
             if (forceUpdate)
             {
                 lg2::info(
                     "{DEV} is healthy, but forceUpdate is set, performing recovery",
-                    "DEV", mcuMap[usbPort].device);
-                enterRecoveryMode(usbPort);
-                if (!updateDevInfo(usbPort))
+                    "DEV", mcuMap[deviceId].device);
+                enterRecoveryMode(deviceId);
+                if (!updateDevInfo(deviceId))
                 {
                     continue;
                 }
-                performRecovery(usbPort, binaryFilePath);
+                performRecovery(deviceId, binaryFilePath);
             }
             else
             {
                 lg2::info("{DEVICE} is healthy", "DEVICE",
-                          mcuMap[usbPort].device);
+                          mcuMap[deviceId].device);
                 if (messageRegistry)
                 {
                     messageRegistry->createMessageRegistry(
-                        firmwareNotInRecovery, mcuMap[usbPort].device);
+                        firmwareNotInRecovery, mcuMap[deviceId].device);
                 }
             }
         }
         else
         {
             lg2::error("{DEV} is not healthy, performing recovery", "DEV",
-                       mcuMap[usbPort].device);
+                       mcuMap[deviceId].device);
 
             // Put the MCU into force recovery mode to avoid the NXP known
             // issue (TRNG issue) where MCU cannot receive the SB3 file even
             // though the MCU is in ISP mode
-            enterRecoveryMode(usbPort);
-            if (!updateDevInfo(usbPort))
+            enterRecoveryMode(deviceId);
+            if (!updateDevInfo(deviceId))
             {
                 continue;
             }
-            performRecovery(usbPort, binaryFilePath);
+            performRecovery(deviceId, binaryFilePath);
         }
     }
 
@@ -726,7 +730,7 @@ void MCURecoveryManager::performResetFlow()
     for (int i = 0; i < 10 && !mcuList.empty(); ++i)
     {
         // Put all MCUs into reset state (only for valid GPIO lines)
-        for (const auto& [usbPort, device] : mcuDevices)
+        for (const auto& [deviceId, device] : mcuDevices)
         {
             if (!device.resetPin)
             {
@@ -737,7 +741,7 @@ void MCURecoveryManager::performResetFlow()
         usleep(mcuResetActiveUs);
 
         // Release all MCU reset pins (only for valid GPIO lines)
-        for (const auto& [usbPort, device] : mcuDevices)
+        for (const auto& [deviceId, device] : mcuDevices)
         {
             if (!device.resetPin)
             {
@@ -749,26 +753,26 @@ void MCURecoveryManager::performResetFlow()
 
         for (auto it = mcuList.begin(); it != mcuList.end();)
         {
-            const auto& [usbPort, mcuInfo] = *it;
-            if (updateDevInfo(usbPort))
+            const auto& [deviceId, mcuInfo] = *it;
+            if (updateDevInfo(deviceId))
             {
-                if (isHealthy(usbPort))
+                if (isHealthy(deviceId))
                 {
                     lg2::info("{DEV} is healthy", "DEV",
-                              mcuMap[usbPort].device);
+                              mcuMap[deviceId].device);
                     // Remove MCU from list if MCU is healthy
                     it = mcuList.erase(it);
                     // Release and remove the GPIO line to prevent
                     // unnecessary reset (only if lines were initialized)
-                    if (mcuDevices[usbPort].resetPin)
+                    if (mcuDevices[deviceId].resetPin)
                     {
-                        mcuDevices[usbPort].resetPin.release();
-                        mcuDevices[usbPort].resetPin = {};
+                        mcuDevices[deviceId].resetPin.release();
+                        mcuDevices[deviceId].resetPin = {};
                     }
-                    if (mcuDevices[usbPort].recoveryPin)
+                    if (mcuDevices[deviceId].recoveryPin)
                     {
-                        mcuDevices[usbPort].recoveryPin.release();
-                        mcuDevices[usbPort].recoveryPin = {};
+                        mcuDevices[deviceId].recoveryPin.release();
+                        mcuDevices[deviceId].recoveryPin = {};
                     }
                     continue;
                 }
@@ -776,8 +780,8 @@ void MCURecoveryManager::performResetFlow()
                 {
                     lg2::error(
                         "{DEV} is not healthy, retrying. Current PID = 0x{PID} (expected: 0x{EXPECTED})",
-                        "DEV", mcuMap[usbPort].device, "PID",
-                        toHexString(mcuDevices[usbPort].curUsbDesc.idProduct),
+                        "DEV", mcuMap[deviceId].device, "PID",
+                        toHexString(mcuDevices[deviceId].curUsbDesc.idProduct),
                         "EXPECTED", toHexString(mcuInfo.functionalPid));
                 }
             }
@@ -793,15 +797,15 @@ void MCURecoveryManager::performResetFlow()
     else
     {
         lg2::error("Some MCUs failed to become healthy after 10 attempts:");
-        for (const auto& [usbPort, mcuInfo] : mcuList)
+        for (const auto& [deviceId, mcuInfo] : mcuList)
         {
-            lg2::error(" - {DEV} on {PORT}", "DEV", mcuMap[usbPort].device,
-                       "PORT", usbPort);
+            lg2::error(" - {DEV} on {PORT}", "DEV", mcuMap[deviceId].device,
+                       "PORT", mcuInfo.usbPort);
         }
     }
 
     // Release all GPIO lines (only for lines that were actually requested)
-    for (auto& [usbPort, device] : mcuDevices)
+    for (auto& [deviceId, device] : mcuDevices)
     {
         if (device.resetPin)
         {

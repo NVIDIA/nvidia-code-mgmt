@@ -24,6 +24,9 @@
 #include <gpiod.hpp>
 #include <phosphor-logging/lg2.hpp>
 
+#include <cstdint>
+#include <string>
+
 namespace mcu_recovery_manager
 {
 
@@ -39,17 +42,26 @@ constexpr uint8_t LIBUSB_CLASS_MCTP = 0x14;
  * @struct MCUInfo
  * @brief Represents a MCU device and its USB configuration.
  *
- * This structure contains information about the MCU device's USB port,
- * GPIO names for reset and recovery, device identifiers, and the
- * corresponding product IDs for recovery and functionality.
+ * This structure contains information about the MCU device's interface
+ * (USB or I2C), connection details, GPIO names for reset and recovery,
+ * device identifiers, and the corresponding product IDs for functionality.
  */
 struct MCUInfo
 {
+    std::string device;
     std::string usbPort;
     std::string resetGpioName;
     std::string recoveryGpioName;
-    std::string device;
-    uint16_t functionalPid;
+    uint8_t i2cBus = 0;
+    uint16_t normalI2cAddress = 0;
+    uint16_t recoveryI2cAddress = 0;
+    uint16_t functionalPid = 0;
+    enum class InterfaceType
+    {
+        USB,
+        I2C,
+        Unknown
+    } interfaceType = InterfaceType::Unknown;
 };
 
 /**
@@ -62,12 +74,13 @@ struct MCUInfo
  */
 struct MCUDevice
 {
-    libusb_device* curUsbDevice;
-    libusb_device_descriptor curUsbDesc;
-    gpiod::line resetPin;
-    gpiod::line recoveryPin;
-    bool inRecoveryMode;
-    bool hasMctpClass;
+    libusb_device* curUsbDevice = nullptr;
+    libusb_device_descriptor curUsbDesc{};
+    gpiod::line resetPin{};
+    gpiod::line recoveryPin{};
+    bool inRecoveryMode = false;
+    bool hasMctpClass = false;
+    bool i2cHealthy = false;
 };
 
 /**
@@ -101,11 +114,11 @@ class MCURecoveryManager
     /**
      * @brief Performs a recovery flow on a specific MCU device.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      * @param binaryFilePath The path to the binary file to be used for
      * recovery.
      */
-    void performRecovery(const std::string& usbPort,
+    void performRecovery(const std::string& deviceId,
                          const std::string& binaryFilePath);
 
     /**
@@ -142,22 +155,22 @@ class MCURecoveryManager
      * it's in ISP mode. So we need to check if the device has MCTP class.
      * the MCU is healthy if it has MCTP class.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      * @return True if the MCU device is healthy, false otherwise.
      */
-    bool isHealthy(const std::string& usbPort)
+    bool isHealthy(const std::string& deviceId)
     {
         try
         {
-            return (mcuDevices.at(usbPort).hasMctpClass ||
-                    (mcuMap.at(usbPort).functionalPid ==
-                     mcuDevices.at(usbPort).curUsbDesc.idProduct));
+            return (mcuDevices.at(deviceId).hasMctpClass ||
+                    (mcuMap.at(deviceId).functionalPid ==
+                     mcuDevices.at(deviceId).curUsbDesc.idProduct));
         }
         catch (const std::out_of_range& oor)
         {
             lg2::error(
-                "USB port '{PORT}' not found in mcuMap or mcuDevices. Error: {ERROR}",
-                "PORT", usbPort, "ERROR", oor.what());
+                "Device '{ID}' not found in mcuMap or mcuDevices. Error: {ERROR}",
+                "ID", deviceId, "ERROR", oor.what());
             return false;
         }
     }
@@ -165,20 +178,20 @@ class MCURecoveryManager
     /**
      * @brief Checks if the MCU device is in recovery mode.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      * @return True if the MCU device is in recovery mode, false otherwise.
      */
-    bool isInRecoveryMode(const std::string& usbPort)
+    bool isInRecoveryMode(const std::string& deviceId)
     {
         try
         {
-            return mcuDevices.at(usbPort).inRecoveryMode;
+            return mcuDevices.at(deviceId).inRecoveryMode;
         }
         catch (const std::out_of_range& oor)
         {
             lg2::error(
-                "USB port '{PORT}' not found in mcuDevices. Error: {ERROR}",
-                "PORT", usbPort, "ERROR", oor.what());
+                "Device '{ID}' not found in mcuDevices. Error: {ERROR}", "ID",
+                deviceId, "ERROR", oor.what());
             return false;
         }
     }
@@ -186,9 +199,9 @@ class MCURecoveryManager
     /**
      * @brief Enters the recovery mode for a specific MCU device.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      */
-    void enterRecoveryMode(const std::string& usbPort);
+    void enterRecoveryMode(const std::string& deviceId);
 
     /**
      * @brief Enters the recovery mode for all MCU devices at once.
@@ -201,9 +214,9 @@ class MCURecoveryManager
     /**
      * @brief Exits the recovery mode for a specific MCU device.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      */
-    void exitRecoveryMode(const std::string& usbPort);
+    void exitRecoveryMode(const std::string& deviceId);
 
     /**
      * @brief Initializes the GPIO lines for the MCU devices.
@@ -236,10 +249,10 @@ class MCURecoveryManager
     /**
      * @brief Updates the status of a specific MCU device.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      * @return True if the update is successful, false otherwise.
      */
-    bool updateDevInfo(const std::string& usbPort);
+    bool updateDevInfo(const std::string& deviceId);
 
     /**
      * @brief Checks if the encrypt key is empty.
@@ -252,43 +265,48 @@ class MCURecoveryManager
     /**
      * @brief Updates the health of a specific MCU device.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      * @param config The libusb config descriptor.
      */
-    void updateDevHealth(const std::string& usbPort,
+    void updateDevHealth(const std::string& deviceId,
                          libusb_config_descriptor* config);
 
     /**
      * @brief Checks if the MCU device is provisioned.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      * @return True if the device is provisioned, false otherwise.
      */
-    bool isDeviceProvisioned(const std::string& usbPort)
+    bool isDeviceProvisioned(const std::string& deviceId)
     {
-        return nvdaVendorId == mcuDevices[usbPort].curUsbDesc.idVendor;
+        const auto& info = mcuMap[deviceId];
+        if (info.interfaceType == MCUInfo::InterfaceType::I2C)
+        {
+            return true;
+        }
+        return nvdaVendorId == mcuDevices[deviceId].curUsbDesc.idVendor;
     }
 
     /**
      * @brief Gets the USB bus number of the MCU device.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      * @return The USB bus number of the MCU device.
      */
-    uint8_t getBusNumber(const std::string& usbPort)
+    uint8_t getBusNumber(const std::string& deviceId)
     {
-        return libusb_get_bus_number(mcuDevices[usbPort].curUsbDevice);
+        return libusb_get_bus_number(mcuDevices[deviceId].curUsbDevice);
     }
 
     /**
      * @brief Gets the USB device address of the MCU device.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      * @return The USB device address of the MCU device.
      */
-    uint8_t getDeviceNumber(const std::string& usbPort)
+    uint8_t getDeviceNumber(const std::string& deviceId)
     {
-        return libusb_get_device_address(mcuDevices[usbPort].curUsbDevice);
+        return libusb_get_device_address(mcuDevices[deviceId].curUsbDevice);
     }
 
     /**
@@ -303,9 +321,10 @@ class MCURecoveryManager
     /**
      * @brief Handles the recovery error for a specific MCU device.
      *
-     * @param usbPort The USB port of the MCU device.
+     * @param deviceId The MCU device identifier from configuration.
      */
-    void handleRecoveryError(const std::string& usbPort);
+    void handleRecoveryError(const std::string& deviceId);
+
 };
 
 } // namespace mcu_recovery_manager

@@ -100,18 +100,34 @@ static std::optional<uint64_t> getPropertyUint64(const std::string& objectPath,
     }
 }
 
+static MCUInfo::InterfaceType parseInterfaceType(const std::string& value)
+{
+    if (value == "USB")
+    {
+        return MCUInfo::InterfaceType::USB;
+    }
+    if (value == "I2C")
+    {
+        return MCUInfo::InterfaceType::I2C;
+    }
+    return MCUInfo::InterfaceType::Unknown;
+}
+
 static std::optional<MCUInfo> populateMCUInfo(const std::string& objectPath,
                                               const std::string& deviceName)
 {
     MCUInfo info;
 
-    auto usbPortOpt = getPropertyString(objectPath, "USBPort");
-    if (!usbPortOpt)
+    auto interfaceOpt = getPropertyString(objectPath, "Interface");
+    const std::string interfaceValue =
+        interfaceOpt ? interfaceOpt.value() : "USB";
+    info.interfaceType = parseInterfaceType(interfaceValue);
+    if (info.interfaceType == MCUInfo::InterfaceType::Unknown)
     {
-        lg2::error("Missing USBPort property for {PATH}", "PATH", objectPath);
+        lg2::error("Unsupported Interface '{IFACE}' for {PATH}", "IFACE",
+                   interfaceValue, "PATH", objectPath);
         return std::nullopt;
     }
-    info.usbPort = usbPortOpt.value();
 
     auto resetGpioNameOpt = getPropertyString(objectPath, "ResetGpioName");
     if (!resetGpioNameOpt)
@@ -132,25 +148,64 @@ static std::optional<MCUInfo> populateMCUInfo(const std::string& objectPath,
     }
     info.recoveryGpioName = recoveryGpioNameOpt.value();
 
-    auto functionalPidOpt = getPropertyUint64(objectPath, "ProductId");
-    if (!functionalPidOpt)
-    {
-        lg2::error("Missing ProductId property for {PATH}", "PATH", objectPath);
-        return std::nullopt;
-    }
-
-    // Validate ProductId fits in uint16_t range
-    uint64_t pidValue = functionalPidOpt.value();
-    if (pidValue > std::numeric_limits<uint16_t>::max())
-    {
-        lg2::error(
-            "ProductId {PID} for {PATH} exceeds uint16_t range (max: 65535)",
-            "PID", pidValue, "PATH", objectPath);
-        return std::nullopt;
-    }
-    info.functionalPid = static_cast<uint16_t>(pidValue);
-
     info.device = deviceName;
+
+    if (info.interfaceType == MCUInfo::InterfaceType::USB)
+    {
+        auto usbPortOpt = getPropertyString(objectPath, "USBPort");
+        if (!usbPortOpt)
+        {
+            lg2::error("Missing USBPort property for {PATH}", "PATH",
+                       objectPath);
+            return std::nullopt;
+        }
+        info.usbPort = usbPortOpt.value();
+
+        auto functionalPidOpt = getPropertyUint64(objectPath, "ProductId");
+        if (!functionalPidOpt)
+        {
+            lg2::error("Missing ProductId property for {PATH}", "PATH",
+                       objectPath);
+            return std::nullopt;
+        }
+
+        // Validate ProductId fits in uint16_t range
+        uint64_t pidValue = functionalPidOpt.value();
+        if (pidValue > std::numeric_limits<uint16_t>::max())
+        {
+            lg2::error(
+                "ProductId {PID} for {PATH} exceeds uint16_t range (max: 65535)",
+                "PID", pidValue, "PATH", objectPath);
+            return std::nullopt;
+        }
+        info.functionalPid = static_cast<uint16_t>(pidValue);
+    }
+    else
+    {
+        auto busOpt = getPropertyUint64(objectPath, "I2CBus");
+        auto normalAddrOpt = getPropertyUint64(objectPath, "NormalI2CAddress");
+        auto recoveryAddrOpt =
+            getPropertyUint64(objectPath, "RecoveryI2CAddress");
+        if (!busOpt || !normalAddrOpt || !recoveryAddrOpt)
+        {
+            lg2::error(
+                "Missing I2C properties for {PATH} (I2CBus/NormalI2CAddress/RecoveryI2CAddress)",
+                "PATH", objectPath);
+            return std::nullopt;
+        }
+        if (busOpt.value() > std::numeric_limits<uint8_t>::max() ||
+            normalAddrOpt.value() > std::numeric_limits<uint16_t>::max() ||
+            recoveryAddrOpt.value() > std::numeric_limits<uint16_t>::max())
+        {
+            lg2::error("I2C properties out of range for {PATH}", "PATH",
+                       objectPath);
+            return std::nullopt;
+        }
+        info.i2cBus = static_cast<uint8_t>(busOpt.value());
+        info.normalI2cAddress = static_cast<uint16_t>(normalAddrOpt.value());
+        info.recoveryI2cAddress =
+            static_cast<uint16_t>(recoveryAddrOpt.value());
+    }
 
     return info;
 }
@@ -181,13 +236,76 @@ std::map<std::string, MCUInfo> parseJsonFile(const std::string& jsonFilePath)
         }
 
         MCUInfo info;
-        info.usbPort = item["USBPort"];
+        auto parseHexField = [&](const char* field,
+                                 uint16_t& outValue) -> bool {
+            if (!item.contains(field))
+            {
+                return false;
+            }
+            if (item[field].is_string())
+            {
+                outValue = static_cast<uint16_t>(
+                    std::stoul(item[field].get<std::string>(), nullptr, 0));
+                return true;
+            }
+            if (item[field].is_number_unsigned() ||
+                item[field].is_number_integer())
+            {
+                outValue = static_cast<uint16_t>(item[field].get<uint64_t>());
+                return true;
+            }
+            return false;
+        };
+
+        if (!item.contains("Interface"))
+        {
+            lg2::warning(
+                "Missing Interface in MCURecovery JSON entry, defaulting to USB");
+            info.interfaceType = MCUInfo::InterfaceType::USB;
+        }
+        else
+        {
+            info.interfaceType =
+                parseInterfaceType(item["Interface"].get<std::string>());
+        }
+        if (info.interfaceType == MCUInfo::InterfaceType::Unknown)
+        {
+            lg2::error("Unsupported Interface in MCURecovery JSON entry");
+            continue;
+        }
+
         info.resetGpioName = item["ResetGpioName"];
         info.recoveryGpioName = item["RecoveryGpioName"];
-        info.functionalPid =
-            std::stoi(item["ProductId"].get<std::string>(), nullptr, 16);
         info.device = item["Name"];
-        mcuMap[info.usbPort] = info;
+
+        if (info.interfaceType == MCUInfo::InterfaceType::USB)
+        {
+            info.usbPort = item["USBPort"];
+            if (!parseHexField("ProductId", info.functionalPid))
+            {
+                lg2::error("Invalid ProductId in MCURecovery JSON entry");
+                continue;
+            }
+        }
+        else
+        {
+            if (!item.contains("I2CBus") ||
+                (!item["I2CBus"].is_number_unsigned() &&
+                 !item["I2CBus"].is_number_integer()))
+            {
+                lg2::error("Invalid I2CBus in MCURecovery JSON entry");
+                continue;
+            }
+            info.i2cBus = static_cast<uint8_t>(item["I2CBus"].get<uint64_t>());
+            if (!parseHexField("NormalI2CAddress", info.normalI2cAddress) ||
+                !parseHexField("RecoveryI2CAddress", info.recoveryI2cAddress))
+            {
+                lg2::error("Invalid I2C address in MCURecovery JSON entry");
+                continue;
+            }
+        }
+
+        mcuMap[info.device] = info;
     }
     return mcuMap;
 }
@@ -225,7 +343,7 @@ std::map<std::string, MCUInfo>
             continue;
         }
 
-        mcuMap[infoOpt->usbPort] = infoOpt.value();
+        mcuMap[infoOpt->device] = infoOpt.value();
     }
 
     lg2::info(
@@ -255,7 +373,7 @@ std::map<std::string, MCUInfo> getAllMCUConfigFromDbus()
             continue;
         }
 
-        mcuMap[infoOpt->usbPort] = infoOpt.value();
+        mcuMap[infoOpt->device] = infoOpt.value();
     }
 
     lg2::info("Found {COUNT} MCU devices from Entity Manager", "COUNT",
@@ -297,7 +415,7 @@ std::map<std::string, MCUInfo>
             continue;
         }
 
-        mcuMap[infoOpt->usbPort] = infoOpt.value();
+        mcuMap[infoOpt->device] = infoOpt.value();
     }
 
     lg2::info(
