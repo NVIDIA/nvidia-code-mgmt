@@ -14,12 +14,12 @@ MCURecoveryModeManager::MCURecoveryModeManager(
     sdbusplus::bus_t& bus, std::string chassisName, std::string objPath,
     const std::shared_ptr<mcu_recovery_manager::MCURecoveryManager>&
         mcuRecoveryMgr,
-    std::string usbPort) :
+    std::string deviceId) :
     RecoveryModeManagerBase(bus, std::move(chassisName), std::move(objPath)),
-    mcuRecoveryManager(mcuRecoveryMgr), usbPort(std::move(usbPort))
+    mcuRecoveryManager(mcuRecoveryMgr), deviceId(std::move(deviceId))
 {
-    lg2::info("MCURecoveryModeManager created for {CHASSIS}, USB port: {PORT}",
-              "CHASSIS", this->chassisName, "PORT", this->usbPort);
+    lg2::info("MCURecoveryModeManager created for {CHASSIS}, device: {DEV}",
+              "CHASSIS", this->chassisName, "DEV", this->deviceId);
 }
 
 void MCURecoveryModeManager::performForceRecovery()
@@ -30,8 +30,8 @@ void MCURecoveryModeManager::performForceRecovery()
         throw sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure();
     }
 
-    lg2::info("Executing MCU force recovery for {CHASSIS} on port {PORT}",
-              "CHASSIS", chassisName, "PORT", usbPort);
+    lg2::info("Executing MCU force recovery for {CHASSIS} on {DEV}", "CHASSIS",
+              chassisName, "DEV", deviceId);
 
     try
     {
@@ -44,7 +44,7 @@ void MCURecoveryModeManager::performForceRecovery()
         }
 
         // Enter recovery mode for this specific MCU
-        mcuRecoveryManager->enterRecoveryMode(usbPort);
+        mcuRecoveryManager->enterRecoveryMode(deviceId);
 
         // Release GPIO lines after operation
         mcuRecoveryManager->releaseGpioLines();

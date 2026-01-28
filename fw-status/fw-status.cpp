@@ -241,13 +241,19 @@ std::map<std::string, mcu_recovery_manager::MCUInfo> getMCUConfig()
     {
         if (interfaces.contains(mcuObjInterface))
         {
-            if (!hasProperty(interfaces, mcuObjInterface, "USBPort"))
+            std::string interfaceType = "USB";
+            if (hasProperty(interfaces, mcuObjInterface, "Interface"))
+            {
+                interfaceType =
+                    getString(interfaces, mcuObjInterface, "Interface");
+            }
+
+            if (!hasProperty(interfaces, mcuObjInterface, "Name"))
             {
                 continue;
             }
-
-            const auto usbPort =
-                getString(interfaces, mcuObjInterface, "USBPort");
+            const auto deviceName =
+                getString(interfaces, mcuObjInterface, "Name");
 
             if (!hasProperty(interfaces, mcuObjInterface, "ResetGpioName"))
             {
@@ -263,19 +269,50 @@ std::map<std::string, mcu_recovery_manager::MCUInfo> getMCUConfig()
             const auto recoveryGpioName =
                 getString(interfaces, mcuObjInterface, "RecoveryGpioName");
 
-            if (!hasProperty(interfaces, mcuObjInterface, "ProductId"))
-            {
-                continue;
-            }
-            auto functionalPid =
-                getUint64(interfaces, mcuObjInterface, "ProductId");
-
             mcu_recovery_manager::MCUInfo info;
-            info.usbPort = usbPort;
+            info.device = deviceName;
             info.resetGpioName = resetGpioName;
             info.recoveryGpioName = recoveryGpioName;
-            info.functionalPid = functionalPid;
-            mcuMap[info.usbPort] = info;
+
+            if (interfaceType == "I2C")
+            {
+                if (!hasProperty(interfaces, mcuObjInterface, "I2CBus") ||
+                    !hasProperty(interfaces, mcuObjInterface,
+                                 "NormalI2CAddress") ||
+                    !hasProperty(interfaces, mcuObjInterface,
+                                 "RecoveryI2CAddress"))
+                {
+                    lg2::error("Missing I2C properties for {PATH}", "PATH",
+                               emObjectPath);
+                    continue;
+                }
+                info.interfaceType =
+                    mcu_recovery_manager::MCUInfo::InterfaceType::I2C;
+                info.i2cBus = static_cast<uint8_t>(
+                    getUint64(interfaces, mcuObjInterface, "I2CBus"));
+                info.normalI2cAddress = static_cast<uint16_t>(
+                    getUint64(interfaces, mcuObjInterface, "NormalI2CAddress"));
+                info.recoveryI2cAddress = static_cast<uint16_t>(getUint64(
+                    interfaces, mcuObjInterface, "RecoveryI2CAddress"));
+            }
+            else
+            {
+                if (!hasProperty(interfaces, mcuObjInterface, "USBPort") ||
+                    !hasProperty(interfaces, mcuObjInterface, "ProductId"))
+                {
+                    lg2::error("Missing USB properties for {PATH}", "PATH",
+                               emObjectPath);
+                    continue;
+                }
+                info.interfaceType =
+                    mcu_recovery_manager::MCUInfo::InterfaceType::USB;
+                info.usbPort =
+                    getString(interfaces, mcuObjInterface, "USBPort");
+                info.functionalPid =
+                    getUint64(interfaces, mcuObjInterface, "ProductId");
+            }
+
+            mcuMap[info.device] = info;
         }
     }
 
@@ -585,16 +622,15 @@ void publishDBusRecoveryObject()
             lg2::info("Found MCU recovery config Object: {PATH}", "PATH",
                       emObjectPath);
 
-            if (!hasProperty(interfaces, mcuObjInterface, "USBPort"))
+            std::string interfaceType = "USB";
+            if (hasProperty(interfaces, mcuObjInterface, "Interface"))
             {
-                lg2::error("Failed to get USB Port in MCU recovery config "
-                           "Object: {PATH}",
-                           "PATH", emObjectPath);
-                continue;
+                interfaceType =
+                    getString(interfaces, mcuObjInterface, "Interface");
             }
 
-            const auto usbPort =
-                getString(interfaces, mcuObjInterface, "USBPort");
+            const auto deviceName =
+                getString(interfaces, mcuObjInterface, "Name");
 
             const auto eidOpt =
                 getUint8(interfaces, mcuObjInterface, "MctpEID");
@@ -619,22 +655,23 @@ void publishDBusRecoveryObject()
                 getString(interfaces, mcuObjInterface, "ChassisName");
 
             resources.push_back(std::make_unique<MCUResource>(
-                getBus(), objPath, eid, usbPort, mcuRecoveryManager));
+                getBus(), objPath, eid, deviceName, mcuRecoveryManager));
 
             // Create MCURecoveryModeManager for D-Bus SetRecoveryMode interface
-            if (mcuRecoveryManager && !chassisName.empty() && !usbPort.empty())
+            if (mcuRecoveryManager && !chassisName.empty() &&
+                !deviceName.empty())
             {
                 try
                 {
                     lg2::info(
-                        "Creating MCURecoveryModeManager: {CHASSIS}, USB port: {PORT}",
-                        "CHASSIS", chassisName, "PORT", usbPort);
+                        "Creating MCURecoveryModeManager: {CHASSIS}, device: {DEV}",
+                        "CHASSIS", chassisName, "DEV", deviceName);
                     recoveryModeManagers.push_back(
                         std::make_unique<
                             nvidia::recovery::MCURecoveryModeManager>(
                             getBus(), chassisName,
                             getChassisObjPath(chassisName), mcuRecoveryManager,
-                            usbPort));
+                            deviceName));
                 }
                 catch (const std::exception& e)
                 {

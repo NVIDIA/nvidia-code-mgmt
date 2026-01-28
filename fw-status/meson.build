@@ -43,6 +43,7 @@ source_files = [
     join_paths(glacier_recovery_dir, 'glacier_recovery_commands.cpp'),
     join_paths(recovery_common_dir, 'i2c_utils.cpp'),
     join_paths(recovery_common_dir, 'message_registry.cpp'),
+    join_paths(mcu_recovery_dir, 'utils.cpp'),
     join_paths(mcu_recovery_dir, 'mcu_recovery_manager.cpp'),
     join_paths(usbrcm_recovery_dir, 'force_recovery.cpp'),
     join_paths(usbrcm_recovery_dir, 'get_recovery_status.cpp'),

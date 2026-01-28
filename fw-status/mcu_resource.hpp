@@ -35,25 +35,25 @@ class MCUResource : public MCTPDiscoveryResource
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
      * @param eid - MCTP Endpoint ID of the Resource
-     * @param usbPort - USB port identifier for the resource
+     * @param deviceId - MCU device identifier for the resource
      * @param mcuRecoveryManager - Shared pointer to MCU Recovery Manager
      *
      */
     MCUResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                uint8_t eid, const std::string& usbPort,
+                uint8_t eid, const std::string& deviceId,
                 std::shared_ptr<mcu_recovery_manager::MCURecoveryManager>
                     mcuRecoveryManager) :
-        MCTPDiscoveryResource(bus, objPath, eid), usbPort(usbPort),
+        MCTPDiscoveryResource(bus, objPath, eid), deviceId(deviceId),
         mcuRecoveryManager(mcuRecoveryManager)
     {
-        lg2::info("Creating MCU Resource: EID={EID}, USB_PORT={PORT}", "EID",
-                  eid, "PORT", usbPort);
+        lg2::info("Creating MCU Resource: EID={EID}, DEVICE_ID={ID}", "EID",
+                  eid, "ID", deviceId);
 
         updateHealth();
     }
 
   private:
-    std::string usbPort;
+    std::string deviceId;
     std::shared_ptr<mcu_recovery_manager::MCURecoveryManager>
         mcuRecoveryManager;
 
@@ -66,12 +66,12 @@ class MCUResource : public MCTPDiscoveryResource
     void updateHealth() override
     {
         mcuRecoveryManager->updateAllDeviceInfo();
-        auto isHealthy = mcuRecoveryManager->isHealthy(usbPort);
-        auto isInRecoveryMode = mcuRecoveryManager->isInRecoveryMode(usbPort);
+        auto isHealthy = mcuRecoveryManager->isHealthy(deviceId);
+        auto isInRecoveryMode = mcuRecoveryManager->isInRecoveryMode(deviceId);
 
         lg2::info(
-            "Updating Health: USB_PORT={PORT}, IS_HEALTHY={IS_HEALTHY}, IS_IN_RECOVERY_MODE={IS_IN_RECOVERY_MODE}",
-            "PORT", usbPort, "IS_HEALTHY", isHealthy, "IS_IN_RECOVERY_MODE",
+            "Updating Health: DEVICE_ID={ID}, IS_HEALTHY={IS_HEALTHY}, IS_IN_RECOVERY_MODE={IS_IN_RECOVERY_MODE}",
+            "ID", deviceId, "IS_HEALTHY", isHealthy, "IS_IN_RECOVERY_MODE",
             isInRecoveryMode);
 
         if (isHealthy)

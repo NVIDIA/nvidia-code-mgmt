@@ -22,7 +22,7 @@ class MCURecoveryModeManager : public RecoveryModeManagerBase
         sdbusplus::bus_t& bus, std::string chassisName, std::string objPath,
         const std::shared_ptr<mcu_recovery_manager::MCURecoveryManager>&
             mcuRecoveryMgr,
-        std::string usbPort);
+        std::string deviceId);
 
   protected:
     void performForceRecovery() override;
@@ -30,7 +30,7 @@ class MCURecoveryModeManager : public RecoveryModeManagerBase
   private:
     std::shared_ptr<mcu_recovery_manager::MCURecoveryManager>
         mcuRecoveryManager;
-    std::string usbPort;
+    std::string deviceId;
 };
 
 } // namespace nvidia::recovery
