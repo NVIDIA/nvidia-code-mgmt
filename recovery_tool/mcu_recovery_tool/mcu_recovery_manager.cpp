@@ -17,11 +17,18 @@
 
 #include "utils.hpp"
 
+#include <fcntl.h>
+#include <linux/i2c-dev.h>
+#include <linux/i2c.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <CLI/CLI.hpp>
 
+#include <cerrno>
+#include <cstring>
 #include <list>
+#include <sstream>
 
 using namespace mcu_recovery_manager;
 
@@ -49,7 +56,11 @@ bool MCURecoveryManager::initialize(
         this->messageRegistry = std::move(messageRegistry);
     }
 
-    if (libusb_init(&context) < 0)
+    const bool hasUsb = std::any_of(
+        this->mcuMap.begin(), this->mcuMap.end(), [](const auto& item) {
+            return item.second.interfaceType == MCUInfo::InterfaceType::USB;
+        });
+    if (hasUsb && libusb_init(&context) < 0)
     {
         lg2::error("Failed to initialize libusb");
         return false;
@@ -60,6 +71,78 @@ bool MCURecoveryManager::initialize(
         return false;
     }
     return true;
+}
+
+std::string MCURecoveryManager::getI2cTarget(uint8_t bus, uint16_t address)
+{
+    std::ostringstream oss;
+    oss << "/dev/i2c-" << static_cast<unsigned>(bus) << ",0x" << std::hex
+        << std::uppercase << address;
+    return oss.str();
+}
+
+bool MCURecoveryManager::probeI2cAddress(const std::string& deviceId,
+                                         uint16_t address)
+{
+    const auto& info = mcuMap[deviceId];
+    std::string devPath = "/dev/i2c-" + std::to_string(info.i2cBus);
+
+    int fd = open(devPath.c_str(), O_RDWR);
+    if (fd < 0)
+    {
+        lg2::error("Failed to open {DEV}: {ERR}", "DEV", devPath, "ERR",
+                   std::strerror(errno));
+        return false;
+    }
+
+    if (ioctl(fd, I2C_SLAVE, address) < 0)
+    {
+        lg2::error("Failed to set I2C address 0x{ADDR} on {DEV}: {ERR}", "ADDR",
+                   toHexString(address), "DEV", devPath, "ERR",
+                   std::strerror(errno));
+        close(fd);
+        return false;
+    }
+
+    i2c_smbus_ioctl_data ioctlData{};
+    i2c_smbus_data smbusData{};
+    ioctlData.read_write = I2C_SMBUS_WRITE;
+    ioctlData.command = 0;
+    ioctlData.size = I2C_SMBUS_QUICK;
+    ioctlData.data = &smbusData;
+    int ret = ioctl(fd, I2C_SMBUS, &ioctlData);
+    if (ret < 0)
+    {
+        close(fd);
+        return false;
+    }
+
+    close(fd);
+    return true;
+}
+
+bool MCURecoveryManager::updateI2cDevInfo(const std::string& deviceId)
+{
+    auto& device = mcuDevices[deviceId];
+    const auto& info = mcuMap[deviceId];
+
+    device.i2cHealthy = probeI2cAddress(deviceId, info.normalI2cAddress);
+    device.inRecoveryMode = probeI2cAddress(deviceId, info.recoveryI2cAddress);
+
+    if (device.i2cHealthy || device.inRecoveryMode)
+    {
+        return true;
+    }
+
+    lg2::error("{DEV} not found on I2C bus {BUS}", "DEV", info.device, "BUS",
+               info.i2cBus);
+    if (messageRegistry)
+    {
+        messageRegistry->createMessageRegistryResourceErrors(
+            resourceErrorsDetected, RecoveryProtocol::MCURecovery,
+            noDevicesFound, info.device);
+    }
+    return false;
 }
 
 bool MCURecoveryManager::initGpioLines()
@@ -119,8 +202,8 @@ void MCURecoveryManager::releaseGpioLines()
         catch (const std::exception& e)
         {
             lg2::warning(
-                "Failed to release GPIO for {DEV}: {ERR}, continuing...",
-                "DEV", mcuMap[deviceId].device, "ERR", e.what());
+                "Failed to release GPIO for {DEV}: {ERR}, continuing...", "DEV",
+                mcuMap[deviceId].device, "ERR", e.what());
         }
     }
 }
@@ -192,8 +275,7 @@ void MCURecoveryManager::enterRecoveryModeAll()
 
 void MCURecoveryManager::exitRecoveryMode(const std::string& deviceId)
 {
-    lg2::info("{DEV} exiting recovery mode...", "DEV",
-              mcuMap[deviceId].device);
+    lg2::info("{DEV} exiting recovery mode...", "DEV", mcuMap[deviceId].device);
 
     if (!mcuDevices[deviceId].recoveryPin || !mcuDevices[deviceId].resetPin)
     {
@@ -277,7 +359,7 @@ void MCURecoveryManager::updateDevHealth(const std::string& deviceId,
     mcuDevices[deviceId].inRecoveryMode = hasHidClass;
 }
 
-bool MCURecoveryManager::updateDevInfo(const std::string& deviceId)
+bool MCURecoveryManager::updateUsbDevInfo(const std::string& deviceId)
 {
     const uint8_t maxRetries = 5;
     uint8_t retries = 0;
@@ -362,6 +444,16 @@ bool MCURecoveryManager::updateDevInfo(const std::string& deviceId)
     return false;
 }
 
+bool MCURecoveryManager::updateDevInfo(const std::string& deviceId)
+{
+    const auto& info = mcuMap[deviceId];
+    if (info.interfaceType == MCUInfo::InterfaceType::I2C)
+    {
+        return updateI2cDevInfo(deviceId);
+    }
+    return updateUsbDevInfo(deviceId);
+}
+
 void MCURecoveryManager::updateAllDeviceInfo()
 {
     for (auto& [deviceId, mcuInfo] : mcuMap)
@@ -385,9 +477,21 @@ void MCURecoveryManager::showAllDeviceStatus()
         }
         else
         {
-            lg2::error("{DEV} is in unknown state: PID = 0x{PID}", "DEV",
-                       mcuMap[deviceId].device, "PID",
-                       toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
+            if (mcuInfo.interfaceType == MCUInfo::InterfaceType::I2C)
+            {
+                lg2::error(
+                    "{DEV} is in unknown state: normal I2C address 0x{NORM} recovery I2C address 0x{REC}",
+                    "DEV", mcuMap[deviceId].device, "NORM",
+                    toHexString(mcuInfo.normalI2cAddress), "REC",
+                    toHexString(mcuInfo.recoveryI2cAddress));
+            }
+            else
+            {
+                lg2::error(
+                    "{DEV} is in unknown state: PID = 0x{PID}", "DEV",
+                    mcuMap[deviceId].device, "PID",
+                    toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
+            }
         }
     }
 }
@@ -476,14 +580,30 @@ bool MCURecoveryManager::isSB3FileValid(const std::string& binaryFilePath)
 void MCURecoveryManager::performRecovery(const std::string& deviceId,
                                          const std::string& binaryFilePath)
 {
-    std::string usbBusDev = std::to_string(getBusNumber(deviceId)) + ":" +
-                            std::to_string(getDeviceNumber(deviceId));
-    std::string usbVidPid =
-        toHexString(mcuDevices[deviceId].curUsbDesc.idVendor) + ":" +
-        toHexString(mcuDevices[deviceId].curUsbDesc.idProduct);
+    const auto& info = mcuMap[deviceId];
+    std::string blhostTarget;
+    if (info.interfaceType == MCUInfo::InterfaceType::USB)
+    {
+        std::string usbBusDev = std::to_string(getBusNumber(deviceId)) + ":" +
+                                std::to_string(getDeviceNumber(deviceId));
+        std::string usbVidPid =
+            toHexString(mcuDevices[deviceId].curUsbDesc.idVendor) + ":" +
+            toHexString(mcuDevices[deviceId].curUsbDesc.idProduct);
+        blhostTarget =
+            "--usb-bus-device " + usbBusDev + " --usb-id " + usbVidPid;
+    }
+    else if (info.interfaceType == MCUInfo::InterfaceType::I2C)
+    {
+        blhostTarget =
+            "-i " + getI2cTarget(info.i2cBus, info.recoveryI2cAddress);
+    }
+    else
+    {
+        lg2::error("Unknown interface for {DEV}", "DEV", info.device);
+        return;
+    }
 
-    lg2::info("Performing recovery on {DEV}", "DEV",
-              mcuMap[deviceId].device);
+    lg2::info("Performing recovery on {DEV}", "DEV", mcuMap[deviceId].device);
     if (messageRegistry)
     {
         messageRegistry->createMessageRegistry(recoveryStarted,
@@ -493,9 +613,8 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
     try
     {
         // get security state to check if MCU is locked
-        std::string cmdSecState = "blhost --usb-bus-device " + usbBusDev +
-                                  " --usb-id " + usbVidPid +
-                                  " get-property security-state";
+        std::string cmdSecState =
+            "blhost " + blhostTarget + " get-property security-state";
         lg2::info("execute: {CMD}", "CMD", cmdSecState);
         std::string secStateOutput = executeCommand(cmdSecState);
         if (!isCommandSuccessful(secStateOutput))
@@ -530,9 +649,8 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
             lg2::info("Checking if encrypt key is set...");
             // check if encrypt key is set as blhost only receives SB3 file if
             // encrypt key is set
-            std::string cmdGetKey = "blhost --usb-bus-device " + usbBusDev +
-                                    " --usb-id " + usbVidPid +
-                                    " read-memory 0x1004160 48";
+            std::string cmdGetKey =
+                "blhost " + blhostTarget + " read-memory 0x1004160 48";
             lg2::info("execute: {CMD}", "CMD", cmdGetKey);
             std::string getKeyOutput = executeCommand(cmdGetKey);
             if (!isCommandSuccessful(getKeyOutput))
@@ -567,9 +685,8 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
         }
 
         // try receiving SB3 file
-        std::string cmdWrite = "blhost --usb-bus-device " + usbBusDev +
-                               " --usb-id " + usbVidPid + " receive-sb-file " +
-                               binaryFilePath;
+        std::string cmdWrite =
+            "blhost " + blhostTarget + " receive-sb-file " + binaryFilePath;
         lg2::info("execute: {CMD}", "CMD", cmdWrite);
         std::string write_output = executeCommand(cmdWrite);
         if (!isCommandSuccessful(write_output))
@@ -596,9 +713,20 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
 
         if (isHealthy(deviceId))
         {
-            lg2::info("{DEV} successfully recovered, PID = 0x{PID} as expected",
-                      "DEV", mcuMap[deviceId].device, "PID",
-                      toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
+            if (mcuMap[deviceId].interfaceType == MCUInfo::InterfaceType::I2C)
+            {
+                lg2::info(
+                    "{DEV} successfully recovered, normal I2C address 0x{ADDR} detected",
+                    "DEV", mcuMap[deviceId].device, "ADDR",
+                    toHexString(mcuMap[deviceId].normalI2cAddress));
+            }
+            else
+            {
+                lg2::info(
+                    "{DEV} successfully recovered, PID = 0x{PID} as expected",
+                    "DEV", mcuMap[deviceId].device, "PID",
+                    toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
+            }
             if (messageRegistry)
             {
                 messageRegistry->createMessageRegistry(recoverySuccessful,
@@ -607,11 +735,21 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
         }
         else
         {
-            lg2::error(
-                "{DEV} Recovery failed, PID = 0x{ACTUAL} does not match expected 0x{EXPECTED}",
-                "DEV", mcuMap[deviceId].device, "ACTUAL",
-                toHexString(mcuDevices[deviceId].curUsbDesc.idProduct),
-                "EXPECTED", toHexString(mcuMap[deviceId].functionalPid));
+            if (mcuMap[deviceId].interfaceType == MCUInfo::InterfaceType::I2C)
+            {
+                lg2::error(
+                    "{DEV} Recovery failed, normal I2C address 0x{ADDR} not detected",
+                    "DEV", mcuMap[deviceId].device, "ADDR",
+                    toHexString(mcuMap[deviceId].normalI2cAddress));
+            }
+            else
+            {
+                lg2::error(
+                    "{DEV} Recovery failed, PID = 0x{ACTUAL} does not match expected 0x{EXPECTED}",
+                    "DEV", mcuMap[deviceId].device, "ACTUAL",
+                    toHexString(mcuDevices[deviceId].curUsbDesc.idProduct),
+                    "EXPECTED", toHexString(mcuMap[deviceId].functionalPid));
+            }
             if (messageRegistry)
             {
                 messageRegistry->createMessageRegistryResourceErrors(
@@ -661,10 +799,8 @@ void MCURecoveryManager::performRecoveryFlow(const std::string& binaryFilePath,
 
         if (!isDeviceProvisioned(deviceId))
         {
-            lg2::error(
-                "Non-provisioned device detected on {PORT}! (PID: 0x{PID}), skipping recovery",
-                "PORT", mcuInfo.usbPort, "PID",
-                toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
+            lg2::error("Non-provisioned device detected, skipping recovery",
+                       "DEV", mcuInfo.device);
             if (messageRegistry)
             {
                 messageRegistry->createMessageRegistryResourceErrors(
@@ -778,11 +914,23 @@ void MCURecoveryManager::performResetFlow()
                 }
                 else
                 {
-                    lg2::error(
-                        "{DEV} is not healthy, retrying. Current PID = 0x{PID} (expected: 0x{EXPECTED})",
-                        "DEV", mcuMap[deviceId].device, "PID",
-                        toHexString(mcuDevices[deviceId].curUsbDesc.idProduct),
-                        "EXPECTED", toHexString(mcuInfo.functionalPid));
+                    if (mcuInfo.interfaceType == MCUInfo::InterfaceType::I2C)
+                    {
+                        lg2::error(
+                            "{DEV} is not healthy, retrying. Normal I2C 0x{NORM} Recovery I2C 0x{REC}",
+                            "DEV", mcuMap[deviceId].device, "NORM",
+                            toHexString(mcuInfo.normalI2cAddress), "REC",
+                            toHexString(mcuInfo.recoveryI2cAddress));
+                    }
+                    else
+                    {
+                        lg2::error(
+                            "{DEV} is not healthy, retrying. Current PID = 0x{PID} (expected: 0x{EXPECTED})",
+                            "DEV", mcuMap[deviceId].device, "PID",
+                            toHexString(
+                                mcuDevices[deviceId].curUsbDesc.idProduct),
+                            "EXPECTED", toHexString(mcuInfo.functionalPid));
+                    }
                 }
             }
             ++it;

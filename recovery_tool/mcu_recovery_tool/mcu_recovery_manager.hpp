@@ -162,6 +162,11 @@ class MCURecoveryManager
     {
         try
         {
+            if (mcuMap.at(deviceId).interfaceType ==
+                MCUInfo::InterfaceType::I2C)
+            {
+                return mcuDevices.at(deviceId).i2cHealthy;
+            }
             return (mcuDevices.at(deviceId).hasMctpClass ||
                     (mcuMap.at(deviceId).functionalPid ==
                      mcuDevices.at(deviceId).curUsbDesc.idProduct));
@@ -189,9 +194,8 @@ class MCURecoveryManager
         }
         catch (const std::out_of_range& oor)
         {
-            lg2::error(
-                "Device '{ID}' not found in mcuDevices. Error: {ERROR}", "ID",
-                deviceId, "ERROR", oor.what());
+            lg2::error("Device '{ID}' not found in mcuDevices. Error: {ERROR}",
+                       "ID", deviceId, "ERROR", oor.what());
             return false;
         }
     }
@@ -325,6 +329,39 @@ class MCURecoveryManager
      */
     void handleRecoveryError(const std::string& deviceId);
 
+    /**
+     * @brief Updates the status of a specific USB MCU device.
+     *
+     * @param deviceId The MCU device identifier from configuration.
+     * @return True if the update is successful, false otherwise.
+     */
+    bool updateUsbDevInfo(const std::string& deviceId);
+
+    /**
+     * @brief Updates the status of a specific I2C MCU device.
+     *
+     * @param deviceId The MCU device identifier from configuration.
+     * @return True if the update is successful, false otherwise.
+     */
+    bool updateI2cDevInfo(const std::string& deviceId);
+
+    /**
+     * @brief Probes the I2C address of a specific MCU device.
+     *
+     * @param deviceId The MCU device identifier from configuration.
+     * @param address The I2C address to probe.
+     * @return True if the probe is successful, false otherwise.
+     */
+    bool probeI2cAddress(const std::string& deviceId, uint16_t address);
+
+    /**
+     * @brief Gets the I2C target string for a specific MCU device.
+     *
+     * @param bus The I2C bus number.
+     * @param address The I2C address.
+     * @return The I2C target string.
+     */
+    std::string getI2cTarget(uint8_t bus, uint16_t address);
 };
 
 } // namespace mcu_recovery_manager
