@@ -22,6 +22,8 @@
 #include <memory>
 #include <string>
 
+class UdevMonitor;
+
 /**@class USBRcmResource
  *
  *  Represents a MCTPDiscoveryResource whose recovery status is determined
@@ -49,14 +51,19 @@ class USBRcmResource : public MCTPDiscoveryResource
      * @param usbPort - USB port path identifier for the resource
      *                  (e.g., "1-1.1.1.2")
      * @param companionObjPath - Path of D-Bus object for companion component
+     * @param udevMonitor - Shared pointer to UdevMonitor for USB device events
      *
      */
     USBRcmResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                    uint8_t eid, const std::string& usbPort,
-                   const std::string& companionObjPath);
+                   const std::string& companionObjPath,
+                   std::shared_ptr<UdevMonitor> udevMonitor);
+
+    ~USBRcmResource();
 
   private:
     std::string usbPort;
+    std::shared_ptr<UdevMonitor> udevMonitor;
     std::unique_ptr<BaseResource> companionResource;
 
     /**@brief Override function for updating Health and Status of D-Bus object

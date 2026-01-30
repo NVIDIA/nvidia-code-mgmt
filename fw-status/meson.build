@@ -22,6 +22,7 @@ dbus_utils_dir = '../src'
 mctp_util_dir = './mctp_util'
 
 libusb_dep = dependency('libusb-1.0', required: true)
+libudev_dep = dependency('libudev', required: true)
 
 source_files = [
     'fw-status.cpp',
@@ -30,6 +31,7 @@ source_files = [
     'erot_resource.cpp',
     'gpio_resource.cpp',
     'usb_rcm_resource.cpp',
+    'udev_monitor.cpp',
     join_paths(mctp_util_dir, 'mctp_vdm_helper.cpp'),
     join_paths(mctp_util_dir, 'mctp_endpoint_discovery.cpp'),
     join_paths(mctp_util_dir, 'socket_handler.cpp'),
@@ -68,6 +70,7 @@ executable(
         ssl,
         libgpiocxx,
         libusb_dep,
+        libudev_dep,
         nlohmann_json,
     ],
     install: true,

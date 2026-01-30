@@ -28,6 +28,7 @@
 #include "mcu_recovery_manager.hpp"
 #include "mcu_recovery_mode_manager.hpp"
 #include "mcu_resource.hpp"
+#include "udev_monitor.hpp"
 #include "usb_i2c_mapper.hpp"
 #include "usb_rcm_resource.hpp"
 #include "usbrcm_recovery_manager.hpp"
@@ -76,6 +77,7 @@ std::vector<std::unique_ptr<nvidia::recovery::RecoveryModeManagerBase>>
 
 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
 std::shared_ptr<mcu_recovery_manager::MCURecoveryManager> mcuRecoveryManager;
+std::shared_ptr<UdevMonitor> udevMonitor;
 
 void checkEntityManagerAvailability();
 
@@ -756,7 +758,8 @@ void publishDBusRecoveryObject()
             const auto companionObjPath = softwareObjPath + fwsComponentName;
 
             resources.push_back(std::make_unique<USBRcmResource>(
-                getBus(), primaryObjPath, eid, usbPort, companionObjPath));
+                getBus(), primaryObjPath, eid, usbPort, companionObjPath,
+                udevMonitor));
         }
     }
 }
@@ -842,6 +845,17 @@ int main()
 
     auto& event = getEvent();
     bus.attach_event(event.get(), SD_EVENT_PRIORITY_NORMAL);
+
+    try
+    {
+        udevMonitor = std::make_shared<UdevMonitor>(event);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::warning(
+            "Failed to initialize UdevMonitor, USB monitoring disabled: {ERR}",
+            "ERR", e.what());
+    }
 
     mctp_socket::Manager sockManager;
     mctp_vdm::InstanceIdMgr instanceIdMgr;

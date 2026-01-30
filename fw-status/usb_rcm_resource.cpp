@@ -18,14 +18,17 @@
 #include "usb_rcm_resource.hpp"
 
 #include "get_recovery_status.hpp"
+#include "udev_monitor.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 
 USBRcmResource::USBRcmResource(sdbusplus::bus::bus& bus,
                                const std::string& objPath, uint8_t eid,
                                const std::string& usbPort,
-                               const std::string& companionObjPath) :
+                               const std::string& companionObjPath,
+                               std::shared_ptr<UdevMonitor> udevMonitor) :
     MCTPDiscoveryResource(bus, objPath, eid), usbPort(usbPort),
+    udevMonitor(std::move(udevMonitor)),
     companionResource(std::make_unique<BaseResource>(bus, companionObjPath))
 {
     lg2::info(
@@ -33,7 +36,21 @@ USBRcmResource::USBRcmResource(sdbusplus::bus::bus& bus,
         "EID", eid, "PORT", usbPort, "PRIMARY", objPath, "COMPANION",
         companionObjPath);
 
+    // Register for USB device add events to refresh health status
+    if (udevMonitor)
+    {
+        udevMonitor->registerCallback(usbPort, [this]() { updateHealth(); });
+    }
+
     updateHealth();
+}
+
+USBRcmResource::~USBRcmResource()
+{
+    if (udevMonitor)
+    {
+        udevMonitor->unregisterCallback(usbPort);
+    }
 }
 
 std::string USBRcmResource::queryUSBRecoveryStatus()
