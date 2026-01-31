@@ -85,8 +85,8 @@ if get_option('MCU_RECOVERY_SUPPORT').enabled()
     source_files += 'mcu_recovery.cpp'
 endif
 
-if get_option('CX8_RECOVERY_SUPPORT').enabled()
-    source_files += 'cx8_recovery.cpp'
+if get_option('CONNECTX_RECOVERY_SUPPORT').enabled()
+    source_files += 'connectx_recovery.cpp'
 endif
 
 if get_option('SPI_PROGRAMMER_SUPPORT').enabled()

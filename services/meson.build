@@ -227,10 +227,10 @@ if get_option('MCU_RECOVERY_SUPPORT').enabled()
     ]
 endif
 
-if get_option('CX8_RECOVERY_SUPPORT').enabled()
+if get_option('CONNECTX_RECOVERY_SUPPORT').enabled()
     unit_files = unit_files + [
-        'com.Nvidia.CX8Recovery.Updater.service',
-        'cx8-recovery@.service',
+        'com.Nvidia.ConnectXRecovery.Updater.service',
+        'connectx-recovery@.service',
     ]
 endif
 

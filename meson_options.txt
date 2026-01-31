@@ -241,20 +241,20 @@ option('VMEPLAYER1_SUPPORTED_MODEL',
        value: '',
        description: 'Lattice supported models')
 
-option('CX8_RECOVERY_SUPPORT',
+option('CONNECTX_RECOVERY_SUPPORT',
        type: 'feature',
        value: 'disabled',
-       description: 'Enables CX8 Recovery support')
+       description: 'Enables ConnectX Recovery support')
 
-option('CX8_RECOVERY_SUPPORTED_MODEL',
+option('CONNECTX_RECOVERY_SUPPORTED_MODEL',
        type: 'string',
        value: '',
-       description: 'CX8 Recovery supported models')
+       description: 'ConnectX Recovery supported models')
 
-option('CX8_RECOVERY_TIMEOUT',
+option('CONNECTX_RECOVERY_TIMEOUT',
        type: 'integer',
        value: 300,
-       description: 'CX8 Recovery update timeout in seconds')
+       description: 'ConnectX Recovery update timeout in seconds')
 
 option('SPI_PROGRAMMER_SUPPORT',
        type: 'feature',

@@ -17,7 +17,7 @@
 
 #include "config.h"
 
-#include "cx8_recovery.hpp"
+#include "connectx_recovery.hpp"
 
 namespace nvidia
 {
@@ -25,22 +25,22 @@ namespace software
 {
 namespace updater
 {
-std::string CX8RecoveryUpdater::getVersion(
+std::string ConnectXRecoveryUpdater::getVersion(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }
 
-std::string CX8RecoveryUpdater::getManufacturer(
+std::string ConnectXRecoveryUpdater::getManufacturer(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "NVIDIA";
 }
 
-std::string CX8RecoveryUpdater::getModel(
+std::string ConnectXRecoveryUpdater::getModel(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
-    return "CX8";
+    return "ConnectX";
 }
 } // namespace updater
 } // namespace software

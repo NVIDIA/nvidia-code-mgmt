@@ -1,13 +1,13 @@
 [Unit]
-Description=CX8 Recovery Updater
+Description=ConnectX Recovery Updater
 Wants=pldmd.service
 After=pldmd.service
 
 [Service]
-ExecStart=/usr/bin/code-manager -u CX8Recovery
+ExecStart=/usr/bin/code-manager -u ConnectXRecovery
 Restart=always
 Type=dbus
-BusName=com.Nvidia.Software.CX8Recovery.Updater
+BusName=com.Nvidia.Software.ConnectXRecovery.Updater
 
 [Install]
 # This should require run power

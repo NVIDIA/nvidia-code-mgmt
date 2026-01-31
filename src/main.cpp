@@ -73,8 +73,8 @@
 #ifdef MCU_RECOVERY_SUPPORT
 #include "mcu_recovery.hpp"
 #endif
-#ifdef CX8_RECOVERY_SUPPORT
-#include "cx8_recovery.hpp"
+#ifdef CONNECTX_RECOVERY_SUPPORT
+#include "connectx_recovery.hpp"
 #endif
 #ifdef SPI_PROGRAMMER_SUPPORT
 #include "spi_programmer.hpp"
@@ -270,10 +270,10 @@ int main(int argc, char** argv)
         itemUpdater = std::make_unique<MCURecovery>(bus, modelName, targetName);
     }
 #endif
-#if CX8_RECOVERY_SUPPORT
-    if (updater == "CX8Recovery")
+#if CONNECTX_RECOVERY_SUPPORT
+    if (updater == "ConnectXRecovery")
     {
-        itemUpdater = std::make_unique<CX8RecoveryUpdater>(bus);
+        itemUpdater = std::make_unique<ConnectXRecoveryUpdater>(bus);
     }
 #endif
 #if SPI_PROGRAMMER_SUPPORT

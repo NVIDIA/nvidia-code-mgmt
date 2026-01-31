@@ -354,27 +354,27 @@ if get_option('VMEPLAYER_SUPPORT').enabled()
     cdata.set('VMEPLAYER_TIMEOUT', get_option('VMEPLAYER_TIMEOUT'))
 endif
 
-if get_option('CX8_RECOVERY_SUPPORT').enabled()
-    add_project_arguments('-DCX8_RECOVERY_SUPPORT', language: ['c', 'cpp'])
+if get_option('CONNECTX_RECOVERY_SUPPORT').enabled()
+    add_project_arguments('-DCONNECTX_RECOVERY_SUPPORT', language: ['c', 'cpp'])
     cdata.set_quoted(
-        'CX8_RECOVERY_SUPPORTED_MODEL',
-        get_option('CX8_RECOVERY_SUPPORTED_MODEL'),
+        'CONNECTX_RECOVERY_SUPPORTED_MODEL',
+        get_option('CONNECTX_RECOVERY_SUPPORTED_MODEL'),
     )
     cdata.set_quoted(
-        'CX8_RECOVERY_INVENTORY_IFACE',
+        'CONNECTX_RECOVERY_INVENTORY_IFACE',
         'xyz.openbmc_project.Inventory.Decorator.Asset',
     )
     cdata.set_quoted(
-        'CX8_RECOVERY_BUSNAME_UPDATER',
-        'com.Nvidia.Software.CX8Recovery.Updater',
+        'CONNECTX_RECOVERY_BUSNAME_UPDATER',
+        'com.Nvidia.Software.ConnectXRecovery.Updater',
     )
     cdata.set_quoted(
-        'CX8_RECOVERY_BUSNAME_INVENTORY',
+        'CONNECTX_RECOVERY_BUSNAME_INVENTORY',
         'xyz.openbmc_project.PLDM',
     )
-    cdata.set_quoted('CX8_RECOVERY_UPDATE_SERVICE', 'cx8-recovery@.service')
-    cdata.set_quoted('CX8_RECOVERY_NAME', 'CX8Recovery')
-    cdata.set('CX8_RECOVERY_TIMEOUT', get_option('CX8_RECOVERY_TIMEOUT'))
+    cdata.set_quoted('CONNECTX_RECOVERY_UPDATE_SERVICE', 'connectx-recovery@.service')
+    cdata.set_quoted('CONNECTX_RECOVERY_NAME', 'ConnectXRecovery')
+    cdata.set('CONNECTX_RECOVERY_TIMEOUT', get_option('CONNECTX_RECOVERY_TIMEOUT'))
 endif
 
 if get_option('AP_IMAGE_VERIFICATION').enabled()

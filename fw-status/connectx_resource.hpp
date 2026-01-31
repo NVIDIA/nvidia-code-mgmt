@@ -24,16 +24,16 @@
 #include <memory>
 #include <thread>
 
-/**@class Cx8Resource
+/**@class ConnectXResource
  *
  *  Represents a MCTPDiscoveryResource whose recovery is performed through
- *  the CX8 Recovery Protocol
+ *  the ConnectX Recovery Protocol
  *
  */
-class Cx8Resource : public MCTPDiscoveryResource
+class ConnectXResource : public MCTPDiscoveryResource
 {
   public:
-    /**@brief Constructor for the Cx8Resource Class
+    /**@brief Constructor for the ConnectXResource Class
      * Updates Health and Status of the D-Bus object on startup
      *
      * @param bus - SystemD bus to publish the object
@@ -44,7 +44,7 @@ class Cx8Resource : public MCTPDiscoveryResource
      * @param eid - MCTP Endpoint ID of the Resource
      * @param smaEid - EID of the SMA
      */
-    Cx8Resource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    ConnectXResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                 const std::string& chassisObjPath, const uint64_t i2cBus,
                 const uint64_t i2cAddress, uint8_t eid, uint8_t smaEid) :
         MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid),
@@ -70,16 +70,16 @@ class Cx8Resource : public MCTPDiscoveryResource
     std::string const chassisInterface = "xyz.openbmc_project.State.Chassis";
     std::string const chassisPowerStateOn =
         "xyz.openbmc_project.State.Chassis.PowerState.On";
-    int const cx8PublishDelayInSeconds = 5;
+    int const connectxPublishDelayInSeconds = 5;
 
     uint8_t smaEid;
     int busAddress;
     int slaveAddress;
 
-    /** @brief CX8 crspace address of irisc.global_image_status
+    /** @brief ConnectX crspace address of irisc.global_image_status
      *
-     * This array represents the CX8 crspace address (0x50084) used to access
-     * irisc.global_image_status. This register is used by the CX8 bootrom to
+     * This array represents the ConnectX crspace address (0x50084) used to access
+     * irisc.global_image_status. This register is used by the ConnectX bootrom to
      * report various failures in the bootrom flow before handing off to BOOT2.
      * The array format is [0, 0x05, 0x50, 0x84] which corresponds to the
      * address 0x50084.
@@ -89,7 +89,7 @@ class Cx8Resource : public MCTPDiscoveryResource
 
     /* @brief Override function for updating Health and Status of D-Bus object
      * based on Device Status and MCTP enumeration
-     * Uses CX8 Recovery Protocol to fetch device status
+     * Uses ConnectX Recovery Protocol to fetch device status
      *
      * @return void
      */
@@ -308,7 +308,7 @@ class Cx8Resource : public MCTPDiscoveryResource
      * @brief Custom implementation of onMCTPDiscoveryMsg
      *
      * This function is a custom implementation of the onMCTPDiscoveryMsg
-     * function. It is used to handle MCTP discovery messages for the CX8
+     * function. It is used to handle MCTP discovery messages for the ConnectX
      * resource.
      *
      * @param msg The message to handle
@@ -319,7 +319,7 @@ class Cx8Resource : public MCTPDiscoveryResource
                   "OBJECT", msg.get_path());
 
         std::this_thread::sleep_for(
-            std::chrono::seconds(cx8PublishDelayInSeconds));
+            std::chrono::seconds(connectxPublishDelayInSeconds));
         updateHealth();
     }
 };

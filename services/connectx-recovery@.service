@@ -1,0 +1,8 @@
+[Unit]
+Description=ConnectX Recovery Utility
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/connectx-recovery.sh $ARGS

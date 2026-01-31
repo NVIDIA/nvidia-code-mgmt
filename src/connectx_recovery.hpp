@@ -29,14 +29,14 @@ namespace software
 namespace updater
 {
 
-class CX8RecoveryUpdater : public BaseItemUpdater
+class ConnectXRecoveryUpdater : public BaseItemUpdater
 {
   public:
-    CX8RecoveryUpdater(sdbusplus::bus::bus& bus) :
+    ConnectXRecoveryUpdater(sdbusplus::bus::bus& bus) :
         BaseItemUpdater(
-            bus, CX8_RECOVERY_SUPPORTED_MODEL, CX8_RECOVERY_INVENTORY_IFACE,
-            CX8_RECOVERY_NAME, CX8_RECOVERY_BUSNAME_UPDATER,
-            CX8_RECOVERY_UPDATE_SERVICE, false, CX8_RECOVERY_BUSNAME_INVENTORY)
+            bus, CONNECTX_RECOVERY_SUPPORTED_MODEL, CONNECTX_RECOVERY_INVENTORY_IFACE,
+            CONNECTX_RECOVERY_NAME, CONNECTX_RECOVERY_BUSNAME_UPDATER,
+            CONNECTX_RECOVERY_UPDATE_SERVICE, false, CONNECTX_RECOVERY_BUSNAME_INVENTORY)
     {}
 
     /**
@@ -95,7 +95,7 @@ class CX8RecoveryUpdater : public BaseItemUpdater
     {
         std::vector<std::string> ret;
         std::string invPath =
-            std::string(SOFTWARE_OBJPATH) + "/" + CX8_RECOVERY_NAME;
+            std::string(SOFTWARE_OBJPATH) + "/" + CONNECTX_RECOVERY_NAME;
         ret.emplace_back(invPath);
         return ret;
     }
@@ -107,14 +107,14 @@ class CX8RecoveryUpdater : public BaseItemUpdater
      */
     uint32_t getTimeout() override
     {
-        return CX8_RECOVERY_TIMEOUT;
+        return CONNECTX_RECOVERY_TIMEOUT;
     }
 
     /**
      * @brief method to check if inventory is supported, if inventory is not
      * supported then D-Bus calls to check compatibility can be ignored
      *
-     * @return false - for cx8 recovery inventory check is not required
+     * @return false - for connectx recovery inventory check is not required
      */
     bool inventorySupported() override
     {
