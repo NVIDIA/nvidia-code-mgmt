@@ -372,9 +372,15 @@ if get_option('CONNECTX_RECOVERY_SUPPORT').enabled()
         'CONNECTX_RECOVERY_BUSNAME_INVENTORY',
         'xyz.openbmc_project.PLDM',
     )
-    cdata.set_quoted('CONNECTX_RECOVERY_UPDATE_SERVICE', 'connectx-recovery@.service')
+    cdata.set_quoted(
+        'CONNECTX_RECOVERY_UPDATE_SERVICE',
+        'connectx-recovery@.service',
+    )
     cdata.set_quoted('CONNECTX_RECOVERY_NAME', 'ConnectXRecovery')
-    cdata.set('CONNECTX_RECOVERY_TIMEOUT', get_option('CONNECTX_RECOVERY_TIMEOUT'))
+    cdata.set(
+        'CONNECTX_RECOVERY_TIMEOUT',
+        get_option('CONNECTX_RECOVERY_TIMEOUT'),
+    )
 endif
 
 if get_option('AP_IMAGE_VERIFICATION').enabled()
