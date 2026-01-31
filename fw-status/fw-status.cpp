@@ -444,11 +444,13 @@ void publishDBusRecoveryObject()
             lg2::info("Found ConnectX recovery config Object: {PATH}", "PATH",
                       emObjectPath);
 
-            const auto eidOpt = getUint8(interfaces, connectxObjInterface, "EID");
+            const auto eidOpt =
+                getUint8(interfaces, connectxObjInterface, "EID");
             if (!eidOpt.has_value())
             {
-                lg2::error("No EID found in ConnectX recovery config Object: {PATH}",
-                           "PATH", emObjectPath);
+                lg2::error(
+                    "No EID found in ConnectX recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
                 continue;
             }
 
@@ -492,9 +494,9 @@ void publishDBusRecoveryObject()
 
             const auto smaEID = smaEidOpt.value();
 
-            resources.push_back(
-                std::make_unique<ConnectXResource>(getBus(), objPath, chassisObjPath,
-                                              i2cBus, i2cAddress, eid, smaEID));
+            resources.push_back(std::make_unique<ConnectXResource>(
+                getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, eid,
+                smaEID));
         }
         else if (interfaces.contains(glacierCrisisObjInterface))
         {

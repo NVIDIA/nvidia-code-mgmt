@@ -45,8 +45,8 @@ class ConnectXResource : public MCTPDiscoveryResource
      * @param smaEid - EID of the SMA
      */
     ConnectXResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                const std::string& chassisObjPath, const uint64_t i2cBus,
-                const uint64_t i2cAddress, uint8_t eid, uint8_t smaEid) :
+                     const std::string& chassisObjPath, const uint64_t i2cBus,
+                     const uint64_t i2cAddress, uint8_t eid, uint8_t smaEid) :
         MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid),
         busAddress(i2cBus), slaveAddress(i2cAddress)
     {
@@ -78,11 +78,11 @@ class ConnectXResource : public MCTPDiscoveryResource
 
     /** @brief ConnectX crspace address of irisc.global_image_status
      *
-     * This array represents the ConnectX crspace address (0x50084) used to access
-     * irisc.global_image_status. This register is used by the ConnectX bootrom to
-     * report various failures in the bootrom flow before handing off to BOOT2.
-     * The array format is [0, 0x05, 0x50, 0x84] which corresponds to the
-     * address 0x50084.
+     * This array represents the ConnectX crspace address (0x50084) used to
+     * access irisc.global_image_status. This register is used by the ConnectX
+     * bootrom to report various failures in the bootrom flow before handing off
+     * to BOOT2. The array format is [0, 0x05, 0x50, 0x84] which corresponds to
+     * the address 0x50084.
      */
     static constexpr std::array<uint8_t, 4> writeDataArray = {0, 0x05, 0x50,
                                                               0x84};
