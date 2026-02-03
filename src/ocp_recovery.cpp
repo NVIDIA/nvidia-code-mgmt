@@ -41,6 +41,18 @@ int OCPRecovery::processImage(std::filesystem::path& filePath)
         return -1;
     }
     auto objPath = std::string{SOFTWARE_OBJPATH} + '/' + id;
+
+    auto it = versions.find(id);
+    if (it != versions.end())
+    {
+        auto currentStatus = it->second->activation();
+        if (currentStatus == Version::Status::Activating ||
+            currentStatus == Version::Status::Ready)
+        {
+            return 0;
+        }
+    }
+
     return initiateUpdateImage(objPath,
                                filePath.parent_path().parent_path().string(),
                                filePath.stem(), id, uniqueIdentifier);

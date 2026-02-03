@@ -179,10 +179,10 @@ class OCPRecoveryCommandLine
     DeviceStatus getDeviceStatus() const noexcept;
 
     /**
-     * @brief Retrieves the recovery status in JSON format.
-     * @return A JSON object representing the recovery status.
+     * @brief Retrieves the recovery status and recovery image index.
+     * @return A pair of RecoveryStatus and Recovery Image Index (uint8_t).
      */
-    RecoveryStatus getRecoveryStatus() const noexcept;
+    std::pair<RecoveryStatus, uint8_t> getRecoveryStatus() const noexcept;
 
     /**
      * @brief Initiates the recovery process using the specified image paths.

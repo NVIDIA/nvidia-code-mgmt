@@ -93,17 +93,10 @@ class OCPRecovery : public BaseItemUpdater
         [[maybe_unused]] const std::string& version,
         [[maybe_unused]] const TargetFilter& targetFilter) const override
     {
-
-        const std::string oobImage =
-            getUpdateFilePath(imagePath + "/" + GPU_OCP_OOBHUB_COMP_ID);
-        const std::string fspImage =
-            getUpdateFilePath(imagePath + "/" + GPU_OCP_FSP_COMP_ID);
-        // The systemd unit shall be escaped
+        // Pass the base path to the recovery tool
         std::string args = "";
         args += "\\x20";
-        args += oobImage;
-        args += "\\x20";
-        args += fspImage;
+        args += imagePath;
         std::replace(args.begin(), args.end(), '/', '-');
         return args;
     }
@@ -145,12 +138,19 @@ class OCPRecovery : public BaseItemUpdater
         {
             std::filesystem::path basePathToWatch(getImageUploadDir());
             basePathToWatch /= uuid;
-            std::filesystem::path oobPathToWatch =
-                basePathToWatch / GPU_OCP_OOBHUB_COMP_ID;
             std::filesystem::path fspPathToWatch =
                 basePathToWatch / GPU_OCP_FSP_COMP_ID;
-            pathsToMonitor.push_back(oobPathToWatch);
+            std::filesystem::path buildInfoPathToWatch =
+                basePathToWatch / GPU_OCP_BUILD_INFO_COMP_ID;
+            std::filesystem::path oobPathToWatch =
+                basePathToWatch / GPU_OCP_OOBHUB_COMP_ID;
+            std::filesystem::path fspRtPathToWatch =
+                basePathToWatch / GPU_OCP_FSP_RT_COMP_ID;
+            // Order: FSP FMC (0), BUILD_INFO (1), OOBHUB (2), FSP RT (3)
             pathsToMonitor.push_back(fspPathToWatch);
+            pathsToMonitor.push_back(buildInfoPathToWatch);
+            pathsToMonitor.push_back(oobPathToWatch);
+            pathsToMonitor.push_back(fspRtPathToWatch);
         }
         if (pathsToMonitor.size() < 1)
         {
