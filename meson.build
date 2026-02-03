@@ -180,8 +180,10 @@ if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
         'GPU_OCP_RECOVERY_SUPPORTED_MODEL',
         get_option('GPU_OCP_RECOVERY_SUPPORTED_MODEL'),
     )
-    cdata.set_quoted('GPU_OCP_OOBHUB_COMP_ID', '49154')
     cdata.set_quoted('GPU_OCP_FSP_COMP_ID', '49153')
+    cdata.set_quoted('GPU_OCP_BUILD_INFO_COMP_ID', '49155')
+    cdata.set_quoted('GPU_OCP_OOBHUB_COMP_ID', '49154')
+    cdata.set_quoted('GPU_OCP_FSP_RT_COMP_ID', '49156')
     cdata.set_quoted(
         'GPU_OCP_RECOVERY_INVENTORY_IFACE',
         'xyz.openbmc_project.Inventory.Decorator.Asset',
@@ -570,7 +572,9 @@ if get_option('IGX_FUSE_SUPPORT').enabled()
     subdir('nvidia_igx/igx_fuse')
 endif
 
-subdir('recovery_tool/ocp_recovery_tool')
+if get_option('GPU_OCP_RECOVERY_SUPPORT').enabled()
+    subdir('recovery_tool/ocp_recovery_tool')
+endif
 subdir('recovery_tool/glacier_recovery_tool')
 
 if get_option('tests').enabled()

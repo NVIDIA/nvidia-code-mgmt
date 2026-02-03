@@ -45,16 +45,29 @@ DeviceStatus OCPRecoveryCommandLine::getDeviceStatus() const noexcept
             ProtocolError::DeviceNotResponding};
 }
 
-RecoveryStatus OCPRecoveryCommandLine::getRecoveryStatus() const noexcept
+std::pair<RecoveryStatus, uint8_t>
+    OCPRecoveryCommandLine::getRecoveryStatus() const noexcept
 {
+    auto [success, hexData, errMsg] =
+        recoveryCommands->getRecoveryStatusCommand();
+
     try
     {
-        auto [success, hexData, errMsg] =
-            recoveryCommands->getRecoveryStatusCommand();
-
         if (success)
         {
-            return static_cast<RecoveryStatus>(hexData[1]);
+            // Extract recovery status from bits [3:0] of hexData[1]
+            constexpr uint8_t recoveryStatusMask = 0x0F;
+            uint8_t recoveryStatus = hexData[1] & recoveryStatusMask;
+
+            // Extract recovery image index from bits [7:4] of hexData[1]
+            constexpr uint8_t recoveryImageIndexMask = 0xF0;
+            constexpr uint8_t recoveryImageIndexShift = 4;
+            uint8_t recoveryImageIndex =
+                (hexData[1] & recoveryImageIndexMask) >>
+                recoveryImageIndexShift;
+
+            return {static_cast<RecoveryStatus>(recoveryStatus),
+                    recoveryImageIndex};
         }
         lg2::error("Error while getting Recovery Status: {ERROR}", "ERROR",
                    errMsg);
@@ -64,8 +77,7 @@ RecoveryStatus OCPRecoveryCommandLine::getRecoveryStatus() const noexcept
         lg2::error("Exception while getting Recovery Status: {ERROR}", "ERROR",
                    e.what());
     }
-
-    return RecoveryStatus::CommandFailure;
+    return {RecoveryStatus::CommandFailure, 0};
 }
 
 std::string OCPRecoveryCommandLine::deviceStatusToStr(
@@ -188,13 +200,17 @@ std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError, RecoveryStatus>
                 RecoveryStatus::NotInRecoveryMode};
     }
 
-    auto recoveryStatus = getRecoveryStatus();
+    auto [recoveryStatus, recoveryImageIndex] = getRecoveryStatus();
     if (recoveryStatus == RecoveryStatus::CommandFailure)
     {
         return {OperationalStatus::Unreachable, deviceStatus.statusCode,
                 ProtocolError::DeviceNotResponding,
                 RecoveryStatus::NotInRecoveryMode};
     }
+
+    lg2::info("Recovery Status for {DEVICE}: status={STATUS}, imageIndex={IDX}",
+              "DEVICE", device, "STATUS", static_cast<int>(recoveryStatus),
+              "IDX", static_cast<int>(recoveryImageIndex));
 
     if (deviceStatus.statusCode == DeviceStatusCode::DeviceHealthy or
         (deviceStatus.statusCode == DeviceStatusCode::RecoveryImgRunning and

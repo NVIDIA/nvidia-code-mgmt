@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include "dbusutils.hpp"
 #include "message_registry.hpp"
 #include "recovery_commandline.hpp"
@@ -6,6 +8,8 @@
 
 #include <CLI/CLI.hpp>
 #include <phosphor-logging/lg2.hpp>
+
+#include <filesystem>
 
 using RecoveryReturnCode = ocp_recovery_commandline::RecoveryReturnCode;
 using namespace phosphor::logging;
@@ -18,9 +22,11 @@ constexpr auto ocpObjInterface =
 struct CommandOptions
 {
     std::string configPath;
+    std::string baseImagePath; // Base path containing component directories
     std::string fspImagePath;
+    std::string buildInfoImagePath;
     std::string oobhubImagePath;
-    std::vector<std::string> imagePaths;
+    std::string fspRtImagePath;
     bool forceRecovery;
     bool verbose;
     bool emulation;
@@ -177,7 +183,8 @@ bool performRecovery(const CommandOptions& opts)
         try
         {
             auto status = ocpRecoveryCommandlineObj.performRecovery(
-                {opts.fspImagePath, opts.oobhubImagePath});
+                {opts.fspImagePath, opts.buildInfoImagePath,
+                 opts.oobhubImagePath, opts.fspRtImagePath});
             if (status == RecoveryReturnCode::FAILURE)
             {
                 retCode = true;
@@ -193,18 +200,47 @@ bool performRecovery(const CommandOptions& opts)
     return retCode;
 }
 
+/**
+ * @brief Helper to get the recovery image path from the directory path
+ * @param dirPath The directory path to search for the recovery image. Expected
+ * structure: baseImagePath/<CompID>
+ * @return The recovery image path if found, empty string otherwise
+ */
+std::string getRecoveryImagePath(const std::string& dirPath)
+{
+    namespace fs = std::filesystem;
+    try
+    {
+        if (!fs::exists(dirPath) || !fs::is_directory(dirPath))
+        {
+            return "";
+        }
+        for (const auto& entry : fs::directory_iterator(dirPath))
+        {
+            if (fs::is_regular_file(entry.path()))
+            {
+                return entry.path().string();
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Error finding file in directory: {ERROR}", "ERROR",
+                   e.what());
+    }
+    return "";
+}
+
 int main(int argc, char** argv)
 {
     CLI::App app{"Command line interface for OCP recovery"};
     CommandOptions opts{};
 
-    app.add_option("oobhub_image", opts.oobhubImagePath, "Path to oobhub Image")
+    app.add_option("base_image_path", opts.baseImagePath,
+                   "Base directory containing component image subdirectories")
         ->required()
-        ->check(CLI::ExistingFile);
-    app.add_option("fsp_image", opts.fspImagePath, "Path to FSP Image")
-        ->required()
-        ->check(CLI::ExistingFile);
-    // app.add_flag("force", opts.forceRecovery, "Slave address");
+        ->check(CLI::ExistingPath);
+
     app.add_flag("-v,--verbose", opts.verbose, "Verbose output");
     app.add_flag("-e,--emulation", opts.emulation,
                  "Enable for emulation setup");
@@ -212,6 +248,30 @@ int main(int argc, char** argv)
     try
     {
         CLI11_PARSE(app, argc, argv);
+
+        // Construct image paths from base directory using component IDs
+        // Expected structure: baseImagePath/<CompID>/<image_file>
+        opts.fspImagePath = getRecoveryImagePath(opts.baseImagePath + "/" +
+                                                 GPU_OCP_FSP_COMP_ID);
+        opts.buildInfoImagePath = getRecoveryImagePath(
+            opts.baseImagePath + "/" + GPU_OCP_BUILD_INFO_COMP_ID);
+        opts.oobhubImagePath = getRecoveryImagePath(opts.baseImagePath + "/" +
+                                                    GPU_OCP_OOBHUB_COMP_ID);
+        opts.fspRtImagePath = getRecoveryImagePath(opts.baseImagePath + "/" +
+                                                   GPU_OCP_FSP_RT_COMP_ID);
+
+        if (opts.fspImagePath.empty() || opts.buildInfoImagePath.empty() ||
+            opts.oobhubImagePath.empty() || opts.fspRtImagePath.empty())
+        {
+            lg2::error(
+                "Failed to find required images in base directory: {PATH}",
+                "PATH", opts.baseImagePath);
+            lg2::error(
+                "FSP: {FSP}, BUILD_INFO: {BUILD_INFO}, OOB: {OOB}, FSP_RT: {FSP_RT}",
+                "FSP", opts.fspImagePath, "BUILD_INFO", opts.buildInfoImagePath,
+                "OOB", opts.oobhubImagePath, "FSP_RT", opts.fspRtImagePath);
+            return 1;
+        }
     }
     catch (const std::exception& e)
     {
