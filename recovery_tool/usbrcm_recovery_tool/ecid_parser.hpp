@@ -39,6 +39,21 @@ inline constexpr uint16_t OPT_OWNERSHIP_ODD_MASK = 0x01;
 } // namespace BitField
 
 /**
+ * @brief Swap nibbles (half-bytes) of a byte
+ *
+ * The ECID serial number format has nibbles reversed for human readability.
+ * This function reverses them back to get the correct numeric value.
+ * Example: 0x10 -> 0x01, 0x30 -> 0x03, 0xA0 -> 0x0A
+ *
+ * @param byte Input byte with potentially swapped nibbles
+ * @return Byte with nibbles swapped back to correct order
+ */
+constexpr uint8_t swapNibbles(uint8_t byte)
+{
+    return static_cast<uint8_t>(((byte & 0x0F) << 4) | ((byte & 0xF0) >> 4));
+}
+
+/**
  * @brief Extract BSI_OEM_KEY_VALID bit from ECID
  * @param ecid Pointer to 32-byte ECID array
  * @return true if OEM key is valid (bit 1 of byte 28 is set)
@@ -51,20 +66,41 @@ constexpr bool isOemKeyValid(const uint8_t* ecid)
 
 /**
  * @brief Extract OPT_OWNERSHIP_STATUS from ECID
+ *
+ * The ECID serial number format has nibbles reversed for human readability.
+ * We swap nibbles back before interpreting the 9-bit fuse count value.
+ *
+ * Example: If ECID shows byte 20 = 0x30, after nibble swap = 0x03 = 3 fuses
+ * burned
+ *
  * @param ecid Pointer to 32-byte ECID array
- * @return 9-bit ownership status value (bits 168:160)
+ * @return 9-bit ownership status fuse count value (0-511)
  */
 constexpr uint16_t getOwnershipStatus(const uint8_t* ecid)
 {
+    // Swap nibbles to get correct numeric value from ECID format
+    const uint8_t byteLow =
+        swapNibbles(ecid[BitField::OPT_OWNERSHIP_STATUS_BYTE_LOW]);
+    const uint8_t byteHigh =
+        swapNibbles(ecid[BitField::OPT_OWNERSHIP_STATUS_BYTE_HIGH]);
+
     const uint16_t ecid5 =
-        (static_cast<uint16_t>(ecid[BitField::OPT_OWNERSHIP_STATUS_BYTE_HIGH])
-         << 8) |
-        static_cast<uint16_t>(ecid[BitField::OPT_OWNERSHIP_STATUS_BYTE_LOW]);
+        (static_cast<uint16_t>(byteHigh) << 8) | static_cast<uint16_t>(byteLow);
     return ecid5 & BitField::OPT_OWNERSHIP_STATUS_MASK;
 }
 
 /**
  * @brief Check if DOT blob is required based on ECID fuses
+ *
+ * DOT blob is required when:
+ * - OEM key is NOT valid (BSI_OEM_KEY_VALID bit not set), AND
+ * - OPT_OWNERSHIP_STATUS fuse count is ODD (mutable DOT state)
+ *
+ * The 9-bit OPT_OWNERSHIP_STATUS field represents a fuse count (0-511).
+ * Each DOT state transition burns one fuse, incrementing the count.
+ * An odd count indicates the device is in "mutable DOT state" requiring
+ * a DOT (Device Owner Token) blob for recovery.
+ *
  * @param ecid Pointer to 32-byte ECID array
  * @return true if DOT blob is required
  */
