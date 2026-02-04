@@ -234,6 +234,8 @@ class Spi : public SpiIntf
     std::shared_ptr<boost::asio::steady_timer> progressTimer;
     // Timer for operation timeout
     std::shared_ptr<boost::asio::steady_timer> timeoutTimer;
+    // dbus match for monitoring host power state changes
+    std::unique_ptr<sdbusplus::bus::match_t> hostPowerStateMatch;
     // Reference to current flashrom process for timeout handling
     std::shared_ptr<boost::process::v2::process> currentProcess;
     int expectedOpTimeSec;
@@ -249,6 +251,13 @@ class Spi : public SpiIntf
      */
 
     void updateProgress();
+    /**
+     * @brief function to handle host power state changes via dbus signal
+     *
+     * @param msg The dbus message containing property changes
+     * @return void
+     */
+    void onHostPowerStateChanged(sdbusplus::message_t& msg);
     /**
      * @brief function to get expected operation time based on chip type
      *

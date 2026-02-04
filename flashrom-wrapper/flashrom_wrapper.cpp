@@ -188,6 +188,58 @@ void Spi::executeFlashrom(std::vector<std::string> args, Operation ops)
     }
 }
 
+void Spi::onHostPowerStateChanged(sdbusplus::message_t& msg)
+{
+    // Check if operation is still in progress
+    if (!isUsbInUse(usbPort))
+    {
+        return;
+    }
+
+    try
+    {
+        std::string interface;
+        std::map<std::string, std::variant<std::string>> changedProperties;
+        msg.read(interface, changedProperties);
+
+        // Check if CurrentHostState property changed
+        auto it = changedProperties.find("CurrentHostState");
+        if (it == changedProperties.end())
+        {
+            return;
+        }
+
+        auto hostState = std::get<std::string>(it->second);
+        lg2::info("[SPI: {NAME}] Host state changed to: {STATE}", "NAME", name,
+                  "STATE", hostState);
+
+        // Check if host powered state not Off
+        if (hostState != "xyz.openbmc_project.State.Host.HostState.Off")
+        {
+            lg2::error(
+                "[SPI: {NAME}] SPI operation failed due to the host power not remaining off.",
+                "NAME", name);
+
+            // Terminate the operation process if running
+            if (currentProcess)
+            {
+                lg2::info(
+                    "[SPI: {NAME}] Terminating flashrom process due to host power not remaining off",
+                    "NAME", name);
+                currentProcess->terminate();
+            }
+
+            finishSpiOperation(SpiProgress::OperationStatus::Failed);
+        }
+    }
+    catch (const std::exception& e)
+    {
+        lg2::warning(
+            "[SPI: {NAME}] Failed to parse host power state change: {ERR}",
+            "NAME", name, "ERR", e.what());
+    }
+}
+
 void Spi::updateProgress()
 {
     // Check if USB port is still in use (operation in progress) and progress
@@ -597,6 +649,15 @@ bool Spi::startSpiOperation(Operation ops)
         }
     });
 
+    // Create a dbus match to monitor host power state changes
+    hostPowerStateMatch = std::make_unique<sdbusplus::bus::match_t>(
+        getBus(),
+        MatchRules::propertiesChanged("/xyz/openbmc_project/state/host0",
+                                      "xyz.openbmc_project.State.Host"),
+        [this](sdbusplus::message_t& msg) { onHostPowerStateChanged(msg); });
+    lg2::info("[SPI: {NAME}] Started monitoring host power state", "NAME",
+              name);
+
     updateProgress();
 
     return true;
@@ -650,6 +711,12 @@ void Spi::finishSpiOperation(SpiProgress::OperationStatus opStatus)
     {
         timeoutTimer->cancel();
         timeoutTimer.reset();
+    }
+
+    // Remove the host power state dbus match when operation finish
+    if (hostPowerStateMatch)
+    {
+        hostPowerStateMatch.reset();
     }
 
     currentProcess.reset();
