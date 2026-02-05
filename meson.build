@@ -547,7 +547,6 @@ phosphor_logging = dependency('phosphor-logging')
 sdbusplus = dependency('sdbusplus')
 ssl = dependency('openssl')
 libgpiocxx = dependency('libgpiodcxx', default_options: ['bindings=cxx'])
-boost = dependency('boost', modules: ['process'], version: '>=1.84.0')
 
 add_project_link_arguments(['-lstdc++fs'], language: 'cpp')
 
@@ -586,6 +585,7 @@ if get_option('MCU_RECOVERY_SUPPORT').enabled()
 endif
 
 if get_option('FLASHROM_WRAPPER_SUPPORT').enabled()
+    boost = dependency('boost', modules: ['process'], version: '>=1.84.0')
     subdir('flashrom-wrapper')
 
     if get_option('FLASHROM_WRITE_SKIP_VERIFY').enabled()
