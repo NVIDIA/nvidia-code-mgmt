@@ -28,14 +28,6 @@ OCPRecoveryTool::OCPRecoveryTool(int busAddr, int slaveAddr, bool verb,
     verbose(verb), emul(emul), recoveryCommands(busAddr, slaveAddr, verb, emul)
 {}
 
-void OCPRecoveryTool::logVerbose(const std::string& message) const
-{
-    if (verbose)
-    {
-        std::cout << message << "\n";
-    }
-}
-
 std::string OCPRecoveryTool::deviceIDToStr(DeviceId id) const noexcept
 {
     switch (id)
@@ -200,28 +192,46 @@ nlohmann::json
 nlohmann::json OCPRecoveryTool::getDeviceIDJson() noexcept
 {
     nlohmann::json jsonResponse;
-    logVerbose("Getting Device ID");
-    auto [success, hexData, errorMsg] = recoveryCommands.getDeviceIDCommand();
 
-    if (!success)
+    try
     {
-        logVerbose("Error while getting Device Id: " + errorMsg);
-        jsonResponse["Error"] = errorMsg;
+        logVerbose("Getting Device ID");
+        auto [success, hexData, errorMsg] =
+            recoveryCommands.getDeviceIDCommand();
+
+        if (!success)
+        {
+            logVerbose("Error while getting Device Id: ", errorMsg);
+            jsonResponse["Error"] = errorMsg;
+            return jsonResponse;
+        }
+
+        const auto descriptorType = static_cast<DeviceId>(hexData[1]);
+        if (descriptorType != DeviceId::PCI_Vendor)
+        {
+            jsonResponse["Error"] = "Found unknown Descriptor Type";
+            return jsonResponse;
+        }
+        jsonResponse["Initial Descriptor Type"] = deviceIDToStr(descriptorType);
+        jsonResponse["PCI Vendor ID"] = hexData[3] << 8 | hexData[4];
+        jsonResponse["PCI DeviceId"] = hexData[5] << 8 | hexData[6];
+        jsonResponse["PCI Subsystem Vendor ID"] = hexData[7] << 8 | hexData[8];
+        jsonResponse["PCI Subsytem ID"] = hexData[9] << 8 | hexData[10];
+        jsonResponse["PCI Revision ID"] = hexData[11];
+    }
+    catch (const std::exception& e)
+    {
+        try
+        {
+            logVerbose("Exception while getting Device ID: ", e.what());
+            jsonResponse["Error"] = e.what();
+        }
+        catch (...)
+        {
+            // Prevent secondary exceptions from leaving the handler
+        }
         return jsonResponse;
     }
-
-    const auto descriptorType = static_cast<DeviceId>(hexData[1]);
-    if (descriptorType != DeviceId::PCI_Vendor)
-    {
-        jsonResponse["Error"] = "Found unknown Descriptor Type";
-        return jsonResponse;
-    }
-    jsonResponse["Initial Descriptor Type"] = deviceIDToStr(descriptorType);
-    jsonResponse["PCI Vendor ID"] = hexData[3] << 8 | hexData[4];
-    jsonResponse["PCI DeviceId"] = hexData[5] << 8 | hexData[6];
-    jsonResponse["PCI Subsystem Vendor ID"] = hexData[7] << 8 | hexData[8];
-    jsonResponse["PCI Subsytem ID"] = hexData[9] << 8 | hexData[10];
-    jsonResponse["PCI Revision ID"] = hexData[11];
 
     return jsonResponse;
 }
@@ -229,18 +239,35 @@ nlohmann::json OCPRecoveryTool::getDeviceIDJson() noexcept
 nlohmann::json OCPRecoveryTool::setForceRecoveryMode() noexcept
 {
     nlohmann::json jsonResponse;
-    logVerbose("Setting device into force recovery");
 
-    const auto [setForceRecoveryStatus, errorMsg] =
-        recoveryCommands.setForceRecoveryMode();
-    if (setForceRecoveryStatus == true)
+    try
     {
-        jsonResponse["Status"] = "Success";
+        logVerbose("Setting device into force recovery");
+        const auto [setForceRecoveryStatus, errorMsg] =
+            recoveryCommands.setForceRecoveryMode();
+        if (setForceRecoveryStatus == true)
+        {
+            jsonResponse["Status"] = "Success";
+        }
+        else
+        {
+            jsonResponse["Error"] = errorMsg;
+        }
     }
-    else
+    catch (const std::exception& e)
     {
-        jsonResponse["Error"] = errorMsg;
+        try
+        {
+            logVerbose("Exception while setting force recovery mode: ",
+                       e.what());
+            jsonResponse["Error"] = e.what();
+        }
+        catch (...)
+        {
+            // Prevent secondary exceptions from leaving the handler
+        }
     }
+
     return jsonResponse;
 }
 
@@ -285,15 +312,22 @@ nlohmann::json OCPRecoveryTool::getDeviceStatusJson()
         }
         else
         {
-            logVerbose("Error while getting Device Status: " + errorMsg);
+            logVerbose("Error while getting Device Status: ", errorMsg);
             jsonResponse["Error"] = errorMsg;
         }
         return jsonResponse;
     }
     catch (const std::exception& e)
     {
-        logVerbose("Error in GetDeviceStatus: " + std::string(e.what()));
-        jsonResponse["Error"] = e.what();
+        try
+        {
+            logVerbose("Error in GetDeviceStatus: ", e.what());
+            jsonResponse["Error"] = e.what();
+        }
+        catch (...)
+        {
+            // Prevent secondary exceptions from leaving the handler
+        }
         return jsonResponse;
     }
 }
@@ -327,15 +361,22 @@ nlohmann::json OCPRecoveryTool::getRecoveryStatusJson()
         }
         else
         {
-            logVerbose("Error while getting Recovery Status: " + errMsg);
+            logVerbose("Error while getting Recovery Status: ", errMsg);
             jsonResponse["Error"] = errMsg;
         }
         return jsonResponse;
     }
     catch (const std::exception& e)
     {
-        logVerbose("Error in GetRecoveryStatus: " + std::string(e.what()));
-        jsonResponse["Error"] = e.what();
+        try
+        {
+            logVerbose("Error in GetRecoveryStatus: ", e.what());
+            jsonResponse["Error"] = e.what();
+        }
+        catch (...)
+        {
+            // Prevent secondary exceptions from leaving the handler
+        }
         return jsonResponse;
     }
 }
@@ -408,8 +449,17 @@ nlohmann::json
     }
     catch (const std::exception& e)
     {
-        logVerbose("Error in Perform Recovery: " + std::string(e.what()));
-        return assignPerformRecoveryError(std::string(e.what()));
+        try
+        {
+            logVerbose("Error in Perform Recovery: ", e.what());
+            jsonResponse["Error"] = e.what();
+            jsonResponse["Status"] = "Failed";
+        }
+        catch (...)
+        {
+            // Prevent secondary exceptions from leaving the handler
+        }
+        return jsonResponse;
     }
 }
 
@@ -446,11 +496,17 @@ nlohmann::json OCPRecoveryTool::processCMSLogs(const std::string& logFilePath,
     }
     catch (const std::exception& e)
     {
-        std::string errorMsg =
-            "Exception while fetching CMS logs: " + std::string(e.what());
-        logVerbose(errorMsg);
-        jsonResponse["Error"] = errorMsg;
-        jsonResponse["Status"] = "Failed";
+        try
+        {
+            logVerbose("Exception while fetching CMS logs: ", e.what());
+            jsonResponse["Error"] =
+                std::string("Exception while fetching CMS logs: ") + e.what();
+            jsonResponse["Status"] = "Failed";
+        }
+        catch (...)
+        {
+            // Prevent secondary exceptions from leaving the handler
+        }
     }
 
     return jsonResponse;
