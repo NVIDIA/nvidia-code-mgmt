@@ -147,9 +147,19 @@ class OCPRecoveryTool
 
     /**
      * @brief Log a message if verbose mode is enabled.
-     * @param message The message to log.
+     * @param args Variable number of arguments to be streamed to output.
+     *
+     * Usage: logVerbose("Error: ", errorMsg, " at line ", 123);
+     * This avoids string concatenation and memory allocation.
      */
-    void logVerbose(const std::string& message) const;
+    template <typename... Args>
+    void logVerbose(Args&&... args) const
+    {
+        if (verbose)
+        {
+            (std::cout << ... << std::forward<Args>(args)) << "\n";
+        }
+    }
 
     /**
      * @brief Converts DeviceId enumeration to its string representation.

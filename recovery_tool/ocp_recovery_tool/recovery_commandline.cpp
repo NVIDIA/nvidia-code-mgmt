@@ -20,32 +20,52 @@ OCPRecoveryCommandLine::OCPRecoveryCommandLine(const std::string_view device,
 DeviceStatus OCPRecoveryCommandLine::getDeviceStatus() const noexcept
 {
     lg2::info("Getting Device Status");
-    const auto& [success, hexData, errorMsg] =
-        recoveryCommands->getDeviceStatusCommand();
-    if (!success)
+
+    try
     {
-        lg2::error(std::string("Error while getting Device Status: " + errorMsg)
-                       .c_str());
-        return {DeviceStatusCode::CommandFailure, RecoveryReasonCode::BFNF,
-                ProtocolError::DeviceNotResponding};
+        const auto& [success, hexData, errorMsg] =
+            recoveryCommands->getDeviceStatusCommand();
+        if (success)
+        {
+            return {
+                static_cast<DeviceStatusCode>(hexData[1]),
+                static_cast<RecoveryReasonCode>(hexData[4] << 8 | hexData[3]),
+                static_cast<ProtocolError>(hexData[2])};
+        }
+        lg2::error("Error while getting Device Status: {ERROR}", "ERROR",
+                   errorMsg);
     }
-    return {static_cast<DeviceStatusCode>(hexData[1]),
-            static_cast<RecoveryReasonCode>(hexData[4] << 8 | hexData[3]),
-            static_cast<ProtocolError>(hexData[2])};
+    catch (const std::exception& e)
+    {
+        lg2::error("Exception while getting Device Status: {ERROR}", "ERROR",
+                   e.what());
+    }
+
+    return {DeviceStatusCode::CommandFailure, RecoveryReasonCode::BFNF,
+            ProtocolError::DeviceNotResponding};
 }
 
 RecoveryStatus OCPRecoveryCommandLine::getRecoveryStatus() const noexcept
 {
-    auto [success, hexData, errMsg] =
-        recoveryCommands->getRecoveryStatusCommand();
-
-    if (!success)
+    try
     {
-        lg2::error(std::string("Error while getting Recovery Status: " + errMsg)
-                       .c_str());
-        return RecoveryStatus::CommandFailure;
+        auto [success, hexData, errMsg] =
+            recoveryCommands->getRecoveryStatusCommand();
+
+        if (success)
+        {
+            return static_cast<RecoveryStatus>(hexData[1]);
+        }
+        lg2::error("Error while getting Recovery Status: {ERROR}", "ERROR",
+                   errMsg);
     }
-    return static_cast<RecoveryStatus>(hexData[1]);
+    catch (const std::exception& e)
+    {
+        lg2::error("Exception while getting Recovery Status: {ERROR}", "ERROR",
+                   e.what());
+    }
+
+    return RecoveryStatus::CommandFailure;
 }
 
 std::string OCPRecoveryCommandLine::deviceStatusToStr(
@@ -205,37 +225,76 @@ std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError, RecoveryStatus>
 RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
     const std::vector<std::string>& imagePaths) const noexcept
 {
-
-    const auto [operationalStatus, deviceStatus, protocolError,
-                recoveryStatus] = getOperationalStatus();
-
-    if (operationalStatus == OperationalStatus::Operational)
+    try
     {
-        lg2::info("Device {DEVICE} is operational, skipping", "DEVICE", device);
-        registry.createMessageRegistryResourceErrors(
-            firmwareNotInRecovery, RecoveryProtocol::OCPRecovery,
-            static_cast<ErrorCode>(recoveryStatus), device);
-        return RecoveryReturnCode::SKIPPED;
-    }
+        const auto [operationalStatus, deviceStatus, protocolError,
+                    recoveryStatus] = getOperationalStatus();
 
-    if (operationalStatus == OperationalStatus::Unreachable)
-    {
-        lg2::info("Device {DEVICE} is unreachable, skipping", "DEVICE", device);
-        registry.createMessageRegistryResourceErrors(
-            resourceErrorsDetected, RecoveryProtocol::OCPRecoveryProtocolError,
-            static_cast<ErrorCode>(protocolError), device);
-        return RecoveryReturnCode::FAILURE;
-    }
-
-    if (operationalStatus == OperationalStatus::UnknownState)
-    {
-        lg2::error("Device {DEVICE} is in an unknown state. "
-                   "Activating force recovery mode",
-                   "DEVICE", device);
-        auto [ret, _] = recoveryCommands->setForceRecoveryMode();
-        if (!ret)
+        if (operationalStatus == OperationalStatus::Operational)
         {
-            lg2::error("Unable to activate force recovery mode");
+            lg2::info("Device {DEVICE} is operational, skipping", "DEVICE",
+                      device);
+            registry.createMessageRegistryResourceErrors(
+                firmwareNotInRecovery, RecoveryProtocol::OCPRecovery,
+                static_cast<ErrorCode>(recoveryStatus), device);
+            return RecoveryReturnCode::SKIPPED;
+        }
+
+        if (operationalStatus == OperationalStatus::Unreachable)
+        {
+            lg2::info("Device {DEVICE} is unreachable, skipping", "DEVICE",
+                      device);
+            registry.createMessageRegistryResourceErrors(
+                resourceErrorsDetected,
+                RecoveryProtocol::OCPRecoveryProtocolError,
+                static_cast<ErrorCode>(protocolError), device);
+            return RecoveryReturnCode::FAILURE;
+        }
+
+        if (operationalStatus == OperationalStatus::UnknownState)
+        {
+            lg2::error("Device {DEVICE} is in an unknown state. "
+                       "Activating force recovery mode",
+                       "DEVICE", device);
+            auto [ret, _] = recoveryCommands->setForceRecoveryMode();
+            if (!ret)
+            {
+                lg2::error("Unable to activate force recovery mode");
+                registry.createMessageRegistryResourceErrors(
+                    resourceErrorsDetected,
+                    RecoveryProtocol::OCPRecoveryProtocolError,
+                    static_cast<ErrorCode>(ProtocolError::GeneralProtocolError),
+                    device);
+                return RecoveryReturnCode::FAILURE;
+            }
+
+            std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
+            OperationalStatus postForceRecoveryOperationalStatus;
+            std::tie(postForceRecoveryOperationalStatus, std::ignore,
+                     std::ignore, std::ignore) = getOperationalStatus();
+            if (postForceRecoveryOperationalStatus !=
+                OperationalStatus::RecoveryMode)
+            {
+                lg2::error("Device {DEVICE} is not in recovery mode", "DEVICE",
+                           device);
+                registry.createMessageRegistryResourceErrors(
+                    resourceErrorsDetected,
+                    RecoveryProtocol::OCPRecoveryProtocolError,
+                    static_cast<ErrorCode>(ProtocolError::GeneralProtocolError),
+                    device);
+                return RecoveryReturnCode::FAILURE;
+            }
+        }
+
+        lg2::info("Perform OCP Recovery Task Started on {DEVICE}.", "DEVICE",
+                  device);
+        registry.createMessageRegistry(recoveryStarted, device);
+
+        auto [success, errorMsg] =
+            recoveryCommands->performRecoveryCommand(imagePaths);
+        if (!success)
+        {
+            lg2::error(errorMsg.c_str());
             registry.createMessageRegistryResourceErrors(
                 resourceErrorsDetected,
                 RecoveryProtocol::OCPRecoveryProtocolError,
@@ -244,50 +303,23 @@ RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
             return RecoveryReturnCode::FAILURE;
         }
 
+        // Adding 1sec delay since probing the status right after
+        // recovery gives incosistent results
         std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
-        OperationalStatus postForceRecoveryOperationalStatus;
-        std::tie(postForceRecoveryOperationalStatus, std::ignore, std::ignore,
-                 std::ignore) = getOperationalStatus();
-        if (postForceRecoveryOperationalStatus !=
-            OperationalStatus::RecoveryMode)
+
+        const auto [postRecOperationalStatus, postRecDeviceStatus,
+                    postRecProtocolError, postRecRecoveryStatus] =
+            getOperationalStatus();
+
+        if (postRecOperationalStatus == OperationalStatus::Operational)
         {
-            lg2::error("Device {DEVICE} is not in recovery mode", "DEVICE",
-                       device);
-            registry.createMessageRegistryResourceErrors(
-                resourceErrorsDetected,
-                RecoveryProtocol::OCPRecoveryProtocolError,
-                static_cast<ErrorCode>(ProtocolError::GeneralProtocolError),
-                device);
-            return RecoveryReturnCode::FAILURE;
+            lg2::info(
+                "Recovery Image Activated on {DEVICE}.\nPerform Recovery Task Successful.",
+                "DEVICE", device);
+            registry.createMessageRegistry(recoverySuccessful, device);
+            return RecoveryReturnCode::SUCCESS;
         }
-    }
 
-    lg2::info("Perform OCP Recovery Task Started on {DEVICE}.", "DEVICE",
-              device);
-    registry.createMessageRegistry(recoveryStarted, device);
-
-    auto [success, errorMsg] =
-        recoveryCommands->performRecoveryCommand(imagePaths);
-    if (!success)
-    {
-        lg2::error(errorMsg.c_str());
-        registry.createMessageRegistryResourceErrors(
-            resourceErrorsDetected, RecoveryProtocol::OCPRecoveryProtocolError,
-            static_cast<ErrorCode>(ProtocolError::GeneralProtocolError),
-            device);
-        return RecoveryReturnCode::FAILURE;
-    }
-
-    // Adding 1sec delay since probing the status right after
-    // recovery gives incosistent results
-    std::this_thread::sleep_for(std::chrono::seconds(delay1sec));
-
-    const auto [postRecOperationalStatus, postRecDeviceStatus,
-                postRecProtocolError, postRecRecoveryStatus] =
-        getOperationalStatus();
-
-    if (postRecOperationalStatus != OperationalStatus::Operational)
-    {
         lg2::error("Recovery of {DEVICE} is not successful", "DEVICE", device);
         if (postRecOperationalStatus == OperationalStatus::RecoveryMode or
             postRecDeviceStatus == DeviceStatusCode::BootFailure)
@@ -305,12 +337,16 @@ RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
         }
         return RecoveryReturnCode::FAILURE;
     }
-
-    lg2::info(
-        "Recovery Image Activated on {DEVICE}.\nPerform Recovery Task Successful.",
-        "DEVICE", device);
-    registry.createMessageRegistry(recoverySuccessful, device);
-    return RecoveryReturnCode::SUCCESS;
+    catch (const std::exception& e)
+    {
+        lg2::error("Exception during recovery operation: {ERROR}", "ERROR",
+                   e.what());
+        registry.createMessageRegistryResourceErrors(
+            resourceErrorsDetected, RecoveryProtocol::OCPRecoveryProtocolError,
+            static_cast<ErrorCode>(ProtocolError::GeneralProtocolError),
+            device);
+        return RecoveryReturnCode::FAILURE;
+    }
 }
 
 } // namespace ocp_recovery_commandline
