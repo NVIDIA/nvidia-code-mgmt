@@ -8,9 +8,11 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <span>
+#include <sstream>
 
 namespace usb
 {
@@ -35,9 +37,10 @@ UsbContext::UsbContext() noexcept
     const int result = libusb_init(&context);
     if (result != LIBUSB_SUCCESS)
     {
-        std::cerr << std::format(
-            "Failed to initialize libusb: {} ({})\n", libusb_error_name(result),
-            libusb_strerror(static_cast<libusb_error>(result)));
+        std::cerr << "Failed to initialize libusb: "
+                  << libusb_error_name(result) << " ("
+                  << libusb_strerror(static_cast<libusb_error>(result))
+                  << ")\n";
         context = nullptr;
         return;
     }
@@ -135,8 +138,8 @@ namespace
     {
         if (verbose)
         {
-            std::cerr << std::format("Failed to get device descriptor: {}\n",
-                                     libusb_error_name(ret));
+            std::cerr << "Failed to get device descriptor: "
+                      << libusb_error_name(ret) << "\n";
         }
         return false;
     }
@@ -146,9 +149,12 @@ namespace
 
     if (verbose && !matches)
     {
-        std::cout << std::format(
-            "Device VID:PID = 0x{:04X}:0x{:04X} (expected 0x{:04X}:0x{:04X})\n",
-            desc.idVendor, desc.idProduct, VENDOR_ID, PRODUCT_ID);
+        std::ostringstream oss;
+        oss << "Device VID:PID = 0x" << std::hex << std::setfill('0')
+            << std::setw(4) << desc.idVendor << ":0x" << std::setw(4)
+            << desc.idProduct << " (expected 0x" << std::setw(4) << VENDOR_ID
+            << ":0x" << std::setw(4) << PRODUCT_ID << ")";
+        std::cout << oss.str() << "\n";
     }
 
     return matches;
@@ -171,8 +177,8 @@ namespace
     {
         if (verbose)
         {
-            std::cerr << std::format("Failed to get config descriptor: {}\n",
-                                     libusb_error_name(ret));
+            std::cerr << "Failed to get config descriptor: "
+                      << libusb_error_name(ret) << "\n";
         }
         return false; // config not allocated on error, safe to return
     }
@@ -220,9 +226,12 @@ namespace
     // Not found
     if (verbose)
     {
-        std::cout << std::format(
-            "Device does not have recovery interface {} with endpoint 0x{:02X}\n",
-            INTERFACE_RECOVERY, ENDPOINT_RECOVERY);
+        std::ostringstream oss;
+        oss << "Device does not have recovery interface "
+            << static_cast<int>(INTERFACE_RECOVERY) << " with endpoint 0x"
+            << std::hex << std::setfill('0') << std::setw(2)
+            << static_cast<int>(ENDPOINT_RECOVERY);
+        std::cout << oss.str() << "\n";
     }
 
     return false; // guard cleanup happens automatically
@@ -250,7 +259,7 @@ namespace
         }
 
         const uint8_t busNumber = libusb_get_bus_number(device);
-        std::string portPath = std::format("{}", busNumber);
+        std::string portPath = std::to_string(busNumber);
 
         // Build port path string using modern range-based for (e.g., "1-1.3.4")
         const auto validPorts =
@@ -258,14 +267,14 @@ namespace
 
         for (size_t i = 0; const auto& port : validPorts)
         {
-            portPath += std::format("{}{}", (i++ == 0 ? "-" : "."), port);
+            portPath += (i++ == 0 ? "-" : ".");
+            portPath += std::to_string(port);
         }
 
         return portPath;
     }
     catch (...)
     {
-        // std::format or std::string can throw - catch to honor noexcept
         return {};
     }
 }
@@ -295,16 +304,16 @@ UsbControlSession::UsbControlSession(libusb_device* device,
     {
         if (portPath.empty())
         {
-            std::cerr << std::format(
-                "Failed to open USB device: {} ({})\n", libusb_error_name(ret),
-                libusb_strerror(static_cast<libusb_error>(ret)));
+            std::cerr << "Failed to open USB device: " << libusb_error_name(ret)
+                      << " (" << libusb_strerror(static_cast<libusb_error>(ret))
+                      << ")\n";
         }
         else
         {
-            std::cerr << std::format(
-                "Failed to open USB device at port {}: {} ({})\n", portPath,
-                libusb_error_name(ret),
-                libusb_strerror(static_cast<libusb_error>(ret)));
+            std::cerr << "Failed to open USB device at port " << portPath
+                      << ": " << libusb_error_name(ret) << " ("
+                      << libusb_strerror(static_cast<libusb_error>(ret))
+                      << ")\n";
         }
         handle = nullptr;
         return;
@@ -368,16 +377,16 @@ UsbDeviceHandle::UsbDeviceHandle(libusb_device* device, const UsbContext& ctx,
     {
         if (portPath.empty())
         {
-            std::cerr << std::format(
-                "Failed to open USB device: {} ({})\n", libusb_error_name(ret),
-                libusb_strerror(static_cast<libusb_error>(ret)));
+            std::cerr << "Failed to open USB device: " << libusb_error_name(ret)
+                      << " (" << libusb_strerror(static_cast<libusb_error>(ret))
+                      << ")\n";
         }
         else
         {
-            std::cerr << std::format(
-                "Failed to open USB device at port {}: {} ({})\n", portPath,
-                libusb_error_name(ret),
-                libusb_strerror(static_cast<libusb_error>(ret)));
+            std::cerr << "Failed to open USB device at port " << portPath
+                      << ": " << libusb_error_name(ret) << " ("
+                      << libusb_strerror(static_cast<libusb_error>(ret))
+                      << ")\n";
         }
         handle = nullptr;
         return;
@@ -390,9 +399,9 @@ UsbDeviceHandle::UsbDeviceHandle(libusb_device* device, const UsbContext& ctx,
         ret = libusb_detach_kernel_driver(handle, claimedInterface);
         if (ret != LIBUSB_SUCCESS)
         {
-            std::cerr << std::format(
-                "Warning: Failed to detach kernel driver from interface {}: {}\n",
-                claimedInterface, libusb_error_name(ret));
+            std::cerr
+                << "Warning: Failed to detach kernel driver from interface "
+                << claimedInterface << ": " << libusb_error_name(ret) << "\n";
         }
     }
 
@@ -400,18 +409,17 @@ UsbDeviceHandle::UsbDeviceHandle(libusb_device* device, const UsbContext& ctx,
     ret = libusb_set_configuration(handle, 1);
     if (ret != LIBUSB_SUCCESS && ret != LIBUSB_ERROR_BUSY)
     {
-        std::cerr << std::format("Warning: Failed to set configuration 1: {}\n",
-                                 libusb_error_name(ret));
+        std::cerr << "Warning: Failed to set configuration 1: "
+                  << libusb_error_name(ret) << "\n";
     }
 
     // Claim specified interface
     ret = libusb_claim_interface(handle, claimedInterface);
     if (ret != LIBUSB_SUCCESS)
     {
-        std::cerr << std::format(
-            "Failed to claim USB interface {}: {} ({})\n", claimedInterface,
-            libusb_error_name(ret),
-            libusb_strerror(static_cast<libusb_error>(ret)));
+        std::cerr << "Failed to claim USB interface " << claimedInterface
+                  << ": " << libusb_error_name(ret) << " ("
+                  << libusb_strerror(static_cast<libusb_error>(ret)) << ")\n";
         cleanup();
         return;
     }
@@ -513,9 +521,9 @@ std::vector<UsbDevice> findDevicesByVidPid(const UsbContext& ctx,
     {
         if (verbose)
         {
-            std::cerr << std::format(
-                "Failed to get USB device list: {}\n",
-                libusb_error_name(static_cast<int>(deviceCount)));
+            std::cerr << "Failed to get USB device list: "
+                      << libusb_error_name(static_cast<int>(deviceCount))
+                      << "\n";
         }
         return {}; // libusb_get_devicelist does NOT allocate list on error,
                    // safe to return
@@ -533,9 +541,11 @@ std::vector<UsbDevice> findDevicesByVidPid(const UsbContext& ctx,
 
     if (verbose)
     {
-        std::cout << std::format(
-            "Scanning {} USB devices for VID:PID=0x{:04X}:0x{:04X}...\n",
-            deviceCount, VENDOR_ID, PRODUCT_ID);
+        std::ostringstream oss;
+        oss << "Scanning " << deviceCount << " USB devices for VID:PID=0x"
+            << std::hex << std::setfill('0') << std::setw(4) << VENDOR_ID
+            << ":0x" << std::setw(4) << PRODUCT_ID << "...";
+        std::cout << oss.str() << "\n";
     }
 
     std::vector<UsbDevice> matchingDevices;
@@ -553,9 +563,11 @@ std::vector<UsbDevice> findDevicesByVidPid(const UsbContext& ctx,
 
             if (verbose)
             {
-                std::cout << std::format(
-                    "Found device VID:PID=0x{:04X}:0x{:04X} at port {}\n",
-                    VENDOR_ID, PRODUCT_ID, portPath);
+                std::ostringstream oss;
+                oss << "Found device VID:PID=0x" << std::hex
+                    << std::setfill('0') << std::setw(4) << VENDOR_ID << ":0x"
+                    << std::setw(4) << PRODUCT_ID << " at port " << portPath;
+                std::cout << oss.str() << "\n";
             }
         }
     }
@@ -564,9 +576,11 @@ std::vector<UsbDevice> findDevicesByVidPid(const UsbContext& ctx,
 
     if (verbose)
     {
-        std::cout << std::format(
-            "Found {} device(s) with VID:PID=0x{:04X}:0x{:04X}\n",
-            matchingDevices.size(), VENDOR_ID, PRODUCT_ID);
+        std::ostringstream oss;
+        oss << "Found " << matchingDevices.size()
+            << " device(s) with VID:PID=0x" << std::hex << std::setfill('0')
+            << std::setw(4) << VENDOR_ID << ":0x" << std::setw(4) << PRODUCT_ID;
+        std::cout << oss.str() << "\n";
     }
 
     return matchingDevices; // guard cleanup happens here
@@ -604,7 +618,7 @@ std::optional<UsbDevice> findDeviceByPortPath(const UsbContext& ctx,
         {
             if (verbose)
             {
-                std::cout << std::format("Found device at port {}\n", portPath);
+                std::cout << "Found device at port " << portPath << "\n";
             }
             return std::move(device); // Transfer ownership
         }
@@ -612,7 +626,7 @@ std::optional<UsbDevice> findDeviceByPortPath(const UsbContext& ctx,
 
     if (verbose)
     {
-        std::cerr << std::format("No device found at port {}\n", portPath);
+        std::cerr << "No device found at port " << portPath << "\n";
     }
 
     return std::nullopt;

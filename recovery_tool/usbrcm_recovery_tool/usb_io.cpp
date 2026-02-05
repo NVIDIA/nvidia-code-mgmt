@@ -10,6 +10,7 @@
 #include <format>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 
 // Compile-time assertions for type safety
 static_assert(sizeof(uint32_t) == 4, "uint32_t must be exactly 4 bytes");
@@ -98,22 +99,24 @@ std::optional<uint32_t> readRegister32(libusb_device_handle* handle,
     // Handle transfer failure
     if (verbose)
     {
-        std::cerr << "usb_io::readRegister32: Transfer failed at address 0x"
-                  << std::hex << std::setfill('0') << std::setw(8)
-                  << virtualAddress << std::dec << " - ";
+        std::ostringstream oss;
+        oss << "usb_io::readRegister32: Transfer failed at address 0x"
+            << std::hex << std::setfill('0') << std::setw(8) << virtualAddress
+            << std::dec << " - ";
 
         if (bytesRead < 0)
         {
-            std::cerr << libusb_error_name(bytesRead) << " ("
-                      << libusb_strerror(static_cast<libusb_error>(bytesRead))
-                      << ")\n";
+            oss << libusb_error_name(bytesRead) << " ("
+                << libusb_strerror(static_cast<libusb_error>(bytesRead)) << ")";
         }
         else
         {
             // Partial read
-            std::cerr << "Incomplete read (expected " << REGISTER_SIZE_BYTES
-                      << " bytes, got " << bytesRead << " bytes)\n";
+            oss << "Incomplete read (expected " << REGISTER_SIZE_BYTES
+                << " bytes, got " << bytesRead << " bytes)";
         }
+
+        std::cerr << oss.str() << "\n";
     }
 
     return std::nullopt;
@@ -140,9 +143,9 @@ std::optional<std::array<uint8_t, EcidParser::ECID_SIZE>>
     {
         if (verbose)
         {
-            std::cerr << std::format(
-                "readDeviceEcid: Failed to get device descriptor: {}\n",
-                libusb_error_name(descResult));
+            // Use stream operators instead of std::format in noexcept function
+            std::cerr << "readDeviceEcid: Failed to get device descriptor: "
+                      << libusb_error_name(descResult) << "\n";
         }
         return std::nullopt;
     }
@@ -171,9 +174,9 @@ std::optional<std::array<uint8_t, EcidParser::ECID_SIZE>>
     {
         if (verbose)
         {
-            std::cerr << std::format(
-                "readDeviceEcid: Failed to read serial descriptor: {}\n",
-                libusb_error_name(serialResult));
+            // Use stream operators instead of std::format in noexcept function
+            std::cerr << "readDeviceEcid: Failed to read serial descriptor: "
+                      << libusb_error_name(serialResult) << "\n";
         }
         return std::nullopt;
     }
@@ -182,9 +185,9 @@ std::optional<std::array<uint8_t, EcidParser::ECID_SIZE>>
     {
         if (verbose)
         {
-            std::cerr << std::format(
-                "readDeviceEcid: Invalid ECID serial string length: {} (expected {})\n",
-                serialResult, ECID_HEX_LENGTH);
+            std::cerr << "readDeviceEcid: Invalid ECID serial string length: "
+                      << serialResult << " (expected " << ECID_HEX_LENGTH
+                      << ")\n";
         }
         return std::nullopt;
     }
@@ -209,9 +212,9 @@ std::optional<std::array<uint8_t, EcidParser::ECID_SIZE>>
         {
             if (verbose)
             {
-                std::cerr << std::format(
-                    "readDeviceEcid: Invalid hex character in ECID at position {}\n",
-                    hexOffset);
+                std::cerr
+                    << "readDeviceEcid: Invalid hex character in ECID at position "
+                    << hexOffset << "\n";
             }
             return std::nullopt;
         }
