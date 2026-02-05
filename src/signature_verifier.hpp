@@ -101,8 +101,8 @@ class SignatureVerifier
     }
 
   private:
-    bool initialized;
-    Metadata metadata;
+    bool initialized = false;
+    Metadata metadata{};
     std::string publicKey;
     std::vector<char> imageData;
 

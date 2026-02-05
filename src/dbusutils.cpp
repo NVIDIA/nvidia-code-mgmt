@@ -253,11 +253,20 @@ void DBUSUtils::controlSystemUnit(const std::string& systemUnit,
 
 std::string DBUSUtils::getHostPwrStatus() const noexcept
 {
-    auto pwrStatus = getProperty<std::string>(
-        "xyz.openbmc_project.State.Chassis",
-        "/xyz/openbmc_project/state/chassis0",
-        "xyz.openbmc_project.State.Chassis", "CurrentPowerState");
-    return pwrStatus;
+    try
+    {
+        auto pwrStatus = getProperty<std::string>(
+            "xyz.openbmc_project.State.Chassis",
+            "/xyz/openbmc_project/state/chassis0",
+            "xyz.openbmc_project.State.Chassis", "CurrentPowerState");
+        return pwrStatus;
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to get host power status: {ERROR}", "ERROR",
+                   e.what());
+        return std::string{};
+    }
 }
 
 void DBUSUtils::createLog(const std::string& messageID,
