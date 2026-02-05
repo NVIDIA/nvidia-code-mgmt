@@ -28,6 +28,7 @@
 #include "mcu_recovery_manager.hpp"
 #include "mcu_recovery_mode_manager.hpp"
 #include "mcu_resource.hpp"
+#include "nvswitch_resource.hpp"
 #include "udev_monitor.hpp"
 #include "usb_i2c_mapper.hpp"
 #include "usb_rcm_resource.hpp"
@@ -55,6 +56,8 @@ constexpr auto mcuObjInterface =
     "xyz.openbmc_project.Configuration.MCURecovery";
 constexpr auto connectxObjInterface =
     "xyz.openbmc_project.Configuration.ConnectXRecovery";
+constexpr auto nvswitchObjInterface =
+    "xyz.openbmc_project.Configuration.NVSwitchRecovery";
 constexpr auto usbRcmForceRecoveryObjInterface =
     "xyz.openbmc_project.Configuration.USBRCMForceRecovery";
 constexpr auto usbRcmObjInterface =
@@ -495,6 +498,65 @@ void publishDBusRecoveryObject()
             const auto smaEID = smaEidOpt.value();
 
             resources.push_back(std::make_unique<ConnectXResource>(
+                getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, eid,
+                smaEID));
+        }
+        else if (interfaces.contains(nvswitchObjInterface))
+        {
+            lg2::info("Found NVSwitch recovery config Object: {PATH}", "PATH",
+                      emObjectPath);
+
+            const auto eidOpt =
+                getUint8(interfaces, nvswitchObjInterface, "EID");
+            if (!eidOpt.has_value())
+            {
+                lg2::error(
+                    "No EID found in NVSwitch recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto eid = eidOpt.value();
+
+            if (!hasProperty(interfaces, nvswitchObjInterface, "I2CBus"))
+            {
+                lg2::error(
+                    "No I2CBus found in NVSwitch recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto i2cBus =
+                getUint64(interfaces, nvswitchObjInterface, "I2CBus");
+
+            if (!hasProperty(interfaces, nvswitchObjInterface, "I2CAddress"))
+            {
+                lg2::error(
+                    "No I2CAddress found in NVSwitch recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto i2cAddress =
+                getUint64(interfaces, nvswitchObjInterface, "I2CAddress");
+
+            const auto chassisName =
+                getString(interfaces, nvswitchObjInterface, "ChassisName");
+            const auto chassisObjPath = getChassisObjPath(chassisName);
+
+            const auto smaEidOpt =
+                getUint8(interfaces, nvswitchObjInterface, "SMAEID");
+            if (!smaEidOpt.has_value())
+            {
+                lg2::error(
+                    "Failed to get SMAEID in NVSwitch recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto smaEID = smaEidOpt.value();
+
+            resources.push_back(std::make_unique<NVSwitchResource>(
                 getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, eid,
                 smaEID));
         }

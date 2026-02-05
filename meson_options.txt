@@ -256,6 +256,21 @@ option('CONNECTX_RECOVERY_TIMEOUT',
        value: 300,
        description: 'ConnectX Recovery update timeout in seconds')
 
+option('NVSWITCH_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables NVSwitch Recovery support')
+
+option('NVSWITCH_RECOVERY_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'NVSwitch Recovery supported models')
+
+option('NVSWITCH_RECOVERY_TIMEOUT',
+       type: 'integer',
+       value: 300,
+       description: 'NVSwitch Recovery update timeout in seconds')
+
 option('SPI_PROGRAMMER_SUPPORT',
        type: 'feature',
        value: 'disabled',

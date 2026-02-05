@@ -234,6 +234,13 @@ if get_option('CONNECTX_RECOVERY_SUPPORT').enabled()
     ]
 endif
 
+if get_option('NVSWITCH_RECOVERY_SUPPORT').enabled()
+    unit_files = unit_files + [
+        'com.Nvidia.NVSwitchRecovery.Updater.service',
+        'nvswitch-recovery@.service',
+    ]
+endif
+
 if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.Nvidia.SpiProgrammer.Updater.service',

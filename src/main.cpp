@@ -76,6 +76,9 @@
 #ifdef CONNECTX_RECOVERY_SUPPORT
 #include "connectx_recovery.hpp"
 #endif
+#ifdef NVSWITCH_RECOVERY_SUPPORT
+#include "nvswitch_recovery.hpp"
+#endif
 #ifdef SPI_PROGRAMMER_SUPPORT
 #include "spi_programmer.hpp"
 #endif
@@ -274,6 +277,12 @@ int main(int argc, char** argv)
     if (updater == "ConnectXRecovery")
     {
         itemUpdater = std::make_unique<ConnectXRecoveryUpdater>(bus);
+    }
+#endif
+#if NVSWITCH_RECOVERY_SUPPORT
+    if (updater == "NVSwitchRecovery")
+    {
+        itemUpdater = std::make_unique<NVSwitchRecoveryUpdater>(bus);
     }
 #endif
 #if SPI_PROGRAMMER_SUPPORT

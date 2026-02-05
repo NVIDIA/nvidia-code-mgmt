@@ -383,6 +383,35 @@ if get_option('CONNECTX_RECOVERY_SUPPORT').enabled()
     )
 endif
 
+if get_option('NVSWITCH_RECOVERY_SUPPORT').enabled()
+    add_project_arguments('-DNVSWITCH_RECOVERY_SUPPORT', language: ['c', 'cpp'])
+    cdata.set_quoted(
+        'NVSWITCH_RECOVERY_SUPPORTED_MODEL',
+        get_option('NVSWITCH_RECOVERY_SUPPORTED_MODEL'),
+    )
+    cdata.set_quoted(
+        'NVSWITCH_RECOVERY_INVENTORY_IFACE',
+        'xyz.openbmc_project.Inventory.Decorator.Asset',
+    )
+    cdata.set_quoted(
+        'NVSWITCH_RECOVERY_BUSNAME_UPDATER',
+        'com.Nvidia.Software.NVSwitchRecovery.Updater',
+    )
+    cdata.set_quoted(
+        'NVSWITCH_RECOVERY_BUSNAME_INVENTORY',
+        'xyz.openbmc_project.PLDM',
+    )
+    cdata.set_quoted(
+        'NVSWITCH_RECOVERY_UPDATE_SERVICE',
+        'nvswitch-recovery@.service',
+    )
+    cdata.set_quoted('NVSWITCH_RECOVERY_NAME', 'NVSwitchRecovery')
+    cdata.set(
+        'NVSWITCH_RECOVERY_TIMEOUT',
+        get_option('NVSWITCH_RECOVERY_TIMEOUT'),
+    )
+endif
+
 if get_option('AP_IMAGE_VERIFICATION').enabled()
     add_project_arguments('-DAP_IMAGE_VERIFICATION', language: ['c', 'cpp'])
 

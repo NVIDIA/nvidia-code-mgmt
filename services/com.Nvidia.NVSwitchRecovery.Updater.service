@@ -1,0 +1,14 @@
+[Unit]
+Description=NVSwitch Recovery Updater
+Wants=pldmd.service
+After=pldmd.service
+
+[Service]
+ExecStart=/usr/bin/code-manager -u NVSwitchRecovery
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.NVSwitchRecovery.Updater
+
+[Install]
+# This should require run power
+WantedBy=multi-user.target

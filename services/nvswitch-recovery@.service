@@ -1,0 +1,7 @@
+[Unit]
+Description=NVSwitch Recovery Utility
+
+[Service]
+Type=oneshot
+Environment="ARGS=%I"
+ExecStart=/usr/bin/nvswitch-recovery.sh $ARGS
