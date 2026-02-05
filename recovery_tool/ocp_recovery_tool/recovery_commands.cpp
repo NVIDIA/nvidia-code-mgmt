@@ -162,7 +162,7 @@ std::tuple<bool, std::vector<uint8_t>, std::string>
 bool OCPRecoveryCommands::isDeviceReadyForTx()
 {
 
-    if (emulation) // Added delay as GB100 emulation is slow so we are
+    if (emulation) // Added delay as some machines emulation are slow so we are
                    // seeing issues with reading the status just after writing
                    // the data
     {

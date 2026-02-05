@@ -458,7 +458,10 @@ void MCURecoveryManager::updateAllDeviceInfo()
 {
     for (auto& [deviceId, mcuInfo] : mcuMap)
     {
-        updateDevInfo(deviceId);
+        if (!updateDevInfo(deviceId))
+        {
+            continue;
+        }
     }
 }
 
