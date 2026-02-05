@@ -37,15 +37,17 @@ class GpuResource : public MCTPDiscoveryResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
-     * @param chassisObjPath - Path of D-Bus object to publish
+     * @param chassisObjPath - Path of D-Bus object for boot status
+     * @param forceRecoveryChassisObjPath - Path for SetRecoveryMode interface
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
      * @param eid - MCTP Endpoint ID of the Resource
      *
      */
     GpuResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                const std::string& chassisObjPath, const uint64_t i2cBus,
-                const uint64_t i2cAddress, uint8_t eid) :
+                const std::string& chassisObjPath,
+                const std::string& forceRecoveryChassisObjPath,
+                const uint64_t i2cBus, const uint64_t i2cAddress, uint8_t eid) :
         MCTPDiscoveryResource(bus, objPath, eid)
     {
         ocpRecoveryCommands = std::make_unique<
@@ -56,7 +58,7 @@ class GpuResource : public MCTPDiscoveryResource
         bootStatus->bootStatusType(
             BootStatusServer::BootStatusTypes::OCPDeviceStatus);
 
-        createRecoveryModeInterface(bus, chassisObjPath);
+        createRecoveryModeInterface(bus, forceRecoveryChassisObjPath);
 
         updateHealth();
     }
@@ -66,15 +68,18 @@ class GpuResource : public MCTPDiscoveryResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
-     * @param chassisObjPath - Path of D-Bus object to publish
+     * @param chassisObjPath - Path of D-Bus object for boot status
+     * @param forceRecoveryChassisObjPath - Path for SetRecoveryMode interface
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
      * @param eid - MCTP Endpoint ID of the Resource
      * @param smaEid - EID of the SMA
      */
     GpuResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                const std::string& chassisObjPath, const uint64_t i2cBus,
-                const uint64_t i2cAddress, uint8_t eid, uint8_t smaEid) :
+                const std::string& chassisObjPath,
+                const std::string& forceRecoveryChassisObjPath,
+                const uint64_t i2cBus, const uint64_t i2cAddress, uint8_t eid,
+                uint8_t smaEid) :
         MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid)
     {
         ocpRecoveryCommands = std::make_unique<
@@ -85,7 +90,7 @@ class GpuResource : public MCTPDiscoveryResource
         bootStatus->bootStatusType(
             BootStatusServer::BootStatusTypes::OCPDeviceStatus);
 
-        createRecoveryModeInterface(bus, chassisObjPath);
+        createRecoveryModeInterface(bus, forceRecoveryChassisObjPath);
 
         updateHealth();
 
@@ -105,30 +110,39 @@ class GpuResource : public MCTPDiscoveryResource
     /**@brief Creates the SetRecoveryMode D-Bus interface on the chassis path
      *
      * @param bus - SystemD bus to publish the object
-     * @param chassisObjPath - Path of D-Bus object to publish
+     * @param forceRecoveryChassisObjPath - Chassis D-Bus object path for the
+     * SetRecoveryMode interface. If empty, the interface is not created.
      */
-    void createRecoveryModeInterface(sdbusplus::bus::bus& bus,
-                                     const std::string& chassisObjPath)
+    void createRecoveryModeInterface(
+        sdbusplus::bus::bus& bus,
+        const std::string& forceRecoveryChassisObjPath)
     {
+        if (forceRecoveryChassisObjPath.empty())
+        {
+            return;
+        }
+
         lg2::info("Creating SetRecoveryMode interface on {PATH}", "PATH",
-                  chassisObjPath);
+                  forceRecoveryChassisObjPath);
 
         recoveryModeInterface = std::make_unique<SetRecoveryModeInterface>(
-            bus, chassisObjPath, [this, chassisObjPath]() {
+            bus, forceRecoveryChassisObjPath,
+            [this, forceRecoveryChassisObjPath]() {
                 lg2::info("Performing OCP force recovery for {PATH}", "PATH",
-                          chassisObjPath);
+                          forceRecoveryChassisObjPath);
 
                 auto [success, error] =
                     ocpRecoveryCommands->setForceRecoveryMode();
                 if (!success)
                 {
                     lg2::error("OCP force recovery failed for {PATH}: {ERR}",
-                               "PATH", chassisObjPath, "ERR", error);
+                               "PATH", forceRecoveryChassisObjPath, "ERR",
+                               error);
                     throw std::runtime_error(error);
                 }
 
                 lg2::info("OCP force recovery successful for {PATH}", "PATH",
-                          chassisObjPath);
+                          forceRecoveryChassisObjPath);
             });
     }
 
