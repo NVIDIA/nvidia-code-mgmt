@@ -385,6 +385,18 @@ void publishDBusRecoveryObject()
                 getString(interfaces, ocpObjInterface, "ChassisName");
             const auto chassisObjPath = getChassisObjPath(chassisName);
 
+            // Only create SetRecoveryMode interface if
+            // ForceRecoveryChassisObject is specified
+            std::string forceRecoveryChassisObjPath;
+            if (hasProperty(interfaces, ocpObjInterface,
+                            "ForceRecoveryChassisObject"))
+            {
+                const auto forceRecoveryChassisName = getString(
+                    interfaces, ocpObjInterface, "ForceRecoveryChassisObject");
+                forceRecoveryChassisObjPath =
+                    getChassisObjPath(forceRecoveryChassisName);
+            }
+
             if (hasProperty(interfaces, ocpObjInterface, "I2CBus"))
             {
                 i2cBus = getUint64(interfaces, ocpObjInterface, "I2CBus");
@@ -432,14 +444,15 @@ void publishDBusRecoveryObject()
                 const auto smaEID = smaEidOpt.value();
 
                 resources.push_back(std::make_unique<GpuResource>(
-                    getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, eid,
+                    getBus(), objPath, chassisObjPath,
+                    forceRecoveryChassisObjPath, i2cBus, i2cAddress, eid,
                     smaEID));
             }
             else
             {
                 resources.push_back(std::make_unique<GpuResource>(
-                    getBus(), objPath, chassisObjPath, i2cBus, i2cAddress,
-                    eid));
+                    getBus(), objPath, chassisObjPath,
+                    forceRecoveryChassisObjPath, i2cBus, i2cAddress, eid));
             }
         }
         else if (interfaces.contains(connectxObjInterface))
@@ -708,33 +721,34 @@ void publishDBusRecoveryObject()
 
             const auto eid = eidOpt.value();
 
-            if (!hasProperty(interfaces, mcuObjInterface, "ChassisName"))
-            {
-                lg2::error("Failed to get Chassis Name in MCU recovery config "
-                           "Object: {PATH}",
-                           "PATH", emObjectPath);
-                continue;
-            }
-            const auto chassisName =
-                getString(interfaces, mcuObjInterface, "ChassisName");
-
             resources.push_back(std::make_unique<MCUResource>(
                 getBus(), objPath, eid, deviceName, mcuRecoveryManager));
 
+            std::string forceRecoveryChassisObjPath;
+            std::string forceRecoveryChassisName;
+            if (hasProperty(interfaces, mcuObjInterface,
+                            "ForceRecoveryChassisObject"))
+            {
+                forceRecoveryChassisName = getString(
+                    interfaces, mcuObjInterface, "ForceRecoveryChassisObject");
+                forceRecoveryChassisObjPath =
+                    getChassisObjPath(forceRecoveryChassisName);
+            }
+
             // Create MCURecoveryModeManager for D-Bus SetRecoveryMode interface
-            if (mcuRecoveryManager && !chassisName.empty() &&
+            if (mcuRecoveryManager && !forceRecoveryChassisObjPath.empty() &&
                 !deviceName.empty())
             {
                 try
                 {
                     lg2::info(
                         "Creating MCURecoveryModeManager: {CHASSIS}, device: {DEV}",
-                        "CHASSIS", chassisName, "DEV", deviceName);
+                        "CHASSIS", forceRecoveryChassisName, "DEV", deviceName);
                     recoveryModeManagers.push_back(
                         std::make_unique<
                             nvidia::recovery::MCURecoveryModeManager>(
-                            getBus(), chassisName,
-                            getChassisObjPath(chassisName), mcuRecoveryManager,
+                            getBus(), forceRecoveryChassisName,
+                            forceRecoveryChassisObjPath, mcuRecoveryManager,
                             deviceName));
                 }
                 catch (const std::exception& e)
