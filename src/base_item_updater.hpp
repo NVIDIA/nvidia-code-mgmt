@@ -248,15 +248,14 @@ class BaseItemUpdater :
      * @param model
      * @param manufacture
      */
-    virtual void insertToUUIDMap(const std::string& uuid,
-                                 const std::string& model,
-                                 const std::string& manufacture)
+    virtual void insertToUUIDMap(std::string uuid, std::string model,
+                                 std::string manufacture)
     {
 
         auto pair =
             std::make_tuple(std::move(model), std::move(manufacture), "");
-        auto npair = std::make_pair(std::move(uuid), pair);
-        deviceIds.insert(npair);
+        auto npair = std::make_pair(std::move(uuid), std::move(pair));
+        deviceIds.insert(std::move(npair));
     }
     /**
      * @brief for a given Model and manufacture gets UUID

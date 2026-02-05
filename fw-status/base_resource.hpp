@@ -145,6 +145,8 @@ class BaseResource
         bus(bus), path(objPath)
     {}
 
+    virtual ~BaseResource() = default;
+
     /** @brief Sets health of resource on D-Bus object.
      *         Creates D-Bus object if it doesn't already exists
      *

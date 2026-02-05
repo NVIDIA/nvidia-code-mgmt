@@ -121,7 +121,7 @@ class GpuResource : public MCTPDiscoveryResource
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointAddedMatch;
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
-    uint8_t smaEid{};
+    uint8_t smaEid{0};
 
     /**@brief Creates the SetRecoveryMode D-Bus interface on the chassis path
      *
