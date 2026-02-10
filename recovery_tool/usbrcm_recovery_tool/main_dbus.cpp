@@ -32,7 +32,9 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <future>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -157,6 +159,21 @@ nlohmann::json findDeviceByPort(const nlohmann::json& devicesArray,
     return "Unknown";
 }
 
+struct RecoveryTask
+{
+    std::string deviceName;
+    std::string usbPort;
+};
+
+struct RecoveryResult
+{
+    bool success;
+    ErrorCode errorCode;
+    std::string errorMessage;
+    /** When true and success, Redfish registry uses enterDOTRecovery. */
+    bool emptyDotBlobAccepted = false;
+};
+
 /**
  * @brief Sort and collect image paths by component ID
  * @param basePath Base path containing component directories
@@ -217,6 +234,77 @@ std::vector<std::string> getOrderedImagePaths(const std::string& basePath)
               "FOUND", orderedPaths.size(), "EXPECTED", componentMap.size());
 
     return orderedPaths;
+}
+
+/**
+ * @brief Execute recovery for a single device (thread-safe)
+ *
+ * This function is designed to be called from std::async for parallel
+ * execution. It creates its own isolated USB context and does not share any
+ * mutable state with other recovery tasks.
+ *
+ * @param task Recovery task containing device information
+ * @param imagePaths Vector of image paths to flash (read-only, shared safely)
+ * @return RecoveryResult with success/failure status and error details
+ */
+RecoveryResult executeRecoveryTask(const RecoveryTask& task,
+                                   const std::vector<std::string>& imagePaths)
+{
+    RecoveryResult result;
+    result.success = false;
+    result.errorCode =
+        static_cast<ErrorCode>(USBRCMRecoveryErrorCode::ImageTransferFailed);
+
+    lg2::info("Starting recovery for device {DEVICE} on USB port {PORT}",
+              "DEVICE", task.deviceName, "PORT", task.usbPort);
+
+    try
+    {
+        std::string dotBlobPath = getDotBlobPath(task.deviceName);
+        nlohmann::json recoveryOutput;
+        if (!performUsbRecovery(task.usbPort, imagePaths, dotBlobPath,
+                                recoveryOutput, false))
+        {
+            lg2::error("Firmware Recovery failed for Device: {DEVICE}",
+                       "DEVICE", task.deviceName);
+
+            if (recoveryOutput.contains("ErrorCode"))
+            {
+                result.errorCode = recoveryOutput["ErrorCode"].get<ErrorCode>();
+                lg2::error("Recovery error code: {CODE} for device {DEVICE}",
+                           "CODE", static_cast<unsigned>(result.errorCode),
+                           "DEVICE", task.deviceName);
+            }
+            if (recoveryOutput.contains("Error"))
+            {
+                result.errorMessage =
+                    recoveryOutput["Error"].get<std::string>();
+                lg2::error("Error details for device {DEVICE}: {ERR}", "DEVICE",
+                           task.deviceName, "ERR", result.errorMessage);
+            }
+            return result;
+        }
+
+        lg2::info("Device {DEVICE} successfully recovered", "DEVICE",
+                  task.deviceName);
+        result.success = true;
+        result.errorCode = static_cast<ErrorCode>(0);
+        if (recoveryOutput.contains("EmptyDotBlobAccepted") &&
+            recoveryOutput["EmptyDotBlobAccepted"].get<bool>())
+        {
+            result.emptyDotBlobAccepted = true;
+        }
+        return result;
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "Firmware Recovery failed for Device: {DEVICE}, Error: {ERROR}",
+            "DEVICE", task.deviceName, "ERROR", e.what());
+        result.errorMessage = e.what();
+        result.errorCode = static_cast<ErrorCode>(deviceRecoveryFailed);
+        return result;
+    }
 }
 
 int main(int argc, char** argv)
@@ -284,6 +372,8 @@ int main(int argc, char** argv)
                   std::filesystem::path(imagePaths[i]).filename().string());
     }
 
+    std::vector<RecoveryTask> recoveryTasks;
+
     for (const auto& [emObjectPath, interfaces] : managedObjects)
     {
         if (!interfaces.contains(usbRcmRecoveryObjInterface))
@@ -313,120 +403,132 @@ int main(int argc, char** argv)
         lg2::info("Device {DEVICE} configured on USB port: {PORT}", "DEVICE",
                   device, "PORT", usbPort);
 
+        nlohmann::json statusOutput =
+            findDeviceByPort(allDevicesStatus, usbPort);
+        if (statusOutput.empty())
+        {
+            lg2::error(
+                "Device {DEVICE} not found in USB recovery status (port: {PORT})",
+                "DEVICE", device, "PORT", usbPort);
+            messageRegistry->createMessageRegistryResourceErrors(
+                resourceErrorsDetected, RecoveryProtocol::USBRCMRecovery,
+                static_cast<ErrorCode>(USBRCMRecoveryErrorCode::DeviceNotFound),
+                device);
+            recoveryTaskState = -1;
+            continue;
+        }
+
+        std::string recoveryStatus =
+            statusOutput.value("Recovery Status", "Unknown");
+
+        if (recoveryStatus == "Not in Recovery")
+        {
+            lg2::info("Device {DEVICE} is healthy, skipping recovery", "DEVICE",
+                      device);
+            messageRegistry->createMessageRegistry(firmwareNotInRecovery,
+                                                   device);
+            continue;
+        }
+
+        if (recoveryStatus == "Recovery Complete")
+        {
+            lg2::info("Device {DEVICE} recovery already complete, skipping",
+                      "DEVICE", device);
+            messageRegistry->createMessageRegistry(recoverySuccessful, device);
+            continue;
+        }
+
+        if (recoveryStatus != "In Recovery")
+        {
+            lg2::error(
+                "Device {DEVICE} not in recovery mode (status: {STATUS}), skipping",
+                "DEVICE", device, "STATUS", recoveryStatus);
+            messageRegistry->createMessageRegistryResourceErrors(
+                resourceErrorsDetected, RecoveryProtocol::USBRCMRecovery,
+                deviceNotResponding, device);
+            recoveryTaskState = -1;
+            continue;
+        }
+
+        RecoveryTask task;
+        task.deviceName = device;
+        task.usbPort = usbPort;
+        recoveryTasks.push_back(std::move(task));
+
+        lg2::info("Device {DEVICE} queued for recovery", "DEVICE", device);
+        messageRegistry->createMessageRegistry(recoveryStarted, device);
+    }
+
+    if (recoveryTasks.empty())
+    {
+        lg2::info("No devices require recovery");
+        return recoveryTaskState;
+    }
+
+    lg2::info("Starting recovery for {COUNT} device(s)", "COUNT",
+              recoveryTasks.size());
+
+    std::map<std::string, std::future<RecoveryResult>> futures;
+    for (const auto& task : recoveryTasks)
+    {
+        futures.emplace(task.deviceName,
+                        std::async(std::launch::async, executeRecoveryTask,
+                                   task, std::cref(imagePaths)));
+    }
+
+    lg2::info("Waiting for {COUNT} recovery task(s) to complete...", "COUNT",
+              futures.size());
+
+    size_t successCount = 0;
+    size_t failCount = 0;
+
+    for (auto& [deviceName, future] : futures)
+    {
         try
         {
-            nlohmann::json statusOutput =
-                findDeviceByPort(allDevicesStatus, usbPort);
-            if (statusOutput.empty())
+            RecoveryResult result = future.get();
+            if (result.success)
             {
-                lg2::error(
-                    "Device {DEVICE} not found in USB recovery status (port: {PORT})",
-                    "DEVICE", device, "PORT", usbPort);
-                messageRegistry->createMessageRegistryResourceErrors(
-                    resourceErrorsDetected, RecoveryProtocol::USBRCMRecovery,
-                    static_cast<ErrorCode>(
-                        USBRCMRecoveryErrorCode::DeviceNotFound),
-                    device);
-                recoveryTaskState = -1;
-                continue;
-            }
-
-            std::string recoveryStatus =
-                statusOutput.value("Recovery Status", "Unknown");
-
-            if (recoveryStatus == "Not in Recovery")
-            {
-                lg2::info("Device {DEVICE} is healthy, skipping recovery",
-                          "DEVICE", device);
-                messageRegistry->createMessageRegistry(firmwareNotInRecovery,
-                                                       device);
-                continue;
-            }
-
-            if (recoveryStatus == "Recovery Complete")
-            {
-                lg2::info("Device {DEVICE} recovery already complete, skipping",
-                          "DEVICE", device);
-                messageRegistry->createMessageRegistry(recoverySuccessful,
-                                                       device);
-                continue;
-            }
-
-            if (recoveryStatus != "In Recovery")
-            {
-                lg2::error(
-                    "Device {DEVICE} not in recovery mode (status: {STATUS}), skipping",
-                    "DEVICE", device, "STATUS", recoveryStatus);
-                messageRegistry->createMessageRegistryResourceErrors(
-                    resourceErrorsDetected, RecoveryProtocol::USBRCMRecovery,
-                    deviceNotResponding, device);
-                recoveryTaskState = -1;
-                continue;
-            }
-
-            lg2::info(
-                "Device {DEVICE} is in recovery state, firmware recovery is started.",
-                "DEVICE", device);
-            messageRegistry->createMessageRegistry(recoveryStarted, device);
-
-            std::string dotBlobPath = getDotBlobPath(device);
-
-            nlohmann::json recoveryOutput;
-            if (!performUsbRecovery(usbPort, imagePaths, dotBlobPath,
-                                    recoveryOutput, false))
-            {
-                lg2::error("Firmware Recovery failed for Device: {DEVICE}",
-                           "DEVICE", device);
-
-                auto errorCode = static_cast<ErrorCode>(
-                    USBRCMRecoveryErrorCode::ImageTransferFailed);
-                if (recoveryOutput.contains("ErrorCode"))
+                lg2::info("Recovery completed successfully for {DEVICE}",
+                          "DEVICE", deviceName);
+                if (result.emptyDotBlobAccepted)
                 {
-                    errorCode = recoveryOutput["ErrorCode"].get<ErrorCode>();
-                    lg2::error("Recovery error code: {CODE}", "CODE",
-                               static_cast<unsigned>(errorCode));
+                    messageRegistry->createMessageRegistry(enterDOTRecovery,
+                                                           deviceName);
                 }
-                if (recoveryOutput.contains("Error"))
+                else
                 {
-                    std::string errMsg =
-                        recoveryOutput["Error"].get<std::string>();
-                    lg2::error("Error details: {ERR}", "ERR", errMsg);
+                    messageRegistry->createMessageRegistry(recoverySuccessful,
+                                                           deviceName);
                 }
-
-                messageRegistry->createMessageRegistryResourceErrors(
-                    resourceErrorsDetected, RecoveryProtocol::USBRCMRecovery,
-                    errorCode, device);
-                recoveryTaskState = -1;
-                continue;
-            }
-
-            lg2::info("Device {DEVICE} successfully recovered", "DEVICE",
-                      device);
-            // Empty DOT message only when we accepted that error and recovery
-            // did not complete (no completion code); otherwise normal success.
-            if (recoveryOutput.contains("EmptyDotBlobAccepted") &&
-                recoveryOutput["EmptyDotBlobAccepted"].get<bool>())
-            {
-                messageRegistry->createMessageRegistry(enterDOTRecovery,
-                                                       device);
+                successCount++;
             }
             else
             {
-                messageRegistry->createMessageRegistry(recoverySuccessful,
-                                                       device);
+                lg2::error("Recovery failed for {DEVICE}: {ERR}", "DEVICE",
+                           deviceName, "ERR", result.errorMessage);
+                messageRegistry->createMessageRegistryResourceErrors(
+                    resourceErrorsDetected, RecoveryProtocol::USBRCMRecovery,
+                    result.errorCode, deviceName);
+                recoveryTaskState = -1;
+                failCount++;
             }
         }
         catch (const std::exception& e)
         {
             lg2::error(
-                "Firmware Recovery failed for Device: {DEVICE}, Error: {ERROR}",
-                "DEVICE", device, "ERROR", e.what());
+                "Exception while waiting for recovery task for {DEVICE}: {ERR}",
+                "DEVICE", deviceName, "ERR", e.what());
             messageRegistry->createMessageRegistryResourceErrors(
                 resourceErrorsDetected, RecoveryProtocol::USBRCMRecovery,
-                deviceRecoveryFailed, device);
+                static_cast<ErrorCode>(deviceRecoveryFailed), deviceName);
             recoveryTaskState = -1;
+            failCount++;
         }
     }
+
+    lg2::info("Recovery complete: {SUCCESS} succeeded, {FAIL} failed",
+              "SUCCESS", successCount, "FAIL", failCount);
 
     return recoveryTaskState;
 }
