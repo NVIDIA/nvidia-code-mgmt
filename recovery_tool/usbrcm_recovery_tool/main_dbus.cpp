@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -82,6 +83,40 @@ std::optional<std::string> getUSBPort(const std::string& objPath,
         lg2::error("Failed to get USBPort property: {ERR}", "ERR", e.what());
         return std::nullopt;
     }
+}
+
+/**
+ * @brief Get DOT blob path for a device based on its name
+ * @param deviceName Device name (e.g., "HGX_FW_CPU_0")
+ * @return Path to DOT blob file if it exists, empty string otherwise
+ */
+std::string getDotBlobPath(const std::string& deviceName)
+{
+    std::string_view name = deviceName;
+    constexpr std::string_view cpuPrefix = "CPU_";
+
+    const auto pos = name.rfind(cpuPrefix);
+    if (pos == std::string_view::npos)
+        return "";
+
+    const auto indexPos = pos + cpuPrefix.size();
+    if (indexPos >= name.size())
+        return "";
+
+    std::string_view suffix = name.substr(indexPos);
+    if (suffix.empty())
+        return "";
+
+    if (!std::all_of(suffix.begin(), suffix.end(), [](char ch) {
+            return std::isdigit(static_cast<unsigned char>(ch));
+        }))
+        return "";
+
+    constexpr std::string_view dotBlobDirectory = "/var/emmc/misc/dot-blob";
+    std::filesystem::path dotBlobPath(dotBlobDirectory);
+    dotBlobPath /= "CPU_" + std::string(suffix) + ".bin";
+
+    return std::filesystem::exists(dotBlobPath) ? dotBlobPath.string() : "";
 }
 
 /**
@@ -334,9 +369,11 @@ int main(int argc, char** argv)
                 "DEVICE", device);
             messageRegistry->createMessageRegistry(recoveryStarted, device);
 
+            std::string dotBlobPath = getDotBlobPath(device);
+
             nlohmann::json recoveryOutput;
-            if (!performUsbRecovery(usbPort, imagePaths, "", recoveryOutput,
-                                    false))
+            if (!performUsbRecovery(usbPort, imagePaths, dotBlobPath,
+                                    recoveryOutput, false))
             {
                 lg2::error("Firmware Recovery failed for Device: {DEVICE}",
                            "DEVICE", device);
