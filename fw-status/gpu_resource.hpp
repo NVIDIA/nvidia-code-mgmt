@@ -42,14 +42,22 @@ class GpuResource : public MCTPDiscoveryResource
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
      * @param eid - MCTP Endpoint ID of the Resource
+     * @param inforomObjPath - Path of companion InfoROM D-Bus object (optional)
      *
      */
     GpuResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                 const std::string& chassisObjPath,
                 const std::string& forceRecoveryChassisObjPath,
-                const uint64_t i2cBus, const uint64_t i2cAddress, uint8_t eid) :
+                const uint64_t i2cBus, const uint64_t i2cAddress, uint8_t eid,
+                const std::string& inforomObjPath = "") :
         MCTPDiscoveryResource(bus, objPath, eid)
     {
+        if (!inforomObjPath.empty())
+        {
+            inforomResource =
+                std::make_unique<BaseResource>(bus, inforomObjPath);
+        }
+
         ocpRecoveryCommands = std::make_unique<
             recovery_tool::recovery_commands::OCPRecoveryCommands>(
             i2cBus, i2cAddress, false, false);
@@ -74,14 +82,21 @@ class GpuResource : public MCTPDiscoveryResource
      * @param i2cAddress - I2C Address of the resource
      * @param eid - MCTP Endpoint ID of the Resource
      * @param smaEid - EID of the SMA
+     * @param inforomObjPath - Path of companion InfoROM D-Bus object (optional)
      */
     GpuResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                 const std::string& chassisObjPath,
                 const std::string& forceRecoveryChassisObjPath,
                 const uint64_t i2cBus, const uint64_t i2cAddress, uint8_t eid,
-                uint8_t smaEid) :
+                uint8_t smaEid, const std::string& inforomObjPath) :
         MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid)
     {
+        if (!inforomObjPath.empty())
+        {
+            inforomResource =
+                std::make_unique<BaseResource>(bus, inforomObjPath);
+        }
+
         ocpRecoveryCommands = std::make_unique<
             recovery_tool::recovery_commands::OCPRecoveryCommands>(
             i2cBus, i2cAddress, false, false);
@@ -102,6 +117,7 @@ class GpuResource : public MCTPDiscoveryResource
         ocpRecoveryCommands;
     std::unique_ptr<BootStatus> bootStatus;
     std::unique_ptr<SetRecoveryModeInterface> recoveryModeInterface;
+    std::unique_ptr<BaseResource> inforomResource;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointAddedMatch;
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
@@ -156,20 +172,35 @@ class GpuResource : public MCTPDiscoveryResource
     {
         const auto& [ret, output, _] =
             ocpRecoveryCommands->getDeviceStatusCommand();
+
+        HealthServer::HealthType healthValue;
+        OperationalStatusServer::StateType stateValue;
+
         if (!ret)
         {
             lg2::error("Device associated with {PATH} is not accessible",
                        "PATH", path.c_str());
 
             bootStatus->bootStatus({0});
-            health(HealthServer::HealthType::Critical);
+            healthValue = HealthServer::HealthType::Critical;
             if (MCTPDiscoveryResource::wasDeviceEnumeratedBefore())
             {
-                state(OperationalStatusServer::StateType::UnavailableOffline);
-                return;
+                stateValue =
+                    OperationalStatusServer::StateType::UnavailableOffline;
+            }
+            else
+            {
+                stateValue = OperationalStatusServer::StateType::Absent;
             }
 
-            state(OperationalStatusServer::StateType::Absent);
+            health(healthValue);
+            state(stateValue);
+
+            if (inforomResource)
+            {
+                inforomResource->health(healthValue);
+                inforomResource->state(stateValue);
+            }
             return;
         }
 
@@ -181,28 +212,33 @@ class GpuResource : public MCTPDiscoveryResource
         {
             lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
                       path.c_str());
-            health(HealthServer::HealthType::OK);
-            state(OperationalStatusServer::StateType::Enabled);
-            return;
+            healthValue = HealthServer::HealthType::OK;
+            stateValue = OperationalStatusServer::StateType::Enabled;
         }
-
-        if (status != recovery_tool::DeviceStatus::DeviceHealthy and
-            status != recovery_tool::DeviceStatus::RecoveryImgRunning)
+        else if (status != recovery_tool::DeviceStatus::DeviceHealthy and
+                 status != recovery_tool::DeviceStatus::RecoveryImgRunning)
         {
             lg2::info("Device associated with {PATH} is in recovery", "PATH",
                       path.c_str());
-
-            health(HealthServer::HealthType::Critical);
-            state(OperationalStatusServer::StateType::StandbyOffline);
-            return;
+            healthValue = HealthServer::HealthType::Critical;
+            stateValue = OperationalStatusServer::StateType::StandbyOffline;
+        }
+        else
+        {
+            lg2::info("Device associated with {PATH} is not in recovery",
+                      "PATH", path.c_str());
+            healthValue = HealthServer::HealthType::OK;
+            stateValue = OperationalStatusServer::StateType::Enabled;
         }
 
-        lg2::info("Device associated with {PATH} is not in recovery", "PATH",
-                  path.c_str());
+        health(healthValue);
+        state(stateValue);
 
-        health(HealthServer::HealthType::OK);
-        state(OperationalStatusServer::StateType::Enabled);
-        return;
+        if (inforomResource)
+        {
+            inforomResource->health(healthValue);
+            inforomResource->state(stateValue);
+        }
     }
 
     /**@brief Fetches the MCTP object path for the SMA EID

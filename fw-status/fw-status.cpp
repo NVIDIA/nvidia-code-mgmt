@@ -397,6 +397,14 @@ void publishDBusRecoveryObject()
                     getChassisObjPath(forceRecoveryChassisName);
             }
 
+            std::string inforomObjPath;
+            if (hasProperty(interfaces, ocpObjInterface, "InfoRomName"))
+            {
+                const auto inforomName =
+                    getString(interfaces, ocpObjInterface, "InfoRomName");
+                inforomObjPath = getSoftwareDBusObjectPath(inforomName);
+            }
+
             if (hasProperty(interfaces, ocpObjInterface, "I2CBus"))
             {
                 i2cBus = getUint64(interfaces, ocpObjInterface, "I2CBus");
@@ -446,13 +454,14 @@ void publishDBusRecoveryObject()
                 resources.push_back(std::make_unique<GpuResource>(
                     getBus(), objPath, chassisObjPath,
                     forceRecoveryChassisObjPath, i2cBus, i2cAddress, eid,
-                    smaEID));
+                    smaEID, inforomObjPath));
             }
             else
             {
                 resources.push_back(std::make_unique<GpuResource>(
                     getBus(), objPath, chassisObjPath,
-                    forceRecoveryChassisObjPath, i2cBus, i2cAddress, eid));
+                    forceRecoveryChassisObjPath, i2cBus, i2cAddress, eid,
+                    inforomObjPath));
             }
         }
         else if (interfaces.contains(connectxObjInterface))
