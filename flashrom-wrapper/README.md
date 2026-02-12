@@ -11,7 +11,7 @@ Reference the requirements from
   code SPI devices.
 - The BMC shall only start this capability (muxing in the selected SPI chip) if
   RUN power is OFF
-- If RUN Power is turned ON, whis service must FIRST deactivate and restore the
+- If RUN Power is turned ON, this service must FIRST deactivate and restore the
   SPI muxes to default position so the CPU can boot (make this a dependency to
   run before power on)
 - The BMC shall support the ability to erase and read the Vera CPU R/W Variable
