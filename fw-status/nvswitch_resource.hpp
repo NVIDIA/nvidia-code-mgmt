@@ -20,7 +20,6 @@
 #include "mctp_discovery_resource.hpp"
 
 #include <array>
-#include <format>
 #include <memory>
 #include <thread>
 
@@ -38,7 +37,7 @@ class NVSwitchResource : public MCTPDiscoveryResource
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
-     * @param chassisObjPath - Path of D-Bus object to publish
+     * @param chassisObjPath - Path of chassis D-Bus object (for BootStatus).
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
      * @param eid - MCTP Endpoint ID of the Resource
@@ -52,7 +51,7 @@ class NVSwitchResource : public MCTPDiscoveryResource
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
         bootStatus->bootStatusType(
-            BootStatusServer::BootStatusTypes::CXBootStatus);
+            BootStatusServer::BootStatusTypes::NVSwitchBootStatus);
 
         updateHealth();
 
@@ -64,13 +63,6 @@ class NVSwitchResource : public MCTPDiscoveryResource
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointAddedMatch;
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
-    std::unique_ptr<sdbusplus::bus::match_t> chassisPowerStateMatch;
-    std::string const chassisService = "xyz.openbmc_project.State.Chassis";
-    std::string const chassisPath = "/xyz/openbmc_project/state/chassis0";
-    std::string const chassisInterface = "xyz.openbmc_project.State.Chassis";
-    std::string const chassisPowerStateOn =
-        "xyz.openbmc_project.State.Chassis.PowerState.On";
-    int const nvswitchPublishDelayInSeconds = 5;
 
     uint8_t smaEid;
     int busAddress;
@@ -78,18 +70,16 @@ class NVSwitchResource : public MCTPDiscoveryResource
 
     /** @brief NVSwitch boot status register address
      *
-     * This array represents the NVSwitch register address used to
-     * access boot status information. This register is used by the NVSwitch
-     * bootrom to report various failures in the bootrom flow.
-     *
-     * NOTE: This is currently set to the same value as ConnectX (0x50084).
-     * This needs to be verified and updated with the actual NVSwitch-specific
-     * boot status register address during testing and validation.
+     * This array represents the NVSwitch crspace address (0x50084) used to
+     * access irisc.global_image_status. This register is used by the NVSwitch
+     * bootrom to report various failures in the bootrom flow before handing off
+     * to BOOT2. The array format is [0, 0x15, 0x20, 0x80] which corresponds to
+     * the address 0x152080.
      */
-    static constexpr std::array<uint8_t, 4> writeDataArray = {0, 0x05, 0x50,
-                                                              0x84};
+    static constexpr std::array<uint8_t, 4> writeDataArray = {0, 0x15, 0x20,
+                                                              0x80};
 
-    /* @brief Override function for updating Health and Status of D-Bus object
+    /** @brief Override function for updating Health and Status of D-Bus object
      * based on Device Status and MCTP enumeration
      * Uses NVSwitch Recovery Protocol to fetch device status
      *
@@ -97,11 +87,12 @@ class NVSwitchResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
-        const auto& [ret, output, _] = getDeviceStatus();
+        const auto& [ret, output, errorMsg] = getDeviceStatus();
         if (!ret)
         {
-            lg2::error("Device associated with {PATH} is not accessible",
-                       "PATH", path.c_str());
+            lg2::error(
+                "Device associated with {PATH} is not accessible: {ERROR}",
+                "PATH", path.c_str(), "ERROR", errorMsg);
 
             bootStatus->bootStatus({0});
             health(HealthServer::HealthType::Critical);
@@ -118,10 +109,12 @@ class NVSwitchResource : public MCTPDiscoveryResource
         bootStatus->bootStatus(output);
 
         // Check if device is in recovery state based on the boot status
-        // NOTE: 0x20000019 indicates normal operation for ConnectX.
-        // This value needs to be verified for NVSwitch and updated accordingly.
-        bool inRecoveryState = (output[0] != 0x20 || output[1] != 0x00 ||
-                                output[2] != 0x00 || output[3] != 0x19);
+        // NOTE: 0x20000019 indicates normal operation for NVSwitch.
+        static constexpr std::array<uint8_t, 4> normalBootStatus = {0x20, 0x00,
+                                                                    0x00, 0x19};
+        bool inRecoveryState =
+            (output != std::vector<uint8_t>(normalBootStatus.begin(),
+                                            normalBootStatus.end()));
 
         if (inRecoveryState)
         {
@@ -273,7 +266,8 @@ class NVSwitchResource : public MCTPDiscoveryResource
     /**
      * @brief Retrieves the device's status.
      * @return A tuple containing success flag, status data as a byte vector,
-     * and an error message if any.
+     * and an error message string (logged by the caller when status is
+     * unavailable).
      */
     std::tuple<bool, std::vector<uint8_t>, std::string> getDeviceStatus()
     {
@@ -294,7 +288,8 @@ class NVSwitchResource : public MCTPDiscoveryResource
                     fd(), static_cast<uint16_t>(slaveAddress), writeData,
                     readData, false))
             {
-                return {false, {}, "Failed to get device status"};
+                errorMsg = "Failed to get device status";
+                return {false, {}, errorMsg};
             }
         }
         catch (const std::exception& e)
@@ -303,16 +298,14 @@ class NVSwitchResource : public MCTPDiscoveryResource
             return {false, {}, errorMsg};
         }
 
-        return {true, readData, ""};
+        return {true, readData, errorMsg};
     }
 
   protected:
     /**
      * @brief Custom implementation of onMCTPDiscoveryMsg
      *
-     * This function is a custom implementation of the onMCTPDiscoveryMsg
-     * function. It is used to handle MCTP discovery messages for the NVSwitch
-     * resource.
+     * Override that handles MCTP discovery messages for the NVSwitch resource.
      *
      * @param msg The message to handle
      */
@@ -321,8 +314,6 @@ class NVSwitchResource : public MCTPDiscoveryResource
         lg2::info("MCTP Event received from Object: {OBJECT}, Updating Health",
                   "OBJECT", msg.get_path());
 
-        std::this_thread::sleep_for(
-            std::chrono::seconds(nvswitchPublishDelayInSeconds));
         updateHealth();
     }
 };
