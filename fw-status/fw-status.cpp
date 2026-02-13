@@ -770,27 +770,29 @@ void publishDBusRecoveryObject()
         else if (interfaces.contains(usbRcmForceRecoveryObjInterface))
         {
             if (!hasProperty(interfaces, usbRcmForceRecoveryObjInterface,
-                             "ChassisName") ||
+                             "ForceRecoveryChassisObject") ||
                 !hasProperty(interfaces, usbRcmForceRecoveryObjInterface,
                              "ConfigType"))
             {
                 lg2::error(
-                    "USBRCMForceRecovery config missing ChassisName or ConfigType: {PATH}",
+                    "USBRCMForceRecovery config missing ForceRecoveryChassisObject or ConfigType: {PATH}",
                     "PATH", emObjectPath);
                 continue;
             }
 
-            auto chassisName = getString(
-                interfaces, usbRcmForceRecoveryObjInterface, "ChassisName");
+            auto forceRecoveryChassisName =
+                getString(interfaces, usbRcmForceRecoveryObjInterface,
+                          "ForceRecoveryChassisObject");
             auto configType = getString(
                 interfaces, usbRcmForceRecoveryObjInterface, "ConfigType");
-            auto chassisObjPath = getChassisObjPath(chassisName);
+            auto chassisObjPath = getChassisObjPath(forceRecoveryChassisName);
 
             try
             {
                 recoveryModeManagers.push_back(
                     std::make_unique<nvidia::recovery::USBRCMRecoveryManager>(
-                        getBus(), chassisName, chassisObjPath, configType));
+                        getBus(), forceRecoveryChassisName, chassisObjPath,
+                        configType));
             }
             catch (const std::exception& e)
             {
