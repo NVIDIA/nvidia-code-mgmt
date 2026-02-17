@@ -92,6 +92,48 @@ std::string MTDItemUpdater::getModel(
 {
     return "";
 }
+
+std::string MTDItemUpdater::getServiceArgs(
+    [[maybe_unused]] const std::string& inventoryPath,
+    const std::string& imagePath, [[maybe_unused]] const std::string& version,
+    [[maybe_unused]] const TargetFilter& targetFilter) const
+{
+    std::string args = "";
+    args += "\\x20";
+    args += imagePath;
+    args += "\\x20";
+    args += mtdName;
+    if (!inventory.empty())
+    {
+        std::cerr << "adding inventory to the update call:" << inventory
+                  << std::endl;
+        args += "\\x20";
+        args += inventory;
+        if (targetFilter.type == TargetFilterType::UpdateAll ||
+            std::find(targetFilter.targets.begin(), targetFilter.targets.end(),
+                      inventory) != targetFilter.targets.end())
+        {
+            // The TargetFilterType is UpdateAll or component target is
+            // in targets, execute the update
+            args += "\\x20";
+            args += "EXECUTE";
+        }
+        else
+        {
+            // Not fulfill the conditions, ignore this update
+            args += "\\x20";
+            args += "IGNORE";
+        }
+    }
+    if (nostrip)
+    {
+        args += "\\x20";
+        args += "nostrip";
+    }
+    std::replace(args.begin(), args.end(), '/', '-');
+    return args;
+}
+
 } // namespace updater
 } // namespace software
 } // namespace nvidia

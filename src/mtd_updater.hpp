@@ -46,15 +46,16 @@ class MTDItemUpdater : public BaseItemUpdater
     std::string inventory;
     std::string manufacturer;
     std::unique_ptr<AssetObject> assetObject;
+    bool nostrip;
 
   public:
     MTDItemUpdater(sdbusplus::bus::bus& bus, std::string mtdN,
-                   std::string modelName) :
+                   std::string modelName, bool nostrip) :
         BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE,
                         computeInventory(mtdN), MTD_BUSNAME_UPDATER_BASE + mtdN,
                         MTD_UPDATE_SERVICE, false,
                         MTD_BUSNAME_INVENTORY_BASE + mtdN),
-        mtdName(mtdN)
+        mtdName(mtdN), nostrip(nostrip)
 
     {
         std::string jsonPath = "/usr/share/mtd_targets/" + mtdName + ".json";
@@ -232,39 +233,7 @@ class MTDItemUpdater : public BaseItemUpdater
         [[maybe_unused]] const std::string& inventoryPath,
         const std::string& imagePath,
         [[maybe_unused]] const std::string& version,
-        [[maybe_unused]] const TargetFilter& targetFilter) const override
-    {
-        std::string args = "";
-        args += "\\x20";
-        args += imagePath;
-        args += "\\x20";
-        args += mtdName;
-        if (!inventory.empty())
-        {
-            std::cerr << "adding inventory to the update call:" << inventory
-                      << std::endl;
-            args += "\\x20";
-            args += inventory;
-            if (targetFilter.type == TargetFilterType::UpdateAll ||
-                std::find(targetFilter.targets.begin(),
-                          targetFilter.targets.end(),
-                          inventory) != targetFilter.targets.end())
-            {
-                // The TargetFilterType is UpdateAll or component target is
-                // in targets, execute the update
-                args += "\\x20";
-                args += "EXECUTE";
-            }
-            else
-            {
-                // Not fulfill the conditions, ignore this update
-                args += "\\x20";
-                args += "IGNORE";
-            }
-        }
-        std::replace(args.begin(), args.end(), '/', '-');
-        return args;
-    }
+        [[maybe_unused]] const TargetFilter& targetFilter) const override;
 
     /**
      * @brief Get the Item Updater Inventory Paths object

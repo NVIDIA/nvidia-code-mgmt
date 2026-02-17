@@ -105,6 +105,7 @@ using namespace phosphor::logging;
 static struct option set_opts[] = {
     {"updater", required_argument, NULL, 'u'},
     {"fallback", no_argument, NULL, 'f'},
+    {"nostrip", no_argument, NULL, 'n'},
 };
 static void print_wrong_arg_exit(void)
 {
@@ -118,9 +119,11 @@ int main(int argc, char** argv)
     auto ret = 0;
     bool useFallback = false;
     (void)useFallback; // if RT_SUPPORT is disabled this isn't used currently
+    bool nostrip = false;
+    (void)nostrip; // only used when MTD_SUPPORT is enabled
     std::string targetName = "";
     std::string modelName = "";
-    while ((ret = getopt_long(argc, argv, "u:i:m:f", set_opts, NULL)) != -1)
+    while ((ret = getopt_long(argc, argv, "u:i:m:fn", set_opts, NULL)) != -1)
     {
         switch (ret)
         {
@@ -132,6 +135,9 @@ int main(int argc, char** argv)
                 break;
             case 'm':
                 modelName = optarg;
+                break;
+            case 'n':
+                nostrip = true;
                 break;
             default:
                 print_wrong_arg_exit();
@@ -248,8 +254,8 @@ int main(int argc, char** argv)
 #if MTD_SUPPORT
     if (updater == "MTD")
     {
-        itemUpdater =
-            std::make_unique<MTDItemUpdater>(bus, targetName, modelName);
+        itemUpdater = std::make_unique<MTDItemUpdater>(bus, targetName,
+                                                       modelName, nostrip);
     }
 #endif
 #if SWITCHTEC_FUSE_SUPPORT
