@@ -16,8 +16,10 @@
 
 #pragma once
 
+#include "base_resource.hpp"
 #include "i2c_utils.hpp"
 #include "mctp_discovery_resource.hpp"
+#include "utils.hpp"
 
 #include <array>
 #include <memory>
@@ -38,20 +40,32 @@ class NVSwitchResource : public MCTPDiscoveryResource
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
      * @param chassisObjPath - Path of chassis D-Bus object (for BootStatus).
+     * @param forceRecoveryChassisObjPath - Path for SetRecoveryMode interface
      * @param i2cBus - I2C Bus where the resource is present
      * @param i2cAddress - I2C Address of the resource
      * @param eid - MCTP Endpoint ID of the Resource
      * @param smaEid - EID of the SMA
+     * @param resetGpioName - GPIO name for reset (e.g. from ResetGPIO config)
+     * @param flashNotPresentGpioName - GPIO name for flash-not-present (e.g.
+     * from FlashNotPresentGPIO config)
      */
     NVSwitchResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                     const std::string& chassisObjPath, const uint64_t i2cBus,
-                     const uint64_t i2cAddress, uint8_t eid, uint8_t smaEid) :
+                     const std::string& chassisObjPath,
+                     const std::string& forceRecoveryChassisObjPath,
+                     const uint64_t i2cBus, const uint64_t i2cAddress,
+                     uint8_t eid, uint8_t smaEid,
+                     const std::string& resetGpioName = "",
+                     const std::string& flashNotPresentGpioName = "") :
         MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid),
-        busAddress(i2cBus), slaveAddress(i2cAddress)
+        busAddress(i2cBus), slaveAddress(i2cAddress),
+        resetGpioName(resetGpioName),
+        flashNotPresentGpioName(flashNotPresentGpioName)
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
         bootStatus->bootStatusType(
             BootStatusServer::BootStatusTypes::NVSwitchBootStatus);
+
+        createRecoveryModeInterface(bus, forceRecoveryChassisObjPath);
 
         updateHealth();
 
@@ -60,6 +74,7 @@ class NVSwitchResource : public MCTPDiscoveryResource
 
   private:
     std::unique_ptr<BootStatus> bootStatus;
+    std::unique_ptr<SetRecoveryModeInterface> recoveryModeInterface;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointAddedMatch;
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
@@ -67,6 +82,157 @@ class NVSwitchResource : public MCTPDiscoveryResource
     uint8_t smaEid;
     int busAddress;
     int slaveAddress;
+    std::string resetGpioName;
+    std::string flashNotPresentGpioName;
+    gpiod::line resetLine{};
+    gpiod::line fnpLine{};
+
+    static constexpr uint32_t resetActiveUs = 500000;
+    static constexpr unsigned int resetDelaySec = 3;
+
+    /**@brief Creates the SetRecoveryMode D-Bus interface on the chassis path
+     *
+     * @param bus - SystemD bus to publish the object
+     * @param forceRecoveryChassisObjPath - Chassis D-Bus object path for the
+     * SetRecoveryMode interface. If empty, the interface is not created.
+     */
+    void createRecoveryModeInterface(
+        sdbusplus::bus::bus& bus,
+        const std::string& forceRecoveryChassisObjPath)
+    {
+        if (forceRecoveryChassisObjPath.empty())
+        {
+            return;
+        }
+
+        lg2::info("Creating SetRecoveryMode interface on {PATH}", "PATH",
+                  forceRecoveryChassisObjPath);
+
+        recoveryModeInterface = std::make_unique<SetRecoveryModeInterface>(
+            bus, forceRecoveryChassisObjPath,
+            [this, forceRecoveryChassisObjPath]() {
+                lg2::info("Performing NVSwitch force recovery for {PATH}",
+                          "PATH", forceRecoveryChassisObjPath);
+
+                auto [success, error] = setForceRecoveryMode();
+                if (!success)
+                {
+                    lg2::error(
+                        "NVSwitch force recovery failed for {PATH}: {ERR}",
+                        "PATH", forceRecoveryChassisObjPath, "ERR", error);
+                    throw std::runtime_error(error);
+                }
+
+                lg2::info("NVSwitch force recovery successful for {PATH}",
+                          "PATH", forceRecoveryChassisObjPath);
+            });
+    }
+
+    bool initGpioLines()
+    {
+        if (resetGpioName.empty() || flashNotPresentGpioName.empty())
+        {
+            return false;
+        }
+        try
+        {
+            resetLine = gpiod::find_line(resetGpioName);
+            if (!resetLine)
+            {
+                lg2::error("GPIO line not found: {NAME}", "NAME",
+                           resetGpioName);
+                return false;
+            }
+            fnpLine = gpiod::find_line(flashNotPresentGpioName);
+            if (!fnpLine)
+            {
+                lg2::error("GPIO line not found: {NAME}", "NAME",
+                           flashNotPresentGpioName);
+                return false;
+            }
+            resetLine.request({"nvswitch_force_recovery",
+                               gpiod::line_request::DIRECTION_OUTPUT, 0},
+                              1);
+            fnpLine.request({"nvswitch_force_recovery",
+                             gpiod::line_request::DIRECTION_OUTPUT, 0},
+                            1);
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("Failed to open GPIO {RESET}/{FNP}: {ERR}", "RESET",
+                       resetGpioName, "FNP", flashNotPresentGpioName, "ERR",
+                       e.what());
+            return false;
+        }
+        return true;
+    }
+
+    void releaseGpioLines()
+    {
+        try
+        {
+            if (resetLine)
+            {
+                resetLine.release();
+                resetLine = {};
+            }
+            if (fnpLine)
+            {
+                fnpLine.release();
+                fnpLine = {};
+            }
+        }
+        catch (const std::exception& e)
+        {
+            lg2::warning(
+                "Failed to release GPIO for NVSwitch force recovery: {ERR}",
+                "ERR", e.what());
+        }
+    }
+
+    void enterRecoveryMode()
+    {
+        if (!fnpLine || !resetLine)
+        {
+            lg2::error("NVSwitch GPIO lines not initialized");
+            throw std::runtime_error("GPIO lines not initialized");
+        }
+        fnpLine.set_value(0);
+        usleep(resetActiveUs);
+        resetLine.set_value(0);
+        usleep(resetActiveUs);
+        resetLine.set_value(1);
+        sleep(resetDelaySec);
+    }
+
+    std::pair<bool, std::string> setForceRecoveryMode()
+    {
+        if (resetGpioName.empty() || flashNotPresentGpioName.empty())
+        {
+            return {false, "GPIO not configured for force recovery (ResetGPIO/"
+                           "FlashNotPresentGPIO)"};
+        }
+
+        if (!initGpioLines())
+        {
+            return {false,
+                    "Failed to initialize GPIO lines for force recovery"};
+        }
+
+        try
+        {
+            enterRecoveryMode();
+        }
+        catch (const std::exception& e)
+        {
+            releaseGpioLines();
+            return {false, "Failed to set GPIO for force recovery: " +
+                               std::string(e.what())};
+        }
+
+        releaseGpioLines();
+        return {true, "Successfully set force recovery mode"};
+    }
 
     /** @brief NVSwitch boot status register address
      *
