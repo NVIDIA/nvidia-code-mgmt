@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION &
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2025 NVIDIA CORPORATION &
  * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +12,8 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations under the License. */
+ * limitations under the License.
+ */
 
 #pragma once
 
@@ -21,22 +22,24 @@
 #include "mctp_discovery_resource.hpp"
 #include "utils.hpp"
 
+#include <unistd.h>
+
+#include <gpiod.hpp>
+
 #include <array>
-#include <format>
 #include <memory>
 #include <thread>
 
-/**@class ConnectXResource
+/**@class NVLinkMgmtNicResource
  *
  *  Represents a MCTPDiscoveryResource whose recovery is performed through
- *  the ConnectX Recovery Protocol
+ *  the NVLink Management NIC Recovery Protocol (GPIO-based SetRecoveryMode).
  *
  */
-class ConnectXResource : public MCTPDiscoveryResource
+class NVLinkMgmtNicResource : public MCTPDiscoveryResource
 {
   public:
-    /**@brief Constructor for the ConnectXResource Class
-     * Updates Health and Status of the D-Bus object on startup
+    /**@brief Constructor for the NVLinkMgmtNicResource Class
      *
      * @param bus - SystemD bus to publish the object
      * @param objPath - Path of D-Bus object to publish
@@ -47,22 +50,23 @@ class ConnectXResource : public MCTPDiscoveryResource
      * @param eid - MCTP Endpoint ID of the Resource
      * @param smaEid - EID of the SMA
      * @param resetGpioName - GPIO name for reset (e.g. from ResetGPIO config)
-     * @param flashNotPresentGpioName - GPIO name for flash-not-present (e.g.
-     * from FlashNotPresentGPIO config)
+     * @param flashNotPresentGpioName - GPIO name for flash-not-present
      */
-    ConnectXResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                     const std::string& chassisObjPath,
-                     const std::string& forceRecoveryChassisObjPath,
-                     const uint64_t i2cBus, const uint64_t i2cAddress,
-                     uint8_t eid, uint8_t smaEid,
-                     const std::string& resetGpioName,
-                     const std::string& flashNotPresentGpioName) :
+    NVLinkMgmtNicResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+                          const std::string& chassisObjPath,
+                          const std::string& forceRecoveryChassisObjPath,
+                          const uint64_t i2cBus, const uint64_t i2cAddress,
+                          uint8_t eid, uint8_t smaEid,
+                          const std::string& resetGpioName,
+                          const std::string& flashNotPresentGpioName) :
         MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid),
         busAddress(i2cBus), slaveAddress(i2cAddress),
         resetGpioName(resetGpioName),
         flashNotPresentGpioName(flashNotPresentGpioName)
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
+        // CXBootStatus is used purposefully cause underthe hood NVLink
+        // Management NIC and ConnectX are CX9 & CX9-FNM (CX Family)
         bootStatus->bootStatusType(
             BootStatusServer::BootStatusTypes::CXBootStatus);
 
@@ -79,13 +83,6 @@ class ConnectXResource : public MCTPDiscoveryResource
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointAddedMatch;
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
-    std::unique_ptr<sdbusplus::bus::match_t> chassisPowerStateMatch;
-    std::string const chassisService = "xyz.openbmc_project.State.Chassis";
-    std::string const chassisPath = "/xyz/openbmc_project/state/chassis0";
-    std::string const chassisInterface = "xyz.openbmc_project.State.Chassis";
-    std::string const chassisPowerStateOn =
-        "xyz.openbmc_project.State.Chassis.PowerState.On";
-    int const connectxPublishDelayInSeconds = 5;
 
     uint8_t smaEid;
     int busAddress;
@@ -98,12 +95,17 @@ class ConnectXResource : public MCTPDiscoveryResource
     static constexpr uint32_t resetActiveUs = 500000;
     static constexpr unsigned int resetDelaySec = 3;
 
-    /**@brief Creates the SetRecoveryMode D-Bus interface on the chassis path
+    /** @brief Crspace address for device status
      *
-     * @param bus - SystemD bus to publish the object
-     * @param forceRecoveryChassisObjPath - Chassis D-Bus object path for the
-     * SetRecoveryMode interface. If empty, the interface is not created.
+     * This array represents the NVLink Management NIC crspace address (0x50084)
+     * used to access irisc.global_image_status. This register is used by the
+     * NVLink Management NIC bootrom to report various failures in the bootrom
+     * flow before handing off to BOOT2. The array format is [0, 0x05, 0x50,
+     * 0x84] which corresponds to the address 0x50084.
      */
+    static constexpr std::array<uint8_t, 4> writeDataArray = {0, 0x05, 0x50,
+                                                              0x84};
+
     void createRecoveryModeInterface(
         sdbusplus::bus::bus& bus,
         const std::string& forceRecoveryChassisObjPath)
@@ -119,40 +121,23 @@ class ConnectXResource : public MCTPDiscoveryResource
         recoveryModeInterface = std::make_unique<SetRecoveryModeInterface>(
             bus, forceRecoveryChassisObjPath,
             [this, forceRecoveryChassisObjPath]() {
-                lg2::info("Performing ConnectX force recovery for {PATH}",
+                lg2::info("Performing NVLinkMgmtNic force recovery for {PATH}",
                           "PATH", forceRecoveryChassisObjPath);
 
                 auto [success, error] = setForceRecoveryMode();
                 if (!success)
                 {
                     lg2::error(
-                        "ConnectX force recovery failed for {PATH}: {ERR}",
+                        "NVLinkMgmtNic force recovery failed for {PATH}: {ERR}",
                         "PATH", forceRecoveryChassisObjPath, "ERR", error);
                     throw std::runtime_error(error);
                 }
 
-                lg2::info("ConnectX force recovery successful for {PATH}",
+                lg2::info("NVLinkMgmtNic force recovery successful for {PATH}",
                           "PATH", forceRecoveryChassisObjPath);
             });
     }
 
-    /** @brief ConnectX crspace address of irisc.global_image_status
-     *
-     * This array represents the ConnectX crspace address (0x50084) used to
-     * access irisc.global_image_status. This register is used by the ConnectX
-     * bootrom to report various failures in the bootrom flow before handing off
-     * to BOOT2. The array format is [0, 0x05, 0x50, 0x84] which corresponds to
-     * the address 0x50084.
-     */
-    static constexpr std::array<uint8_t, 4> writeDataArray = {0, 0x05, 0x50,
-                                                              0x84};
-
-    /* @brief Override function for updating Health and Status of D-Bus object
-     * based on Device Status and MCTP enumeration
-     * Uses ConnectX Recovery Protocol to fetch device status
-     *
-     * @return void
-     */
     void updateHealth() override
     {
         const auto& [ret, output, errorMsg] = getDeviceStatus();
@@ -176,8 +161,6 @@ class ConnectXResource : public MCTPDiscoveryResource
 
         bootStatus->bootStatus(output);
 
-        // Check if device is in recovery state based on the boot status
-        // 0x20000019 indicates normal operation
         bool inRecoveryState = (output[0] != 0x20 || output[1] != 0x00 ||
                                 output[2] != 0x00 || output[3] != 0x19);
 
@@ -193,26 +176,15 @@ class ConnectXResource : public MCTPDiscoveryResource
 
         if (MCTPDiscoveryResource::isDeviceEnumerated())
         {
-            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
-                      path.c_str());
             health(HealthServer::HealthType::OK);
             state(OperationalStatusServer::StateType::Enabled);
             return;
         }
 
-        lg2::info("Device associated with {PATH} is not in recovery", "PATH",
-                  path.c_str());
-
         health(HealthServer::HealthType::OK);
         state(OperationalStatusServer::StateType::Enabled);
-        return;
     }
 
-    /**@brief Fetches the MCTP object path for the SMA EID
-     *
-     * @return string - MCTP object path, empty if not found
-     *
-     */
     std::string getSMAMCTPObjectPath()
     {
         auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
@@ -237,8 +209,6 @@ class ConnectXResource : public MCTPDiscoveryResource
         return {};
     }
 
-    /**@brief Monitor SMA MCTP endpoint for add/remove events
-     */
     void monitorSMAEndpoint()
     {
         smaMctpObjectPath = getSMAMCTPObjectPath();
@@ -306,16 +276,6 @@ class ConnectXResource : public MCTPDiscoveryResource
         }
     }
 
-    /**
-     * @brief Opens the I2C device for communication
-     *
-     * This function opens the I2C device specified by the bus address for
-     * read/write operations. It constructs the device path using the format
-     * "/dev/i2c-{busAddress}" and opens it with O_RDWR flags to enable both
-     * reading and writing.
-     *
-     * @return CustomFD
-     */
     utils::CustomFD openI2CDevice()
     {
         std::string i2cDevicePath = "/dev/i2c-" + std::to_string(busAddress);
@@ -328,11 +288,6 @@ class ConnectXResource : public MCTPDiscoveryResource
         return utils::CustomFD(fd);
     }
 
-    /**
-     * @brief Retrieves the device's status.
-     * @return A tuple containing success flag, status data as a byte vector,
-     * and an error message if any.
-     */
     std::tuple<bool, std::vector<uint8_t>, std::string> getDeviceStatus()
     {
         auto fd = openI2CDevice();
@@ -361,7 +316,7 @@ class ConnectXResource : public MCTPDiscoveryResource
             return {false, {}, errorMsg};
         }
 
-        return {true, readData, ""};
+        return {true, readData, "Successfully got device status"};
     }
 
     bool initGpioLines()
@@ -386,10 +341,10 @@ class ConnectXResource : public MCTPDiscoveryResource
                            flashNotPresentGpioName);
                 return false;
             }
-            resetLine.request({"connectx_force_recovery",
+            resetLine.request({"nvlinkmgmt_nic_force_recovery",
                                gpiod::line_request::DIRECTION_OUTPUT, 0},
                               1);
-            fnpLine.request({"connectx_force_recovery",
+            fnpLine.request({"nvlinkmgmt_nic_force_recovery",
                              gpiod::line_request::DIRECTION_OUTPUT, 0},
                             1);
         }
@@ -421,7 +376,7 @@ class ConnectXResource : public MCTPDiscoveryResource
         catch (const std::exception& e)
         {
             lg2::warning(
-                "Failed to release GPIO for ConnectX force recovery: {ERR}",
+                "Failed to release GPIO for NVLinkMgmtNic force recovery: {ERR}",
                 "ERR", e.what());
         }
     }
@@ -430,8 +385,8 @@ class ConnectXResource : public MCTPDiscoveryResource
     {
         if (!fnpLine || !resetLine)
         {
-            lg2::error("ConnectX GPIO lines not initialized");
-            return;
+            lg2::error("NVLinkMgmtNic GPIO lines not initialized");
+            throw std::runtime_error("GPIO lines not initialized");
         }
         fnpLine.set_value(0);
         usleep(resetActiveUs);
@@ -468,25 +423,5 @@ class ConnectXResource : public MCTPDiscoveryResource
 
         releaseGpioLines();
         return {true, "Successfully set force recovery mode"};
-    }
-
-  protected:
-    /**
-     * @brief Custom implementation of onMCTPDiscoveryMsg
-     *
-     * This function is a custom implementation of the onMCTPDiscoveryMsg
-     * function. It is used to handle MCTP discovery messages for the ConnectX
-     * resource.
-     *
-     * @param msg The message to handle
-     */
-    void onMCTPDiscoveryMsg(sdbusplus::message::message& msg)
-    {
-        lg2::info("MCTP Event received from Object: {OBJECT}, Updating Health",
-                  "OBJECT", msg.get_path());
-
-        std::this_thread::sleep_for(
-            std::chrono::seconds(connectxPublishDelayInSeconds));
-        updateHealth();
     }
 };

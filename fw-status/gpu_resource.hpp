@@ -170,7 +170,7 @@ class GpuResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
-        const auto& [ret, output, _] =
+        const auto& [ret, output, errorMsg] =
             ocpRecoveryCommands->getDeviceStatusCommand();
 
         HealthServer::HealthType healthValue;
@@ -178,8 +178,9 @@ class GpuResource : public MCTPDiscoveryResource
 
         if (!ret)
         {
-            lg2::error("Device associated with {PATH} is not accessible",
-                       "PATH", path.c_str());
+            lg2::error(
+                "Device associated with {PATH} is not accessible: {ERROR}",
+                "PATH", path.c_str(), "ERROR", errorMsg);
 
             bootStatus->bootStatus({0});
             healthValue = HealthServer::HealthType::Critical;

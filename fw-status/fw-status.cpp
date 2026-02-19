@@ -28,6 +28,7 @@
 #include "mcu_recovery_manager.hpp"
 #include "mcu_recovery_mode_manager.hpp"
 #include "mcu_resource.hpp"
+#include "nvlinkmgmt_nic_resource.hpp"
 #include "nvswitch_resource.hpp"
 #include "udev_monitor.hpp"
 #include "usb_i2c_mapper.hpp"
@@ -58,6 +59,8 @@ constexpr auto connectxObjInterface =
     "xyz.openbmc_project.Configuration.ConnectXRecovery";
 constexpr auto nvswitchObjInterface =
     "xyz.openbmc_project.Configuration.NVSwitchRecovery";
+constexpr auto nvlinkMgmtNicObjInterface =
+    "xyz.openbmc_project.Configuration.NVLinkManagementNICRecovery";
 constexpr auto usbRcmForceRecoveryObjInterface =
     "xyz.openbmc_project.Configuration.USBRCMForceRecovery";
 constexpr auto usbRcmObjInterface =
@@ -507,6 +510,19 @@ void publishDBusRecoveryObject()
                 getString(interfaces, connectxObjInterface, "ChassisName");
             const auto chassisObjPath = getChassisObjPath(chassisName);
 
+            // Only create SetRecoveryMode interface if
+            // ForceRecoveryChassisObject is specified
+            std::string forceRecoveryChassisObjPath;
+            if (hasProperty(interfaces, connectxObjInterface,
+                            "ForceRecoveryChassisObject"))
+            {
+                const auto forceRecoveryChassisName =
+                    getString(interfaces, connectxObjInterface,
+                              "ForceRecoveryChassisObject");
+                forceRecoveryChassisObjPath =
+                    getChassisObjPath(forceRecoveryChassisName);
+            }
+
             const auto smaEidOpt =
                 getUint8(interfaces, connectxObjInterface, "SMAEID");
             if (!smaEidOpt.has_value())
@@ -519,9 +535,25 @@ void publishDBusRecoveryObject()
 
             const auto smaEID = smaEidOpt.value();
 
+            std::string resetGpioName;
+            if (hasProperty(interfaces, connectxObjInterface, "ResetGPIO"))
+            {
+                resetGpioName =
+                    getString(interfaces, connectxObjInterface, "ResetGPIO");
+            }
+
+            std::string flashNotPresentGpioName;
+            if (hasProperty(interfaces, connectxObjInterface,
+                            "FlashNotPresentGPIO"))
+            {
+                flashNotPresentGpioName = getString(
+                    interfaces, connectxObjInterface, "FlashNotPresentGPIO");
+            }
+
             resources.push_back(std::make_unique<ConnectXResource>(
-                getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, eid,
-                smaEID));
+                getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
+                i2cBus, i2cAddress, eid, smaEID, resetGpioName,
+                flashNotPresentGpioName));
         }
         else if (interfaces.contains(nvswitchObjInterface))
         {
@@ -566,6 +598,19 @@ void publishDBusRecoveryObject()
                 getString(interfaces, nvswitchObjInterface, "ChassisName");
             const auto chassisObjPath = getChassisObjPath(chassisName);
 
+            // Only create SetRecoveryMode interface if
+            // ForceRecoveryChassisObject is specified
+            std::string forceRecoveryChassisObjPath;
+            if (hasProperty(interfaces, nvswitchObjInterface,
+                            "ForceRecoveryChassisObject"))
+            {
+                const auto forceRecoveryChassisName =
+                    getString(interfaces, nvswitchObjInterface,
+                              "ForceRecoveryChassisObject");
+                forceRecoveryChassisObjPath =
+                    getChassisObjPath(forceRecoveryChassisName);
+            }
+
             const auto smaEidOpt =
                 getUint8(interfaces, nvswitchObjInterface, "SMAEID");
             if (!smaEidOpt.has_value())
@@ -578,9 +623,113 @@ void publishDBusRecoveryObject()
 
             const auto smaEID = smaEidOpt.value();
 
+            std::string resetGpioName;
+            if (hasProperty(interfaces, nvswitchObjInterface, "ResetGPIO"))
+            {
+                resetGpioName =
+                    getString(interfaces, nvswitchObjInterface, "ResetGPIO");
+            }
+
+            std::string flashNotPresentGpioName;
+            if (hasProperty(interfaces, nvswitchObjInterface,
+                            "FlashNotPresentGPIO"))
+            {
+                flashNotPresentGpioName = getString(
+                    interfaces, nvswitchObjInterface, "FlashNotPresentGPIO");
+            }
+
             resources.push_back(std::make_unique<NVSwitchResource>(
-                getBus(), objPath, chassisObjPath, i2cBus, i2cAddress, eid,
-                smaEID));
+                getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
+                i2cBus, i2cAddress, eid, smaEID, resetGpioName,
+                flashNotPresentGpioName));
+        }
+        else if (interfaces.contains(nvlinkMgmtNicObjInterface))
+        {
+            lg2::info("Found NVLinkMgmtNic recovery config Object: {PATH}",
+                      "PATH", emObjectPath);
+
+            const auto eidOpt =
+                getUint8(interfaces, nvlinkMgmtNicObjInterface, "EID");
+            if (!eidOpt.has_value())
+            {
+                lg2::error(
+                    "No EID found in NVLinkMgmtNic recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto eid = eidOpt.value();
+
+            if (!hasProperty(interfaces, nvlinkMgmtNicObjInterface, "I2CBus"))
+            {
+                lg2::error(
+                    "No I2CBus found in NVLinkMgmtNic recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto i2cBus =
+                getUint64(interfaces, nvlinkMgmtNicObjInterface, "I2CBus");
+
+            if (!hasProperty(interfaces, nvlinkMgmtNicObjInterface,
+                             "I2CAddress"))
+            {
+                lg2::error(
+                    "No I2CAddress found in NVLinkMgmtNic recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto i2cAddress =
+                getUint64(interfaces, nvlinkMgmtNicObjInterface, "I2CAddress");
+
+            const auto chassisName =
+                getString(interfaces, nvlinkMgmtNicObjInterface, "ChassisName");
+            const auto chassisObjPath = getChassisObjPath(chassisName);
+
+            std::string forceRecoveryChassisObjPath;
+            if (hasProperty(interfaces, nvlinkMgmtNicObjInterface,
+                            "ForceRecoveryChassisObject"))
+            {
+                const auto forceRecoveryChassisName =
+                    getString(interfaces, nvlinkMgmtNicObjInterface,
+                              "ForceRecoveryChassisObject");
+                forceRecoveryChassisObjPath =
+                    getChassisObjPath(forceRecoveryChassisName);
+            }
+
+            const auto smaEidOpt =
+                getUint8(interfaces, nvlinkMgmtNicObjInterface, "SMAEID");
+            if (!smaEidOpt.has_value())
+            {
+                lg2::error(
+                    "Failed to get SMAEID in NVLinkMgmtNic recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto smaEID = smaEidOpt.value();
+
+            std::string resetGpioName;
+            if (hasProperty(interfaces, nvlinkMgmtNicObjInterface, "ResetGPIO"))
+            {
+                resetGpioName = getString(interfaces, nvlinkMgmtNicObjInterface,
+                                          "ResetGPIO");
+            }
+
+            std::string flashNotPresentGpioName;
+            if (hasProperty(interfaces, nvlinkMgmtNicObjInterface,
+                            "FlashNotPresentGPIO"))
+            {
+                flashNotPresentGpioName =
+                    getString(interfaces, nvlinkMgmtNicObjInterface,
+                              "FlashNotPresentGPIO");
+            }
+
+            resources.push_back(std::make_unique<NVLinkMgmtNicResource>(
+                getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
+                i2cBus, i2cAddress, eid, smaEID, resetGpioName,
+                flashNotPresentGpioName));
         }
         else if (interfaces.contains(glacierCrisisObjInterface))
         {
