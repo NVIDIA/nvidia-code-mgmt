@@ -241,6 +241,13 @@ if get_option('NVSWITCH_RECOVERY_SUPPORT').enabled()
     ]
 endif
 
+if get_option('NVLINKMANAGEMENTNIC_RECOVERY_SUPPORT').enabled()
+    unit_files = unit_files + [
+        'com.Nvidia.NVLinkManagementNICRecovery.Updater.service',
+        'nvlinkmgmt-nic-recovery@.service',
+    ]
+endif
+
 if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.Nvidia.SpiProgrammer.Updater.service',

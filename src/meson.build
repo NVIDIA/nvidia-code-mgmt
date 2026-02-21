@@ -93,6 +93,10 @@ if get_option('NVSWITCH_RECOVERY_SUPPORT').enabled()
     source_files += 'nvswitch_recovery.cpp'
 endif
 
+if get_option('NVLINKMANAGEMENTNIC_RECOVERY_SUPPORT').enabled()
+    source_files += 'nvlinkmgmt_nic_recovery.cpp'
+endif
+
 if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
     source_files += 'spi_programmer.cpp'
 endif
