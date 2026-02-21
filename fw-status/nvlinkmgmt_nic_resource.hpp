@@ -84,6 +84,8 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
 
+    int const nvlinkMgmtNicPublishDelayInSeconds = 5;
+
     uint8_t smaEid;
     int busAddress;
     int slaveAddress;
@@ -423,5 +425,24 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
 
         releaseGpioLines();
         return {true, "Successfully set force recovery mode"};
+    }
+
+  protected:
+    /**
+     * @brief Custom implementation of onMCTPDiscoveryMsg
+     *
+     * Handles MCTP discovery messages for the NVLink Management NIC resource.
+     * Applies a delay before updating health to allow the device to stabilize.
+     *
+     * @param msg The message to handle
+     */
+    void onMCTPDiscoveryMsg(sdbusplus::message::message& msg)
+    {
+        lg2::info("MCTP Event received from Object: {OBJECT}, Updating Health",
+                  "OBJECT", msg.get_path());
+
+        std::this_thread::sleep_for(
+            std::chrono::seconds(nvlinkMgmtNicPublishDelayInSeconds));
+        updateHealth();
     }
 };

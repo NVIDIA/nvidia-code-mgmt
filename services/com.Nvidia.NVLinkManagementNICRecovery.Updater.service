@@ -1,0 +1,14 @@
+[Unit]
+Description=NVLink Management NIC Recovery Updater
+Wants=pldmd.service
+After=pldmd.service
+
+[Service]
+ExecStart=/usr/bin/code-manager -u NVLinkManagementNICRecovery
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.NVLinkManagementNICRecovery.Updater
+
+[Install]
+# This should require run power
+WantedBy=multi-user.target

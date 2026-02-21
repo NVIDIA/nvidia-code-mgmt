@@ -271,6 +271,21 @@ option('NVSWITCH_RECOVERY_TIMEOUT',
        value: 300,
        description: 'NVSwitch Recovery update timeout in seconds')
 
+option('NVLINKMANAGEMENTNIC_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables NVLink Management NIC Recovery support')
+
+option('NVLINKMANAGEMENTNIC_RECOVERY_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'NVLink Management NIC Recovery supported models')
+
+option('NVLINKMANAGEMENTNIC_RECOVERY_TIMEOUT',
+       type: 'integer',
+       value: 300,
+       description: 'NVLink Management NIC Recovery update timeout in seconds')
+
 option('SPI_PROGRAMMER_SUPPORT',
        type: 'feature',
        value: 'disabled',

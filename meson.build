@@ -414,6 +414,41 @@ if get_option('NVSWITCH_RECOVERY_SUPPORT').enabled()
     )
 endif
 
+if get_option('NVLINKMANAGEMENTNIC_RECOVERY_SUPPORT').enabled()
+    add_project_arguments(
+        '-DNVLINKMANAGEMENTNIC_RECOVERY_SUPPORT',
+        language: ['c', 'cpp'],
+    )
+    cdata.set_quoted(
+        'NVLINKMANAGEMENTNIC_RECOVERY_SUPPORTED_MODEL',
+        get_option('NVLINKMANAGEMENTNIC_RECOVERY_SUPPORTED_MODEL'),
+    )
+    cdata.set_quoted(
+        'NVLINKMANAGEMENTNIC_RECOVERY_INVENTORY_IFACE',
+        'xyz.openbmc_project.Inventory.Decorator.Asset',
+    )
+    cdata.set_quoted(
+        'NVLINKMANAGEMENTNIC_RECOVERY_BUSNAME_UPDATER',
+        'com.Nvidia.Software.NVLinkManagementNICRecovery.Updater',
+    )
+    cdata.set_quoted(
+        'NVLINKMANAGEMENTNIC_RECOVERY_BUSNAME_INVENTORY',
+        'xyz.openbmc_project.PLDM',
+    )
+    cdata.set_quoted(
+        'NVLINKMANAGEMENTNIC_RECOVERY_UPDATE_SERVICE',
+        'nvlinkmgmt-nic-recovery@.service',
+    )
+    cdata.set_quoted(
+        'NVLINKMANAGEMENTNIC_RECOVERY_NAME',
+        'NVLinkManagementNICRecovery',
+    )
+    cdata.set(
+        'NVLINKMANAGEMENTNIC_RECOVERY_TIMEOUT',
+        get_option('NVLINKMANAGEMENTNIC_RECOVERY_TIMEOUT'),
+    )
+endif
+
 if get_option('AP_IMAGE_VERIFICATION').enabled()
     add_project_arguments('-DAP_IMAGE_VERIFICATION', language: ['c', 'cpp'])
 

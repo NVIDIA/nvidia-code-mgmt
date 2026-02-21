@@ -555,6 +555,95 @@ void publishDBusRecoveryObject()
                 i2cBus, i2cAddress, eid, smaEID, resetGpioName,
                 flashNotPresentGpioName));
         }
+        else if (interfaces.contains(nvlinkMgmtNicObjInterface))
+        {
+            lg2::info(
+                "Found NVLink Management NIC recovery config Object: {PATH}",
+                "PATH", emObjectPath);
+
+            const auto eidOpt =
+                getUint8(interfaces, nvlinkMgmtNicObjInterface, "EID");
+            if (!eidOpt.has_value())
+            {
+                lg2::error(
+                    "No EID found in NVLink Management NIC recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto eid = eidOpt.value();
+
+            if (!hasProperty(interfaces, nvlinkMgmtNicObjInterface, "I2CBus"))
+            {
+                lg2::error(
+                    "No I2CBus found in NVLink Management NIC recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto i2cBus =
+                getUint64(interfaces, nvlinkMgmtNicObjInterface, "I2CBus");
+
+            if (!hasProperty(interfaces, nvlinkMgmtNicObjInterface,
+                             "I2CAddress"))
+            {
+                lg2::error(
+                    "No I2CAddress found in NVLink Management NIC recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto i2cAddress =
+                getUint64(interfaces, nvlinkMgmtNicObjInterface, "I2CAddress");
+
+            const auto chassisName =
+                getString(interfaces, nvlinkMgmtNicObjInterface, "ChassisName");
+            const auto chassisObjPath = getChassisObjPath(chassisName);
+
+            std::string forceRecoveryChassisObjPath;
+            if (hasProperty(interfaces, nvlinkMgmtNicObjInterface,
+                            "ForceRecoveryChassisObject"))
+            {
+                const auto forceRecoveryChassisName =
+                    getString(interfaces, nvlinkMgmtNicObjInterface,
+                              "ForceRecoveryChassisObject");
+                forceRecoveryChassisObjPath =
+                    getChassisObjPath(forceRecoveryChassisName);
+            }
+
+            const auto smaEidOpt =
+                getUint8(interfaces, nvlinkMgmtNicObjInterface, "SMAEID");
+            if (!smaEidOpt.has_value())
+            {
+                lg2::error(
+                    "Failed to get SMAEID in NVLink Management NIC recovery config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto smaEID = smaEidOpt.value();
+
+            std::string resetGpioName;
+            if (hasProperty(interfaces, nvlinkMgmtNicObjInterface, "ResetGPIO"))
+            {
+                resetGpioName = getString(interfaces, nvlinkMgmtNicObjInterface,
+                                          "ResetGPIO");
+            }
+
+            std::string flashNotPresentGpioName;
+            if (hasProperty(interfaces, nvlinkMgmtNicObjInterface,
+                            "FlashNotPresentGPIO"))
+            {
+                flashNotPresentGpioName =
+                    getString(interfaces, nvlinkMgmtNicObjInterface,
+                              "FlashNotPresentGPIO");
+            }
+
+            resources.push_back(std::make_unique<NVLinkMgmtNicResource>(
+                getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
+                i2cBus, i2cAddress, eid, smaEID, resetGpioName,
+                flashNotPresentGpioName));
+        }
         else if (interfaces.contains(nvswitchObjInterface))
         {
             lg2::info("Found NVSwitch recovery config Object: {PATH}", "PATH",

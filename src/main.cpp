@@ -79,6 +79,9 @@
 #ifdef NVSWITCH_RECOVERY_SUPPORT
 #include "nvswitch_recovery.hpp"
 #endif
+#ifdef NVLINKMANAGEMENTNIC_RECOVERY_SUPPORT
+#include "nvlinkmgmt_nic_recovery.hpp"
+#endif
 #ifdef SPI_PROGRAMMER_SUPPORT
 #include "spi_programmer.hpp"
 #endif
@@ -283,6 +286,12 @@ int main(int argc, char** argv)
     if (updater == "NVSwitchRecovery")
     {
         itemUpdater = std::make_unique<NVSwitchRecoveryUpdater>(bus);
+    }
+#endif
+#if NVLINKMANAGEMENTNIC_RECOVERY_SUPPORT
+    if (updater == "NVLinkManagementNICRecovery")
+    {
+        itemUpdater = std::make_unique<NVLinkManagementNICRecoveryUpdater>(bus);
     }
 #endif
 #if SPI_PROGRAMMER_SUPPORT

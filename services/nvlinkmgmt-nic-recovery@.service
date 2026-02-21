@@ -1,0 +1,8 @@
+[Unit]
+Description=NVLink Management NIC Recovery Utility
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/nvlinkmgmt-nic-recovery.sh $ARGS
