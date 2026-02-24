@@ -101,11 +101,10 @@ void ERoTResource::updateERoTHealth()
         return;
     }
 
-    if (MCTPDiscoveryResource::isDeviceEnumerated())
+    if (isChassisPoweredOff())
     {
-        lg2::info("MCTP EID for {PATH} is enumerated", "PATH", path.c_str());
-        health(HealthServer::HealthType::OK);
-        state(OperationalStatusServer::StateType::Enabled);
+        health(HealthServer::HealthType::Warning);
+        state(OperationalStatusServer::StateType::UnavailableOffline);
         return;
     }
 
@@ -125,9 +124,19 @@ void ERoTResource::updateERoTHealth()
     }
 
     const auto& status = glacierRecoveryObj->performInitialization();
+    bool inRecovery =
+        (status != glacier_recovery_tool::glacier_recovery_commands::
+                       RecoveryResult::FirmwareNotInRecovery);
 
-    if (status != glacier_recovery_tool::glacier_recovery_commands::
-                      RecoveryResult::FirmwareNotInRecovery)
+    if (MCTPDiscoveryResource::isDeviceEnumerated() and !inRecovery)
+    {
+        lg2::info("MCTP EID for {PATH} is enumerated", "PATH", path.c_str());
+        health(HealthServer::HealthType::OK);
+        state(OperationalStatusServer::StateType::Enabled);
+        return;
+    }
+
+    if (inRecovery)
     {
         lg2::info("Device associated with {PATH} is in recovery", "PATH",
                   path.c_str());
@@ -137,10 +146,12 @@ void ERoTResource::updateERoTHealth()
         return;
     }
 
-    lg2::info("Device associated with {PATH} is not in recovery", "PATH",
-              path.c_str());
-    health(HealthServer::HealthType::OK);
-    state(OperationalStatusServer::StateType::Enabled);
+    lg2::warning("Device associated with {PATH} is healthy but MCTP "
+                 "connectivity is not available",
+                 "PATH", path.c_str());
+
+    health(HealthServer::HealthType::Critical);
+    state(OperationalStatusServer::StateType::Degraded);
     return;
 }
 

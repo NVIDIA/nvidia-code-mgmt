@@ -27,8 +27,25 @@
 
 using namespace phosphor::logging;
 
+void APResource::updateHealth()
+{
+    if (co)
+    {
+        co = nullptr;
+    }
+    auto rc = updateHealthAsync(erotResource->isChassisPoweredOff());
+    co = rc.handle;
+}
+
 mctp_vdm::requester::Coroutine APResource::initializeHealth()
 {
+    if (erotResource->isChassisPoweredOff())
+    {
+        health(HealthServer::HealthType::Warning);
+        state(OperationalStatusServer::StateType::UnavailableOffline);
+        co_return 0;
+    }
+
     if (isERoTHealthy())
     {
         co_await erotResource->updateBootStatusAsync();
@@ -41,10 +58,21 @@ mctp_vdm::requester::Coroutine APResource::initializeHealth()
         co_return 0;
     }
 
+    if (!isERoTHealthy())
+    {
+        lg2::error(
+            "Unable to read AP device status: ERoT not available and AP MCTP "
+            "not enumerated");
+        health(HealthServer::HealthType::Critical);
+        state(OperationalStatusServer::StateType::UnavailableOffline);
+        co_return 0;
+    }
+
     if (isAPInRecovery())
     {
-        timer = std::make_unique<sdbusplus::Timer>(
-            [&]() { updateHealthAsync().detach(); });
+        timer = std::make_unique<sdbusplus::Timer>([&]() {
+            updateHealthAsync(erotResource->isChassisPoweredOff()).detach();
+        });
 
         timer->start(std::chrono::seconds(maxBootCompleteTimeout), false);
     }
@@ -57,8 +85,16 @@ mctp_vdm::requester::Coroutine APResource::initializeHealth()
     co_return 0;
 }
 
-mctp_vdm::requester::Coroutine APResource::updateHealthAsync()
+mctp_vdm::requester::Coroutine
+    APResource::updateHealthAsync(bool chassisPoweredOff)
 {
+    if (chassisPoweredOff)
+    {
+        health(HealthServer::HealthType::Warning);
+        state(OperationalStatusServer::StateType::UnavailableOffline);
+        co_return 0;
+    }
+
     if (isERoTHealthy())
     {
         co_await erotResource->updateBootStatusAsync();
@@ -71,6 +107,16 @@ mctp_vdm::requester::Coroutine APResource::updateHealthAsync()
         co_return 0;
     }
 
+    if (!isERoTHealthy())
+    {
+        lg2::error(
+            "Unable to read AP device status: ERoT not available and AP MCTP "
+            "not enumerated");
+        health(HealthServer::HealthType::Critical);
+        state(OperationalStatusServer::StateType::UnavailableOffline);
+        co_return 0;
+    }
+
     if (isAPInRecovery())
     {
         health(HealthServer::HealthType::Critical);
@@ -78,8 +124,9 @@ mctp_vdm::requester::Coroutine APResource::updateHealthAsync()
     }
     else
     {
-        health(HealthServer::HealthType::OK);
-        state(OperationalStatusServer::StateType::Enabled);
+        lg2::warning("AP MCTP EID not available but device not in recovery");
+        health(HealthServer::HealthType::Critical);
+        state(OperationalStatusServer::StateType::Degraded);
     }
 
     co_return 0;

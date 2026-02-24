@@ -170,11 +170,26 @@ class GpuResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
-        const auto& [ret, output, errorMsg] =
-            ocpRecoveryCommands->getDeviceStatusCommand();
-
         HealthServer::HealthType healthValue;
         OperationalStatusServer::StateType stateValue;
+
+        if (isChassisPoweredOff())
+        {
+            healthValue = HealthServer::HealthType::Warning;
+            stateValue = OperationalStatusServer::StateType::UnavailableOffline;
+            health(healthValue);
+            state(stateValue);
+
+            if (inforomResource)
+            {
+                inforomResource->health(healthValue);
+                inforomResource->state(stateValue);
+            }
+            return;
+        }
+
+        const auto& [ret, output, errorMsg] =
+            ocpRecoveryCommands->getDeviceStatusCommand();
 
         if (!ret)
         {
@@ -209,7 +224,8 @@ class GpuResource : public MCTPDiscoveryResource
         bootStatus->bootStatus(
             std::vector<uint8_t>(output.begin() + 1, output.end()));
 
-        if (MCTPDiscoveryResource::isDeviceEnumerated())
+        if (MCTPDiscoveryResource::isDeviceEnumerated() and
+            status == recovery_tool::DeviceStatus::DeviceHealthy)
         {
             lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
                       path.c_str());
@@ -226,10 +242,11 @@ class GpuResource : public MCTPDiscoveryResource
         }
         else
         {
-            lg2::info("Device associated with {PATH} is not in recovery",
-                      "PATH", path.c_str());
-            healthValue = HealthServer::HealthType::OK;
-            stateValue = OperationalStatusServer::StateType::Enabled;
+            lg2::warning("Device associated with {PATH} is healthy but MCTP "
+                         "connectivity is not available",
+                         "PATH", path.c_str());
+            healthValue = HealthServer::HealthType::Critical;
+            stateValue = OperationalStatusServer::StateType::Degraded;
         }
 
         health(healthValue);

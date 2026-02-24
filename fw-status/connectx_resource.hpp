@@ -79,12 +79,6 @@ class ConnectXResource : public MCTPDiscoveryResource
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointAddedMatch;
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
-    std::unique_ptr<sdbusplus::bus::match_t> chassisPowerStateMatch;
-    std::string const chassisService = "xyz.openbmc_project.State.Chassis";
-    std::string const chassisPath = "/xyz/openbmc_project/state/chassis0";
-    std::string const chassisInterface = "xyz.openbmc_project.State.Chassis";
-    std::string const chassisPowerStateOn =
-        "xyz.openbmc_project.State.Chassis.PowerState.On";
     int const connectxPublishDelayInSeconds = 5;
 
     uint8_t smaEid;
@@ -155,6 +149,13 @@ class ConnectXResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
+        if (isChassisPoweredOff())
+        {
+            health(HealthServer::HealthType::Warning);
+            state(OperationalStatusServer::StateType::UnavailableOffline);
+            return;
+        }
+
         const auto& [ret, output, errorMsg] = getDeviceStatus();
         if (!ret)
         {
@@ -181,6 +182,15 @@ class ConnectXResource : public MCTPDiscoveryResource
         bool inRecoveryState = (output[0] != 0x20 || output[1] != 0x00 ||
                                 output[2] != 0x00 || output[3] != 0x19);
 
+        if (MCTPDiscoveryResource::isDeviceEnumerated() and !inRecoveryState)
+        {
+            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
+                      path.c_str());
+            health(HealthServer::HealthType::OK);
+            state(OperationalStatusServer::StateType::Enabled);
+            return;
+        }
+
         if (inRecoveryState)
         {
             lg2::info("Device associated with {PATH} is in recovery", "PATH",
@@ -191,20 +201,12 @@ class ConnectXResource : public MCTPDiscoveryResource
             return;
         }
 
-        if (MCTPDiscoveryResource::isDeviceEnumerated())
-        {
-            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
-                      path.c_str());
-            health(HealthServer::HealthType::OK);
-            state(OperationalStatusServer::StateType::Enabled);
-            return;
-        }
+        lg2::warning("Device associated with {PATH} is healthy but MCTP "
+                     "connectivity is not available",
+                     "PATH", path.c_str());
 
-        lg2::info("Device associated with {PATH} is not in recovery", "PATH",
-                  path.c_str());
-
-        health(HealthServer::HealthType::OK);
-        state(OperationalStatusServer::StateType::Enabled);
+        health(HealthServer::HealthType::Critical);
+        state(OperationalStatusServer::StateType::Degraded);
         return;
     }
 

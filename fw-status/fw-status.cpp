@@ -69,6 +69,8 @@ constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/";
 constexpr auto recoveryConfigIntfName =
     "xyz.openbmc_project.Inventory.Item.Recovery_Config";
+constexpr auto chassisInterface = "xyz.openbmc_project.State.Chassis";
+constexpr auto stateBasePath = "/xyz/openbmc_project/state";
 
 using namespace phosphor::logging;
 using namespace nvidia::software::updater;
@@ -77,6 +79,8 @@ using namespace mctp_vdm;
 std::vector<std::unique_ptr<BaseResource>> resources;
 
 std::unique_ptr<sdbusplus::bus::match_t> entityManagerServiceMatch;
+std::unique_ptr<sdbusplus::bus::match_t> chassisPowerStateMatch;
+std::unique_ptr<sdbusplus::bus::match_t> chassisDiscoveryRetryMatch;
 
 std::vector<std::unique_ptr<nvidia::recovery::RecoveryModeManagerBase>>
     recoveryModeManagers;
@@ -86,6 +90,8 @@ std::shared_ptr<mcu_recovery_manager::MCURecoveryManager> mcuRecoveryManager;
 std::shared_ptr<UdevMonitor> udevMonitor;
 
 void checkEntityManagerAvailability();
+bool startCentralizedPowerStateWatcher();
+void armCentralizedPowerStateWatcherRetry();
 
 auto& getBus()
 {
@@ -207,6 +213,35 @@ bool hasProperty(const InterfaceMap& interfaces, const Interface& interface,
         lg2::error("Failed to check property {NAME}. {ERR}", "NAME", property,
                    "ERR", e.what());
         return false;
+    }
+}
+
+void applyChassisConnectionAndRefresh(const InterfaceMap& interfaces,
+                                      const Interface& interface,
+                                      BaseResource& resource,
+                                      const std::string& initialPowerState)
+{
+    if (!hasProperty(interfaces, interface, "hasChassisPowerSource"))
+    {
+        return;
+    }
+
+    resource.setConnectedToChassis(
+        getBool(interfaces, interface, "hasChassisPowerSource"));
+    if (resource.hasChassisPowerSource())
+    {
+        resource.setChassisPowerState(initialPowerState);
+    }
+
+    try
+    {
+        resource.updateHealth();
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "Failed to refresh health for resource {PATH} after setting hasChassisPowerSource: {ERROR}",
+            "PATH", resource.getObjectPath(), "ERROR", e.what());
     }
 }
 
@@ -335,6 +370,7 @@ void publishDBusRecoveryObject()
     auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
     const auto managedObjects = dbusUtil.getManagedObjects(
         entityManagerService, entityManagerObjManager);
+    const auto initialChassisPowerState = dbusUtil.getHostPwrStatus();
     auto& event = getEvent();
 
     auto mcuMap = getMCUConfig();
@@ -466,6 +502,10 @@ void publishDBusRecoveryObject()
                     forceRecoveryChassisObjPath, i2cBus, i2cAddress, eid,
                     inforomObjPath));
             }
+
+            applyChassisConnectionAndRefresh(interfaces, ocpObjInterface,
+                                             *resources.back(),
+                                             initialChassisPowerState);
         }
         else if (interfaces.contains(connectxObjInterface))
         {
@@ -554,6 +594,10 @@ void publishDBusRecoveryObject()
                 getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
                 i2cBus, i2cAddress, eid, smaEID, resetGpioName,
                 flashNotPresentGpioName));
+
+            applyChassisConnectionAndRefresh(interfaces, connectxObjInterface,
+                                             *resources.back(),
+                                             initialChassisPowerState);
         }
         else if (interfaces.contains(nvlinkMgmtNicObjInterface))
         {
@@ -643,6 +687,10 @@ void publishDBusRecoveryObject()
                 getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
                 i2cBus, i2cAddress, eid, smaEID, resetGpioName,
                 flashNotPresentGpioName));
+
+            applyChassisConnectionAndRefresh(
+                interfaces, nvlinkMgmtNicObjInterface, *resources.back(),
+                initialChassisPowerState);
         }
         else if (interfaces.contains(nvswitchObjInterface))
         {
@@ -731,6 +779,10 @@ void publishDBusRecoveryObject()
                 getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
                 i2cBus, i2cAddress, eid, smaEID, resetGpioName,
                 flashNotPresentGpioName));
+
+            applyChassisConnectionAndRefresh(interfaces, nvswitchObjInterface,
+                                             *resources.back(),
+                                             initialChassisPowerState);
         }
         else if (interfaces.contains(nvlinkMgmtNicObjInterface))
         {
@@ -819,6 +871,10 @@ void publishDBusRecoveryObject()
                 getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
                 i2cBus, i2cAddress, eid, smaEID, resetGpioName,
                 flashNotPresentGpioName));
+
+            applyChassisConnectionAndRefresh(
+                interfaces, nvlinkMgmtNicObjInterface, *resources.back(),
+                initialChassisPowerState);
         }
         else if (interfaces.contains(glacierCrisisObjInterface))
         {
@@ -884,6 +940,10 @@ void publishDBusRecoveryObject()
                         getBus(), objPath, event, eid, chassisObjPath,
                         isRecoverable, mctpVdmHelper));
                 }
+
+                applyChassisConnectionAndRefresh(
+                    interfaces, glacierCrisisObjInterface, *resources.back(),
+                    initialChassisPowerState);
             }
         }
         else if (interfaces.contains(gpioObjInterface))
@@ -940,6 +1000,10 @@ void publishDBusRecoveryObject()
                     getBus(), objPath, event, eid, gpio, risingTarget,
                     fallingTarget, polarity, chassisObjPath, mctpVdmHelper));
             }
+
+            applyChassisConnectionAndRefresh(interfaces, gpioObjInterface,
+                                             *resources.back(),
+                                             initialChassisPowerState);
         }
         else if (interfaces.contains(mcuObjInterface))
         {
@@ -970,6 +1034,10 @@ void publishDBusRecoveryObject()
 
             resources.push_back(std::make_unique<MCUResource>(
                 getBus(), objPath, eid, deviceName, mcuRecoveryManager));
+
+            applyChassisConnectionAndRefresh(interfaces, mcuObjInterface,
+                                             *resources.back(),
+                                             initialChassisPowerState);
 
             std::string forceRecoveryChassisObjPath;
             std::string forceRecoveryChassisName;
@@ -1124,7 +1192,165 @@ void publishDBusRecoveryObject()
             resources.push_back(std::make_unique<USBRcmResource>(
                 getBus(), primaryObjPath, eid, usbPort, companionObjPath,
                 udevMonitor));
+
+            applyChassisConnectionAndRefresh(interfaces, usbRcmObjInterface,
+                                             *resources.back(),
+                                             initialChassisPowerState);
         }
+    }
+
+    if (!startCentralizedPowerStateWatcher())
+    {
+        armCentralizedPowerStateWatcherRetry();
+    }
+}
+
+/**
+ * @brief Start a single centralized watcher for chassis power state changes.
+ *
+ * Instead of each resource creating its own D-Bus propertiesChanged matcher,
+ * this function creates one global matcher that iterates all resources and
+ * updates each resource's cached chassis power state when the chassis power
+ * state changes.
+ */
+bool startCentralizedPowerStateWatcher()
+{
+    if (chassisPowerStateMatch)
+    {
+        return true;
+    }
+
+    std::string chassisPath;
+    try
+    {
+        auto method = getBus().new_method_call(
+            MAPPER_BUSNAME, MAPPER_PATH, MAPPER_INTERFACE, "GetSubTreePaths");
+        method.append(stateBasePath);
+        method.append(0);
+        method.append(std::vector<std::string>({chassisInterface}));
+
+        auto reply = getBus().call(method);
+        std::vector<std::string> chassisPaths;
+        reply.read(chassisPaths);
+
+        if (!chassisPaths.empty())
+        {
+            chassisPath = chassisPaths[0];
+        }
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "Failed to discover chassis path for centralized watcher: {ERROR}",
+            "ERROR", e.what());
+        return false;
+    }
+
+    if (chassisPath.empty())
+    {
+        lg2::warning(
+            "No chassis path found, centralized power state watcher not started");
+        return false;
+    }
+
+    chassisPowerStateMatch = std::make_unique<sdbusplus::bus::match_t>(
+        getBus(), MatchRules::propertiesChanged(chassisPath, chassisInterface),
+        [](sdbusplus::message::message& msg) {
+            std::string interface;
+            std::map<std::string, std::variant<std::string>> properties;
+
+            try
+            {
+                msg.read(interface, properties);
+
+                auto it = properties.find("CurrentPowerState");
+                if (it == properties.end())
+                {
+                    return;
+                }
+
+                const auto& powerState = std::get<std::string>(it->second);
+                lg2::info(
+                    "Chassis power state changed to {STATE}, updating cached power state for all resources",
+                    "STATE", powerState);
+
+                for (auto& resource : resources)
+                {
+                    if (!resource->hasChassisPowerSource())
+                    {
+                        continue;
+                    }
+
+                    const auto objectPath = resource->getObjectPath();
+                    lg2::info(
+                        "Updating cached chassis power state for resource {PATH} to {STATE}",
+                        "PATH", objectPath, "STATE", powerState);
+                    resource->setChassisPowerState(powerState);
+                }
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error(
+                    "Failed to process centralized power state change: {ERROR}",
+                    "ERROR", e.what());
+            }
+        });
+
+    lg2::info(
+        "Started centralized chassis power state watcher at {CHASSIS_PATH}",
+        "CHASSIS_PATH", chassisPath);
+    return true;
+}
+
+void armCentralizedPowerStateWatcherRetry()
+{
+    if (chassisPowerStateMatch || chassisDiscoveryRetryMatch)
+    {
+        return;
+    }
+
+    chassisDiscoveryRetryMatch = std::make_unique<sdbusplus::bus::match_t>(
+        getBus(), MatchRules::interfacesAdded(stateBasePath),
+        [](sdbusplus::message::message& msg) {
+            try
+            {
+                sdbusplus::message::object_path objPath;
+                std::map<std::string, std::map<std::string, Value>> interfaces;
+
+                msg.read(objPath, interfaces);
+
+                if (!interfaces.contains(chassisInterface))
+                {
+                    return;
+                }
+
+                lg2::info(
+                    "Detected chassis interface at {PATH}; retrying centralized "
+                    "power state watcher setup",
+                    "PATH", std::string(objPath));
+
+                if (startCentralizedPowerStateWatcher())
+                {
+                    chassisDiscoveryRetryMatch.reset();
+                }
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error(
+                    "Failed to process chassis discovery retry signal: {ERROR}",
+                    "ERROR", e.what());
+            }
+        });
+
+    lg2::info(
+        "Armed centralized power state watcher retry on interfacesAdded for {PATH}",
+        "PATH", stateBasePath);
+
+    // Close a race where the chassis object appears between initial discovery
+    // failure and retry matcher registration.
+    if (startCentralizedPowerStateWatcher())
+    {
+        chassisDiscoveryRetryMatch.reset();
     }
 }
 

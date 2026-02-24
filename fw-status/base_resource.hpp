@@ -27,6 +27,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 
 using ResourceInterfacesInherit = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::State::Decorator::server::Health,
@@ -223,9 +224,68 @@ class BaseResource
         return path;
     }
 
+    /** @brief Gets the cached chassis power state
+     *
+     * @return std::string - Cached chassis power state
+     *         (e.g., "xyz.openbmc_project.State.Chassis.PowerState.On")
+     */
+    inline std::string getChassisPowerState() const noexcept
+    {
+        return chassisPowerState;
+    }
+
+    /** @brief Updates the cached chassis power state
+     */
+    inline void setChassisPowerState(const std::string& currentPowerState)
+    {
+        chassisPowerState = currentPowerState;
+    }
+
+    /** @brief Updates the Health and State of the resource
+     *  Default implementation is a no-op for resources that don't need it
+     *  (e.g., USBRcmResource companion objects).
+     *  MCTPDiscoveryResource overrides this as pure virtual.
+     */
+    virtual void updateHealth()
+    {}
+
+    /** @brief Whether this resource should be updated on chassis power state
+     *  changes. Set from Entity Manager "hasChassisPowerSource" config.
+     */
+    inline bool hasChassisPowerSource() const noexcept
+    {
+        return connectedToChassisPower;
+    }
+
+    inline void setConnectedToChassis(bool connected) noexcept
+    {
+        connectedToChassisPower = connected;
+        if (!connected)
+        {
+            chassisPowerState.clear();
+        }
+    }
+
+    /** @brief Returns true if this resource is tied to chassis power and the
+     *  chassis is currently Off.
+     */
+    inline bool isChassisPoweredOff() const noexcept
+    {
+        if (!connectedToChassisPower)
+        {
+            return false;
+        }
+
+        return chassisPowerState == chassisPowerOffState;
+    }
+
   protected:
     const std::string path;
 
   private:
     std::unique_ptr<ResourceInterfaces> resourceDbusObj;
+    bool connectedToChassisPower = false;
+    std::string chassisPowerState;
+    static constexpr const char* chassisPowerOffState =
+        "xyz.openbmc_project.State.Chassis.PowerState.Off";
 };

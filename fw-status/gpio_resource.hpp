@@ -168,4 +168,23 @@ class GPIOResource : public BaseResource
      *
      */
     uint8_t fetchEid() const noexcept;
+
+    /** @brief Updates Health and State of the resource on power state changes
+     */
+    void updateHealth() override
+    {
+        if (isEROT)
+        {
+            updateERoTHealth();
+        }
+        else if (isChassisPoweredOff())
+        {
+            health(HealthServer::HealthType::Warning);
+            state(OperationalStatusServer::StateType::UnavailableOffline);
+        }
+        else
+        {
+            updateAPHealth(LEVEL_TRIGGER);
+        }
+    }
 };
