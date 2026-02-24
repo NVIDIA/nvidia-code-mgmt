@@ -111,6 +111,16 @@ std::string USBRcmResource::queryUSBRecoveryStatus()
 
 void USBRcmResource::updateHealth()
 {
+    if (isChassisPoweredOff())
+    {
+        health(HealthServer::HealthType::Warning);
+        state(OperationalStatusServer::StateType::UnavailableOffline);
+        companionResource->health(HealthServer::HealthType::Warning);
+        companionResource->state(
+            OperationalStatusServer::StateType::UnavailableOffline);
+        return;
+    }
+
     const auto recoveryStatus = queryUSBRecoveryStatus();
     const bool mctpEnumerated = MCTPDiscoveryResource::isDeviceEnumerated();
 
@@ -121,16 +131,27 @@ void USBRcmResource::updateHealth()
     HealthServer::HealthType healthValue;
     OperationalStatusServer::StateType stateValue;
 
-    if (mctpEnumerated || (recoveryStatus == "Recovery Complete") ||
-        (recoveryStatus == "Not in Recovery"))
-    {
-        healthValue = HealthServer::HealthType::OK;
-        stateValue = OperationalStatusServer::StateType::Enabled;
-    }
-    else if (recoveryStatus == "In Recovery")
+    if (recoveryStatus == "In Recovery")
     {
         healthValue = HealthServer::HealthType::Critical;
         stateValue = OperationalStatusServer::StateType::StandbyOffline;
+    }
+    else if ((recoveryStatus == "Recovery Complete") ||
+             (recoveryStatus == "Not in Recovery"))
+    {
+        if (mctpEnumerated)
+        {
+            healthValue = HealthServer::HealthType::OK;
+            stateValue = OperationalStatusServer::StateType::Enabled;
+        }
+        else
+        {
+            lg2::warning("USB device at port {PORT} is healthy but MCTP "
+                         "connectivity is not available",
+                         "PORT", usbPort);
+            healthValue = HealthServer::HealthType::Critical;
+            stateValue = OperationalStatusServer::StateType::Degraded;
+        }
     }
     else
     {

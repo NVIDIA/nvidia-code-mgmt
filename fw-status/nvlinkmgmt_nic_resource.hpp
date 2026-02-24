@@ -142,6 +142,13 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
 
     void updateHealth() override
     {
+        if (isChassisPoweredOff())
+        {
+            health(HealthServer::HealthType::Warning);
+            state(OperationalStatusServer::StateType::UnavailableOffline);
+            return;
+        }
+
         const auto& [ret, output, errorMsg] = getDeviceStatus();
         if (!ret)
         {
@@ -183,8 +190,12 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
             return;
         }
 
-        health(HealthServer::HealthType::OK);
-        state(OperationalStatusServer::StateType::Enabled);
+        lg2::warning("Device associated with {PATH} is healthy but MCTP "
+                     "connectivity is not available",
+                     "PATH", path.c_str());
+
+        health(HealthServer::HealthType::Critical);
+        state(OperationalStatusServer::StateType::Degraded);
     }
 
     std::string getSMAMCTPObjectPath()

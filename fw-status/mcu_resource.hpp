@@ -65,6 +65,13 @@ class MCUResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
+        if (isChassisPoweredOff())
+        {
+            health(HealthServer::HealthType::Warning);
+            state(OperationalStatusServer::StateType::UnavailableOffline);
+            return;
+        }
+
         mcuRecoveryManager->updateAllDeviceInfo();
         auto isHealthy = mcuRecoveryManager->isHealthy(deviceId);
         auto isInRecoveryMode = mcuRecoveryManager->isInRecoveryMode(deviceId);
@@ -74,28 +81,43 @@ class MCUResource : public MCTPDiscoveryResource
             "ID", deviceId, "IS_HEALTHY", isHealthy, "IS_IN_RECOVERY_MODE",
             isInRecoveryMode);
 
-        if (isHealthy)
+        if (MCTPDiscoveryResource::isDeviceEnumerated() and isHealthy)
         {
+            lg2::info("MCU device {ID} is healthy with MCTP enumerated", "ID",
+                      deviceId);
             health(HealthServer::HealthType::OK);
             state(OperationalStatusServer::StateType::Enabled);
+            return;
         }
-        else if (isInRecoveryMode)
+
+        if (isInRecoveryMode)
         {
+            lg2::info("MCU device {ID} is in recovery mode", "ID", deviceId);
             health(HealthServer::HealthType::Critical);
             state(OperationalStatusServer::StateType::StandbyOffline);
+            return;
+        }
+
+        if (isHealthy and !MCTPDiscoveryResource::isDeviceEnumerated())
+        {
+            lg2::warning("MCU device {ID} is healthy but MCTP connectivity "
+                         "is not available",
+                         "ID", deviceId);
+            health(HealthServer::HealthType::Critical);
+            state(OperationalStatusServer::StateType::Degraded);
+            return;
+        }
+
+        lg2::error("MCU device {ID} is not accessible", "ID", deviceId);
+        health(HealthServer::HealthType::Critical);
+
+        if (MCTPDiscoveryResource::wasDeviceEnumeratedBefore())
+        {
+            state(OperationalStatusServer::StateType::UnavailableOffline);
         }
         else
         {
-            health(HealthServer::HealthType::Critical);
-
-            if (MCTPDiscoveryResource::wasDeviceEnumeratedBefore())
-            {
-                state(OperationalStatusServer::StateType::UnavailableOffline);
-            }
-            else
-            {
-                state(OperationalStatusServer::StateType::Absent);
-            }
+            state(OperationalStatusServer::StateType::Absent);
         }
     }
 };

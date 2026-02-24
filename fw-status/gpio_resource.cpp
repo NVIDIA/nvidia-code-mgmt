@@ -131,10 +131,19 @@ void GPIOResource::registerGPIOEvent()
 
 void GPIOResource::updateERoTHealth()
 {
-    const auto& status = glacierRecoveryObj->performInitialization();
+    if (isChassisPoweredOff())
+    {
+        health(HealthServer::HealthType::Warning);
+        state(OperationalStatusServer::StateType::UnavailableOffline);
+        return;
+    }
 
-    if (status != glacier_recovery_tool::glacier_recovery_commands::
-                      RecoveryResult::FirmwareNotInRecovery)
+    const auto& status = glacierRecoveryObj->performInitialization();
+    bool inRecovery =
+        (status != glacier_recovery_tool::glacier_recovery_commands::
+                       RecoveryResult::FirmwareNotInRecovery);
+
+    if (inRecovery)
     {
         lg2::info("Device associated with {PATH} is in recovery", "PATH",
                   path.c_str());

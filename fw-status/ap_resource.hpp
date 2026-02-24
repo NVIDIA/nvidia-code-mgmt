@@ -66,17 +66,7 @@ class APResource : public MCTPDiscoveryResource
      *
      * @return void
      */
-    void updateHealth()
-    {
-
-        if (co)
-        {
-            co = nullptr;
-        }
-        auto rc = updateHealthAsync();
-        co = rc.handle;
-        return;
-    }
+    void updateHealth() override;
 
   private:
     std::unique_ptr<sdbusplus::Timer> timer;
@@ -118,7 +108,7 @@ class APResource : public MCTPDiscoveryResource
      * @return coroutine
      *
      */
-    mctp_vdm::requester::Coroutine updateHealthAsync();
+    mctp_vdm::requester::Coroutine updateHealthAsync(bool chassisPoweredOff);
 
     /**@brief Checks whether the AP FW is in recovery based on QueryBootStatus
      * output and/or MCTP EID object

@@ -253,6 +253,13 @@ class NVSwitchResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
+        if (isChassisPoweredOff())
+        {
+            health(HealthServer::HealthType::Warning);
+            state(OperationalStatusServer::StateType::UnavailableOffline);
+            return;
+        }
+
         const auto& [ret, output, errorMsg] = getDeviceStatus();
         if (!ret)
         {
@@ -301,11 +308,12 @@ class NVSwitchResource : public MCTPDiscoveryResource
             return;
         }
 
-        lg2::info("Device associated with {PATH} is not in recovery", "PATH",
-                  path.c_str());
+        lg2::warning("Device associated with {PATH} is healthy but MCTP "
+                     "connectivity is not available",
+                     "PATH", path.c_str());
 
-        health(HealthServer::HealthType::OK);
-        state(OperationalStatusServer::StateType::Enabled);
+        health(HealthServer::HealthType::Critical);
+        state(OperationalStatusServer::StateType::Degraded);
         return;
     }
 
