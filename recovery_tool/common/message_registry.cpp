@@ -34,7 +34,7 @@ void MessageRegistry::createMessageRegistry(const std::string& messageID,
     addData["REDFISH_MESSAGE_ID"] = messageID;
     if ((messageID == recoveryStarted) ||
         (messageID == firmwareNotInRecovery) ||
-        (messageID == recoverySuccessful))
+        (messageID == recoverySuccessful) || (messageID == enterDOTRecovery))
     {
         addData["REDFISH_MESSAGE_ARGS"] = deviceName;
     }
