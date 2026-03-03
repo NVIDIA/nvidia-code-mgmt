@@ -402,7 +402,19 @@ int main(int argc, char** argv)
 
             lg2::info("Device {DEVICE} successfully recovered", "DEVICE",
                       device);
-            messageRegistry->createMessageRegistry(recoverySuccessful, device);
+            // Empty DOT message only when we accepted that error and recovery
+            // did not complete (no completion code); otherwise normal success.
+            if (recoveryOutput.contains("EmptyDotBlobAccepted") &&
+                recoveryOutput["EmptyDotBlobAccepted"].get<bool>())
+            {
+                messageRegistry->createMessageRegistry(enterDOTRecovery,
+                                                       device);
+            }
+            else
+            {
+                messageRegistry->createMessageRegistry(recoverySuccessful,
+                                                       device);
+            }
         }
         catch (const std::exception& e)
         {

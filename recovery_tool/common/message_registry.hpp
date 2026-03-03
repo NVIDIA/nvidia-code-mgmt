@@ -14,6 +14,7 @@ const std::string firmwareNotInRecovery{
     "NvidiaUpdate.1.0.FirmwareNotInRecovery"};
 const std::string recoverySuccessful{"NvidiaUpdate.1.0.RecoverySuccessful"};
 const std::string recoveryStarted{"NvidiaUpdate.1.0.RecoveryStarted"};
+const std::string enterDOTRecovery{"NvidiaUpdate.1.0.EnterDOTRecovery"};
 const std::string resourceErrorsDetected{
     "ResourceEvent.1.0.ResourceErrorsDetected"};
 

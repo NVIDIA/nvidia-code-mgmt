@@ -14,10 +14,12 @@
 
 #include <libusb-1.0/libusb.h>
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -33,7 +35,7 @@ constexpr size_t BULK_CHUNK_SIZE = 512; ///< 512B chunks for optimal throughput
 /// Progress monitoring timing constants
 constexpr int PROGRESS_CHECK_INTERVAL_MS = 500; ///< Check progress every 500ms
 constexpr int POST_IMAGE_MONITOR_ITERATIONS =
-    4; ///< Monitor for 2 seconds after image (4 × 500ms)
+    8; ///< Monitor for 4 seconds after image (8 × 500ms)
 constexpr int INTER_IMAGE_DELAY_MS = 250; ///< Pause between images
 
 /// Progress check result status
@@ -204,6 +206,22 @@ enum class ProgressStatus
     }
 }
 
+/**
+ * @brief Check if data is the expected "empty" DOT blob (1024 bytes of zeros).
+ *        Used in DOT recovery override flow where PSC reports
+ *        PSC_ROM_EC_MUTABLE_DOT_HEADER_CHECK_FAIL for this payload; we treat
+ *        it as expected and continue recovery instead of aborting.
+ * @param data Image data that was sent
+ * @return true if data is exactly 1024 bytes and all zeros
+ */
+[[nodiscard]] bool isEmptyDotBlob(const std::vector<uint8_t>& data) noexcept
+{
+    constexpr size_t emptyDotBlobSize = 1024; // PSC expects exactly 1024B
+    return data.size() == emptyDotBlobSize &&
+           std::all_of(data.begin(), data.end(),
+                       [](uint8_t b) { return b == 0; });
+}
+
 [[nodiscard]] bool readFileToBuffer(const std::string& filePath,
                                     std::vector<uint8_t>& buffer, bool verbose)
 {
@@ -252,12 +270,19 @@ enum class ProgressStatus
  * @param data Pointer to data buffer to send
  * @param size Size of data to send in bytes
  * @param verbose Enable progress output to stdout and errors to stderr
+ * @param outLibusbError Optional: set to libusb error code on transfer failure
+ * (e.g. LIBUSB_ERROR_TIMEOUT); unchanged on success
  *
  * @return true if all data sent successfully, false on transfer failure
  */
 [[nodiscard]] bool sendBulkData(libusb_device_handle* handle,
-                                const uint8_t* data, size_t size, bool verbose)
+                                const uint8_t* data, size_t size, bool verbose,
+                                std::optional<int>* outLibusbError = nullptr)
 {
+    if (outLibusbError)
+    {
+        *outLibusbError = std::nullopt;
+    }
     size_t totalSent = 0;
 
     while (totalSent < size)
@@ -272,6 +297,10 @@ enum class ProgressStatus
 
         if (ret != LIBUSB_SUCCESS)
         {
+            if (outLibusbError)
+            {
+                *outLibusbError = ret;
+            }
             if (verbose)
             {
                 std::cerr << std::format(
@@ -397,9 +426,9 @@ enum class ProgressStatus
 }
 
 /**
- * @brief Monitor progress codes for 2 seconds after sending an image
+ * @brief Monitor progress codes after sending an image
  *
- * Polls for new progress codes every 500ms for a total of 2 seconds (4
+ * Polls for new progress codes every 500ms. Default is 4 seconds (8
  * iterations). Returns immediately if completion code or error is detected
  * during monitoring.
  *
@@ -410,6 +439,7 @@ enum class ProgressStatus
  * detected
  * @param errorCode Reference to error code; populated if error detected
  * @param verbose Enable diagnostic output to stdout/stderr
+ * @param iterations Number of 500ms poll iterations (default 4s)
  *
  * @return ProgressStatus::Completed if recovery completion detected
  * @return ProgressStatus::Error if error code detected
@@ -418,11 +448,12 @@ enum class ProgressStatus
  */
 [[nodiscard]] ProgressStatus monitorProgressAfterImageTransfer(
     libusb_device_handle* handle, uint32_t& lastProcessedTimestamp,
-    std::string& errorDetail, USBRCMRecoveryErrorCode& errorCode, bool verbose)
+    std::string& errorDetail, USBRCMRecoveryErrorCode& errorCode, bool verbose,
+    int iterations = POST_IMAGE_MONITOR_ITERATIONS)
 {
     using namespace std::chrono;
 
-    for (int i = 0; i < POST_IMAGE_MONITOR_ITERATIONS; ++i)
+    for (int i = 0; i < iterations; ++i)
     {
         std::this_thread::sleep_for(milliseconds(PROGRESS_CHECK_INTERVAL_MS));
 
@@ -567,6 +598,17 @@ bool performUsbRecovery(const std::string& portPath,
         USBRCMRecoveryErrorCode errorCode =
             USBRCMRecoveryErrorCode::ImageTransferFailed;
 
+        // Track if we accepted the empty-DOT error; only set
+        // EmptyDotBlobAccepted in output when recovery ultimately fails (no
+        // completion code).
+        bool emptyDotBlobAccepted = false;
+
+        auto reportEmptyDotSoftSuccess = [&jsonOutput]() {
+            jsonOutput["Status"] = "Successful";
+            jsonOutput["EmptyDotBlobAccepted"] = true;
+            return true;
+        };
+
         for (size_t i = 0; i < finalImagePaths.size(); ++i)
         {
             const auto& imagePath = finalImagePaths[i];
@@ -594,9 +636,27 @@ bool performUsbRecovery(const std::string& portPath,
                                          imageData.size());
             }
 
+            // First image after the DOT blob (index 1 when blob is at 0). Used
+            // only for soft-success on USB timeout.
+            const bool firstImageAfterDOTBlob = (i == 1 && !blobPath.empty());
+            std::optional<int> libusbErr;
             if (!sendBulkData(rawHandle, imageData.data(), imageData.size(),
-                              verbose))
+                              verbose, &libusbErr))
             {
+                // Soft success only when: we already accepted empty-DOT error,
+                // this transfer is the first image after DOT blob, and failure
+                // is USB timeout.
+                if (emptyDotBlobAccepted && firstImageAfterDOTBlob &&
+                    libusbErr.has_value() && *libusbErr == LIBUSB_ERROR_TIMEOUT)
+                {
+                    if (verbose)
+                    {
+                        std::cout << "Empty DOT blob flow: First image after "
+                                     "empty DOT blob timed out, reporting task "
+                                     "success with EnterDOTRecovery.\n";
+                    }
+                    return reportEmptyDotSoftSuccess();
+                }
                 jsonOutput["Status"] = "Failed";
                 jsonOutput["Error"] =
                     std::format("Failed to send image: {}", imagePath);
@@ -617,10 +677,37 @@ bool performUsbRecovery(const std::string& portPath,
                 verbose);
             if (status == ProgressStatus::Error)
             {
-                jsonOutput["Status"] = "Failed";
-                jsonOutput["Error"] = errorDetail;
-                jsonOutput["ErrorCode"] = static_cast<uint8_t>(errorCode);
-                return false;
+                // Accept empty-DOT error only when seen right after sending the
+                // DOT blob (within the 4s monitor window), not one transfer
+                // late.
+                const bool isEmptyDotAcceptable =
+                    errorCode == USBRCMRecoveryErrorCode::
+                                     PscRomMutableDotHeaderCheckFail &&
+                    !blobPath.empty() &&
+                    (imagePath == blobPath && isEmptyDotBlob(imageData));
+                if (isEmptyDotAcceptable)
+                {
+                    emptyDotBlobAccepted = true;
+                    if (verbose)
+                    {
+                        std::cout << "Empty DOT blob accepted (expected in DOT "
+                                     "recovery flow), continuing.\n";
+                    }
+                }
+                else if (emptyDotBlobAccepted)
+                {
+                    // Recovery failed; we had accepted empty DOT earlier,
+                    // report task success and set EmptyDotBlobAccepted so RF
+                    // shows the resolution message instead of failure.
+                    return reportEmptyDotSoftSuccess();
+                }
+                else
+                {
+                    jsonOutput["Status"] = "Failed";
+                    jsonOutput["Error"] = errorDetail;
+                    jsonOutput["ErrorCode"] = static_cast<uint8_t>(errorCode);
+                    return false;
+                }
             }
             if (status == ProgressStatus::Completed)
             {
@@ -635,6 +722,13 @@ bool performUsbRecovery(const std::string& portPath,
             }
         }
 
+        // All images sent but no completion code: recovery failed. If we
+        // accepted the empty-DOT error, report task success and set flag so
+        // Redfish shows the EmptyDotBlobAccepted message with resolution.
+        if (emptyDotBlobAccepted)
+        {
+            return reportEmptyDotSoftSuccess();
+        }
         jsonOutput["Status"] = "Successful";
         return true;
     }

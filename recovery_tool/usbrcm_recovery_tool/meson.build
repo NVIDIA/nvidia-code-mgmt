@@ -20,14 +20,14 @@ usb_rcm_lib_sources = [
 
 libusb_dep = dependency('libusb-1.0', required: true)
 
-# 1. Standalone CLI tool
+# 1. Standalone CLI tool (perform_rcm_recovery.cpp uses lg2 for diagnostic log)
 standalone_source_files = ['main.cpp'] + usb_rcm_lib_sources
 
 executable(
     'usbrcm-recovery-tool',
     sources: standalone_source_files,
     include_directories: inc_dirs,
-    dependencies: [libusb_dep, nlohmann_json, CLI11_dep],
+    dependencies: [libusb_dep, nlohmann_json, CLI11_dep, phosphor_logging],
     install: true,
     install_dir: get_option('bindir'),
 )

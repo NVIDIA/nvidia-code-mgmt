@@ -19,7 +19,7 @@
  * 3. Read ECID and determine DOT blob requirement
  * 4. Validate DOT blob availability
  * 5. Send DOT blob + images via synchronous USB bulk transfers
- * 6. Monitor progress codes for 2 seconds after each image
+ * 6. Monitor progress codes for 4 seconds after each image
  * 7. Return success if completion detected or all images sent without errors
  *
  * @param portPath USB port path (e.g., "1-1.3", "2-4.1") - must be non-empty
