@@ -614,3 +614,7 @@ endif
 if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
     subdir('recovery_tool/usbrcm_recovery_tool')
 endif
+
+if get_option('DOT_KEYD_SUPPORT').enabled()
+    subdir('dot-keyd')
+endif

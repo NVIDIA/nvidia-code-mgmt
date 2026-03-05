@@ -1,0 +1,11 @@
+[Unit]
+Description=DOT key management daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/dot-keyd --config /etc/dot-keyd/config.json
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
