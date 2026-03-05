@@ -452,3 +452,8 @@ option('USBRCM_RECOVERY_TIMEOUT',
        type: 'integer',
        value: 600,
        description: 'USB RCM Recovery timeout in seconds')
+
+option('DOT_KEYD_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables dot-keyd support')

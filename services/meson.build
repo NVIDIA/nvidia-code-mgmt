@@ -4,6 +4,10 @@ if get_option('FWSTATUS_SUPPORT').enabled()
     unit_files = unit_files + ['com.Nvidia.FWStatus.service']
 endif
 
+if get_option('DOT_KEYD_SUPPORT').enabled()
+    unit_files = unit_files + ['dot-keyd.service']
+endif
+
 if get_option('PSU_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.Nvidia.PSU.Updater.service',
