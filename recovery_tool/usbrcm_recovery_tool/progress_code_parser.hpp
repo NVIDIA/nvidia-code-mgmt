@@ -251,11 +251,11 @@ struct ProgressCodeInfo
     }
 };
 
-// Recovery complete codes (PSC_FMC_PC_PLDM_T5_READY)
+// Recovery complete codes (PSC_RT_PC_PLDM_T5_READY)
 namespace RecoveryCompleteCodes
 {
-constexpr uint32_t CPU0 = 0x70C1C00C;
-constexpr uint32_t CPU1 = 0x71C1C00C;
+constexpr uint32_t CPU0 = 0x70C2C002;
+constexpr uint32_t CPU1 = 0x71C2C002;
 } // namespace RecoveryCompleteCodes
 
 // Lookup tables for PSC ROM codes
@@ -342,6 +342,27 @@ inline constexpr std::string_view psc_fmc_progress_names[] = {
 
 inline constexpr std::size_t PSC_FMC_PROGRESS_COUNT =
     std::size(psc_fmc_progress_names);
+
+// PSC RT progress code lookup table (PSC_RT_PC_PLDM_T5_READY = recovery ready)
+inline constexpr std::string_view psc_rt_progress_names[] = {
+    "",                       // 0x00
+    "",                       // 0x01
+    "PSC_RT_PC_PLDM_T5_READY" // 0x02
+};
+
+inline constexpr std::size_t PSC_RT_PROGRESS_COUNT =
+    std::size(psc_rt_progress_names);
+
+// OOBHUB progress code lookup table
+inline constexpr std::string_view oobhub_progress_names[] = {
+    "",                    // 0x00
+    "OOBHUB_PC_INIT",      // 0x01
+    "",                    // 0x02
+    "OOBHUB_PC_MCTP_INIT", // 0x03
+};
+
+inline constexpr std::size_t OOBHUB_PROGRESS_COUNT =
+    std::size(oobhub_progress_names);
 
 // PSC FMC error code lookup table
 inline constexpr std::string_view psc_fmc_error_reasons[] = {
@@ -736,6 +757,28 @@ inline std::string mapOperationToString(CodeType codeType, SubClass subClass,
                 !Detail::psc_fmc_progress_names[operation].empty())
             {
                 return std::string(Detail::psc_fmc_progress_names[operation]);
+            }
+        }
+    }
+    else if (subClass == SubClass::PSC_RT)
+    {
+        if (codeType == CodeType::Progress)
+        {
+            if (operation < Detail::PSC_RT_PROGRESS_COUNT &&
+                !Detail::psc_rt_progress_names[operation].empty())
+            {
+                return std::string(Detail::psc_rt_progress_names[operation]);
+            }
+        }
+    }
+    else if (subClass == SubClass::OOBHUB_FW)
+    {
+        if (codeType == CodeType::Progress)
+        {
+            if (operation < Detail::OOBHUB_PROGRESS_COUNT &&
+                !Detail::oobhub_progress_names[operation].empty())
+            {
+                return std::string(Detail::oobhub_progress_names[operation]);
             }
         }
     }
