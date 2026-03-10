@@ -1,0 +1,15 @@
+[Unit]
+Description=vHMC FW Upgrade Manager
+Wants=pldmd.service
+After=pldmd.service
+Wants=obmc-mapper.target
+After=obmc-mapper.target
+
+[Service]
+ExecStart=/usr/bin/code-manager -u VHMC
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.vHMC.Updater
+
+[Install]
+WantedBy=multi-user.target

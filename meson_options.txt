@@ -73,6 +73,26 @@ option('ORIN_FLASH_SUPPORT',
        value: 'disabled',
        description: 'Enables ORIN flash support')
 
+option('VHMC_FLASH_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables vHMC flash support')
+
+option('VHMC_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'vHMC supported models')
+
+option('VHMC_CONFIG_SCRIPT',
+       type: 'string',
+       value: '',
+       description: 'Path to the vHMC configuration script')
+       
+option('VHMC_STAGE_SCRIPT',
+       type: 'string',
+       value: '',
+       description: 'Path to the vHMC stage script')
+       
 option('SPI_WRITE_PROTECT_APP_SUPPORT',
        type: 'feature',
        value: 'disabled',
