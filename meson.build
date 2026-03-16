@@ -119,6 +119,19 @@ if get_option('ORIN_FLASH_SUPPORT').enabled()
     cdata.set_quoted('ORIN_UPDATE_SERVICE', 'orin-update@.service')
 endif
 
+if get_option('VHMC_FLASH_SUPPORT').enabled()
+    add_project_arguments('-DVHMC_FLASH_SUPPORT', language: ['c', 'cpp'])
+    cdata.set_quoted('VHMC_SUPPORTED_MODEL', get_option('VHMC_SUPPORTED_MODEL'))
+    cdata.set_quoted(
+        'VHMC_INVENTORY_IFACE',
+        'xyz.openbmc_project.Inventory.Decorator.Asset',
+    )
+    cdata.set_quoted('VHMC_BUSNAME_UPDATER', 'com.Nvidia.Software.vHMC.Updater')
+    cdata.set_quoted('VHMC_BUSNAME_INVENTORY', 'com.Nvidia.VHMC')
+    cdata.set_quoted('VHMC_UPDATE_SERVICE', 'vhmc-update@.service')
+    cdata.set_quoted('VHMC_CONFIG_SCRIPT', get_option('VHMC_CONFIG_SCRIPT'))
+endif
+
 if get_option('SMCU_FLASH_SUPPORT').enabled()
     add_project_arguments('-DSMCU_FLASH_SUPPORT', language: ['c', 'cpp'])
     cdata.set_quoted('SMCU_SUPPORTED_MODEL', get_option('SMCU_SUPPORTED_MODEL'))

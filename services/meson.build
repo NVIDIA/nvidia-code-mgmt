@@ -72,6 +72,13 @@ if get_option('ORIN_FLASH_SUPPORT').enabled()
     ]
 endif
 
+if get_option('VHMC_FLASH_SUPPORT').enabled()
+    unit_files = unit_files + [
+        'com.Nvidia.vHMC.Updater.service',
+        'vhmc-update@.service',
+    ]
+endif
+
 if get_option('SMCU_FLASH_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.Nvidia.SMCU.Updater.service',

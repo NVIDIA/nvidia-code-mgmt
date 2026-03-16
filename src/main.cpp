@@ -42,6 +42,9 @@
 #ifdef ORIN_FLASH_SUPPORT
 #include "orin_updater.hpp"
 #endif
+#ifdef VHMC_FLASH_SUPPORT
+#include "vhmc_updater.hpp"
+#endif
 #ifdef SMCU_FLASH_SUPPORT
 #include "smcu_updater.hpp"
 #endif
@@ -200,6 +203,12 @@ int main(int argc, char** argv)
     if (updater == "ORIN")
     {
         itemUpdater = std::make_unique<ORINItemUpdater>(bus);
+    }
+#endif
+#if VHMC_FLASH_SUPPORT
+    if (updater == "VHMC")
+    {
+        itemUpdater = std::make_unique<VHMCItemUpdater>(bus);
     }
 #endif
 #if SMCU_FLASH_SUPPORT

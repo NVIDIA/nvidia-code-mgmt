@@ -1,0 +1,8 @@
+[Unit]
+Description=Update vHMC
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/bin/sh -c '/usr/bin/vhmc_stage_v6.sh "%I"'
