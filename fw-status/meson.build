@@ -28,6 +28,7 @@ source_files = [
     'fw-status.cpp',
     'mctp_discovery_resource.cpp',
     'ap_resource.cpp',
+    'cpld_resource.cpp',
     'erot_resource.cpp',
     'gpio_resource.cpp',
     'usb_rcm_resource.cpp',

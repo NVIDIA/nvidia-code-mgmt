@@ -19,6 +19,7 @@
 
 #include "ap_resource.hpp"
 #include "connectx_resource.hpp"
+#include "cpld_resource.hpp"
 #include "dbusutils.hpp"
 #include "erot_resource.hpp"
 #include "gpio_resource.hpp"
@@ -65,6 +66,8 @@ constexpr auto usbRcmForceRecoveryObjInterface =
     "xyz.openbmc_project.Configuration.USBRCMForceRecovery";
 constexpr auto usbRcmObjInterface =
     "xyz.openbmc_project.Configuration.USBRCMRecovery";
+constexpr auto cpldMonitorObjInterface =
+    "xyz.openbmc_project.Configuration.CPLDGPIOMonitor";
 constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/";
 constexpr auto recoveryConfigIntfName =
@@ -1004,6 +1007,46 @@ void publishDBusRecoveryObject()
             applyChassisConnectionAndRefresh(interfaces, gpioObjInterface,
                                              *resources.back(),
                                              initialChassisPowerState);
+        }
+        else if (interfaces.contains(cpldMonitorObjInterface))
+        {
+            lg2::info("Found CPLD monitor config Object: {PATH}", "PATH",
+                      emObjectPath);
+
+            const auto smaEidOpt =
+                getUint8(interfaces, cpldMonitorObjInterface, "SMAEID");
+            if (!smaEidOpt.has_value())
+            {
+                lg2::error(
+                    "No SMAEID found in CPLD monitor config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            if (!hasProperty(interfaces, cpldMonitorObjInterface, "DeviceId"))
+            {
+                lg2::error(
+                    "No DeviceId found in CPLD monitor config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            const auto deviceId =
+                getString(interfaces, cpldMonitorObjInterface, "DeviceId");
+            if (deviceId.empty())
+            {
+                lg2::error(
+                    "Empty DeviceId in CPLD monitor config Object: {PATH}",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
+            resources.push_back(std::make_unique<CpldResource>(
+                getBus(), objPath, smaEidOpt.value(), deviceId));
+
+            applyChassisConnectionAndRefresh(
+                interfaces, cpldMonitorObjInterface, *resources.back(),
+                initialChassisPowerState);
         }
         else if (interfaces.contains(mcuObjInterface))
         {
