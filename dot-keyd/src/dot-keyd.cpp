@@ -38,6 +38,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -49,6 +50,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -1544,49 +1546,47 @@ static void provisionCak(const Config& config, std::atomic<bool>& hostIsOff)
     lg2::info("CAK provisioning process completed");
 }
 
-/**
- * @brief Parse, normalize, validate, and persist a DOT JSON payload.
- *
- * @param config Active runtime configuration.
- * @param jsonPayload Serialized DOT JSON payload.
- */
-static void storeCakFromJson(const Config& config,
-                             const std::string& jsonPayload)
+static void
+    storeCakFromDbusArgs(const Config& config,
+                         const std::tuple<std::string, std::string>& cakKey,
+                         bool lockDisable, int64_t vendorMinimumSecurityVersion,
+                         int64_t ownerMinimumSecurityVersion, bool hasLakKey,
+                         const std::tuple<std::string, std::string>& lakKey)
 {
     json payload;
-    try
+    payload["CAKKey"] = {
+        {"AuthenticationScheme", std::get<0>(cakKey)},
+        {"ECDSAKey", std::get<1>(cakKey)},
+    };
+    payload["LockDisable"] = lockDisable;
+    payload["VendorMinimumSecurityVersion"] = vendorMinimumSecurityVersion;
+    payload["OwnerMinimumSecurityVersion"] = ownerMinimumSecurityVersion;
+
+    if (hasLakKey)
     {
-        payload = json::parse(jsonPayload);
-        validateDotPayload(payload);
-    }
-    catch (const json::parse_error& ex)
-    {
-        throw std::runtime_error("Invalid JSON: " + std::string(ex.what()));
-    }
-    catch (const std::exception& ex)
-    {
-        throw std::runtime_error("Invalid payload structure: " +
-                                 std::string(ex.what()));
+        payload["LAKKey"] = {
+            {"AuthenticationScheme", std::get<0>(lakKey)},
+            {"ECDSAKey", std::get<1>(lakKey)},
+        };
     }
 
-    if (payload.contains("CAKKey") && payload["CAKKey"].contains("ECDSAKey"))
+    validateDotPayload(payload);
+
+    std::string cakEcdsaKey = payload["CAKKey"]["ECDSAKey"].get<std::string>();
+    normalizePemKeyFormat(cakEcdsaKey);
+    payload["CAKKey"]["ECDSAKey"] = cakEcdsaKey;
+
+    if (hasLakKey)
     {
-        std::string cakKey = payload["CAKKey"]["ECDSAKey"].get<std::string>();
-        normalizePemKeyFormat(cakKey);
-        payload["CAKKey"]["ECDSAKey"] = cakKey;
+        std::string lakEcdsaKey =
+            payload["LAKKey"]["ECDSAKey"].get<std::string>();
+        normalizePemKeyFormat(lakEcdsaKey);
+        payload["LAKKey"]["ECDSAKey"] = lakEcdsaKey;
     }
 
-    if (payload.contains("LAKKey") && payload["LAKKey"].contains("ECDSAKey"))
-    {
-        std::string lakKey = payload["LAKKey"]["ECDSAKey"].get<std::string>();
-        normalizePemKeyFormat(lakKey);
-        payload["LAKKey"]["ECDSAKey"] = lakKey;
-    }
-
-    std::string normalizedPayload = payload.dump();
-    std::string cakBytes = extractCakFromJson(normalizedPayload);
-    validateCakBytes(cakBytes, config.maxCakBytes);
-
+    std::string normalizedPayload =
+        payload.dump(-1, ' ', true, nlohmann::json::error_handler_t::replace);
+    validateCakBytes(cakEcdsaKey, config.maxCakBytes);
     atomicWrite(payloadPath(config.keyStorePath), normalizedPayload);
 }
 
@@ -1976,19 +1976,39 @@ static int runService(const Args& args)
         }).detach();
     });
 
-    iface->register_method("installCak2BmcFs",
-                           [&config, iface](const std::string& jsonPayload) {
-                               try
-                               {
-                                   storeCakFromJson(config, jsonPayload);
-                                   iface->signal_property("Stored");
-                                   return std::string{"Success"};
-                               }
-                               catch (const std::exception& ex)
-                               {
-                                   return std::string{"Error: "} + ex.what();
-                               }
-                           });
+    iface->register_method(
+        "installCak2BmcFs",
+        [&config, iface](const std::tuple<std::string, std::string>& cakKey,
+                         const bool& lockDisable,
+                         const int64_t& vendorMinimumSecurityVersion,
+                         const int64_t& ownerMinimumSecurityVersion,
+                         const bool& hasLakKey,
+                         const std::tuple<std::string, std::string>& lakKey) {
+            try
+            {
+                storeCakFromDbusArgs(
+                    config, cakKey, lockDisable, vendorMinimumSecurityVersion,
+                    ownerMinimumSecurityVersion, hasLakKey, lakKey);
+                iface->signal_property("Stored");
+                return std::string{"Success"};
+            }
+            catch (const std::exception& ex)
+            {
+                return std::string{"Error: "} + ex.what();
+            }
+        });
+    iface->register_method("DeleteCak", [&config, iface]() {
+        try
+        {
+            deleteCak(config);
+            iface->signal_property("Stored");
+            return std::string{"Success"};
+        }
+        catch (const std::exception& ex)
+        {
+            return std::string{"Error: "} + ex.what();
+        }
+    });
 
     iface->initialize();
 
