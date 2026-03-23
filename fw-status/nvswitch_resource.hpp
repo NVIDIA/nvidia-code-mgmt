@@ -282,9 +282,9 @@ class NVSwitchResource : public MCTPDiscoveryResource
         bootStatus->bootStatus(output);
 
         // Check if device is in recovery state based on the boot status
-        // NOTE: 0x20000019 indicates normal operation for NVSwitch.
-        static constexpr std::array<uint8_t, 4> normalBootStatus = {0x20, 0x00,
-                                                                    0x00, 0x19};
+        // NOTE: 0x000005e indicates normal operation for NVSwitch.
+        static constexpr std::array<uint8_t, 4> normalBootStatus = {0x00, 0x00,
+                                                                    0x00, 0x5e};
         bool inRecoveryState =
             (output != std::vector<uint8_t>(normalBootStatus.begin(),
                                             normalBootStatus.end()));
