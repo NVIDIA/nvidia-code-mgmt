@@ -35,7 +35,7 @@ constexpr size_t BULK_CHUNK_SIZE = 512; ///< 512B chunks for optimal throughput
 /// Progress monitoring timing constants
 constexpr int PROGRESS_CHECK_INTERVAL_MS = 500; ///< Check progress every 500ms
 constexpr int POST_IMAGE_MONITOR_ITERATIONS =
-    8; ///< Monitor for 4 seconds after image (8 × 500ms)
+    10; ///< Monitor for 5 seconds after image (10 × 500ms)
 constexpr int INTER_IMAGE_DELAY_MS = 250; ///< Pause between images
 
 /// Progress check result status
@@ -220,6 +220,20 @@ enum class ProgressStatus
     return data.size() == emptyDotBlobSize &&
            std::all_of(data.begin(), data.end(),
                        [](uint8_t b) { return b == 0; });
+}
+
+[[nodiscard]] bool
+    isMutableDotSoftIgnorableError(USBRCMRecoveryErrorCode code) noexcept
+{
+    switch (code)
+    {
+        case USBRCMRecoveryErrorCode::PscRomMutableDotHeaderCheckFail:
+        case USBRCMRecoveryErrorCode::PscRomMutableDotIntegrityFail:
+        case USBRCMRecoveryErrorCode::PscRomMutableDotSanityFail:
+            return true;
+        default:
+            return false;
+    }
 }
 
 [[nodiscard]] bool readFileToBuffer(const std::string& filePath,
@@ -428,7 +442,7 @@ enum class ProgressStatus
 /**
  * @brief Monitor progress codes after sending an image
  *
- * Polls for new progress codes every 500ms. Default is 4 seconds (8
+ * Polls for new progress codes every 500ms. Default is 5 seconds (10
  * iterations). Returns immediately if completion code or error is detected
  * during monitoring.
  *
@@ -439,7 +453,7 @@ enum class ProgressStatus
  * detected
  * @param errorCode Reference to error code; populated if error detected
  * @param verbose Enable diagnostic output to stdout/stderr
- * @param iterations Number of 500ms poll iterations (default 4s)
+ * @param iterations Number of 500ms poll iterations (default 5s)
  *
  * @return ProgressStatus::Completed if recovery completion detected
  * @return ProgressStatus::Error if error code detected
@@ -678,28 +692,26 @@ bool performUsbRecovery(const std::string& portPath,
             if (status == ProgressStatus::Error)
             {
                 // Accept empty-DOT error only when seen right after sending the
-                // DOT blob (within the 4s monitor window), not one transfer
+                // DOT blob (within the 5s monitor window), not one transfer
                 // late.
-                const bool isEmptyDotAcceptable =
-                    errorCode == USBRCMRecoveryErrorCode::
-                                     PscRomMutableDotHeaderCheckFail &&
-                    !blobPath.empty() &&
-                    (imagePath == blobPath && isEmptyDotBlob(imageData));
-                if (isEmptyDotAcceptable)
+                const bool isInitialEmptyDotAcceptable =
+                    !blobPath.empty() && (imagePath == blobPath) &&
+                    isEmptyDotBlob(imageData) &&
+                    isMutableDotSoftIgnorableError(errorCode);
+                const bool isFollowUpMutableDotIgnored =
+                    emptyDotBlobAccepted &&
+                    isMutableDotSoftIgnorableError(errorCode);
+                if (isInitialEmptyDotAcceptable || isFollowUpMutableDotIgnored)
                 {
-                    emptyDotBlobAccepted = true;
+                    if (isInitialEmptyDotAcceptable)
+                    {
+                        emptyDotBlobAccepted = true;
+                    }
                     if (verbose)
                     {
                         std::cout << "Empty DOT blob accepted (expected in DOT "
                                      "recovery flow), continuing.\n";
                     }
-                }
-                else if (emptyDotBlobAccepted)
-                {
-                    // Recovery failed; we had accepted empty DOT earlier,
-                    // report task success and set EmptyDotBlobAccepted so RF
-                    // shows the resolution message instead of failure.
-                    return reportEmptyDotSoftSuccess();
                 }
                 else
                 {
