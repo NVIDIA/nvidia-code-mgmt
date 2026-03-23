@@ -250,9 +250,7 @@ RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
         {
             lg2::info("Device {DEVICE} is operational, skipping", "DEVICE",
                       device);
-            registry.createMessageRegistryResourceErrors(
-                firmwareNotInRecovery, RecoveryProtocol::OCPRecovery,
-                static_cast<ErrorCode>(recoveryStatus), device);
+            registry.createMessageRegistry(firmwareNotInRecovery, device);
             return RecoveryReturnCode::SKIPPED;
         }
 
