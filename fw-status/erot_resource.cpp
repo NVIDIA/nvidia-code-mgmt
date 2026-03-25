@@ -108,21 +108,6 @@ void ERoTResource::updateERoTHealth()
         return;
     }
 
-    if (!glacierRecoveryObj->unlockI2CDevice())
-    {
-        lg2::error("Unable to unlock I2C for object {OBJECT}", "OBJECT",
-                   path.c_str());
-        health(HealthServer::HealthType::Critical);
-        if (MCTPDiscoveryResource::wasDeviceEnumeratedBefore())
-        {
-            state(OperationalStatusServer::StateType::UnavailableOffline);
-            return;
-        }
-
-        state(OperationalStatusServer::StateType::Absent);
-        return;
-    }
-
     const auto& status = glacierRecoveryObj->performInitialization();
     bool inRecovery =
         (status != glacier_recovery_tool::glacier_recovery_commands::
