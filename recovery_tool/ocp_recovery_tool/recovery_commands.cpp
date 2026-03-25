@@ -210,7 +210,6 @@ bool OCPRecoveryCommands::writeRecoveryChunk(
     const std::string_view imageName, const std::string_view targetName,
     const std::vector<uint8_t>& imageData, const size_t offset)
 {
-    static uint8_t lastLoggedProgress = 0;
     size_t imageSize = imageData.size();
     size_t remainingSize = imageSize - offset;
     size_t currentChunkSize = std::min(chunkSize, remainingSize);

@@ -134,6 +134,9 @@ class OCPRecoveryCommands
     static constexpr size_t chunkSize = 252;
 #endif
 
+    /** Last logged progress percent (0–100) */
+    uint8_t lastLoggedProgress{0};
+
     /**
      * @brief Constructs the path to the I2C device.
      * @return The device path as a string.

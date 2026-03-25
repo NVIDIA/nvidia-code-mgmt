@@ -123,6 +123,82 @@ bool hasUSBPortProperty(const std::string& objPath,
     }
 }
 
+struct DeviceRecoveryTarget
+{
+    std::string device;
+    uint32_t busAddr;
+    uint32_t slaveAddr;
+};
+
+static std::vector<DeviceRecoveryTarget> collectRecoveryTargets(
+    const nvidia::software::updater::ObjectValueTree& managedObjects,
+    bool verbose)
+{
+    std::vector<DeviceRecoveryTarget> targets;
+    for (const auto& [emObjectPath, interfaces] : managedObjects)
+    {
+        if (!interfaces.contains(ocpObjInterface))
+        {
+            continue;
+        }
+
+        const std::string objPathStr = emObjectPath.str;
+        lg2::info("Found OCP recovery config Object: {PATH}", "PATH",
+                  objPathStr);
+
+        const auto device =
+            std::filesystem::path(objPathStr).filename().string();
+        uint32_t busAddr = 0;
+
+        if (hasUSBPortProperty(objPathStr, ocpObjInterface))
+        {
+            const auto usbPort = getUSBPort(objPathStr, ocpObjInterface);
+            const auto i2cBus =
+                recovery_tool::usb_i2c::getI2CBusFromUSBPort(usbPort, verbose);
+
+            if (i2cBus < 0)
+            {
+                lg2::error("Failed to get I2C bus from USB port {USBPORT}",
+                           "USBPORT", usbPort);
+                continue;
+            }
+            busAddr = i2cBus;
+        }
+        else
+        {
+            busAddr = getI2CBus(objPathStr, ocpObjInterface);
+        }
+
+        const auto slaveAddr = getAddress(objPathStr, ocpObjInterface);
+        targets.push_back({device, busAddr, static_cast<uint32_t>(slaveAddr)});
+    }
+    return targets;
+}
+
+static bool performRecoveryForDevice(const DeviceRecoveryTarget& target,
+                                     const CommandOptions& opts)
+{
+    try
+    {
+        ocp_recovery_commandline::OCPRecoveryCommandLine
+            ocpRecoveryCommandlineObj(target.device, target.busAddr,
+                                      target.slaveAddr, opts.verbose,
+                                      opts.emulation);
+
+        auto status = ocpRecoveryCommandlineObj.performRecovery(
+            {opts.fspImagePath, opts.buildInfoImagePath, opts.oobhubImagePath,
+             opts.fspRtImagePath});
+
+        return status == RecoveryReturnCode::FAILURE;
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Recovery failed due to exception {EXCEPTION}", "EXCEPTION",
+                   e.what());
+        return true;
+    }
+}
+
 bool performRecovery(const CommandOptions& opts)
 {
     auto& bus = getBus();
@@ -139,61 +215,28 @@ bool performRecovery(const CommandOptions& opts)
         messageRegistry->createMessageRegistryResourceErrors(
             resourceErrorsDetected, RecoveryProtocol::OCPRecoveryProtocolError,
             static_cast<ErrorCode>(noDevicesFound), "OCPRecovery");
-        retCode = true;
+        return true;
     }
 
-    for (const auto& [emObjectPath, interfaces] : managedObjects)
+    auto targets = collectRecoveryTargets(managedObjects, opts.verbose);
+    if (targets.empty())
     {
-        if (!interfaces.contains(ocpObjInterface))
+        return retCode;
+    }
+
+    std::vector<std::future<bool>> futures;
+    futures.reserve(targets.size());
+    for (const auto& target : targets)
+    {
+        futures.emplace_back(std::async(std::launch::async, [&opts, target]() {
+            return performRecoveryForDevice(target, opts);
+        }));
+    }
+
+    for (auto& future : futures)
+    {
+        if (future.get())
         {
-            continue;
-        }
-
-        lg2::info("Found OCP recovery config Object: {PATH}", "PATH",
-                  emObjectPath);
-
-        const auto& device = emObjectPath.filename();
-
-        uint32_t busAddr = 0;
-        if (hasUSBPortProperty(emObjectPath, ocpObjInterface))
-        {
-            const auto usbPort = getUSBPort(emObjectPath, ocpObjInterface);
-            const auto i2cBus = recovery_tool::usb_i2c::getI2CBusFromUSBPort(
-                usbPort, opts.verbose);
-
-            if (i2cBus < 0)
-            {
-                lg2::error("Failed to get I2C bus from USB port {USBPORT}",
-                           "USBPORT", usbPort);
-                continue;
-            }
-
-            busAddr = i2cBus;
-        }
-        else
-        {
-            busAddr = getI2CBus(emObjectPath, ocpObjInterface);
-        }
-
-        const auto slaveAddr = getAddress(emObjectPath, ocpObjInterface);
-
-        ocp_recovery_commandline::OCPRecoveryCommandLine
-            ocpRecoveryCommandlineObj(device, busAddr, slaveAddr, opts.verbose,
-                                      opts.emulation);
-        try
-        {
-            auto status = ocpRecoveryCommandlineObj.performRecovery(
-                {opts.fspImagePath, opts.buildInfoImagePath,
-                 opts.oobhubImagePath, opts.fspRtImagePath});
-            if (status == RecoveryReturnCode::FAILURE)
-            {
-                retCode = true;
-            }
-        }
-        catch (const sdbusplus::exception::SdBusError& e)
-        {
-            lg2::error("Recovery failed due to exception {EXCEPTION}",
-                       "EXCEPTION", e.what());
             retCode = true;
         }
     }
