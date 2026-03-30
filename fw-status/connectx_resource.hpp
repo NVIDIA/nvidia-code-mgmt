@@ -59,11 +59,13 @@ class ConnectXResource : public MCTPDiscoveryResource
                      const uint64_t i2cBus, const uint64_t i2cAddress,
                      uint8_t eid, uint8_t smaEid,
                      const std::string& resetGpioName,
-                     const std::string& flashNotPresentGpioName) :
+                     const std::string& flashNotPresentGpioName,
+                     int fnpPolarity = 0) :
         MCTPDiscoveryResource(bus, objPath, eid), smaEid(smaEid),
         busAddress(i2cBus), slaveAddress(i2cAddress),
         resetGpioName(resetGpioName),
-        flashNotPresentGpioName(flashNotPresentGpioName)
+        flashNotPresentGpioName(flashNotPresentGpioName),
+        fnpAssertValue(fnpPolarity)
     {
         bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
         bootStatus->bootStatusType(
@@ -87,6 +89,7 @@ class ConnectXResource : public MCTPDiscoveryResource
     int slaveAddress;
     std::string resetGpioName;
     std::string flashNotPresentGpioName;
+    int fnpAssertValue;
     gpiod::line resetLine{};
     gpiod::line fnpLine{};
 
@@ -406,7 +409,7 @@ class ConnectXResource : public MCTPDiscoveryResource
                               1);
             fnpLine.request({"connectx_force_recovery",
                              gpiod::line_request::DIRECTION_OUTPUT, 0},
-                            1);
+                            !fnpAssertValue);
         }
         catch (const std::exception& e)
         {
@@ -448,7 +451,7 @@ class ConnectXResource : public MCTPDiscoveryResource
             lg2::error("ConnectX GPIO lines not initialized");
             return;
         }
-        fnpLine.set_value(0);
+        fnpLine.set_value(fnpAssertValue);
         usleep(resetActiveUs);
         resetLine.set_value(0);
         usleep(resetActiveUs);

@@ -726,10 +726,19 @@ void publishDBusRecoveryObject()
                     interfaces, connectxObjInterface, "FlashNotPresentGPIO");
             }
 
+            int fnpPolarity = 0;
+            if (hasProperty(interfaces, connectxObjInterface,
+                            "FlashNotPresentPolarity"))
+            {
+                fnpPolarity =
+                    static_cast<int>(getUint64(interfaces, connectxObjInterface,
+                                               "FlashNotPresentPolarity"));
+            }
+
             resources.push_back(std::make_unique<ConnectXResource>(
                 getBus(), objPath, chassisObjPath, forceRecoveryChassisObjPath,
                 i2cBus, i2cAddress, eid, smaEID, resetGpioName,
-                flashNotPresentGpioName));
+                flashNotPresentGpioName, fnpPolarity));
 
             applyChassisConnectionAndRefresh(interfaces, connectxObjInterface,
                                              *resources.back(),
