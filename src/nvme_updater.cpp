@@ -311,20 +311,42 @@ std::string
     return eidList;
 }
 
+TargetFilter NVMeItemUpdater::applyTargetFilters(
+    const std::vector<sdbusplus::message::object_path>& targets)
+{
+    TargetFilter filter = BaseItemUpdater::applyTargetFilters(targets);
+    if (getDevicesToUpdate(filter).empty())
+    {
+        lg2::warning(
+            "No NVMe devices match model {MODEL}, activating as success",
+            "MODEL", modelName);
+        return {TargetFilterType::UpdateNone, {}};
+    }
+    return filter;
+}
+
 std::string NVMeItemUpdater::getServiceArgs(
     [[maybe_unused]] const std::string& inventoryPath,
     const std::string& imagePath, const std::string& version,
     const TargetFilter& targetFilter) const
 {
+    std::string deviceList = getDevicesToUpdate(targetFilter);
+    if (deviceList.empty())
+    {
+        lg2::warning("No matching NVMe devices found for model {MODEL}, "
+                     "skipping update service launch",
+                     "MODEL", modelName);
+        return "";
+    }
+
     std::string args = "";
-    args += "\\x20";
     args += imagePath; // image path
     args += "\\x20";
     args += version; // version string for message registry
     args += "\\x20";
     args += NVME_INVENTORY_PATH; // path for message registry
     args += "\\x20";
-    args += getDevicesToUpdate(targetFilter); // collect eid list
+    args += deviceList; // eid list
 
     std::replace(args.begin(), args.end(), '/', '-');
     return args;
