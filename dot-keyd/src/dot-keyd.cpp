@@ -15,1536 +15,42 @@
  * limitations under the License.
  */
 
-#include <curl/curl.h>
-#include <fcntl.h>
+#include "cak.hpp"
+#include "config.hpp"
+#include "dot_installer.hpp"
+
 #include <getopt.h>
-#include <linux/i2c-dev.h>
-#include <openssl/sha.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #include <boost/asio.hpp>
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/cancellation_signal.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/use_awaitable.hpp>
 #include <nlohmann/json.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <sdbusplus/asio/property.hpp>
+#include <sdbusplus/bus.hpp>
 #include <sdbusplus/bus/match.hpp>
 
-#include <atomic>
-#include <cerrno>
 #include <chrono>
 #include <csignal>
-#include <cstdint>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <iomanip>
 #include <iostream>
-#include <optional>
-#include <set>
+#include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <tuple>
-#include <vector>
+#include <variant>
 
-namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-constexpr int kDefaultInstallTimeoutMs = 30000;
-constexpr int kDefaultDotCakInitTimeoutMs = 30000;
-constexpr int kHmcRequestTimeoutMs = 3000;
-constexpr size_t kDefaultCakMaxBytes = 16 * 1024;
-constexpr const char* kDefaultPayloadFilename = "cak_payload.json";
-constexpr int kDefaultCakInstallRetries = 30;
-constexpr const char* kDefaultKeyStorePath = "/var/lib/dot-keyd";
-
-struct ExitCode
-{
-    static constexpr int kSuccess = 0;
-    static constexpr int kInvalidArgs = 1;
-    static constexpr int kInvalidCak = 2;
-    static constexpr int kStorageError = 3;
-    static constexpr int kProvisioningError = 4;
-    static constexpr int kL1ResetError = 5;
-};
-
-struct HmcConfig
-{
-    std::string host;
-    std::optional<std::string> username;
-    std::optional<std::string> password;
-    bool verifyTls{false};
-    std::string dotCakInitPath{"/redfish/v1/Systems/HGX_Baseboard_0"};
-    std::vector<std::string> installPaths{
-        "/redfish/v1/Chassis/HGX_CPU_0/TrustedComponents/IRoT_CPU_0/Oem/Nvidia/"
-        "DOT/Actions/NvidiaDOT.Install",
-        "/redfish/v1/Chassis/HGX_CPU_1/TrustedComponents/IRoT_CPU_1/Oem/Nvidia/"
-        "DOT/Actions/NvidiaDOT.Install",
-    };
-    std::vector<std::string> statusPaths{
-        "/redfish/v1/Chassis/HGX_CPU_0/TrustedComponents/IRoT_CPU_0/Oem/Nvidia/"
-        "DOT",
-        "/redfish/v1/Chassis/HGX_CPU_1/TrustedComponents/IRoT_CPU_1/Oem/Nvidia/"
-        "DOT",
-    };
-};
-
-struct HmclessExecConfig
-{
-    std::string path;
-    std::vector<std::string> args;
-};
-
-struct L1ResetConfig
-{
-    int i2cBus{70};
-    std::string i2cAddr{"0x38"};
-};
-
-struct TimeoutsConfig
-{
-    int installMs{kDefaultInstallTimeoutMs};
-    int dotCakInitMs{kDefaultDotCakInitTimeoutMs};
-};
-
-struct Config
-{
-    fs::path keyStorePath;
-    std::optional<HmcConfig> hmc;
-    std::optional<HmclessExecConfig> hmclessExec;
-    L1ResetConfig l1Reset;
-    TimeoutsConfig timeouts;
-    size_t maxCakBytes{kDefaultCakMaxBytes};
-    bool allowCakReadout{true};
-    std::optional<int> minimumSecurityVersion;
-    int cakInstallRetries{kDefaultCakInstallRetries};
-};
-
-struct RunResult
-{
-    int code{0};
-    std::string stdoutStr;
-    std::string stderrStr;
-    bool timedOut{false};
-};
-
-struct Args
-{
-    std::string configPath;
-    bool install{false};
-    bool deleteCak{false};
-    std::optional<std::string> cakPath;
-    std::optional<std::string> keyStorePath;
-    std::optional<std::string> hmclessExec;
-    std::vector<std::string> hmclessArgs;
-    std::optional<int> i2cBus;
-    std::optional<std::string> i2cAddr;
-};
-
-/**
- * @brief Ensure a directory exists and apply secure permissions.
- *
- * @param path Directory path to create or validate.
- */
-static void ensureDir(const fs::path& path)
-{
-    fs::create_directories(path);
-    ::chmod(path.c_str(), 0700);
-}
-
-/**
- * @brief Atomically write file contents using a temporary file and rename.
- *
- * @param path Destination file path.
- * @param data Serialized content to persist.
- */
-static void atomicWrite(const fs::path& path, const std::string& data)
-{
-    ensureDir(path.parent_path());
-    std::string tmpl = (path.parent_path() / "tmp.XXXXXX").string();
-    std::vector<char> tmp(tmpl.begin(), tmpl.end());
-    tmp.push_back('\0');
-    int fd = ::mkstemp(tmp.data());
-    if (fd < 0)
-    {
-        throw std::runtime_error("mkstemp failed");
-    }
-    if (::write(fd, data.data(), data.size()) < 0)
-    {
-        ::close(fd);
-        throw std::runtime_error("write failed");
-    }
-    ::fsync(fd);
-    ::fchmod(fd, 0600);
-    ::close(fd);
-    fs::path tmpPath(tmp.data());
-    fs::rename(tmpPath, path);
-}
-
-/**
- * @brief Read an entire file into a string buffer.
- *
- * @param path File path to read.
- * @return std::string Complete file contents.
- */
-static std::string readFile(const fs::path& path)
-{
-    std::ifstream in(path, std::ios::binary);
-    if (!in)
-    {
-        throw std::runtime_error("failed to open file");
-    }
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    return buffer.str();
-}
-
-/**
- * @brief Build the CAK payload file path under the key store.
- *
- * @param keyStorePath Key store root path.
- * @return fs::path Full payload file path.
- */
-static fs::path payloadPath(const fs::path& keyStorePath)
-{
-    return keyStorePath / kDefaultPayloadFilename;
-}
-
-/**
- * @brief Check whether input includes PEM public-key markers.
- *
- * @param data Key material to validate.
- * @return true PEM markers are present.
- * @return false PEM markers are not present.
- */
-static bool isValidPem(const std::string& data)
-{
-    return data.find("BEGIN PUBLIC KEY") != std::string::npos &&
-           data.find("END PUBLIC KEY") != std::string::npos;
-}
-
-/**
- * @brief Validate CAK bytes for non-empty size and PEM shape.
- *
- * @param data CAK bytes to validate.
- * @param maxBytes Maximum allowed CAK size in bytes.
- */
-static void validateCakBytes(const std::string& data, size_t maxBytes)
-{
-    if (data.empty())
-    {
-        throw std::runtime_error("CAK is empty");
-    }
-    if (data.size() > maxBytes)
-    {
-        throw std::runtime_error("CAK exceeds maximum size");
-    }
-    if (!isValidPem(data))
-    {
-        throw std::runtime_error("CAK is not a valid PEM public key");
-    }
-}
-
-/**
- * @brief Compute SHA-256 fingerprint text for key material.
- *
- * @param data Raw key bytes.
- * @return std::string Hex-encoded SHA-256 digest.
- */
-[[maybe_unused]] static std::string computeFingerprint(const std::string& data)
-{
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256(reinterpret_cast<const unsigned char*>(data.data()), data.size(),
-           hash);
-    std::ostringstream out;
-    for (auto byte : hash)
-    {
-        out << std::hex << std::setw(2) << std::setfill('0')
-            << static_cast<int>(byte);
-    }
-    return out.str();
-}
-
-/**
- * @brief Normalize PEM input by removing markers and whitespace.
- *
- * @param data Input PEM key string.
- * @return std::string Normalized key body.
- */
-[[maybe_unused]] static std::string normalizePemKey(const std::string& data)
-{
-    std::istringstream stream(data);
-    std::string line;
-    std::string out;
-    while (std::getline(stream, line))
-    {
-        if (line.find("BEGIN") != std::string::npos ||
-            line.find("END") != std::string::npos)
-        {
-            continue;
-        }
-        for (char ch : line)
-        {
-            if (!std::isspace(static_cast<unsigned char>(ch)))
-            {
-                out.push_back(ch);
-            }
-        }
-    }
-    if (out.empty())
-    {
-        for (char ch : data)
-        {
-            if (!std::isspace(static_cast<unsigned char>(ch)))
-            {
-                out.push_back(ch);
-            }
-        }
-    }
-    return out;
-}
-
-/**
- * @brief Normalize PEM formatting to a canonical newline layout.
- *
- * @param key PEM key string to normalize in place.
- */
-static void normalizePemKeyFormat(std::string& key)
-{
-    if (key.empty())
-    {
-        return;
-    }
-
-    bool hasEscapedNewlines = (key.find("\\n") != std::string::npos);
-
-    std::string normalized;
-    normalized.reserve(key.size());
-    for (size_t i = 0; i < key.size(); ++i)
-    {
-        if (key[i] == '\\' && i + 1 < key.size() && key[i + 1] == 'n')
-        {
-            normalized.push_back('\n');
-            ++i;
-        }
-        else
-        {
-            normalized.push_back(key[i]);
-        }
-    }
-    key = std::move(normalized);
-
-    if (hasEscapedNewlines)
-    {
-        if (key.find("-----BEGIN PUBLIC KEY-----") != std::string::npos &&
-            key.find("-----END PUBLIC KEY-----") != std::string::npos)
-        {
-            if (!key.empty() && key.back() != '\n')
-            {
-                key.push_back('\n');
-            }
-            return;
-        }
-    }
-
-    const std::string beginMarker = "-----BEGIN PUBLIC KEY-----";
-    const std::string endMarker = "-----END PUBLIC KEY-----";
-
-    size_t beginPos = key.find(beginMarker);
-    size_t endPos = key.find(endMarker);
-
-    if (beginPos == std::string::npos && endPos == std::string::npos)
-    {
-        return;
-    }
-
-    bool hasNewlineAfterBegin = (beginPos != std::string::npos) &&
-                                (beginPos + beginMarker.size() < key.size()) &&
-                                (key[beginPos + beginMarker.size()] == '\n');
-    bool hasNewlineBeforeEnd = (endPos != std::string::npos) && (endPos > 0) &&
-                               (key[endPos - 1] == '\n');
-    bool hasNewlineAfterEnd = (endPos != std::string::npos) &&
-                              (endPos + endMarker.size() < key.size()) &&
-                              (key[endPos + endMarker.size()] == '\n');
-
-    if (hasNewlineAfterBegin && hasNewlineBeforeEnd && hasNewlineAfterEnd)
-    {
-        return;
-    }
-
-    std::string base64Data;
-    if (beginPos != std::string::npos && endPos != std::string::npos &&
-        endPos > beginPos)
-    {
-        size_t contentStart = beginPos + beginMarker.size();
-        while (contentStart < endPos &&
-               std::isspace(static_cast<unsigned char>(key[contentStart])))
-        {
-            ++contentStart;
-        }
-
-        if (contentStart < endPos)
-        {
-            size_t contentEnd = endPos;
-            while (
-                contentEnd > contentStart &&
-                std::isspace(static_cast<unsigned char>(key[contentEnd - 1])))
-            {
-                --contentEnd;
-            }
-
-            if (contentEnd > contentStart)
-            {
-                base64Data =
-                    key.substr(contentStart, contentEnd - contentStart);
-            }
-        }
-    }
-    else
-    {
-        return;
-    }
-
-    std::string cleanBase64;
-    cleanBase64.reserve(base64Data.size());
-    for (char ch : base64Data)
-    {
-        if (!std::isspace(static_cast<unsigned char>(ch)))
-        {
-            cleanBase64.push_back(ch);
-        }
-    }
-
-    if (cleanBase64.empty())
-    {
-        return;
-    }
-
-    key = beginMarker + "\n";
-
-    for (size_t i = 0; i < cleanBase64.size(); ++i)
-    {
-        key.push_back(cleanBase64[i]);
-        if ((i + 1) % 64 == 0)
-        {
-            key.push_back('\n');
-        }
-    }
-
-    if (!key.empty() && key.back() != '\n')
-    {
-        key.push_back('\n');
-    }
-
-    key += endMarker + "\n";
-}
-
-/**
- * @brief Store a minimal legacy payload using only the CAK key.
- *
- * @param config Active runtime configuration.
- * @param cakBytes CAK PEM bytes.
- */
-static void storeCak(const Config& config, const std::string& cakBytes)
-{
-    validateCakBytes(cakBytes, config.maxCakBytes);
-
-    json payload = {
-        {"CAKKey", {{"AuthenticationScheme", "Ecdsa"}, {"ECDSAKey", cakBytes}}},
-        {"LockDisable", true},
-        {"VendorMinimumSecurityVersion",
-         config.minimumSecurityVersion.value_or(0)},
-        {"OwnerMinimumSecurityVersion",
-         config.minimumSecurityVersion.value_or(0)}};
-
-    atomicWrite(payloadPath(config.keyStorePath), payload.dump());
-}
-
-/**
- * @brief Remove persisted CAK payload and legacy migration files.
- *
- * @param config Active runtime configuration.
- */
-static void deleteCak(const Config& config)
-{
-    fs::path payloadFile = payloadPath(config.keyStorePath);
-    if (fs::exists(payloadFile))
-    {
-        fs::remove(payloadFile);
-    }
-    fs::path legacyCakFile = config.keyStorePath / "cak.pem";
-    if (fs::exists(legacyCakFile))
-    {
-        fs::remove(legacyCakFile);
-    }
-    fs::path legacyMetaFile = config.keyStorePath / "cak_metadata.json";
-    if (fs::exists(legacyMetaFile))
-    {
-        fs::remove(legacyMetaFile);
-    }
-}
-
-/**
- * @brief Execute a process and collect output with timeout enforcement.
- *
- * @param command Command vector where index 0 is executable.
- * @param timeoutMs Timeout in milliseconds.
- * @return RunResult Exit code, stdout/stderr, and timeout status.
- */
-static RunResult runCommandWithTimeout(const std::vector<std::string>& command,
-                                       int timeoutMs)
-{
-    int stdoutPipe[2]{-1, -1};
-    int stderrPipe[2]{-1, -1};
-    if (::pipe(stdoutPipe) < 0 || ::pipe(stderrPipe) < 0)
-    {
-        throw std::runtime_error("pipe failed");
-    }
-
-    pid_t pid = ::fork();
-    if (pid < 0)
-    {
-        throw std::runtime_error("fork failed");
-    }
-    if (pid == 0)
-    {
-        ::dup2(stdoutPipe[1], STDOUT_FILENO);
-        ::dup2(stderrPipe[1], STDERR_FILENO);
-        ::close(stdoutPipe[0]);
-        ::close(stdoutPipe[1]);
-        ::close(stderrPipe[0]);
-        ::close(stderrPipe[1]);
-        std::vector<char*> argv;
-        argv.reserve(command.size() + 1);
-        for (const auto& arg : command)
-        {
-            argv.push_back(const_cast<char*>(arg.c_str()));
-        }
-        argv.push_back(nullptr);
-        ::execvp(argv[0], argv.data());
-        _exit(127);
-    }
-
-    ::close(stdoutPipe[1]);
-    ::close(stderrPipe[1]);
-
-    RunResult result;
-    auto start = std::chrono::steady_clock::now();
-    int status = 0;
-    while (true)
-    {
-        pid_t finished = ::waitpid(pid, &status, WNOHANG);
-        if (finished == pid)
-        {
-            break;
-        }
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - start)
-                .count() > timeoutMs)
-        {
-            result.timedOut = true;
-            ::kill(pid, SIGKILL);
-            ::waitpid(pid, &status, 0);
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-
-    auto readPipe = [](int fd) -> std::string {
-        std::string out;
-        char buf[4096];
-        ssize_t n = 0;
-        while ((n = ::read(fd, buf, sizeof(buf))) > 0)
-        {
-            out.append(buf, static_cast<size_t>(n));
-        }
-        return out;
-    };
-    result.stdoutStr = readPipe(stdoutPipe[0]);
-    result.stderrStr = readPipe(stderrPipe[0]);
-    ::close(stdoutPipe[0]);
-    ::close(stderrPipe[0]);
-
-    if (result.timedOut)
-    {
-        result.code = 124;
-    }
-    else if (WIFEXITED(status))
-    {
-        result.code = WEXITSTATUS(status);
-    }
-    else
-    {
-        result.code = 1;
-    }
-    return result;
-}
-
-/**
- * @brief libcurl write callback to append response bytes.
- *
- * @param contents Byte buffer from libcurl.
- * @param size Element size.
- * @param nmemb Element count.
- * @param userp Output std::string pointer.
- * @return size_t Number of bytes consumed.
- */
-static size_t curlWriteCallback(void* contents, size_t size, size_t nmemb,
-                                void* userp)
-{
-    size_t total = size * nmemb;
-    auto* out = static_cast<std::string*>(userp);
-    out->append(static_cast<const char*>(contents), total);
-    return total;
-}
-
-/**
- * @brief Install CAK using configured hmcless helper executable.
- *
- * @param config Active runtime configuration.
- * @param cakFile Path to temporary CAK file consumed by helper.
- */
-static void installCakHmcless(const Config& config, const fs::path& cakFile)
-{
-    if (!config.hmclessExec)
-    {
-        throw std::runtime_error("hmclessExec is not configured");
-    }
-    std::vector<std::string> command;
-    command.push_back(config.hmclessExec->path);
-    for (const auto& arg : config.hmclessExec->args)
-    {
-        command.push_back(arg);
-    }
-    command.push_back(cakFile.string());
-    RunResult result =
-        runCommandWithTimeout(command, config.timeouts.installMs);
-    if (result.code != 0)
-    {
-        throw std::runtime_error("hmcless exec failed: " + result.stderrStr);
-    }
-}
-
-/**
- * @brief Install CAK payload to all configured HMC Redfish endpoints.
- *
- * @param config Active runtime configuration.
- * @param jsonPayload Serialized JSON payload to POST.
- */
-[[maybe_unused]] static void installCakHmc(const Config& config,
-                                           const std::string& jsonPayload)
-{
-    for (const auto& installPath : config.hmc->installPaths)
-    {
-        std::string url = "http://" + config.hmc->host + installPath;
-        lg2::info("Sending CAK installation request to Redfish endpoint: {URL}",
-                  "URL", url);
-
-        CURL* curl = curl_easy_init();
-        if (!curl)
-        {
-            throw std::runtime_error("curl init failed for " + url);
-        }
-
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonPayload.c_str());
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, config.timeouts.installMs);
-        if (config.hmc->username && config.hmc->password)
-        {
-            std::string auth =
-                *config.hmc->username + ":" + *config.hmc->password;
-            curl_easy_setopt(curl, CURLOPT_USERPWD, auth.c_str());
-        }
-        struct curl_slist* headers = nullptr;
-        headers = curl_slist_append(headers, "Content-Type: application/json");
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-        CURLcode res = curl_easy_perform(curl);
-        long status = 0;
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-        curl_slist_free_all(headers);
-        curl_easy_cleanup(curl);
-
-        if (res != CURLE_OK)
-        {
-            throw std::runtime_error(
-                "Redfish CAK installation request failed for " + url +
-                ": curl error " + std::to_string(res));
-        }
-        if (status >= 300)
-        {
-            throw std::runtime_error("Redfish CAK installation failed for " +
-                                     url + " with HTTP status " +
-                                     std::to_string(status));
-        }
-    }
-}
-
-/**
- * @brief Fetch JSON content from an HMC Redfish path.
- *
- * @param hmc HMC connectivity configuration.
- * @param path Redfish path to query.
- * @param timeoutMs Request timeout in milliseconds.
- * @return std::string Raw JSON response body.
- */
-static std::string fetchHmcJson(const HmcConfig& hmc, const std::string& path,
-                                int timeoutMs)
-{
-    CURL* curl = curl_easy_init();
-    if (!curl)
-    {
-        throw std::runtime_error("curl init failed");
-    }
-
-    std::string url = "http://" + hmc.host + path;
-    std::string response;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeoutMs);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    if (hmc.username && hmc.password)
-    {
-        std::string auth = *hmc.username + ":" + *hmc.password;
-        curl_easy_setopt(curl, CURLOPT_USERPWD, auth.c_str());
-    }
-
-    CURLcode res = curl_easy_perform(curl);
-    long status = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK)
-    {
-        throw std::runtime_error("HMC request failed");
-    }
-    if (status >= 300)
-    {
-        throw std::runtime_error("HMC request failed with status " +
-                                 std::to_string(status));
-    }
-    return response;
-}
-
-/**
- * @brief Get DOTCAKInitialization state from HMC when available.
- *
- * @param config Active runtime configuration.
- * @return std::string State string or empty on unavailable/error.
- */
-static std::string getDotCakInitializationState(const Config& config)
-{
-    if (!config.hmc)
-    {
-        return "";
-    }
-
-    try
-    {
-        std::string response = fetchHmcJson(
-            *config.hmc, config.hmc->dotCakInitPath, kHmcRequestTimeoutMs);
-        json payload = json::parse(response);
-        return payload["Oem"]["Nvidia"].value("DOTCAKInitialization", "");
-    }
-    catch (const std::exception&)
-    {
-        return "";
-    }
-}
-
-/**
- * @brief Wait for expected DOT-related state conditions or timeout.
- *
- * @param config Active runtime configuration.
- * @param expectedDotState Expected DOTState value.
- */
-static void ensureDotState(const Config& config,
-                           const std::string& expectedDotState)
-{
-    if (!config.hmc)
-    {
-        throw std::runtime_error("hmc is not configured");
-    }
-
-    bool isBeforeInstall = (expectedDotState == "Uninitialized");
-    bool isAfterInstall = (expectedDotState == "Volatile");
-    std::string expectedCakInit = isBeforeInstall ? "Waiting" : "Complete";
-
-    auto startTime = std::chrono::steady_clock::now();
-    auto deadline =
-        startTime + std::chrono::milliseconds(config.timeouts.installMs);
-    std::vector<std::string> dotStates;
-
-    while (true)
-    {
-        bool cakInitMatch = false;
-        bool cakInitFetched = false;
-        std::string cakInitState;
-        try
-        {
-            cakInitState = getDotCakInitializationState(config);
-            cakInitFetched = !cakInitState.empty();
-            if (cakInitFetched)
-            {
-                lg2::info("Checking DOTCAKInitialization: current={STATE}, "
-                          "expected={EXPECTED}",
-                          "STATE", cakInitState, "EXPECTED", expectedCakInit);
-            }
-            if (cakInitFetched && cakInitState == expectedCakInit)
-            {
-                cakInitMatch = true;
-                lg2::info(
-                    "DOTCAKInitialization state matches expected: {STATE}",
-                    "STATE", cakInitState);
-            }
-        }
-        catch (const std::exception& ex)
-        {
-            cakInitFetched = false;
-            lg2::debug("Failed to fetch DOTCAKInitialization: {ERROR}", "ERROR",
-                       ex.what());
-        }
-
-        if (cakInitMatch)
-        {
-            return;
-        }
-
-        if (isBeforeInstall && cakInitFetched && cakInitState == "Complete")
-        {
-            return;
-        }
-
-        if (isBeforeInstall && cakInitFetched)
-        {
-            if (std::chrono::steady_clock::now() >= deadline)
-            {
-                throw std::runtime_error(
-                    "DOTCAKInitialization not " + expectedCakInit +
-                    " (current: " + cakInitState + ") before timeout");
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            continue;
-        }
-
-        bool allDotStateMatch = true;
-        dotStates.clear();
-        CURL* curl = curl_easy_init();
-        if (!curl)
-        {
-            throw std::runtime_error("curl init failed");
-        }
-
-        bool allRequestsSucceeded = true;
-        for (const auto& statusPath : config.hmc->statusPaths)
-        {
-            std::string url = "http://" + config.hmc->host + statusPath;
-            std::string response;
-
-            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-            curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, kHmcRequestTimeoutMs);
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-            if (config.hmc->username && config.hmc->password)
-            {
-                std::string auth =
-                    *config.hmc->username + ":" + *config.hmc->password;
-                curl_easy_setopt(curl, CURLOPT_USERPWD, auth.c_str());
-            }
-
-            CURLcode res = curl_easy_perform(curl);
-            long status = 0;
-            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-
-            if (res != CURLE_OK)
-            {
-                allRequestsSucceeded = false;
-                allDotStateMatch = false;
-                dotStates.push_back("");
-                continue;
-            }
-            if (status >= 300)
-            {
-                allRequestsSucceeded = false;
-                allDotStateMatch = false;
-                dotStates.push_back("");
-                continue;
-            }
-
-            json payload = json::parse(response);
-            std::string state = payload.value("DOTState", "");
-            dotStates.push_back(state);
-            if (state != expectedDotState)
-            {
-                allDotStateMatch = false;
-            }
-        }
-        curl_easy_cleanup(curl);
-
-        if (!allRequestsSucceeded)
-        {
-            allDotStateMatch = false;
-        }
-
-        if (isAfterInstall)
-        {
-            std::string statesStr;
-            for (size_t i = 0; i < dotStates.size(); ++i)
-            {
-                if (i > 0)
-                    statesStr += ", ";
-                statesStr += "CPU" + std::to_string(i) + "=" +
-                             (dotStates[i].empty() ? "<empty>" : dotStates[i]);
-            }
-            lg2::info("Checking DOTState after installation: {STATES} "
-                      "(expected={EXPECTED}), DOTCAKInitialization={CAKINIT}",
-                      "STATES", statesStr, "EXPECTED", expectedDotState,
-                      "CAKINIT",
-                      cakInitFetched ? cakInitState : "<not available>");
-        }
-
-        bool success = false;
-        if (isAfterInstall)
-        {
-            success = allDotStateMatch || cakInitMatch;
-        }
-        else
-        {
-            success = allDotStateMatch;
-        }
-
-        if (success)
-        {
-            return;
-        }
-
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - startTime)
-                           .count();
-
-        if (isAfterInstall && elapsed > 0 && elapsed % 1000 < 200)
-        {
-            std::string statesStr;
-            for (size_t i = 0; i < dotStates.size(); ++i)
-            {
-                if (i > 0)
-                    statesStr += ", ";
-                statesStr += "CPU" + std::to_string(i) + "=" +
-                             (dotStates[i].empty() ? "<empty>" : dotStates[i]);
-            }
-            lg2::info("Still waiting for verification ({ELAPSED}ms elapsed): "
-                      "DOTState={STATES}, DOTCAKInitialization={CAKINIT}",
-                      "ELAPSED", elapsed, "STATES", statesStr, "CAKINIT",
-                      cakInitFetched ? cakInitState : "<not available>");
-        }
-
-        if (now >= deadline)
-        {
-            std::string errorMsg;
-            std::string statesStr;
-            for (size_t i = 0; i < dotStates.size(); ++i)
-            {
-                if (i > 0)
-                    statesStr += ", ";
-                statesStr += "CPU" + std::to_string(i) + "=" +
-                             (dotStates[i].empty() ? "<empty>" : dotStates[i]);
-            }
-
-            if (isBeforeInstall)
-            {
-                if (!cakInitFetched)
-                {
-                    errorMsg =
-                        "DOTCAKInitialization not available and DOTState not " +
-                        expectedDotState +
-                        " for both CPUs before timeout. Final DOTState: " +
-                        statesStr;
-                }
-                else
-                {
-                    errorMsg =
-                        "DOTCAKInitialization not " + expectedCakInit +
-                        " (current: " + cakInitState + ") and DOTState not " +
-                        expectedDotState +
-                        " for both CPUs before timeout. Final DOTState: " +
-                        statesStr;
-                }
-            }
-            else if (isAfterInstall)
-            {
-                errorMsg = "Neither DOTState " + expectedDotState +
-                           " for both CPUs (current: " + statesStr +
-                           ") nor DOTCAKInitialization " + expectedCakInit +
-                           " (current: " +
-                           (cakInitFetched ? cakInitState : "<not available>") +
-                           ") before timeout";
-            }
-            else
-            {
-                errorMsg = "DOTState not " + expectedDotState +
-                           " for both CPUs before timeout. Final DOTState: " +
-                           statesStr;
-            }
-            throw std::runtime_error(errorMsg);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
-}
-
-/**
- * @brief Parse and validate an I2C 7-bit address string.
- *
- * @param addrStr I2C address text in decimal or hex form.
- * @return int Parsed I2C address value.
- */
-static int parseI2cAddr(const std::string& addrStr)
-{
-    size_t parsed = 0;
-    int addr = std::stoi(addrStr, &parsed, 0);
-    if (parsed != addrStr.size())
-    {
-        throw std::runtime_error("Invalid I2C address: " + addrStr);
-    }
-    if (addr < 0 || addr > 0x7f)
-    {
-        throw std::runtime_error("I2C address out of range: " + addrStr);
-    }
-    return addr;
-}
-
-/**
- * @brief Write raw bytes to a target I2C bus/address.
- *
- * @param bus I2C bus number.
- * @param addr 7-bit I2C address.
- * @param bytes Payload bytes to transmit.
- */
-static void writeI2cBytes(int bus, int addr, const std::vector<uint8_t>& bytes)
-{
-    std::string devPath = "/dev/i2c-" + std::to_string(bus);
-    int fd = ::open(devPath.c_str(), O_RDWR | O_CLOEXEC);
-    if (fd < 0)
-    {
-        throw std::runtime_error("Failed to open " + devPath + ": " +
-                                 std::strerror(errno));
-    }
-    if (::ioctl(fd, I2C_SLAVE, addr) < 0)
-    {
-        int savedErrno = errno;
-        ::close(fd);
-        throw std::runtime_error("Failed to set I2C address " +
-                                 std::to_string(addr) + " on " + devPath +
-                                 ": " + std::strerror(savedErrno));
-    }
-    ssize_t written = ::write(fd, bytes.data(), bytes.size());
-    int savedErrno = errno;
-    ::close(fd);
-    if (written < 0)
-    {
-        throw std::runtime_error("I2C write failed on " + devPath + ": " +
-                                 std::strerror(savedErrno));
-    }
-    if (static_cast<size_t>(written) != bytes.size())
-    {
-        throw std::runtime_error("I2C write short write on " + devPath +
-                                 " (wrote " + std::to_string(written) + " of " +
-                                 std::to_string(bytes.size()) + " bytes)");
-    }
-}
-
-/**
- * @brief Execute the two-step L1 reset sequence over I2C.
- *
- * @param config Active runtime configuration.
- */
-static void l1Reset(const Config& config)
-{
-    lg2::info("Starting L1 reset via I2C (bus {BUS}, addr {ADDR})", "BUS",
-              config.l1Reset.i2cBus, "ADDR", config.l1Reset.i2cAddr);
-    const int addr = parseI2cAddr(config.l1Reset.i2cAddr);
-    std::vector<std::vector<uint8_t>> payloads = {
-        {0xF0, 0x04, 0x00, 0x40, 0x00, 0x00},
-        {0xF2, 0x04, 0x01, 0x00, 0x00, 0x00},
-    };
-
-    for (size_t index = 0; index < payloads.size(); ++index)
-    {
-        const auto& payload = payloads[index];
-        bool success = false;
-        std::string lastError;
-        lg2::info("L1 reset command {INDEX}/{TOTAL}", "INDEX", index + 1,
-                  "TOTAL", payloads.size());
-        for (int attempt = 1; attempt <= 5; ++attempt)
-        {
-            try
-            {
-                writeI2cBytes(config.l1Reset.i2cBus, addr, payload);
-                success = true;
-                lg2::info(
-                    "L1 reset command {INDEX} succeeded on attempt {ATTEMPT}",
-                    "INDEX", index + 1, "ATTEMPT", attempt);
-                break;
-            }
-            catch (const std::exception& ex)
-            {
-                lastError = ex.what();
-            }
-            lg2::warning(
-                "L1 reset command {INDEX} attempt {ATTEMPT}/5 failed: {ERROR}",
-                "INDEX", index + 1, "ATTEMPT", attempt, "ERROR", lastError);
-            if (attempt < 5)
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            }
-        }
-        if (!success)
-        {
-            throw std::runtime_error("L1 reset command " +
-                                     std::to_string(index + 1) +
-                                     " failed after 5 attempts: " + lastError);
-        }
-        if (index + 1 < payloads.size())
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-    lg2::info("L1 reset completed successfully");
-}
-
-/**
- * @brief Validate DOT payload schema and required fields.
- *
- * @param payload JSON payload to validate.
- */
-static void validateDotPayload(const json& payload)
-{
-    const std::set<std::string> allowedFields = {
-        "CAKKey", "LAKKey", "LockDisable", "VendorMinimumSecurityVersion",
-        "OwnerMinimumSecurityVersion"};
-    for (const auto& [key, value] : payload.items())
-    {
-        if (allowedFields.find(key) == allowedFields.end())
-        {
-            throw std::runtime_error("Disallowed field in JSON payload: " +
-                                     key);
-        }
-    }
-
-    if (!payload.contains("CAKKey"))
-    {
-        throw std::runtime_error("CAKKey is required in JSON payload");
-    }
-
-    const auto& cakKey = payload["CAKKey"];
-    if (!cakKey.is_object())
-    {
-        throw std::runtime_error("CAKKey must be an object");
-    }
-
-    if (!cakKey.contains("AuthenticationScheme"))
-    {
-        throw std::runtime_error("CAKKey.AuthenticationScheme is required");
-    }
-    if (!cakKey.contains("ECDSAKey"))
-    {
-        throw std::runtime_error("CAKKey.ECDSAKey is required");
-    }
-
-    std::string authScheme = cakKey["AuthenticationScheme"].get<std::string>();
-    if (authScheme.empty())
-    {
-        throw std::runtime_error("CAKKey.AuthenticationScheme cannot be empty");
-    }
-
-    std::string ecdsaKey = cakKey["ECDSAKey"].get<std::string>();
-    if (ecdsaKey.empty())
-    {
-        throw std::runtime_error("CAKKey.ECDSAKey cannot be empty");
-    }
-
-    if (payload.contains("LAKKey"))
-    {
-        const auto& lakKey = payload["LAKKey"];
-        if (!lakKey.is_object())
-        {
-            throw std::runtime_error("LAKKey must be an object");
-        }
-
-        if (!lakKey.contains("AuthenticationScheme"))
-        {
-            throw std::runtime_error("LAKKey.AuthenticationScheme is required");
-        }
-        if (!lakKey.contains("ECDSAKey"))
-        {
-            throw std::runtime_error("LAKKey.ECDSAKey is required");
-        }
-
-        std::string lakAuthScheme =
-            lakKey["AuthenticationScheme"].get<std::string>();
-        if (lakAuthScheme.empty())
-        {
-            throw std::runtime_error(
-                "LAKKey.AuthenticationScheme cannot be empty");
-        }
-
-        std::string lakEcdsaKey = lakKey["ECDSAKey"].get<std::string>();
-        if (lakEcdsaKey.empty())
-        {
-            throw std::runtime_error("LAKKey.ECDSAKey cannot be empty");
-        }
-    }
-
-    if (!payload.contains("LockDisable"))
-    {
-        throw std::runtime_error("LockDisable is required in JSON payload");
-    }
-    if (!payload["LockDisable"].is_boolean())
-    {
-        throw std::runtime_error("LockDisable must be a boolean");
-    }
-    if (!payload["LockDisable"].get<bool>())
-    {
-        throw std::runtime_error("LockDisable must be true");
-    }
-
-    if (!payload.contains("VendorMinimumSecurityVersion"))
-    {
-        throw std::runtime_error(
-            "VendorMinimumSecurityVersion is required in JSON payload");
-    }
-    if (!payload["VendorMinimumSecurityVersion"].is_number())
-    {
-        throw std::runtime_error(
-            "VendorMinimumSecurityVersion must be a number");
-    }
-
-    if (!payload.contains("OwnerMinimumSecurityVersion"))
-    {
-        throw std::runtime_error(
-            "OwnerMinimumSecurityVersion is required in JSON payload");
-    }
-    if (!payload["OwnerMinimumSecurityVersion"].is_number())
-    {
-        throw std::runtime_error(
-            "OwnerMinimumSecurityVersion must be a number");
-    }
-}
-
-/**
- * @brief Extract the CAK ECDSA key from a DOT JSON payload.
- *
- * @param jsonPayload Serialized DOT JSON payload.
- * @return std::string CAK ECDSA key bytes.
- */
-static std::string extractCakFromJson(const std::string& jsonPayload)
-{
-    json payload = json::parse(jsonPayload);
-    validateDotPayload(payload);
-
-    const auto& cakKey = payload["CAKKey"];
-    return cakKey["ECDSAKey"].get<std::string>();
-}
-
-/**
- * @brief Run end-to-end CAK provisioning, reset, and post-check flow.
- *
- * @param config Active runtime configuration.
- * @param hostIsOff Shared host power-off state flag.
- */
-static void provisionCak(const Config& config, std::atomic<bool>& hostIsOff)
-{
-    lg2::info("Starting CAK provisioning process");
-    fs::path payloadFile = payloadPath(config.keyStorePath);
-    if (!fs::exists(payloadFile))
-    {
-        throw std::runtime_error("No CAK payload found");
-    }
-
-    lg2::info("Reading CAK payload from {FILE}", "FILE", payloadFile.string());
-    json payload;
-    try
-    {
-        payload = json::parse(readFile(payloadFile));
-        validateDotPayload(payload);
-    }
-    catch (const json::parse_error& ex)
-    {
-        lg2::error(
-            "Invalid JSON in CAK payload file: {ERROR}. File will not be used.",
-            "ERROR", ex.what());
-        throw std::runtime_error("Invalid JSON in CAK payload file: " +
-                                 std::string(ex.what()));
-    }
-    catch (const std::exception& ex)
-    {
-        lg2::error(
-            "Invalid or unreadable CAK payload file: {ERROR}. File will not "
-            "be used.",
-            "ERROR", ex.what());
-        throw std::runtime_error("Invalid or unreadable CAK payload file: " +
-                                 std::string(ex.what()));
-    }
-
-    std::string cakBytes = extractCakFromJson(payload.dump());
-    std::string payloadStr = payload.dump();
-
-    if (config.hmc)
-    {
-        std::string currentState = getDotCakInitializationState(config);
-        if (currentState == "Complete")
-        {
-            lg2::info("DOTCAKInitialization state is Complete - CAK already "
-                      "installed, skipping installation");
-            return;
-        }
-
-        lg2::info("Verifying DOT state before installation (waiting for "
-                  "DOTCAKInitialization=Waiting or DOTState=Uninitialized)");
-        try
-        {
-            ensureDotState(config, "Uninitialized");
-            lg2::info(
-                "DOT state verification before installation succeeded - "
-                "DOTCAKInitialization is Waiting or DOTState is Uninitialized");
-        }
-        catch (const std::exception& ex)
-        {
-            lg2::warning(
-                "Failed to verify DOT state before installation: {ERROR}. "
-                "Proceeding with installation anyway.",
-                "ERROR", ex.what());
-        }
-
-        std::string lastError;
-        std::set<std::string> successfulPaths;
-
-        lg2::info(
-            "DOTCAKInitialization is Waiting - waiting 1 second for HMC "
-            "Redfish endpoint to initialize before starting CAK installation "
-            "(using 1-second intervals for timing data)");
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
-        lg2::info("Starting Redfish CAK installation (max {RETRIES} attempts)",
-                  "RETRIES", config.cakInstallRetries);
-
-        for (int attempt = 1; attempt <= config.cakInstallRetries; ++attempt)
-        {
-            if (hostIsOff.load())
-            {
-                lg2::info(
-                    "Host powered off during CAK installation - aborting installation");
-                throw std::runtime_error(
-                    "CAK installation aborted: host powered off");
-            }
-
-            try
-            {
-                lg2::info("Redfish CAK installation attempt {ATTEMPT}/{MAX}",
-                          "ATTEMPT", attempt, "MAX", config.cakInstallRetries);
-
-                std::vector<std::string> remainingPaths;
-                for (const auto& path : config.hmc->installPaths)
-                {
-                    if (successfulPaths.find(path) == successfulPaths.end())
-                    {
-                        remainingPaths.push_back(path);
-                    }
-                }
-
-                if (remainingPaths.empty())
-                {
-                    lg2::info("All CPUs already have CAK installed");
-                    break;
-                }
-
-                for (const auto& installPath : remainingPaths)
-                {
-                    std::string url =
-                        "http://" + config.hmc->host + installPath;
-                    lg2::info(
-                        "Sending CAK installation request to Redfish endpoint: {URL}",
-                        "URL", url);
-                    lg2::info(
-                        "Request configuration: method=POST, payload_size={SIZE}",
-                        "SIZE", payloadStr.size());
-                    if (!payloadStr.empty())
-                    {
-                        lg2::info("JSON payload: {PAYLOAD}", "PAYLOAD",
-                                  payloadStr);
-                    }
-
-                    CURL* curl = curl_easy_init();
-                    if (!curl)
-                    {
-                        throw std::runtime_error("curl init failed for " + url);
-                    }
-
-                    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS,
-                                     payloadStr.c_str());
-                    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS,
-                                     config.timeouts.installMs);
-                    std::string responseBody;
-                    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-                                     curlWriteCallback);
-                    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
-                    if (config.hmc->username && config.hmc->password)
-                    {
-                        std::string auth =
-                            *config.hmc->username + ":" + *config.hmc->password;
-                        curl_easy_setopt(curl, CURLOPT_USERPWD, auth.c_str());
-                        lg2::info("Using HTTP authentication: username={USER}",
-                                  "USER", *config.hmc->username);
-                    }
-                    else
-                    {
-                        lg2::info(
-                            "No HTTP authentication configured (userless)");
-                    }
-                    struct curl_slist* headers = nullptr;
-                    headers = curl_slist_append(
-                        headers, "Content-Type: application/json");
-                    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-                    lg2::info("HTTP headers: Content-Type: application/json");
-
-                    CURLcode res = curl_easy_perform(curl);
-                    long status = 0;
-                    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-
-                    char* effectiveUrl = nullptr;
-                    curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL,
-                                      &effectiveUrl);
-                    if (effectiveUrl && strcmp(effectiveUrl, url.c_str()) != 0)
-                    {
-                        lg2::info("Effective URL (after redirects): {URL}",
-                                  "URL", effectiveUrl);
-                    }
-
-                    curl_slist_free_all(headers);
-                    curl_easy_cleanup(curl);
-
-                    if (!responseBody.empty())
-                    {
-                        lg2::info(
-                            "Response body from {URL} (HTTP {STATUS}): {BODY}",
-                            "URL", url, "STATUS", status, "BODY", responseBody);
-                    }
-                    else
-                    {
-                        lg2::info(
-                            "Response body from {URL} (HTTP {STATUS}): <empty>",
-                            "URL", url, "STATUS", status);
-                    }
-
-                    if (res != CURLE_OK)
-                    {
-                        throw std::runtime_error(
-                            "Redfish CAK installation request failed for " +
-                            url + ": curl error " + std::to_string(res));
-                    }
-                    if (status >= 300)
-                    {
-                        throw std::runtime_error(
-                            "Redfish CAK installation failed for " + url +
-                            " with HTTP status " + std::to_string(status));
-                    }
-
-                    successfulPaths.insert(installPath);
-                    lg2::info("CAK installation succeeded for {PATH}", "PATH",
-                              installPath);
-                }
-
-                lastError.clear();
-                lg2::info(
-                    "Redfish CAK installation succeeded on attempt {ATTEMPT}",
-                    "ATTEMPT", attempt);
-                break;
-            }
-            catch (const std::exception& ex)
-            {
-                if (hostIsOff.load())
-                {
-                    lg2::info(
-                        "Host powered off during CAK installation - aborting "
-                        "installation");
-                    throw std::runtime_error(
-                        "CAK installation aborted: host powered off");
-                }
-
-                lastError = ex.what();
-                lg2::warning(
-                    "Redfish CAK installation attempt {ATTEMPT}/{MAX} failed: {ERROR}",
-                    "ATTEMPT", attempt, "MAX", config.cakInstallRetries,
-                    "ERROR", ex.what());
-                if (attempt == config.cakInstallRetries)
-                {
-                    throw std::runtime_error(
-                        "Redfish CAK installation failed after " +
-                        std::to_string(config.cakInstallRetries) +
-                        " attempts: " + lastError);
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-            }
-        }
-    }
-    else
-    {
-        fs::path tempKeyFile = config.keyStorePath / "cak_temp.pem";
-        atomicWrite(tempKeyFile, cakBytes);
-        try
-        {
-            installCakHmcless(config, tempKeyFile);
-        }
-        catch (...)
-        {
-            fs::remove(tempKeyFile);
-            throw;
-        }
-        fs::remove(tempKeyFile);
-    }
-    if (hostIsOff.load())
-    {
-        lg2::info("Host powered off before L1 reset - aborting installation");
-        throw std::runtime_error("CAK installation aborted: host powered off");
-    }
-
-    lg2::info("Performing L1 reset");
-    l1Reset(config);
-    if (config.hmc)
-    {
-        lg2::info("Verifying DOT state after installation");
-        try
-        {
-            ensureDotState(config, "Volatile");
-            lg2::info("DOT state verification succeeded");
-        }
-        catch (const std::exception& ex)
-        {
-            int timeoutSeconds = config.timeouts.installMs / 1000;
-            lg2::error(
-                "Failed to verify DOT state after installation: {ERROR}. "
-                "System failed to boot within {TIMEOUT} seconds after CAK "
-                "installation. Make sure correct CAK is being used.",
-                "ERROR", ex.what(), "TIMEOUT", timeoutSeconds);
-            throw std::runtime_error(
-                "CAK verification failed: system failed to boot within " +
-                std::to_string(timeoutSeconds) +
-                " seconds after CAK installation. Make sure correct CAK is being "
-                "used.");
-        }
-    }
-    lg2::info("CAK provisioning process completed");
-}
+// ---------------------------------------------------------------------------
+// D-Bus key-store write method (called by installCak2BmcFs)
+// ---------------------------------------------------------------------------
 
 static void
     storeCakFromDbusArgs(const Config& config,
@@ -1590,11 +96,10 @@ static void
     atomicWrite(payloadPath(config.keyStorePath), normalizedPayload);
 }
 
-/**
- * @brief Build default runtime configuration values.
- *
- * @return Config Default configuration.
- */
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
 static Config getDefaultConfig()
 {
     Config config;
@@ -1607,12 +112,6 @@ static Config getDefaultConfig()
     return config;
 }
 
-/**
- * @brief Parse configuration JSON into an internal Config model.
- *
- * @param data Source JSON object.
- * @return Config Parsed configuration.
- */
 static Config parseConfig(const json& data)
 {
     Config config = getDefaultConfig();
@@ -1694,17 +193,22 @@ static Config parseConfig(const json& data)
     }
     config.cakInstallRetries =
         data.value("cakInstallRetries", kDefaultCakInstallRetries);
+    config.useDefaultDbus = data.value("useDefaultDbus", false);
+    if (config.useDefaultDbus)
+    {
+        // useDefaultDbus mode calls nsmd directly; HMC config is not applicable
+        // and must not be used even if set by default.
+        config.hmc = std::nullopt;
+    }
+    if (data.contains("dbusDotPaths"))
+    {
+        config.dbusDotPaths =
+            data.at("dbusDotPaths").get<std::vector<std::string>>();
+    }
 
     return config;
 }
 
-/**
- * @brief Apply CLI overrides to a resolved configuration.
- *
- * @param config Base configuration.
- * @param args Parsed CLI arguments.
- * @return Config Updated configuration.
- */
 static Config applyCliOverrides(Config config, const Args& args)
 {
     if (args.keyStorePath)
@@ -1729,12 +233,6 @@ static Config applyCliOverrides(Config config, const Args& args)
     return config;
 }
 
-/**
- * @brief Resolve final configuration from defaults, file, and CLI.
- *
- * @param args Parsed CLI arguments.
- * @return Config Final resolved configuration.
- */
 static Config resolveConfig(const Args& args)
 {
     Config config = getDefaultConfig();
@@ -1756,12 +254,10 @@ static Config resolveConfig(const Args& args)
     return applyCliOverrides(config, args);
 }
 
-/**
- * @brief Execute one-shot install flow for standalone CLI mode.
- *
- * @param args Parsed CLI arguments.
- * @return int Process-style exit code.
- */
+// ---------------------------------------------------------------------------
+// One-shot install flow
+// ---------------------------------------------------------------------------
+
 static int installFlow(const Args& args)
 {
     Config config;
@@ -1803,19 +299,45 @@ static int installFlow(const Args& args)
         return ExitCode::kInvalidArgs;
     }
 
-    std::atomic<bool> hostIsOff{false};
+    boost::asio::io_context io;
+    auto bus = std::make_shared<sdbusplus::asio::connection>(io);
+    auto installer = createInstaller(config, bus);
+
+    int result = ExitCode::kSuccess;
+    boost::asio::co_spawn(
+        io,
+        [&]() -> boost::asio::awaitable<void> { co_await installer->run(); },
+        [&](std::exception_ptr ep) {
+            if (ep)
+            {
+                try
+                {
+                    std::rethrow_exception(ep);
+                }
+                catch (const std::exception& ex)
+                {
+                    std::cerr << "provisioning error: " << ex.what() << "\n";
+                    result = ExitCode::kProvisioningError;
+                }
+            }
+            io.stop();
+        });
 
     auto start = std::chrono::steady_clock::now();
     try
     {
-        provisionCak(config, hostIsOff);
+        io.run();
     }
     catch (const std::exception& ex)
     {
-        std::cerr << "provisioning error: " << ex.what() << "\n";
+        std::cerr << "io_context error: " << ex.what() << "\n";
         return ExitCode::kProvisioningError;
     }
 
+    if (result != ExitCode::kSuccess)
+    {
+        return result;
+    }
     auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::steady_clock::now() - start)
                          .count();
@@ -1827,12 +349,176 @@ static int installFlow(const Args& args)
     return ExitCode::kSuccess;
 }
 
-/**
- * @brief Run D-Bus service mode and host-state driven install logic.
- *
- * @param args Parsed CLI arguments.
- * @return int Process-style exit code.
- */
+// ---------------------------------------------------------------------------
+// D-Bus service mode — shared state and worker helpers
+// ---------------------------------------------------------------------------
+
+struct ServiceState
+{
+    DotInstaller& installer;
+    const Config& config;
+    boost::asio::io_context& io;
+    bool& hostIsOff;
+    bool& installInProgress;
+    std::string& lastInstallStatus;
+    std::shared_ptr<sdbusplus::asio::dbus_interface> iface;
+    boost::asio::cancellation_signal& cancelInstall;
+};
+
+static std::string readCakValue(const Config& config)
+{
+    if (!config.allowCakReadout)
+    {
+        return {};
+    }
+    try
+    {
+        fs::path payloadFile = payloadPath(config.keyStorePath);
+        if (!fs::exists(payloadFile))
+        {
+            return {};
+        }
+        std::string content = readFile(payloadFile);
+        try
+        {
+            json payload = json::parse(content);
+            validateDotPayload(payload);
+            return content;
+        }
+        catch (const json::parse_error& ex)
+        {
+            lg2::error("CAKValue: invalid JSON in payload file: {ERROR}",
+                       "ERROR", ex.what());
+            return {};
+        }
+        catch (const std::exception& ex)
+        {
+            lg2::error("CAKValue: invalid payload structure: {ERROR}", "ERROR",
+                       ex.what());
+            return {};
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        lg2::error("CAKValue: failed to read payload file: {ERROR}", "ERROR",
+                   ex.what());
+        return {};
+    }
+}
+
+static boost::asio::awaitable<void> runCakInstall(ServiceState svc)
+{
+    lg2::info("runCakInstall: starting, current status={STATUS} "
+              "hostIsOff={HOSTOFF}",
+              "STATUS", svc.lastInstallStatus, "HOSTOFF",
+              svc.hostIsOff ? "yes" : "no");
+    try
+    {
+        co_await svc.installer.run();
+        svc.lastInstallStatus = "Installed";
+        lg2::info("runCakInstall: installer.run() completed successfully → "
+                  "status=Installed");
+    }
+    catch (const CakInstallDeclinedException& ex)
+    {
+        svc.lastInstallStatus = "NotApplicable";
+        lg2::warning("runCakInstall: CakInstallDeclinedException → "
+                     "status=NotApplicable: {ERROR}",
+                     "ERROR", ex.what());
+    }
+    catch (const boost::system::system_error& ex)
+    {
+        lg2::info("runCakInstall: boost::system::system_error caught: "
+                  "code={CODE} message={ERROR}",
+                  "CODE", ex.code().value(), "ERROR", ex.what());
+        if (ex.code() == boost::asio::error::operation_aborted)
+        {
+            lg2::info("runCakInstall: operation_aborted — host went off, "
+                      "status already set by Off handler, co_return");
+            co_return;
+        }
+        std::string errorMsg = ex.what();
+        if (errorMsg.find("CAK verification failed") != std::string::npos)
+        {
+            svc.lastInstallStatus = "Error";
+            lg2::error("runCakInstall: system_error, CAK verification failed "
+                       "→ status=Error: {ERROR}",
+                       "ERROR", errorMsg);
+        }
+        else
+        {
+            svc.lastInstallStatus = "NotInstalled";
+            lg2::error("runCakInstall: system_error → status=NotInstalled: "
+                       "{ERROR}",
+                       "ERROR", errorMsg);
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        std::string errorMsg = ex.what();
+        lg2::info("runCakInstall: std::exception caught: {ERROR}", "ERROR",
+                  errorMsg);
+        if (errorMsg.find("CAK verification failed") != std::string::npos)
+        {
+            svc.lastInstallStatus = "Error";
+            lg2::error(
+                "runCakInstall: CAK verification failed → status=Error: "
+                "{ERROR}",
+                "ERROR", errorMsg);
+        }
+        else
+        {
+            svc.lastInstallStatus = "NotInstalled";
+            lg2::error("runCakInstall: exception → status=NotInstalled: "
+                       "{ERROR}",
+                       "ERROR", errorMsg);
+        }
+    }
+    catch (...)
+    {
+        // Catch-all: prevents std::terminate via detached co_spawn if an
+        // unexpected exception type (e.g. boost::wrapexcept wrapping a
+        // system_error with EOPNOTSUPP from disabled-thread cancellation)
+        // somehow escapes the typed catch blocks above.
+        svc.lastInstallStatus = "NotInstalled";
+        lg2::error("runCakInstall: unknown exception type caught (not "
+                   "std::exception) → status=NotInstalled");
+    }
+    lg2::info("runCakInstall: finished, final status={STATUS}, signaling "
+              "CAKInstalled property",
+              "STATUS", svc.lastInstallStatus);
+    try
+    {
+        svc.iface->signal_property("CAKInstalled");
+    }
+    catch (const std::exception& ex)
+    {
+        lg2::error("runCakInstall: signal_property(CAKInstalled) threw: "
+                   "{ERROR}",
+                   "ERROR", ex.what());
+    }
+    svc.installInProgress = false;
+    lg2::info("runCakInstall: installInProgress=false, coroutine exiting");
+}
+
+static void triggerCakInstall(ServiceState svc)
+{
+    lg2::info("triggerCakInstall: called, installInProgress={INPROG} "
+              "hostIsOff={HOSTOFF} lastStatus={STATUS}",
+              "INPROG", svc.installInProgress ? "yes" : "no", "HOSTOFF",
+              svc.hostIsOff ? "yes" : "no", "STATUS", svc.lastInstallStatus);
+    if (svc.installInProgress)
+    {
+        lg2::info("triggerCakInstall: install already in progress, skipping");
+        return;
+    }
+    lg2::info("triggerCakInstall: spawning runCakInstall coroutine");
+    svc.installInProgress = true;
+    boost::asio::co_spawn(svc.io, runCakInstall(svc),
+                          boost::asio::bind_cancellation_slot(
+                              svc.cancelInstall.slot(), boost::asio::detached));
+}
+
 static int runService(const Args& args)
 {
     Config config;
@@ -1853,9 +539,15 @@ static int runService(const Args& args)
     auto iface = server.add_interface("/xyz/openbmc_project/security/dot",
                                       "xyz.openbmc_project.Security.DOT");
 
+    auto installer = createInstaller(config, bus);
+
     std::string lastInstallStatus = "NotInstalled";
-    std::atomic<bool> installInProgress{false};
-    std::atomic<bool> hostIsOff{false};
+    bool installInProgress = false;
+    bool hostIsOff = false;
+    boost::asio::cancellation_signal cancelInstall;
+    ServiceState svc{
+        *installer,        config, io,           hostIsOff, installInProgress,
+        lastInstallStatus, iface,  cancelInstall};
 
     iface->register_property_r<bool>(
         "Stored", sdbusplus::vtable::property_::emits_change,
@@ -1864,50 +556,7 @@ static int runService(const Args& args)
         });
     iface->register_property_r<std::string>(
         "CAKValue", sdbusplus::vtable::property_::emits_change,
-        [&config](const std::string&) {
-            if (!config.allowCakReadout)
-            {
-                return std::string{};
-            }
-            try
-            {
-                fs::path payloadFile = payloadPath(config.keyStorePath);
-                if (fs::exists(payloadFile))
-                {
-                    std::string content = readFile(payloadFile);
-                    try
-                    {
-                        json payload = json::parse(content);
-                        validateDotPayload(payload);
-                        return content;
-                    }
-                    catch (const json::parse_error& ex)
-                    {
-                        lg2::error(
-                            "CAKValue: Invalid JSON in payload file: {ERROR}. "
-                            "Returning empty string.",
-                            "ERROR", ex.what());
-                        return std::string{};
-                    }
-                    catch (const std::exception& ex)
-                    {
-                        lg2::error(
-                            "CAKValue: Invalid payload structure: {ERROR}. "
-                            "Returning empty string.",
-                            "ERROR", ex.what());
-                        return std::string{};
-                    }
-                }
-                return std::string{};
-            }
-            catch (const std::exception& ex)
-            {
-                lg2::error("CAKValue: Failed to read payload file: {ERROR}. "
-                           "Returning empty string.",
-                           "ERROR", ex.what());
-                return std::string{};
-            }
-        });
+        [&config](const std::string&) { return readCakValue(config); });
     iface->register_property_r<std::string>(
         "KeyStorePath", sdbusplus::vtable::property_::emits_change,
         [&config](const std::string&) { return config.keyStorePath.string(); });
@@ -1919,63 +568,7 @@ static int runService(const Args& args)
         sdbusplus::vtable::property_::emits_change,
         [&config](const int&) { return config.timeouts.installMs / 1000; });
 
-    iface->register_method("InstallCak", [&config, &lastInstallStatus,
-                                          &installInProgress, &hostIsOff,
-                                          iface]() {
-        if (installInProgress.exchange(true))
-        {
-            return;
-        }
-
-        std::thread([&config, &lastInstallStatus, &installInProgress,
-                     &hostIsOff, iface]() {
-            struct ResetFlag
-            {
-                std::atomic<bool>& flag;
-                ~ResetFlag()
-                {
-                    flag.store(false);
-                }
-            } reset{installInProgress};
-
-            try
-            {
-                provisionCak(config, hostIsOff);
-                lastInstallStatus = "Installed";
-                iface->signal_property("CAKInstalled");
-            }
-            catch (const std::exception& ex)
-            {
-                std::string errorMsg = ex.what();
-                if (errorMsg.find("CAK verification failed") !=
-                    std::string::npos)
-                {
-                    lastInstallStatus = "Error";
-                    lg2::error(
-                        "InstallCak: CAK verification failed - wrong CAK may "
-                        "have been installed: {ERROR}",
-                        "ERROR", errorMsg);
-                }
-                else if (hostIsOff.load() &&
-                         errorMsg.find("host powered off") != std::string::npos)
-                {
-                    lastInstallStatus = "NotInstalled";
-                    lg2::info(
-                        "InstallCak: Installation aborted because host powered off");
-                }
-                else
-                {
-                    lastInstallStatus = "NotInstalled";
-                    lg2::error(
-                        "InstallCak: Installation failed: {ERROR}. Service "
-                        "continues running.",
-                        "ERROR", errorMsg);
-                }
-                iface->signal_property("CAKInstalled");
-            }
-        }).detach();
-    });
-
+    iface->register_method("InstallCak", [svc]() { triggerCakInstall(svc); });
     iface->register_method(
         "installCak2BmcFs",
         [&config, iface](const std::tuple<std::string, std::string>& cakKey,
@@ -2025,220 +618,170 @@ static int runService(const Args& args)
         static_cast<sdbusplus::bus_t&>(*bus),
         sdbusplus::bus::match::rules::propertiesChanged(hostStatePath,
                                                         hostStateInterface),
-        [&config, &lastInstallStatus, &installInProgress, &hostIsOff, iface,
-         bus](sdbusplus::message_t& msg) {
+        [svc, bus](sdbusplus::message_t& msg) {
             std::string interface;
             std::map<std::string, std::variant<std::string>> properties;
             msg.read(interface, properties);
 
             auto it = properties.find(hostStateProperty);
-            if (it != properties.end())
+            if (it == properties.end())
             {
-                const std::string* state =
-                    std::get_if<std::string>(&it->second);
-                if (state != nullptr)
+                lg2::debug("HostState propertiesChanged: no CurrentHostState "
+                           "in message, ignoring");
+                return;
+            }
+            const std::string* state = std::get_if<std::string>(&it->second);
+            if (!state)
+            {
+                lg2::debug("HostState propertiesChanged: CurrentHostState is "
+                           "not a string, ignoring");
+                return;
+            }
+
+            lg2::info("HostState propertiesChanged: new state={STATE} "
+                      "(installInProgress={INPROG} lastStatus={STATUS})",
+                      "STATE", *state, "INPROG",
+                      svc.installInProgress ? "yes" : "no", "STATUS",
+                      svc.lastInstallStatus);
+
+            if (*state == hostStateOn)
+            {
+                lg2::info("HostState → Running: triggering CAK installation");
+                svc.hostIsOff = false;
+                triggerCakInstall(svc);
+            }
+            else if (*state == hostStateOff)
+            {
+                lg2::info(
+                    "HostState → Off: resetting CAKInstalled=NotInstalled, "
+                    "aborting any in-progress installation "
+                    "(installInProgress={INPROG})",
+                    "INPROG", svc.installInProgress ? "yes" : "no");
+                svc.hostIsOff = true;
+                // Use catch(...) rather than catch(std::exception): on some
+                // Boost/ABI combinations, boost::wrapexcept<system_error> is
+                // not matched by catch(const std::exception&).  With
+                // BOOST_ASIO_DISABLE_THREADS, cancelling an in-progress
+                // async operation may internally attempt thread creation and
+                // throw system:95 (EOPNOTSUPP).
+                lg2::info("HostState → Off: emitting terminal cancellation");
+                try
                 {
-                    if (*state == hostStateOn)
-                    {
-                        hostIsOff.store(false);
-
-                        if (config.hmc)
-                        {
-                            std::string cakState =
-                                getDotCakInitializationState(config);
-                            if (cakState == "Complete")
-                            {
-                                lg2::info(
-                                    "HostState changed to Running and CAK is already "
-                                    "installed (DOTCAKInitialization=Complete) - "
-                                    "skipping installation");
-                                lastInstallStatus = "Installed";
-                                iface->signal_property("CAKInstalled");
-                                return;
-                            }
-                        }
-
-                        if (!installInProgress.exchange(true))
-                        {
-                            lg2::info(
-                                "HostState changed to Running - triggering CAK "
-                                "installation");
-                            std::thread([&config, &lastInstallStatus,
-                                         &installInProgress, &hostIsOff,
-                                         iface]() {
-                                struct ResetFlag
-                                {
-                                    std::atomic<bool>& flag;
-                                    ~ResetFlag()
-                                    {
-                                        flag.store(false);
-                                    }
-                                } reset{installInProgress};
-
-                                try
-                                {
-                                    provisionCak(config, hostIsOff);
-                                    lastInstallStatus = "Installed";
-                                    iface->signal_property("CAKInstalled");
-                                }
-                                catch (const std::exception& ex)
-                                {
-                                    std::string errorMsg = ex.what();
-                                    if (errorMsg.find(
-                                            "CAK verification failed") !=
-                                        std::string::npos)
-                                    {
-                                        lastInstallStatus = "Error";
-                                        lg2::error(
-                                            "CAK installation on power-on: CAK verification "
-                                            "failed - wrong CAK may have been installed: {ERROR}",
-                                            "ERROR", errorMsg);
-                                    }
-                                    else if (hostIsOff.load())
-                                    {
-                                        lastInstallStatus = "NotInstalled";
-                                        lg2::info(
-                                            "CAK installation aborted because host powered off");
-                                    }
-                                    else
-                                    {
-                                        lastInstallStatus = "NotInstalled";
-                                        lg2::error(
-                                            "CAK installation failed on power-on: "
-                                            "{ERROR}. Service continues running.",
-                                            "ERROR", errorMsg);
-                                    }
-                                    iface->signal_property("CAKInstalled");
-                                }
-                            }).detach();
-                        }
-                        else
-                        {
-                            lg2::info(
-                                "HostState changed to Running but CAK installation "
-                                "already in progress - skipping");
-                        }
-                    }
-                    else if (*state == hostStateOff)
-                    {
-                        lg2::info(
-                            "HostState changed to Off - resetting CAKInstalled to "
-                            "NotInstalled and aborting any ongoing installation");
-                        hostIsOff.store(true);
-                        lastInstallStatus = "NotInstalled";
-                        iface->signal_property("CAKInstalled");
-                    }
+                    svc.cancelInstall.emit(
+                        boost::asio::cancellation_type::terminal);
+                    lg2::info("HostState → Off: terminal cancellation emitted");
                 }
+                catch (...)
+                {
+                    lg2::warning(
+                        "HostState → Off: cancelInstall.emit() threw "
+                        "(exception swallowed) — install coroutine will exit "
+                        "when its current operation completes");
+                }
+                svc.installInProgress = false;
+                svc.lastInstallStatus = "NotInstalled";
+                lg2::info("HostState → Off: signaling CAKInstalled=NotInstalled");
+                try
+                {
+                    svc.iface->signal_property("CAKInstalled");
+                }
+                catch (...)
+                {
+                    lg2::warning(
+                        "HostState → Off: signal_property(CAKInstalled) threw "
+                        "(exception swallowed)");
+                }
+                lg2::info("HostState → Off: handler complete");
+            }
+            else
+            {
+                lg2::info("HostState propertiesChanged: unrecognised state "
+                          "{STATE}, ignoring",
+                          "STATE", *state);
             }
         });
 
     sdbusplus::asio::getProperty<std::string>(
         *bus, hostStateService, hostStatePath, hostStateInterface,
         hostStateProperty,
-        [&config, &lastInstallStatus, &installInProgress, &hostIsOff, iface,
-         hostStateOn, hostStateOff](const boost::system::error_code& ec,
-                                    const std::string& state) {
+        [svc, hostStateOn, hostStateOff](const boost::system::error_code& ec,
+                                         const std::string& state) {
             if (ec)
             {
-                lg2::warning(
-                    "Failed to get initial HostState: {ERROR}. Will monitor "
-                    "for changes.",
-                    "ERROR", ec.message());
+                lg2::warning("Initial HostState read failed: {ERROR}. "
+                             "Will rely on propertiesChanged match for state.",
+                             "ERROR", ec.message());
                 return;
             }
             lg2::info("Initial HostState: {STATE}", "STATE", state);
             if (state == hostStateOn)
             {
-                if (config.hmc)
-                {
-                    std::string cakState = getDotCakInitializationState(config);
-                    if (cakState == "Complete")
-                    {
-                        lg2::info(
-                            "Host is Running and CAK is already installed "
-                            "(DOTCAKInitialization=Complete) - skipping installation");
-                        lastInstallStatus = "Installed";
-                        iface->signal_property("CAKInstalled");
-                        return;
-                    }
-                }
-
-                if (!installInProgress.exchange(true))
-                {
-                    lg2::info(
-                        "Host is already Running on startup - triggering CAK "
-                        "installation");
-                    std::thread([&config, &lastInstallStatus,
-                                 &installInProgress, &hostIsOff, iface]() {
-                        struct ResetFlag
-                        {
-                            std::atomic<bool>& flag;
-                            ~ResetFlag()
-                            {
-                                flag.store(false);
-                            }
-                        } reset{installInProgress};
-
-                        try
-                        {
-                            provisionCak(config, hostIsOff);
-                            lastInstallStatus = "Installed";
-                            iface->signal_property("CAKInstalled");
-                        }
-                        catch (const std::exception& ex)
-                        {
-                            std::string errorMsg = ex.what();
-                            if (errorMsg.find("CAK verification failed") !=
-                                std::string::npos)
-                            {
-                                lastInstallStatus = "Error";
-                                lg2::error(
-                                    "Auto-install on startup: CAK verification failed "
-                                    "- wrong CAK may have been installed: {ERROR}",
-                                    "ERROR", errorMsg);
-                            }
-                            else if (hostIsOff.load() &&
-                                     errorMsg.find("host powered off") !=
-                                         std::string::npos)
-                            {
-                                lastInstallStatus = "NotInstalled";
-                                lg2::info(
-                                    "Auto-install on startup aborted because host "
-                                    "powered off");
-                            }
-                            else
-                            {
-                                lastInstallStatus = "NotInstalled";
-                                lg2::error(
-                                    "Auto-install on startup failed: {ERROR}. Service "
-                                    "continues running.",
-                                    "ERROR", errorMsg);
-                            }
-                            iface->signal_property("CAKInstalled");
-                        }
-                    }).detach();
-                }
+                lg2::info("Initial HostState is Running — host is already up, "
+                          "NOT triggering install (waiting for next On event)");
+                svc.hostIsOff = false;
             }
             else if (state == hostStateOff)
             {
-                lastInstallStatus = "NotInstalled";
-                iface->signal_property("CAKInstalled");
+                lg2::info("Initial HostState is Off — setting hostIsOff=true, "
+                          "CAKInstalled=NotInstalled");
+                svc.hostIsOff = true;
+                svc.lastInstallStatus = "NotInstalled";
+                svc.iface->signal_property("CAKInstalled");
+            }
+            else
+            {
+                lg2::info("Initial HostState is {STATE} (neither Running nor "
+                          "Off), no action",
+                          "STATE", state);
             }
         });
 
     boost::asio::signal_set signals(io, SIGTERM, SIGINT);
     signals.async_wait(
         [&](const boost::system::error_code&, int) { io.stop(); });
-    io.run();
+    // Run the io_context in a resilient loop: if a handler throws (e.g. from
+    // Boost.Asio's async cancellation machinery when
+    // BOOST_ASIO_DISABLE_THREADS is set), log and restart rather than exiting.
+    // io_context::run() can be re-entered after a throw; pending completions
+    // remain queued and will be processed on the next iteration.
+    lg2::info("runService: entering io_context run loop");
+    int ioRestarts = 0;
+    for (;;)
+    {
+        try
+        {
+            io.run();
+            lg2::info("runService: io_context run() returned normally "
+                      "(io.stop() called), restarts={RESTARTS}",
+                      "RESTARTS", ioRestarts);
+            break; // ran out of work — io.stop() called (SIGTERM/SIGINT)
+        }
+        catch (const std::exception& ex)
+        {
+            ++ioRestarts;
+            lg2::error(
+                "runService: io_context handler threw (restart #{RESTARTS}): "
+                "{ERROR}. Re-entering run loop.",
+                "RESTARTS", ioRestarts, "ERROR", ex.what());
+        }
+        catch (...)
+        {
+            ++ioRestarts;
+            lg2::error(
+                "runService: io_context handler threw unknown exception "
+                "(restart #{RESTARTS}). Re-entering run loop.",
+                "RESTARTS", ioRestarts);
+        }
+    }
+    lg2::info("runService: exiting, total io_context restarts={RESTARTS}",
+              "RESTARTS", ioRestarts);
     return ExitCode::kSuccess;
 }
 
-/**
- * @brief Split whitespace-delimited text into argument tokens.
- *
- * @param input Input argument string.
- * @return std::vector<std::string> Tokenized arguments.
- */
+// ---------------------------------------------------------------------------
+// CLI argument parsing
+// ---------------------------------------------------------------------------
+
 static std::vector<std::string> splitArgs(const std::string& input)
 {
     std::istringstream stream(input);
@@ -2251,13 +794,6 @@ static std::vector<std::string> splitArgs(const std::string& input)
     return out;
 }
 
-/**
- * @brief Parse command-line options into Args.
- *
- * @param argc Argument count.
- * @param argv Argument vector.
- * @return Args Parsed argument structure.
- */
 static Args parseArgs(int argc, char** argv)
 {
     Args args;
@@ -2317,7 +853,15 @@ static Args parseArgs(int argc, char** argv)
         }
         else if (name == "i2c-bus")
         {
-            args.i2cBus = std::stoi(optarg);
+            try
+            {
+                args.i2cBus = std::stoi(optarg);
+            }
+            catch (const std::exception&)
+            {
+                std::cerr << "invalid --i2c-bus value: " << optarg << "\n";
+                std::exit(ExitCode::kInvalidArgs);
+            }
         }
         else if (name == "i2c-addr")
         {
@@ -2327,13 +871,10 @@ static Args parseArgs(int argc, char** argv)
     return args;
 }
 
-/**
- * @brief Program entry point and mode dispatcher.
- *
- * @param argc Argument count.
- * @param argv Argument vector.
- * @return int Process-style exit code.
- */
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
+
 int main(int argc, char** argv)
 {
     Args args = parseArgs(argc, argv);
