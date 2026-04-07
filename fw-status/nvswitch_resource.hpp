@@ -253,11 +253,16 @@ class NVSwitchResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
-        if (isChassisPoweredOff())
+        const bool mctpEnumerated = MCTPDiscoveryResource::isDeviceEnumerated();
+
+        if (!mctpEnumerated)
         {
-            health(HealthServer::HealthType::Warning);
-            state(OperationalStatusServer::StateType::UnavailableOffline);
-            return;
+            if (isChassisPoweredOff())
+            {
+                health(HealthServer::HealthType::Warning);
+                state(OperationalStatusServer::StateType::UnavailableOffline);
+                return;
+            }
         }
 
         const auto& [ret, output, errorMsg] = getDeviceStatus();
@@ -289,6 +294,15 @@ class NVSwitchResource : public MCTPDiscoveryResource
             (output != std::vector<uint8_t>(normalBootStatus.begin(),
                                             normalBootStatus.end()));
 
+        if (mctpEnumerated)
+        {
+            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
+                      path.c_str());
+            health(HealthServer::HealthType::OK);
+            state(OperationalStatusServer::StateType::Enabled);
+            return;
+        }
+
         if (inRecoveryState)
         {
             lg2::info("Device associated with {PATH} is in recovery", "PATH",
@@ -296,15 +310,6 @@ class NVSwitchResource : public MCTPDiscoveryResource
 
             health(HealthServer::HealthType::Critical);
             state(OperationalStatusServer::StateType::StandbyOffline);
-            return;
-        }
-
-        if (MCTPDiscoveryResource::isDeviceEnumerated())
-        {
-            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
-                      path.c_str());
-            health(HealthServer::HealthType::OK);
-            state(OperationalStatusServer::StateType::Enabled);
             return;
         }
 

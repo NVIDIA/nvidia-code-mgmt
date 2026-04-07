@@ -1286,6 +1286,16 @@ bool startCentralizedPowerStateWatcher()
                         "Updating cached chassis power state for resource {PATH} to {STATE}",
                         "PATH", objectPath, "STATE", powerState);
                     resource->setChassisPowerState(powerState);
+                    try
+                    {
+                        resource->updateHealth();
+                    }
+                    catch (const std::exception& e)
+                    {
+                        lg2::error(
+                            "Failed to update health for resource at {PATH} after a chassis power state change",
+                            "PATH", objectPath);
+                    }
                 }
             }
             catch (const std::exception& e)

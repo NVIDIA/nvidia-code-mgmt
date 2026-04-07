@@ -65,11 +65,16 @@ class MCUResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
-        if (isChassisPoweredOff())
+        const bool mctpEnumerated = MCTPDiscoveryResource::isDeviceEnumerated();
+
+        if (!mctpEnumerated)
         {
-            health(HealthServer::HealthType::Warning);
-            state(OperationalStatusServer::StateType::UnavailableOffline);
-            return;
+            if (isChassisPoweredOff())
+            {
+                health(HealthServer::HealthType::Warning);
+                state(OperationalStatusServer::StateType::UnavailableOffline);
+                return;
+            }
         }
 
         mcuRecoveryManager->updateAllDeviceInfo();
@@ -81,7 +86,7 @@ class MCUResource : public MCTPDiscoveryResource
             "ID", deviceId, "IS_HEALTHY", isHealthy, "IS_IN_RECOVERY_MODE",
             isInRecoveryMode);
 
-        if (MCTPDiscoveryResource::isDeviceEnumerated() and isHealthy)
+        if (mctpEnumerated)
         {
             lg2::info("MCU device {ID} is healthy with MCTP enumerated", "ID",
                       deviceId);
@@ -98,7 +103,7 @@ class MCUResource : public MCTPDiscoveryResource
             return;
         }
 
-        if (isHealthy and !MCTPDiscoveryResource::isDeviceEnumerated())
+        if (isHealthy)
         {
             lg2::warning("MCU device {ID} is healthy but MCTP connectivity "
                          "is not available",
