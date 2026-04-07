@@ -101,11 +101,16 @@ void ERoTResource::updateERoTHealth()
         return;
     }
 
-    if (isChassisPoweredOff())
+    const bool mctpEnumerated = MCTPDiscoveryResource::isDeviceEnumerated();
+
+    if (!mctpEnumerated)
     {
-        health(HealthServer::HealthType::Warning);
-        state(OperationalStatusServer::StateType::UnavailableOffline);
-        return;
+        if (isChassisPoweredOff())
+        {
+            health(HealthServer::HealthType::Warning);
+            state(OperationalStatusServer::StateType::UnavailableOffline);
+            return;
+        }
     }
 
     const auto& status = glacierRecoveryObj->performInitialization();
@@ -113,7 +118,7 @@ void ERoTResource::updateERoTHealth()
         (status != glacier_recovery_tool::glacier_recovery_commands::
                        RecoveryResult::FirmwareNotInRecovery);
 
-    if (MCTPDiscoveryResource::isDeviceEnumerated() and !inRecovery)
+    if (mctpEnumerated)
     {
         lg2::info("MCTP EID for {PATH} is enumerated", "PATH", path.c_str());
         health(HealthServer::HealthType::OK);

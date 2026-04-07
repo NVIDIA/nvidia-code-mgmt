@@ -149,11 +149,16 @@ class ConnectXResource : public MCTPDiscoveryResource
      */
     void updateHealth() override
     {
-        if (isChassisPoweredOff())
+        const bool mctpEnumerated = MCTPDiscoveryResource::isDeviceEnumerated();
+
+        if (!mctpEnumerated)
         {
-            health(HealthServer::HealthType::Warning);
-            state(OperationalStatusServer::StateType::UnavailableOffline);
-            return;
+            if (isChassisPoweredOff())
+            {
+                health(HealthServer::HealthType::Warning);
+                state(OperationalStatusServer::StateType::UnavailableOffline);
+                return;
+            }
         }
 
         const auto& [ret, output, errorMsg] = getDeviceStatus();
@@ -182,7 +187,7 @@ class ConnectXResource : public MCTPDiscoveryResource
         bool inRecoveryState = (output[0] != 0x20 || output[1] != 0x00 ||
                                 output[2] != 0x00 || output[3] != 0x19);
 
-        if (MCTPDiscoveryResource::isDeviceEnumerated() and !inRecoveryState)
+        if (mctpEnumerated)
         {
             lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
                       path.c_str());

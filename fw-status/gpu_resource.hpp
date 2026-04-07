@@ -172,20 +172,25 @@ class GpuResource : public MCTPDiscoveryResource
     {
         HealthServer::HealthType healthValue;
         OperationalStatusServer::StateType stateValue;
+        const bool mctpEnumerated = MCTPDiscoveryResource::isDeviceEnumerated();
 
-        if (isChassisPoweredOff())
+        if (!mctpEnumerated)
         {
-            healthValue = HealthServer::HealthType::Warning;
-            stateValue = OperationalStatusServer::StateType::UnavailableOffline;
-            health(healthValue);
-            state(stateValue);
-
-            if (inforomResource)
+            if (isChassisPoweredOff())
             {
-                inforomResource->health(healthValue);
-                inforomResource->state(stateValue);
+                healthValue = HealthServer::HealthType::Warning;
+                stateValue =
+                    OperationalStatusServer::StateType::UnavailableOffline;
+                health(healthValue);
+                state(stateValue);
+
+                if (inforomResource)
+                {
+                    inforomResource->health(healthValue);
+                    inforomResource->state(stateValue);
+                }
+                return;
             }
-            return;
         }
 
         const auto& [ret, output, errorMsg] =
@@ -224,8 +229,7 @@ class GpuResource : public MCTPDiscoveryResource
         bootStatus->bootStatus(
             std::vector<uint8_t>(output.begin() + 1, output.end()));
 
-        if (MCTPDiscoveryResource::isDeviceEnumerated() and
-            status == recovery_tool::DeviceStatus::DeviceHealthy)
+        if (mctpEnumerated)
         {
             lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
                       path.c_str());

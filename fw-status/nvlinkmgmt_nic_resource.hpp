@@ -142,11 +142,16 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
 
     void updateHealth() override
     {
-        if (isChassisPoweredOff())
+        const bool mctpEnumerated = MCTPDiscoveryResource::isDeviceEnumerated();
+
+        if (!mctpEnumerated)
         {
-            health(HealthServer::HealthType::Warning);
-            state(OperationalStatusServer::StateType::UnavailableOffline);
-            return;
+            if (isChassisPoweredOff())
+            {
+                health(HealthServer::HealthType::Warning);
+                state(OperationalStatusServer::StateType::UnavailableOffline);
+                return;
+            }
         }
 
         const auto& [ret, output, errorMsg] = getDeviceStatus();
@@ -173,6 +178,13 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
         bool inRecoveryState = (output[0] != 0x20 || output[1] != 0x00 ||
                                 output[2] != 0x00 || output[3] != 0x19);
 
+        if (mctpEnumerated)
+        {
+            health(HealthServer::HealthType::OK);
+            state(OperationalStatusServer::StateType::Enabled);
+            return;
+        }
+
         if (inRecoveryState)
         {
             lg2::info("Device associated with {PATH} is in recovery", "PATH",
@@ -180,13 +192,6 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
 
             health(HealthServer::HealthType::Critical);
             state(OperationalStatusServer::StateType::StandbyOffline);
-            return;
-        }
-
-        if (MCTPDiscoveryResource::isDeviceEnumerated())
-        {
-            health(HealthServer::HealthType::OK);
-            state(OperationalStatusServer::StateType::Enabled);
             return;
         }
 
