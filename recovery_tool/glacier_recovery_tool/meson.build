@@ -18,7 +18,7 @@ recovery_app_source_files = [
     join_paths(dbus_utils_dir, 'dbusutils.cpp'),
 ]
 
-executable(
+glacier_recovery_tool_exe = executable(
     'glacier-recovery-tool',
     sources: source_files,
     include_directories: inc_dirs,
@@ -27,7 +27,7 @@ executable(
     install_dir: get_option('bindir'),
 )
 
-executable(
+glacier_recovery_exe = executable(
     'glacier-recovery',
     sources: recovery_app_source_files,
     include_directories: inc_dirs,
@@ -43,4 +43,3 @@ executable(
     install: true,
     install_dir: get_option('bindir'),
 )
-

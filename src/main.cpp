@@ -140,7 +140,9 @@ int main(int argc, char** argv)
                 modelName = optarg;
                 break;
             case 'n':
+#if MTD_SUPPORT
                 nostrip = true;
+#endif
                 break;
             default:
                 print_wrong_arg_exit();

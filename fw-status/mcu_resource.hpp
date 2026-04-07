@@ -75,6 +75,17 @@ class MCUResource : public MCTPDiscoveryResource
             }
         }
 
+        if (!mcuRecoveryManager)
+        {
+            lg2::error("MCU recovery manager is not available for device {ID}",
+                       "ID", deviceId);
+            health(HealthServer::HealthType::Critical);
+            state(MCTPDiscoveryResource::wasDeviceEnumeratedBefore()
+                      ? OperationalStatusServer::StateType::UnavailableOffline
+                      : OperationalStatusServer::StateType::Absent);
+            return;
+        }
+
         mcuRecoveryManager->updateDevInfo(deviceId);
         auto isHealthy = mcuRecoveryManager->isHealthy(deviceId);
         auto isInRecoveryMode = mcuRecoveryManager->isInRecoveryMode(deviceId);

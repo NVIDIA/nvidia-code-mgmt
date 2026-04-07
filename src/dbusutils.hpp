@@ -30,8 +30,8 @@
 #include <phosphor-logging/log.hpp>
 
 #include <algorithm>
+#include <any>
 #include <cstring>
-#include <experimental/any>
 #include <filesystem>
 #include <string>
 #include <typeinfo>
@@ -42,11 +42,8 @@ namespace software
 {
 namespace updater
 {
-// Due to a libstdc++ bug, we got compile error using std::any with gmock.
-// A temporary workaround is to use std::experimental::any.
-// See details in https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90415
-using std::experimental::any;
-using std::experimental::any_cast;
+using std::any;
+using std::any_cast;
 using Value =
     std::variant<bool, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t,
                  uint64_t, double, std::string, std::vector<uint8_t>>;

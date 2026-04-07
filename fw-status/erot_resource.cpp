@@ -109,6 +109,26 @@ void ERoTResource::updateERoTHealth()
         }
     }
 
+    if (!glacierRecoveryObj)
+    {
+        if (mctpEnumerated)
+        {
+            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
+                      path.c_str());
+            health(HealthServer::HealthType::OK);
+            state(OperationalStatusServer::StateType::Enabled);
+            return;
+        }
+
+        lg2::error("Glacier recovery object is not available for {PATH}",
+                   "PATH", path.c_str());
+        health(HealthServer::HealthType::Critical);
+        state(MCTPDiscoveryResource::wasDeviceEnumeratedBefore()
+                  ? OperationalStatusServer::StateType::UnavailableOffline
+                  : OperationalStatusServer::StateType::Absent);
+        return;
+    }
+
     const auto& status = glacierRecoveryObj->performInitialization();
     bool inRecovery =
         (status != glacier_recovery_tool::glacier_recovery_commands::

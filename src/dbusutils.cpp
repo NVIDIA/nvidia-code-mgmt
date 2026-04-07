@@ -31,8 +31,8 @@
 #include <phosphor-logging/log.hpp>
 
 #include <algorithm>
+#include <any>
 #include <cstring>
-#include <experimental/any>
 #include <filesystem>
 #include <string>
 
@@ -45,11 +45,8 @@ namespace updater
 
 using namespace phosphor::logging;
 
-// Due to a libstdc++ bug, we got compile error using std::any with gmock.
-// A temporary workaround is to use std::experimental::any.
-// See details in https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90415
-using std::experimental::any;
-using std::experimental::any_cast;
+using std::any;
+using std::any_cast;
 using PropertyType = std::variant<std::string, bool>;
 
 std::vector<std::string> DBUSUtils::getinventoryPath(const std::string& iface)

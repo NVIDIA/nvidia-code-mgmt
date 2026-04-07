@@ -31,10 +31,26 @@ void APResource::updateHealth()
 {
     if (co)
     {
+        if (co.done())
+        {
+            co.destroy();
+        }
+        else
+        {
+            co.promise().detached = true;
+        }
         co = nullptr;
     }
+
     auto rc = updateHealthAsync(erotResource->isChassisPoweredOff());
     co = rc.handle;
+    rc.handle = nullptr;
+
+    if (co.done())
+    {
+        co.destroy();
+        co = nullptr;
+    }
 }
 
 mctp_vdm::requester::Coroutine APResource::initializeHealth()
@@ -143,10 +159,7 @@ bool APResource::isAPInRecovery() const noexcept
     if (isERoTHealthy())
     {
         auto status = erotResource->getBootStatus();
-
-        auto bootCompleteTimeout = (status[status.size() - 4]) & (1 << 3);
-
-        return static_cast<bool>(bootCompleteTimeout);
+        return getBit(status, AP0_BOOT_COMPLETE_TIMEOUT_BIT);
     }
     return !isApHealthy();
 }

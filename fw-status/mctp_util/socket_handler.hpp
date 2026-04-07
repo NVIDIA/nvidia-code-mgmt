@@ -84,11 +84,23 @@ class Handler
      */
     int activateSockets(const std::vector<uint8_t>& eids)
     {
+        int ret = 0;
         for (const auto& eid : eids)
         {
-            auto type = std::get<0>(eidToSockMap[eid]);
-            auto protocol = std::get<1>(eidToSockMap[eid]);
-            auto pathName = std::get<2>(eidToSockMap[eid]);
+            auto endpoint = eidToSockMap.find(eid);
+            if (endpoint == eidToSockMap.end())
+            {
+                lg2::error("No MCTP socket info registered for EID={EID}",
+                           "EID", eid);
+                ret = -1;
+                continue;
+            }
+
+            const auto& [type, protocol, pathName] = endpoint->second;
+            if (manager.getSocket(eid) >= 0)
+            {
+                continue;
+            }
 
             auto entry = socketInfoMap.find(pathName);
             if (entry == socketInfoMap.end())
@@ -98,6 +110,7 @@ class Handler
                 {
                     lg2::error("Error initialising socket for EID={EID}", "EID",
                                eid);
+                    ret = -1;
                     continue;
                 }
                 else
@@ -111,7 +124,7 @@ class Handler
                     eid, (*(std::get<0>(entry->second)).get())());
             }
         }
-        return 0;
+        return ret;
     }
 
     /** @brief Deactivates all sockets and clears endpoint registrations */

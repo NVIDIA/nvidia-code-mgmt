@@ -88,6 +88,14 @@ class GPIOResource : public BaseResource
                  const std::string chassisObjPath,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
 
+    ~GPIOResource() override
+    {
+        if (co && co.done())
+        {
+            co.destroy();
+        }
+    }
+
   private:
     sdeventplus::Event& sdEvent;
     uint8_t eid;
@@ -151,13 +159,24 @@ class GPIOResource : public BaseResource
     {
         if (co)
         {
+            if (co.done())
+            {
+                co.destroy();
+            }
+            else
+            {
+                co.promise().detached = true;
+            }
             co = nullptr;
         }
+
         auto rc = updateBootStatusAsync();
         co = rc.handle;
+        rc.handle = nullptr;
 
         if (co.done())
         {
+            co.destroy();
             co = nullptr;
         }
     }

@@ -36,6 +36,11 @@ constexpr static size_t AP0_BOOT_COMPLETE_TIMEOUT_BIT = 27;
 
 inline bool getBit(const std::vector<uint8_t>& status, size_t bit)
 {
+    if (status.empty() || bit / 8 >= status.size())
+    {
+        return false;
+    }
+
     size_t maxIdx = status.size() - 1;
     return (status[maxIdx - bit / 8] >> (bit % 8)) & 1;
 }
@@ -92,6 +97,14 @@ class ERoTResource : public MCTPDiscoveryResource
                  const std::string chassisObjPath, const bool isRecoverable,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
 
+    ~ERoTResource() override
+    {
+        if (co && co.done())
+        {
+            co.destroy();
+        }
+    }
+
     /**@brief Updates the BootStatus of the AP on chassis D-Bus object
      *
      * @return coroutine
@@ -106,22 +119,26 @@ class ERoTResource : public MCTPDiscoveryResource
      */
     void updateBootStatus()
     {
-        if (co && !co.done())
-        {
-            lg2::info("Update in progress, skipping new update request");
-            return;
-        }
-
         if (co)
         {
+            if (co.done())
+            {
+                co.destroy();
+            }
+            else
+            {
+                co.promise().detached = true;
+            }
             co = nullptr;
         }
 
         auto rc = updateBootStatusAsync();
         co = rc.handle;
+        rc.handle = nullptr;
 
         if (co.done())
         {
+            co.destroy();
             co = nullptr;
         }
     }

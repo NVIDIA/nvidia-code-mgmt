@@ -38,7 +38,10 @@ cdata = configuration_data()
 cdata.set_quoted('VERSION_IFACE', 'xyz.openbmc_project.Software.Version')
 compiler_args = []
 if get_option('MOCK_UTILS')
-    compiler_args = ['-DMOCK_UTILS', '-O3']
+    compiler_args = ['-DMOCK_UTILS']
+    if not get_option('b_coverage')
+        compiler_args += ['-O3']
+    endif
 endif
 cdata.set_quoted('IMG_UPLOAD_DIR_BASE', '/tmp/images/pldm/')
 
@@ -240,33 +243,34 @@ if get_option('NVME_SUPPORT').enabled()
     cdata.set('NVME_UPDATE_TIMEOUT', get_option('NVME_UPDATE_TIMEOUT'))
 endif
 
+cdata.set_quoted(
+    'DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL',
+    get_option('DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL'),
+)
+cdata.set_quoted(
+    'DEBUG_TOKEN_ERASE_SUPPORTED_MODEL',
+    get_option('DEBUG_TOKEN_ERASE_SUPPORTED_MODEL'),
+)
+cdata.set_quoted(
+    'DEBUG_TOKEN_INVENTORY_IFACE',
+    'xyz.openbmc_project.Inventory.Decorator.Asset',
+)
+cdata.set_quoted(
+    'DEBUG_TOKEN_INSTALL_BUSNAME_UPDATER',
+    'com.Nvidia.Software.DebugTokenInstall.Updater',
+)
+cdata.set_quoted(
+    'DEBUG_TOKEN_ERASE_BUSNAME_UPDATER',
+    'com.Nvidia.Software.DebugTokenErase.Updater',
+)
+cdata.set_quoted('DEBUG_TOKEN_INSTALL_NAME', 'HGX_FW_Debug_Token_Install')
+cdata.set_quoted('DEBUG_TOKEN_ERASE_NAME', 'HGX_FW_Debug_Token_Erase')
+cdata.set_quoted('DEBUG_TOKEN_BUSNAME_INVENTORY', 'xyz.openbmc_project.PLDM')
+cdata.set_quoted('DEBUG_TOKEN_INVENTORY_PATH', '/xyz/openbmc_project/PLDM')
+cdata.set_quoted('DEBUG_TOKEN_UPDATE_SERVICE', 'debug-token-update@.service')
+
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     add_project_arguments('-DDEBUG_TOKEN_SUPPORT', language: ['c', 'cpp'])
-    cdata.set_quoted(
-        'DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL',
-        get_option('DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL'),
-    )
-    cdata.set_quoted(
-        'DEBUG_TOKEN_ERASE_SUPPORTED_MODEL',
-        get_option('DEBUG_TOKEN_ERASE_SUPPORTED_MODEL'),
-    )
-    cdata.set_quoted(
-        'DEBUG_TOKEN_INVENTORY_IFACE',
-        'xyz.openbmc_project.Inventory.Decorator.Asset',
-    )
-    cdata.set_quoted(
-        'DEBUG_TOKEN_INSTALL_BUSNAME_UPDATER',
-        'com.Nvidia.Software.DebugTokenInstall.Updater',
-    )
-    cdata.set_quoted(
-        'DEBUG_TOKEN_ERASE_BUSNAME_UPDATER',
-        'com.Nvidia.Software.DebugTokenErase.Updater',
-    )
-    cdata.set_quoted('DEBUG_TOKEN_INSTALL_NAME', 'HGX_FW_Debug_Token_Install')
-    cdata.set_quoted('DEBUG_TOKEN_ERASE_NAME', 'HGX_FW_Debug_Token_Erase')
-    cdata.set_quoted('DEBUG_TOKEN_BUSNAME_INVENTORY', 'xyz.openbmc_project.PLDM')
-    cdata.set_quoted('DEBUG_TOKEN_INVENTORY_PATH', '/xyz/openbmc_project/PLDM')
-    cdata.set_quoted('DEBUG_TOKEN_UPDATE_SERVICE', 'debug-token-update@.service')
 endif
 
 if get_option('GLACIER_RECOVERY_SUPPORT').enabled()

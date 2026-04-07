@@ -69,7 +69,7 @@ class Error
      */
     std::string to_string() const noexcept
     {
-        static const std::map<ErrorCode, std::string> errorMessages{
+        static const std::map<uint16_t, std::string> errorMessages{
             {InternalError, "Internal error"},
             {InvalidFormat, "Invalid format"},
             {SignatureVerificationFailed, "Signature verification failed"},
@@ -87,7 +87,7 @@ class Error
             {AlreadyInstalled, "Token already installed"},
             {NotInstalled, "Token not installed"},
             {TokenHashVerificationFailed, "Token hash verification failed"}};
-        auto it = errorMessages.find(static_cast<ErrorCode>(code));
+        auto it = errorMessages.find(code);
         if (it != errorMessages.end())
         {
             return it->second;

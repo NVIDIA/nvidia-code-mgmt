@@ -8,7 +8,7 @@ source_files = [
     'tlv/tlv_decoder.cpp',
 ]
 
-executable(
+update_debug_token_exe = executable(
     'updateDebugToken',
     sources: source_files,
     include_directories: debug_token_inc,

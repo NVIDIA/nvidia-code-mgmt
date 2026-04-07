@@ -894,7 +894,8 @@ void MCURecoveryManager::performResetFlow()
 
         for (auto it = mcuList.begin(); it != mcuList.end();)
         {
-            const auto& [deviceId, mcuInfo] = *it;
+            const auto deviceId = it->first;
+            const auto& mcuInfo = it->second;
             if (updateDevInfo(deviceId))
             {
                 if (isHealthy(deviceId))

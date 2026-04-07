@@ -61,6 +61,14 @@ class APResource : public MCTPDiscoveryResource
         initializeHealth().detach();
     }
 
+    ~APResource() override
+    {
+        if (co && co.done())
+        {
+            co.destroy();
+        }
+    }
+
     /* @brief Function for updating Health and Status of the resource
      * based on QueryBootStatus and MCTP enumeration
      *

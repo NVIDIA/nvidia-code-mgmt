@@ -18,6 +18,7 @@
 #pragma once
 
 #include "base_resource.hpp"
+#include "dbusutils.hpp"
 #include "i2c_utils.hpp"
 #include "mctp_discovery_resource.hpp"
 #include "utils.hpp"

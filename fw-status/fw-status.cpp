@@ -276,8 +276,18 @@ void applyChassisConnectionAndRefresh(const InterfaceMap& interfaces,
 std::map<std::string, mcu_recovery_manager::MCUInfo> getMCUConfig()
 {
     auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    const auto managedObjects = dbusUtil.getManagedObjects(
-        entityManagerService, entityManagerObjManager);
+    nvidia::software::updater::ObjectValueTree managedObjects;
+    try
+    {
+        managedObjects = dbusUtil.getManagedObjects(entityManagerService,
+                                                    entityManagerObjManager);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to get MCU configuration objects: {ERR}", "ERR",
+                   e.what());
+        return {};
+    }
 
     std::map<std::string, mcu_recovery_manager::MCUInfo> mcuMap;
 
