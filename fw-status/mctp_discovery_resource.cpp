@@ -47,12 +47,11 @@ std::string MCTPDiscoveryResource::getMCTPObjectPath()
 
 void MCTPDiscoveryResource::monitorMCTPEndpoint()
 {
-    mctpObjectPath = getMCTPObjectPath();
-    if (!mctpObjectPath.empty())
-    {
-        wasEnumeratedOnce = true;
-    }
-
+    // Register D-Bus signal matches FIRST, before querying current state.
+    // This closes a race window where an endpoint could be added between
+    // the initial query and the match registration, causing the signal to
+    // be missed. With matches registered first, any endpoint added after
+    // this point will be caught by the callback.
     if (!endpointAddedMatch)
     {
         endpointAddedMatch = std::make_unique<sdbusplus::bus::match_t>(
@@ -114,5 +113,14 @@ void MCTPDiscoveryResource::monitorMCTPEndpoint()
                         "ERROR", e);
                 }
             });
+    }
+
+    // Now query current state AFTER matches are registered.
+    // Any endpoint that existed before matches were set up is caught here.
+    // Any endpoint added after matches were set up is caught by the callback.
+    mctpObjectPath = getMCTPObjectPath();
+    if (!mctpObjectPath.empty())
+    {
+        wasEnumeratedOnce = true;
     }
 }
