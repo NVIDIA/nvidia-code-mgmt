@@ -99,11 +99,11 @@ class Orin : public OrinInherit, public Util
 
         if (platformName == "Thor")
         {
-            swpath += "/IGX_Thor_BaseOS";
+            swpath += "/IGX_Thor";
         }
         else if (platformName == "Orin")
         {
-            swpath += "/IGX_Orin_BaseOS";
+            swpath += "/IGX_Orin";
         }
         else
         {

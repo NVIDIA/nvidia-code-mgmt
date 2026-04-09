@@ -17,14 +17,15 @@
 #pragma once
 #include "config.h"
 
+#include "../nvidia_igx/orin/src/orin_util.hpp"
 #include "base_item_updater.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <tuple>
-#include <variant>
 
 namespace nvidia
 {
@@ -50,54 +51,60 @@ class SMCUItemUpdater : public BaseItemUpdater
 
   private:
     /**
-     * @brief Detect platform SMCU type using D-Bus FRU query
-     *
-     * @return std::string "ASMCU" for Orin, "RSMCU" for Thor, "" if unknown
+     * @brief Detect SMCU type from platform detection
+     * @return "ASMCU" (Aurix) or "RSMCU" (Renesas)
      */
     std::string detectPlatformSmcu()
     {
         try
         {
-            auto bus = sdbusplus::bus::new_default();
-            auto method =
-                bus.new_method_call("xyz.openbmc_project.FruDevice",
-                                    "/xyz/openbmc_project/FruDevice/P3809",
-                                    "org.freedesktop.DBus.Properties", "Get");
-            method.append("xyz.openbmc_project.FruDevice",
-                          "PRODUCT_PRODUCT_NAME");
+            // Direct SMCU type detection
+            std::string cmd =
+                "/usr/bin/igx-platform-detection.py --type smcu --no-wait";
+            std::string smcuType = nvidia::orin::common::readVersionFile(cmd);
 
-            auto reply = bus.call(method);
-            std::variant<std::string> productNameVariant;
-            reply.read(productNameVariant);
-            std::string productName = std::get<std::string>(productNameVariant);
-
-            if (productName == "P5840" || productName == "P5940")
+            if (smcuType == "RSMCU")
             {
-                lg2::info(
-                    "Detected Thor platform ({PRODUCT}), using Renesas SMCU",
-                    "PRODUCT", productName);
+                lg2::info("Detected SMCU type: Renesas (from SMCU_SOC field)");
                 return "RSMCU";
             }
-            else if (productName == "P3840" || productName == "P3940")
+            else if (smcuType == "ASMCU")
+            {
+                lg2::info("Detected SMCU type: Aurix (from SMCU_SOC field)");
+                return "ASMCU";
+            }
+
+            // Priority 2: Fallback to platform name detection
+            lg2::info("SMCU_SOC field unavailable, falling back to platform "
+                      "name detection");
+
+            nvidia::orin::common::Util util;
+            std::string platformName = util.getPlatformName();
+
+            if (platformName == "Thor")
             {
                 lg2::info(
-                    "Detected Orin platform ({PRODUCT}), using Aurix SMCU",
-                    "PRODUCT", productName);
+                    "Detected Thor platform, using Renesas SMCU (fallback)");
+                return "RSMCU";
+            }
+            else if (platformName == "Orin")
+            {
+                lg2::info(
+                    "Detected Orin platform, using Aurix SMCU (fallback)");
                 return "ASMCU";
             }
             else
             {
-                lg2::warning("Unknown platform product name: {PRODUCT}, will "
-                             "expose both SMCU types",
-                             "PRODUCT", productName);
+                lg2::error(
+                    "Unknown platform: {PLATFORM}. Cannot determine SMCU type",
+                    "PLATFORM", platformName.empty() ? "empty" : platformName);
                 return "";
             }
         }
         catch (const std::exception& e)
         {
-            lg2::error("Failed to detect platform: {ERROR}, will expose both "
-                       "SMCU types",
-                       "ERROR", e.what());
+            lg2::error("Failed to detect platform SMCU: {ERROR}", "ERROR",
+                       e.what());
             return "";
         }
     }
@@ -196,25 +203,35 @@ class SMCUItemUpdater : public BaseItemUpdater
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
-        // Priority 1: Use model token from firmware image if available
+        // If we already processed an image and know the model, use it
         if (currentModelToken == "ASMCU")
         {
             ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/ASMCU");
             return ret;
         }
-        if (currentModelToken == "RSMCU")
+        else if (currentModelToken == "RSMCU")
         {
             ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/RSMCU");
             return ret;
         }
-        // Priority 2: Use platform-detected SMCU type if available
+
+        // Priority 2: Use detectedPlatformSmcu (from startup detection)
         if (!detectedPlatformSmcu.empty())
         {
-            ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/" +
-                             detectedPlatformSmcu);
-            return ret;
+            if (detectedPlatformSmcu == "ASMCU")
+            {
+                ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/ASMCU");
+                return ret;
+            }
+            else if (detectedPlatformSmcu == "RSMCU")
+            {
+                ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/RSMCU");
+                return ret;
+            }
         }
-        // Priority 3 (fallback): expose both if detection unavailable
+
+        // Fallback: Return both if platform detection failed
+        // Fallback: Return both if platform detection failed
         ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/ASMCU");
         ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/RSMCU");
         return ret;
@@ -227,47 +244,48 @@ class SMCUItemUpdater : public BaseItemUpdater
 
     /**
      * @brief Generate stable IDs per model.
-     *        ASMCU  -> Aurix_SMCU
-     *        RSMCU  -> Renesas_SMCU
-     *        Others -> fallback unique by UUID
+     *        Resolution order:
+     *          1. Model from deviceIds map keyed by the given UUID
+     *          2. SMCU type cached from startup platform detection
+     *          3. Live platform detection via detectPlatformSmcu()
+     *          4. getName() fallback when SMCU type cannot be determined
      */
     std::string getIdProperty(const std::string& uniqueIdentifier) override
     {
-        if (uniqueIdentifier == "ASMCU")
+        // Priority 1: Check if called with a UUID (after processImage)
+        // Extract model from deviceIds map using the UUID
+        if (!uniqueIdentifier.empty())
         {
-            return "Aurix_SMCU";
-        }
-        if (uniqueIdentifier == "RSMCU")
-        {
-            return "Renesas_SMCU";
-        }
-
-        std::string model;
-        auto it = deviceIds.find(uniqueIdentifier);
-        if (it != deviceIds.end())
-        {
-            model = std::get<0>(it->second);
-        }
-        if (model == "ASMCU")
-        {
-            return "Aurix_SMCU";
-        }
-        if (model == "RSMCU")
-        {
-            return "Renesas_SMCU";
+            auto it = deviceIds.find(uniqueIdentifier);
+            if (it != deviceIds.end())
+            {
+                std::string model = std::get<0>(it->second);
+                if (model == "ASMCU")
+                {
+                    return "ASMCU";
+                }
+                else if (model == "RSMCU")
+                {
+                    return "RSMCU";
+                }
+            }
         }
 
-        // Fallback to unique ID to avoid collisions
-        if (uniqueIdentifier.empty())
+        // Priority 2: Use cached platform detection (from constructor)
+        if (!detectedPlatformSmcu.empty())
         {
-            return getName();
+            return detectedPlatformSmcu;
         }
-        std::string id = getName();
-        id += "_";
-        std::string sanitized = uniqueIdentifier;
-        std::replace(sanitized.begin(), sanitized.end(), '/', '_');
-        id += sanitized;
-        return id;
+
+        // Priority 3: Detect now (called during base constructor)
+        std::string smcuType = detectPlatformSmcu();
+        if (smcuType == "ASMCU" || smcuType == "RSMCU")
+        {
+            return smcuType;
+        }
+
+        // Fallback: Use generic SMCU
+        return getName();
     }
 
     int processImage(std::filesystem::path& filePath) override

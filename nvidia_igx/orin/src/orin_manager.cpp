@@ -27,7 +27,25 @@ ORINManager::ORINManager(sdbusplus::bus::bus& bus, std::string basePath) :
 {
     try
     {
-        const auto baseinvInvPath = basePath + "/" + "IGX_Host";
+        // Get platform name dynamically to set inventory path
+        Util util;
+        std::string platformName = util.getPlatformName();
+
+        std::string inventoryName;
+        if (platformName == "Thor")
+        {
+            inventoryName = "IGX_Thor";
+        }
+        else if (platformName == "Orin")
+        {
+            inventoryName = "IGX_Orin";
+        }
+        else
+        {
+            inventoryName = "IGX_Host"; // Fallback for unknown platforms
+        }
+
+        const auto baseinvInvPath = basePath + "/" + inventoryName;
 
         orinInvs = std::make_unique<Orin>(bus, baseinvInvPath);
     }
