@@ -673,3 +673,7 @@ endif
 if get_option('NVSWITCH_CONFIG_SUPPORT').enabled()
     subdir('nvswitch-config')
 endif
+
+if get_option('PREBOOTDIAG_SUPPORT').enabled()
+    subdir('prebootdiag')
+endif

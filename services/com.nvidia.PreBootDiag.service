@@ -1,0 +1,11 @@
+[Unit]
+Description=Nvidia Pre-Boot Diagnostic service
+
+[Service]
+Type=dbus
+BusName=com.nvidia.PreBootDiag
+Restart=always
+ExecStart=/usr/bin/prebootdiag
+
+[Install]
+WantedBy=multi-user.target

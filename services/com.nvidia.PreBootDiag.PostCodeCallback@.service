@@ -1,0 +1,8 @@
+[Unit]
+Description=PreBootDiag PostCode Callback for %i
+Requires=com.nvidia.PreBootDiag.service
+After=com.nvidia.PreBootDiag.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/prebootdiag-postcode-callback.sh %i

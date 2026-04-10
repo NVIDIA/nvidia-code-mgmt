@@ -8,6 +8,13 @@ if get_option('DOT_KEYD_SUPPORT').enabled()
     unit_files = unit_files + ['dot-keyd.service']
 endif
 
+if get_option('PREBOOTDIAG_SUPPORT').enabled()
+    unit_files = unit_files + [
+        'com.nvidia.PreBootDiag.service',
+        'com.nvidia.PreBootDiag.PostCodeCallback@.service',
+    ]
+endif
+
 if get_option('PSU_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.Nvidia.PSU.Updater.service',
