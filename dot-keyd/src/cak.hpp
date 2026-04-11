@@ -25,8 +25,6 @@
 #include <filesystem>
 #include <string>
 
-using json = nlohmann::json;
-
 // ---------------------------------------------------------------------------
 // File utilities
 // ---------------------------------------------------------------------------
@@ -42,7 +40,7 @@ fs::path payloadPath(const fs::path& keyStorePath);
 
 void validateCakBytes(const std::string& data, size_t maxBytes);
 void normalizePemKeyFormat(std::string& key);
-void validateDotPayload(const json& payload);
+void validateDotPayload(const nlohmann::json& payload);
 std::string extractCakFromJson(const std::string& jsonPayload);
 
 // ---------------------------------------------------------------------------

@@ -52,6 +52,8 @@ using json = nlohmann::json;
 // D-Bus key-store write method (called by installCak2BmcFs)
 // ---------------------------------------------------------------------------
 
+/** Validates and writes a CAK payload received via D-Bus arguments to the
+ *  on-disk key store. */
 static void
     storeCakFromDbusArgs(const Config& config,
                          const std::tuple<std::string, std::string>& cakKey,
@@ -100,6 +102,7 @@ static void
 // Configuration
 // ---------------------------------------------------------------------------
 
+/** Returns the built-in default configuration. */
 static Config getDefaultConfig()
 {
     Config config;
@@ -112,6 +115,7 @@ static Config getDefaultConfig()
     return config;
 }
 
+/** Parses a JSON configuration object into a Config struct. */
 static Config parseConfig(const json& data)
 {
     Config config = getDefaultConfig();
@@ -165,19 +169,6 @@ static Config parseConfig(const json& data)
         config.hmclessExec = exec;
     }
 
-    if (data.contains("l1Reset"))
-    {
-        const auto& l1Reset = data.at("l1Reset");
-        if (l1Reset.contains("i2cBus"))
-        {
-            config.l1Reset.i2cBus = l1Reset.at("i2cBus").get<int>();
-        }
-        if (l1Reset.contains("i2cAddr"))
-        {
-            config.l1Reset.i2cAddr = l1Reset.at("i2cAddr").get<std::string>();
-        }
-    }
-
     const auto& timeouts = data.value("timeouts", json::object());
     config.timeouts.installMs =
         timeouts.value("installMs", kDefaultInstallTimeoutMs);
@@ -196,8 +187,6 @@ static Config parseConfig(const json& data)
     config.useDefaultDbus = data.value("useDefaultDbus", false);
     if (config.useDefaultDbus)
     {
-        // useDefaultDbus mode calls nsmd directly; HMC config is not applicable
-        // and must not be used even if set by default.
         config.hmc = std::nullopt;
     }
     if (data.contains("dbusDotPaths"))
@@ -209,6 +198,7 @@ static Config parseConfig(const json& data)
     return config;
 }
 
+/** Applies CLI argument overrides on top of a parsed Config. */
 static Config applyCliOverrides(Config config, const Args& args)
 {
     if (args.keyStorePath)
@@ -222,17 +212,10 @@ static Config applyCliOverrides(Config config, const Args& args)
         exec.args = args.hmclessArgs;
         config.hmclessExec = exec;
     }
-    if (args.i2cBus)
-    {
-        config.l1Reset.i2cBus = *args.i2cBus;
-    }
-    if (args.i2cAddr)
-    {
-        config.l1Reset.i2cAddr = *args.i2cAddr;
-    }
     return config;
 }
 
+/** Loads config from file (if present) and applies CLI overrides. */
 static Config resolveConfig(const Args& args)
 {
     Config config = getDefaultConfig();
@@ -258,6 +241,7 @@ static Config resolveConfig(const Args& args)
 // One-shot install flow
 // ---------------------------------------------------------------------------
 
+/** Runs a single CAK provisioning attempt and returns an exit code. */
 static int installFlow(const Args& args)
 {
     Config config;
@@ -365,6 +349,9 @@ struct ServiceState
     boost::asio::cancellation_signal& cancelInstall;
 };
 
+/** Returns the current CAK payload content for the CAKValue D-Bus property,
+ *  or an empty string if readout is disabled, the file is absent, or invalid.
+ */
 static std::string readCakValue(const Config& config)
 {
     if (!config.allowCakReadout)
@@ -406,119 +393,88 @@ static std::string readCakValue(const Config& config)
     }
 }
 
+/** Runs the CAK installer coroutine, updates the install status, and signals
+ *  the CAKInstalled D-Bus property on completion or failure. */
 static boost::asio::awaitable<void> runCakInstall(ServiceState svc)
 {
-    lg2::info("runCakInstall: starting, current status={STATUS} "
-              "hostIsOff={HOSTOFF}",
-              "STATUS", svc.lastInstallStatus, "HOSTOFF",
-              svc.hostIsOff ? "yes" : "no");
     try
     {
         co_await svc.installer.run();
         svc.lastInstallStatus = "Installed";
-        lg2::info("runCakInstall: installer.run() completed successfully → "
-                  "status=Installed");
+        lg2::info("CAK installation completed successfully");
     }
     catch (const CakInstallDeclinedException& ex)
     {
-        svc.lastInstallStatus = "NotApplicable";
-        lg2::warning("runCakInstall: CakInstallDeclinedException → "
-                     "status=NotApplicable: {ERROR}",
-                     "ERROR", ex.what());
+        svc.lastInstallStatus = "Installed";
+        lg2::info("CAK already installed on device: {MSG}", "MSG", ex.what());
     }
     catch (const boost::system::system_error& ex)
     {
-        lg2::info("runCakInstall: boost::system::system_error caught: "
-                  "code={CODE} message={ERROR}",
-                  "CODE", ex.code().value(), "ERROR", ex.what());
         if (ex.code() == boost::asio::error::operation_aborted)
         {
-            lg2::info("runCakInstall: operation_aborted — host went off, "
-                      "status already set by Off handler, co_return");
             co_return;
         }
         std::string errorMsg = ex.what();
         if (errorMsg.find("CAK verification failed") != std::string::npos)
         {
             svc.lastInstallStatus = "Error";
-            lg2::error("runCakInstall: system_error, CAK verification failed "
-                       "→ status=Error: {ERROR}",
-                       "ERROR", errorMsg);
+            lg2::error("CAK verification failed: {ERROR}", "ERROR", errorMsg);
         }
         else
         {
             svc.lastInstallStatus = "NotInstalled";
-            lg2::error("runCakInstall: system_error → status=NotInstalled: "
-                       "{ERROR}",
-                       "ERROR", errorMsg);
+            lg2::error("CAK installation failed: {ERROR}", "ERROR", errorMsg);
         }
     }
     catch (const std::exception& ex)
     {
         std::string errorMsg = ex.what();
-        lg2::info("runCakInstall: std::exception caught: {ERROR}", "ERROR",
-                  errorMsg);
         if (errorMsg.find("CAK verification failed") != std::string::npos)
         {
             svc.lastInstallStatus = "Error";
-            lg2::error(
-                "runCakInstall: CAK verification failed → status=Error: "
-                "{ERROR}",
-                "ERROR", errorMsg);
+            lg2::error("CAK verification failed: {ERROR}", "ERROR", errorMsg);
         }
         else
         {
             svc.lastInstallStatus = "NotInstalled";
-            lg2::error("runCakInstall: exception → status=NotInstalled: "
-                       "{ERROR}",
-                       "ERROR", errorMsg);
+            lg2::error("CAK installation failed: {ERROR}", "ERROR", errorMsg);
         }
     }
     catch (...)
     {
-        // Catch-all: prevents std::terminate via detached co_spawn if an
-        // unexpected exception type (e.g. boost::wrapexcept wrapping a
-        // system_error with EOPNOTSUPP from disabled-thread cancellation)
-        // somehow escapes the typed catch blocks above.
         svc.lastInstallStatus = "NotInstalled";
-        lg2::error("runCakInstall: unknown exception type caught (not "
-                   "std::exception) → status=NotInstalled");
+        lg2::error("CAK installation failed: unknown exception");
     }
-    lg2::info("runCakInstall: finished, final status={STATUS}, signaling "
-              "CAKInstalled property",
-              "STATUS", svc.lastInstallStatus);
     try
     {
         svc.iface->signal_property("CAKInstalled");
     }
     catch (const std::exception& ex)
     {
-        lg2::error("runCakInstall: signal_property(CAKInstalled) threw: "
-                   "{ERROR}",
-                   "ERROR", ex.what());
+        lg2::error("signal_property(CAKInstalled) threw: {ERROR}", "ERROR",
+                   ex.what());
     }
     svc.installInProgress = false;
-    lg2::info("runCakInstall: installInProgress=false, coroutine exiting");
 }
 
+/** Starts the CAK install coroutine if one is not already running. */
 static void triggerCakInstall(ServiceState svc)
 {
-    lg2::info("triggerCakInstall: called, installInProgress={INPROG} "
-              "hostIsOff={HOSTOFF} lastStatus={STATUS}",
-              "INPROG", svc.installInProgress ? "yes" : "no", "HOSTOFF",
-              svc.hostIsOff ? "yes" : "no", "STATUS", svc.lastInstallStatus);
     if (svc.installInProgress)
     {
-        lg2::info("triggerCakInstall: install already in progress, skipping");
+        lg2::info("CAK install already in progress, skipping");
         return;
     }
-    lg2::info("triggerCakInstall: spawning runCakInstall coroutine");
     svc.installInProgress = true;
     boost::asio::co_spawn(svc.io, runCakInstall(svc),
                           boost::asio::bind_cancellation_slot(
                               svc.cancelInstall.slot(), boost::asio::detached));
 }
 
+/** Runs the D-Bus service loop: registers properties and methods, subscribes to
+ *  host state changes, and runs the io_context with restart on unexpected
+ * throws to guard against cancellation exceptions from
+ * BOOST_ASIO_DISABLE_THREADS builds. */
 static int runService(const Args& args)
 {
     Config config;
@@ -626,23 +582,15 @@ static int runService(const Args& args)
             auto it = properties.find(hostStateProperty);
             if (it == properties.end())
             {
-                lg2::debug("HostState propertiesChanged: no CurrentHostState "
-                           "in message, ignoring");
                 return;
             }
             const std::string* state = std::get_if<std::string>(&it->second);
             if (!state)
             {
-                lg2::debug("HostState propertiesChanged: CurrentHostState is "
-                           "not a string, ignoring");
                 return;
             }
 
-            lg2::info("HostState propertiesChanged: new state={STATE} "
-                      "(installInProgress={INPROG} lastStatus={STATUS})",
-                      "STATE", *state, "INPROG",
-                      svc.installInProgress ? "yes" : "no", "STATUS",
-                      svc.lastInstallStatus);
+            lg2::info("HostState changed: {STATE}", "STATE", *state);
 
             if (*state == hostStateOn)
             {
@@ -652,35 +600,21 @@ static int runService(const Args& args)
             }
             else if (*state == hostStateOff)
             {
-                lg2::info(
-                    "HostState → Off: resetting CAKInstalled=NotInstalled, "
-                    "aborting any in-progress installation "
-                    "(installInProgress={INPROG})",
-                    "INPROG", svc.installInProgress ? "yes" : "no");
+                lg2::info("HostState → Off: aborting install, resetting "
+                          "CAKInstalled");
                 svc.hostIsOff = true;
-                // Use catch(...) rather than catch(std::exception): on some
-                // Boost/ABI combinations, boost::wrapexcept<system_error> is
-                // not matched by catch(const std::exception&).  With
-                // BOOST_ASIO_DISABLE_THREADS, cancelling an in-progress
-                // async operation may internally attempt thread creation and
-                // throw system:95 (EOPNOTSUPP).
-                lg2::info("HostState → Off: emitting terminal cancellation");
                 try
                 {
                     svc.cancelInstall.emit(
                         boost::asio::cancellation_type::terminal);
-                    lg2::info("HostState → Off: terminal cancellation emitted");
                 }
                 catch (...)
                 {
-                    lg2::warning(
-                        "HostState → Off: cancelInstall.emit() threw "
-                        "(exception swallowed) — install coroutine will exit "
-                        "when its current operation completes");
+                    lg2::warning("HostState → Off: cancelInstall.emit() threw "
+                                 "(swallowed)");
                 }
                 svc.installInProgress = false;
                 svc.lastInstallStatus = "NotInstalled";
-                lg2::info("HostState → Off: signaling CAKInstalled=NotInstalled");
                 try
                 {
                     svc.iface->signal_property("CAKInstalled");
@@ -688,16 +622,9 @@ static int runService(const Args& args)
                 catch (...)
                 {
                     lg2::warning(
-                        "HostState → Off: signal_property(CAKInstalled) threw "
-                        "(exception swallowed)");
+                        "HostState → Off: signal_property(CAKInstalled)"
+                        " threw (swallowed)");
                 }
-                lg2::info("HostState → Off: handler complete");
-            }
-            else
-            {
-                lg2::info("HostState propertiesChanged: unrecognised state "
-                          "{STATE}, ignoring",
-                          "STATE", *state);
             }
         });
 
@@ -708,73 +635,51 @@ static int runService(const Args& args)
                                          const std::string& state) {
             if (ec)
             {
-                lg2::warning("Initial HostState read failed: {ERROR}. "
-                             "Will rely on propertiesChanged match for state.",
-                             "ERROR", ec.message());
+                lg2::warning("Initial HostState read failed: {ERROR}", "ERROR",
+                             ec.message());
                 return;
             }
             lg2::info("Initial HostState: {STATE}", "STATE", state);
             if (state == hostStateOn)
             {
-                lg2::info("Initial HostState is Running — host is already up, "
-                          "NOT triggering install (waiting for next On event)");
                 svc.hostIsOff = false;
+                triggerCakInstall(svc);
             }
             else if (state == hostStateOff)
             {
-                lg2::info("Initial HostState is Off — setting hostIsOff=true, "
-                          "CAKInstalled=NotInstalled");
                 svc.hostIsOff = true;
                 svc.lastInstallStatus = "NotInstalled";
                 svc.iface->signal_property("CAKInstalled");
-            }
-            else
-            {
-                lg2::info("Initial HostState is {STATE} (neither Running nor "
-                          "Off), no action",
-                          "STATE", state);
             }
         });
 
     boost::asio::signal_set signals(io, SIGTERM, SIGINT);
     signals.async_wait(
         [&](const boost::system::error_code&, int) { io.stop(); });
-    // Run the io_context in a resilient loop: if a handler throws (e.g. from
-    // Boost.Asio's async cancellation machinery when
-    // BOOST_ASIO_DISABLE_THREADS is set), log and restart rather than exiting.
-    // io_context::run() can be re-entered after a throw; pending completions
-    // remain queued and will be processed on the next iteration.
-    lg2::info("runService: entering io_context run loop");
+
     int ioRestarts = 0;
     for (;;)
     {
         try
         {
             io.run();
-            lg2::info("runService: io_context run() returned normally "
-                      "(io.stop() called), restarts={RESTARTS}",
-                      "RESTARTS", ioRestarts);
-            break; // ran out of work — io.stop() called (SIGTERM/SIGINT)
+            break;
         }
         catch (const std::exception& ex)
         {
             ++ioRestarts;
             lg2::error(
-                "runService: io_context handler threw (restart #{RESTARTS}): "
-                "{ERROR}. Re-entering run loop.",
+                "io_context handler threw (restart #{RESTARTS}): {ERROR}",
                 "RESTARTS", ioRestarts, "ERROR", ex.what());
         }
         catch (...)
         {
             ++ioRestarts;
-            lg2::error(
-                "runService: io_context handler threw unknown exception "
-                "(restart #{RESTARTS}). Re-entering run loop.",
-                "RESTARTS", ioRestarts);
+            lg2::error("io_context handler threw unknown exception "
+                       "(restart #{RESTARTS})",
+                       "RESTARTS", ioRestarts);
         }
     }
-    lg2::info("runService: exiting, total io_context restarts={RESTARTS}",
-              "RESTARTS", ioRestarts);
     return ExitCode::kSuccess;
 }
 
@@ -782,6 +687,7 @@ static int runService(const Args& args)
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
+/** Splits a whitespace-delimited string into a vector of tokens. */
 static std::vector<std::string> splitArgs(const std::string& input)
 {
     std::istringstream stream(input);
@@ -794,6 +700,7 @@ static std::vector<std::string> splitArgs(const std::string& input)
     return out;
 }
 
+/** Parses command-line arguments into an Args struct. */
 static Args parseArgs(int argc, char** argv)
 {
     Args args;
@@ -806,8 +713,6 @@ static Args parseArgs(int argc, char** argv)
         {"key-store-path", required_argument, nullptr, 0},
         {"hmcless-exec", required_argument, nullptr, 0},
         {"hmcless-args", required_argument, nullptr, 0},
-        {"i2c-bus", required_argument, nullptr, 0},
-        {"i2c-addr", required_argument, nullptr, 0},
         {nullptr, 0, nullptr, 0},
     };
     int longIndex = 0;
@@ -850,22 +755,6 @@ static Args parseArgs(int argc, char** argv)
         else if (name == "hmcless-args")
         {
             args.hmclessArgs = splitArgs(optarg);
-        }
-        else if (name == "i2c-bus")
-        {
-            try
-            {
-                args.i2cBus = std::stoi(optarg);
-            }
-            catch (const std::exception&)
-            {
-                std::cerr << "invalid --i2c-bus value: " << optarg << "\n";
-                std::exit(ExitCode::kInvalidArgs);
-            }
-        }
-        else if (name == "i2c-addr")
-        {
-            args.i2cAddr = optarg;
         }
     }
     return args;

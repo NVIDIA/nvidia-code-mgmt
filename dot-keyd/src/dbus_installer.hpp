@@ -36,8 +36,10 @@ class DbusInstaller : public DotInstaller
     {}
 
   protected:
+    asio::awaitable<bool> shouldSkip() override;
     asio::awaitable<void> doInstall(const json& payload) override;
     asio::awaitable<void> doVerify() override;
+    asio::awaitable<void> doL1Reset() override;
 
   private:
     asio::awaitable<void> install(const json& payload,

@@ -43,6 +43,7 @@ class HmcInstaller : public DotInstaller
     asio::awaitable<void> doPreInstallCheck() override;
     asio::awaitable<void> doInstall(const json& payload) override;
     asio::awaitable<void> doVerify() override;
+    asio::awaitable<void> doL1Reset() override;
 
   private:
     asio::awaitable<std::string> getCakInitState();

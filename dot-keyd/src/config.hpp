@@ -28,7 +28,7 @@ namespace fs = std::filesystem;
 
 constexpr int kDefaultInstallTimeoutMs = 30000;
 constexpr int kDefaultDotCakInitTimeoutMs = 30000;
-constexpr int kHmcRequestTimeoutMs = 3000;
+constexpr int kHmcRequestTimeoutMs = 30000;
 constexpr size_t kDefaultCakMaxBytes = 16 * 1024;
 constexpr const char* kDefaultPayloadFilename = "cak_payload.json";
 constexpr int kDefaultCakInstallRetries = 30;
@@ -47,6 +47,7 @@ constexpr const char* kAsyncStatusInProgress =
 constexpr const char* kAsyncStatusSuccess =
     "com.nvidia.Async.Status.AsyncOperationStatus.Success";
 constexpr const char* kBootRawService = "xyz.openbmc_project.State.Boot.Raw";
+constexpr const char* kL1ResetIntf = "com.nvidia.L1Reset";
 constexpr const char* kBootCakPath = "/xyz/openbmc_project/state/boot/cak0";
 constexpr const char* kBootProgressIntf =
     "xyz.openbmc_project.State.Boot.Progress";
@@ -90,12 +91,6 @@ struct HmclessExecConfig
     std::vector<std::string> args;
 };
 
-struct L1ResetConfig
-{
-    int i2cBus{70};
-    std::string i2cAddr{"0x38"};
-};
-
 struct TimeoutsConfig
 {
     int installMs{kDefaultInstallTimeoutMs};
@@ -109,7 +104,6 @@ struct Config
     std::optional<HmclessExecConfig> hmclessExec;
     bool useDefaultDbus{false};
     std::vector<std::string> dbusDotPaths;
-    L1ResetConfig l1Reset;
     TimeoutsConfig timeouts;
     size_t maxCakBytes{kDefaultCakMaxBytes};
     bool allowCakReadout{true};
@@ -134,6 +128,4 @@ struct Args
     std::optional<std::string> keyStorePath;
     std::optional<std::string> hmclessExec;
     std::vector<std::string> hmclessArgs;
-    std::optional<int> i2cBus;
-    std::optional<std::string> i2cAddr;
 };
