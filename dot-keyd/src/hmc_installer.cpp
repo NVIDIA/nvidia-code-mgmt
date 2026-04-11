@@ -37,73 +37,72 @@ namespace http = beast::http;
 // Virtual override methods — small, delegate to private helpers
 // ---------------------------------------------------------------------------
 
+/** Returns true if CAK is already installed (DOTCAKInitialization=Complete). */
 asio::awaitable<bool> HmcInstaller::shouldSkip()
 {
-    lg2::info("shouldSkip: querying DOTCAKInitialization state");
     std::string state = co_await getCakInitState();
+    bool skip = (state == "Complete");
     lg2::info("shouldSkip: DOTCAKInitialization={STATE} — {DECISION}", "STATE",
               state.empty() ? "<unavailable>" : state, "DECISION",
-              state == "Complete" ? "skipping (already complete)"
-                                  : "proceeding with install");
-    co_return state == "Complete";
+              skip ? "skipping (already complete)" : "proceeding with install");
+    co_return skip;
 }
 
+/** Waits for DOTState=Uninitialized (DOTCAKInitialization=Waiting) before
+ * proceeding, then delays 1s. */
 asio::awaitable<void> HmcInstaller::doPreInstallCheck()
 {
-    lg2::info("doPreInstallCheck: starting pre-install DOT state check "
-              "(expecting Uninitialized or DOTCAKInitialization=Waiting)");
+    lg2::info(
+        "Pre-install check: waiting for DOTState=Uninitialized (DOTCAKInitialization=Waiting)");
     try
     {
         co_await waitForDotState("Uninitialized");
-        lg2::info("doPreInstallCheck: DOT state verification passed");
+        lg2::info("Pre-install check passed");
+    }
+    catch (const CakInstallDeclinedException&)
+    {
+        throw;
     }
     catch (const std::exception& ex)
     {
-        lg2::warning("doPreInstallCheck: DOT state check failed: {ERROR}. "
-                     "Proceeding with install anyway.",
+        lg2::warning("Pre-install check failed: {ERROR}. Proceeding anyway.",
                      "ERROR", ex.what());
     }
 
-    lg2::info("doPreInstallCheck: waiting 1s for HMC Redfish endpoint");
     asio::steady_timer timer(co_await asio::this_coro::executor);
     timer.expires_after(std::chrono::seconds(1));
     co_await timer.async_wait(asio::use_awaitable);
-    lg2::info("doPreInstallCheck: done");
 }
 
+/** Sends the CAK payload to all install paths via Redfish, with retries. */
 asio::awaitable<void> HmcInstaller::doInstall(const json& payload)
 {
     std::string payloadStr = payload.dump();
-    lg2::info("doInstall: starting Redfish CAK install, "
-              "payload size={SIZE} bytes, install paths={NPATHS}",
-              "SIZE", payloadStr.size(), "NPATHS",
+    lg2::info("Starting Redfish CAK install to {NPATHS} path(s)", "NPATHS",
               config_.hmc->installPaths.size());
     std::set<std::string> donePaths;
-    co_await retryInstall("Redfish", [&](int attempt) -> asio::awaitable<void> {
-        lg2::info("doInstall: retry-install callback, attempt={ATTEMPT}, "
-                  "donePaths={NDONE}/{NTOTAL}",
-                  "ATTEMPT", attempt, "NDONE", donePaths.size(), "NTOTAL",
-                  config_.hmc->installPaths.size());
+    co_await retryInstall("Redfish", [&](int) -> asio::awaitable<void> {
         co_await sendToRemainingPaths(payloadStr, donePaths);
     });
-    lg2::info("doInstall: all install paths completed");
+    lg2::info("Redfish CAK install completed");
 }
 
+/** Waits for DOTCAKInitialization=Complete or DOTState=Volatile post-install.
+ */
 asio::awaitable<void> HmcInstaller::doVerify()
 {
     int timeoutSecs = config_.timeouts.installMs / 1000;
-    lg2::info("doVerify: waiting for DOTState=Volatile or "
-              "DOTCAKInitialization=Complete (timeout={TIMEOUT}s)",
+    lg2::info("Post-install verification: waiting for DOTCAKInitialization="
+              "Complete (timeout={TIMEOUT}s)",
               "TIMEOUT", timeoutSecs);
     try
     {
         co_await waitForDotState("Volatile");
-        lg2::info("doVerify: post-install DOT state verification passed");
+        lg2::info("Post-install verification passed");
     }
     catch (const std::exception& ex)
     {
-        lg2::error("doVerify: post-install verification failed after "
-                   "{TIMEOUT}s: {ERROR}",
+        lg2::error("Post-install verification failed after {TIMEOUT}s: {ERROR}",
                    "TIMEOUT", timeoutSecs, "ERROR", ex.what());
         throw std::runtime_error(
             "CAK verification failed: system failed to boot within " +
@@ -117,30 +116,24 @@ asio::awaitable<void> HmcInstaller::doVerify()
 // CAK initialization state
 // ---------------------------------------------------------------------------
 
+/** Fetches DOTCAKInitialization from the HMC Redfish endpoint; returns "" on
+ *  any error. */
 asio::awaitable<std::string> HmcInstaller::getCakInitState()
 {
     if (!config_.hmc)
     {
-        lg2::debug("getCakInitState: no HMC config, returning empty");
         co_return "";
     }
-    lg2::debug("getCakInitState: GET {PATH}", "PATH",
-               config_.hmc->dotCakInitPath);
     try
     {
         std::string response = co_await httpRequest(
             http::verb::get, config_.hmc->dotCakInitPath, "");
         json data = json::parse(response);
-        std::string state =
-            data["Oem"]["Nvidia"].value("DOTCAKInitialization", "");
-        lg2::debug("getCakInitState: DOTCAKInitialization={STATE}", "STATE",
-                   state.empty() ? "<not present in response>" : state);
-        co_return state;
+        co_return data["Oem"]["Nvidia"].value("DOTCAKInitialization", "");
     }
     catch (const std::exception& ex)
     {
-        lg2::debug("getCakInitState: request failed: {ERROR}", "ERROR",
-                   ex.what());
+        lg2::debug("getCakInitState failed: {ERROR}", "ERROR", ex.what());
         co_return "";
     }
 }
@@ -149,59 +142,47 @@ asio::awaitable<std::string> HmcInstaller::getCakInitState()
 // State polling
 // ---------------------------------------------------------------------------
 
+/** Polls DOTState and DOTCAKInitialization until the expected state is reached
+ *  or the configured timeout expires. */
 asio::awaitable<void> HmcInstaller::waitForDotState(const std::string& expected)
 {
     bool isBeforeInstall = (expected == "Uninitialized");
     bool isAfterInstall = (expected == "Volatile");
     std::string expectedCakInit = isBeforeInstall ? "Waiting" : "Complete";
-    int timeoutSecs = config_.timeouts.installMs / 1000;
-
-    lg2::info("waitForDotState: waiting for DOTState={EXPECTED} "
-              "(DOTCAKInitialization={CAKINIT_EXPECTED}, "
-              "phase={PHASE}, timeout={TIMEOUT}s)",
-              "EXPECTED", expected, "CAKINIT_EXPECTED", expectedCakInit,
-              "PHASE", isBeforeInstall  ? "pre-install"
-                       : isAfterInstall ? "post-install"
-                                        : "other",
-              "TIMEOUT", timeoutSecs);
 
     auto executor = co_await asio::this_coro::executor;
     auto startTime = std::chrono::steady_clock::now();
     auto deadline =
         startTime + std::chrono::milliseconds(config_.timeouts.installMs);
     asio::steady_timer timer(executor);
-    int iteration = 0;
 
     while (true)
     {
-        ++iteration;
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                            std::chrono::steady_clock::now() - startTime)
                            .count();
 
         auto [cakInitFetched, cakInitState] = co_await tryCakInitState();
 
-        lg2::info("waitForDotState[{ITER}] elapsed={ELAPSED}ms: "
-                  "DOTCAKInitialization={CAKINIT} (fetched={FETCHED})",
-                  "ITER", iteration, "ELAPSED", elapsed, "CAKINIT",
-                  cakInitFetched ? cakInitState : "<unavailable>", "FETCHED",
-                  cakInitFetched ? "yes" : "no");
+        if (cakInitFetched)
+        {
+            lg2::info("DOTCAKInitialization={STATE} (elapsed={ELAPSED}ms, "
+                      "expecting={EXPECTED})",
+                      "STATE", cakInitState, "ELAPSED", elapsed, "EXPECTED",
+                      expectedCakInit);
+        }
 
         if (cakInitFetched && cakInitState == expectedCakInit)
         {
-            lg2::info(
-                "waitForDotState[{ITER}]: DOTCAKInitialization={STATE} matches "
-                "expected — done (elapsed={ELAPSED}ms)",
-                "ITER", iteration, "STATE", cakInitState, "ELAPSED", elapsed);
+            lg2::info("DOTCAKInitialization={STATE} reached in {ELAPSED}ms",
+                      "STATE", cakInitState, "ELAPSED", elapsed);
             co_return;
         }
         if (isBeforeInstall && cakInitFetched && cakInitState == "Complete")
         {
-            lg2::info("waitForDotState[{ITER}]: DOTCAKInitialization=Complete "
-                      "before install — CAK already installed, skipping "
-                      "(elapsed={ELAPSED}ms)",
-                      "ITER", iteration, "ELAPSED", elapsed);
-            co_return;
+            throw CakInstallDeclinedException(
+                "DOTCAKInitialization=Complete before install — "
+                "CAK already installed");
         }
         if (isBeforeInstall && cakInitFetched)
         {
@@ -211,9 +192,6 @@ asio::awaitable<void> HmcInstaller::waitForDotState(const std::string& expected)
                     "DOTCAKInitialization not " + expectedCakInit +
                     " (current: " + cakInitState + ") before timeout");
             }
-            lg2::debug("waitForDotState[{ITER}]: DOTCAKInitialization={STATE}, "
-                       "waiting 200ms",
-                       "ITER", iteration, "STATE", cakInitState);
             timer.expires_after(std::chrono::milliseconds(200));
             co_await timer.async_wait(asio::use_awaitable);
             continue;
@@ -225,19 +203,14 @@ asio::awaitable<void> HmcInstaller::waitForDotState(const std::string& expected)
         bool cakInitMatch = cakInitFetched && cakInitState == expectedCakInit;
         bool success = isAfterInstall ? (allMatch || cakInitMatch) : allMatch;
 
-        lg2::info("waitForDotState[{ITER}] elapsed={ELAPSED}ms: "
-                  "DOTState={STATES} allMatch={ALLMATCH} "
-                  "cakInitMatch={CAKINITMATCH} success={SUCCESS}",
-                  "ITER", iteration, "ELAPSED", elapsed, "STATES", statesStr,
-                  "ALLMATCH", allMatch ? "yes" : "no", "CAKINITMATCH",
-                  cakInitMatch ? "yes" : "no", "SUCCESS",
-                  success ? "yes" : "no");
+        if (isAfterInstall)
+        {
+            lg2::info("DOTState={STATES} elapsed={ELAPSED}ms", "STATES",
+                      statesStr, "ELAPSED", elapsed);
+        }
 
         if (success)
         {
-            lg2::info(
-                "waitForDotState[{ITER}]: success — elapsed={ELAPSED}ms",
-                "ITER", iteration, "ELAPSED", elapsed);
             co_return;
         }
 
@@ -247,19 +220,19 @@ asio::awaitable<void> HmcInstaller::waitForDotState(const std::string& expected)
                 expected, expectedCakInit, cakInitFetched, cakInitState,
                 statesStr, isBeforeInstall, isAfterInstall));
         }
-        lg2::debug("waitForDotState[{ITER}]: not done yet, waiting 200ms",
-                   "ITER", iteration);
         timer.expires_after(std::chrono::milliseconds(200));
         co_await timer.async_wait(asio::use_awaitable);
     }
 }
 
+/** Wraps getCakInitState, returning a (fetched, state) pair. */
 asio::awaitable<std::pair<bool, std::string>> HmcInstaller::tryCakInitState()
 {
     std::string state = co_await getCakInitState();
     co_return std::make_pair(!state.empty(), state);
 }
 
+/** Fetches DOTState from each configured status path. */
 asio::awaitable<std::pair<bool, std::vector<std::string>>>
     HmcInstaller::pollDotStates(const std::string& expected)
 {
@@ -268,29 +241,20 @@ asio::awaitable<std::pair<bool, std::vector<std::string>>>
 
     for (const auto& statusPath : config_.hmc->statusPaths)
     {
-        lg2::debug("pollDotStates: GET {PATH} (expecting DOTState={EXPECTED})",
-                   "PATH", statusPath, "EXPECTED", expected);
         try
         {
             std::string response =
                 co_await httpRequest(http::verb::get, statusPath, "");
             json data = json::parse(response);
             std::string state = data.value("DOTState", "");
-            lg2::debug("pollDotStates: {PATH} → DOTState={STATE} "
-                       "(match={MATCH})",
-                       "PATH", statusPath, "STATE",
-                       state.empty() ? "<not present>" : state, "MATCH",
-                       state == expected ? "yes" : "no");
             dotStates.push_back(state);
             if (state != expected)
             {
                 allMatch = false;
             }
         }
-        catch (const std::exception& ex)
+        catch (const std::exception&)
         {
-            lg2::debug("pollDotStates: {PATH} → request failed: {ERROR}",
-                       "PATH", statusPath, "ERROR", ex.what());
             dotStates.push_back("");
             allMatch = false;
         }
@@ -302,6 +266,7 @@ asio::awaitable<std::pair<bool, std::vector<std::string>>>
 // Installation
 // ---------------------------------------------------------------------------
 
+/** POSTs the CAK payload to each install path not yet in donePaths. */
 asio::awaitable<void>
     HmcInstaller::sendToRemainingPaths(const std::string& payloadStr,
                                        std::set<std::string>& donePaths)
@@ -315,54 +280,47 @@ asio::awaitable<void>
         }
     }
 
-    lg2::info("sendToRemainingPaths: {NREMAIN} of {NTOTAL} paths pending "
-              "(already done: {NDONE})",
-              "NREMAIN", remaining.size(), "NTOTAL",
-              config_.hmc->installPaths.size(), "NDONE", donePaths.size());
-
     if (remaining.empty())
     {
-        lg2::info("sendToRemainingPaths: all paths already done, nothing to do");
+        lg2::info("All CPUs already have CAK installed");
         co_return;
     }
 
     for (const auto& installPath : remaining)
     {
-        lg2::info("sendToRemainingPaths: POST {PATH}", "PATH", installPath);
+        lg2::info("Sending CAK installation request to {PATH}", "PATH",
+                  installPath);
         try
         {
             std::string response =
                 co_await httpRequest(http::verb::post, installPath, payloadStr);
-            lg2::info(
-                "sendToRemainingPaths: POST {PATH} → success "
-                "(response {BYTES} bytes)",
-                "PATH", installPath, "BYTES", response.size());
             if (!response.empty())
             {
-                lg2::info("sendToRemainingPaths: response body: {BODY}", "BODY",
-                          response);
+                lg2::info("Response from {PATH}: {BODY}", "PATH", installPath,
+                          "BODY", response);
             }
             donePaths.insert(installPath);
+            lg2::info("CAK installation succeeded for {PATH}", "PATH",
+                      installPath);
         }
         catch (const CakInstallDeclinedException& ex)
         {
-            // 409: already installed on this CPU — mark done and continue
             lg2::info(
-                "sendToRemainingPaths: {PATH} → 409 (CAK already installed), "
-                "marking done: {ERROR}",
+                "CAK already installed on {PATH} (409), skipping: {ERROR}",
                 "PATH", installPath, "ERROR", ex.what());
             donePaths.insert(installPath);
         }
     }
-    lg2::info("sendToRemainingPaths: done, total completed={NDONE}/{NTOTAL}",
-              "NDONE", donePaths.size(), "NTOTAL",
-              config_.hmc->installPaths.size());
 }
 
 // ---------------------------------------------------------------------------
 // HTTP (Beast)
 // ---------------------------------------------------------------------------
 
+/** Executes a single HTTP request to the HMC.  The host config field must be
+ *  an IP address — async_resolve is intentionally avoided because on
+ *  BOOST_ASIO_DISABLE_THREADS builds its cancellation handler attempts thread
+ *  creation and throws EOPNOTSUPP. */
 asio::awaitable<std::string> HmcInstaller::httpRequest(http::verb method,
                                                        const std::string& path,
                                                        const std::string& body)
@@ -370,11 +328,6 @@ asio::awaitable<std::string> HmcInstaller::httpRequest(http::verb method,
     auto executor = co_await asio::this_coro::executor;
     auto [host, port] = parseHost();
 
-    // Parse host as an IP address directly rather than using async_resolve.
-    // On platforms built with BOOST_ASIO_DISABLE_THREADS, the resolver's
-    // cancellation handler internally attempts thread creation, which throws
-    // system:95 (EOPNOTSUPP) during terminal cancellation.  The HMC host is
-    // always an IP address in practice, so DNS resolution is not needed.
     boost::system::error_code addrEc;
     auto addr = asio::ip::make_address(host, addrEc);
     if (addrEc)
@@ -382,28 +335,24 @@ asio::awaitable<std::string> HmcInstaller::httpRequest(http::verb method,
         throw std::runtime_error("HMC host must be an IP address: " + host +
                                  " (" + addrEc.message() + ")");
     }
-    int portNum = std::stoi(port);
+    int portNum = 0;
+    try
+    {
+        portNum = std::stoi(port);
+    }
+    catch (const std::exception&)
+    {
+        throw std::runtime_error("Invalid HMC port: " + port);
+    }
     if (portNum <= 0 || portNum > 65535)
     {
         throw std::runtime_error("Invalid HMC port: " + port);
     }
     asio::ip::tcp::endpoint endpoint(addr, static_cast<uint16_t>(portNum));
 
-    std::string methodStr(method == http::verb::get    ? "GET"
-                          : method == http::verb::post ? "POST"
-                                                       : "OTHER");
-    lg2::debug("httpRequest: {METHOD} http://{HOST}:{PORT}{PATH} "
-               "(timeout={TIMEOUT}ms, body={BODYSIZE}B)",
-               "METHOD", methodStr, "HOST", host, "PORT", port, "PATH", path,
-               "TIMEOUT", kHmcRequestTimeoutMs, "BODYSIZE", body.size());
-
     beast::tcp_stream stream(executor);
     stream.expires_after(std::chrono::milliseconds(kHmcRequestTimeoutMs));
-    lg2::debug("httpRequest: connecting to {HOST}:{PORT}", "HOST", host, "PORT",
-               port);
     co_await stream.async_connect(endpoint, asio::use_awaitable);
-    lg2::debug("httpRequest: connected to {HOST}:{PORT}", "HOST", host, "PORT",
-               port);
 
     http::request<http::string_body> req{method, path, 11};
     req.set(http::field::host, host);
@@ -422,28 +371,14 @@ asio::awaitable<std::string> HmcInstaller::httpRequest(http::verb method,
     }
 
     stream.expires_after(std::chrono::milliseconds(kHmcRequestTimeoutMs));
-    lg2::debug("httpRequest: sending {METHOD} {PATH}", "METHOD", methodStr,
-               "PATH", path);
     co_await http::async_write(stream, req, asio::use_awaitable);
 
     beast::flat_buffer buf;
     http::response<http::string_body> res;
-    lg2::debug("httpRequest: reading response for {METHOD} {PATH}", "METHOD",
-               methodStr, "PATH", path);
     co_await http::async_read(stream, buf, res, asio::use_awaitable);
 
     beast::error_code ec;
     stream.socket().shutdown(asio::ip::tcp::socket::shutdown_both, ec);
-    if (ec)
-    {
-        lg2::debug("httpRequest: socket shutdown warning: {ERROR}", "ERROR",
-                   ec.message());
-    }
-
-    lg2::debug("httpRequest: {METHOD} {PATH} → HTTP {STATUS} "
-               "({BYTES} bytes body)",
-               "METHOD", methodStr, "PATH", path, "STATUS",
-               res.result_int(), "BYTES", res.body().size());
 
     if (res.result_int() == 409)
     {
@@ -453,13 +388,72 @@ asio::awaitable<std::string> HmcInstaller::httpRequest(http::verb method,
     }
     if (res.result_int() >= 300)
     {
-        lg2::warning("httpRequest: {METHOD} {PATH} → HTTP {STATUS} (error)",
-                     "METHOD", methodStr, "PATH", path, "STATUS",
-                     res.result_int());
+        lg2::warning("HTTP {STATUS} from {PATH}", "STATUS", res.result_int(),
+                     "PATH", path);
         throw std::runtime_error("HTTP " + std::to_string(res.result_int()) +
                                  " from " + path);
     }
     co_return res.body();
+}
+
+// ---------------------------------------------------------------------------
+// L1 reset via HMC Redfish OEM action
+// ---------------------------------------------------------------------------
+
+/** Performs an L1 SW main reset by POSTing to the HMC Redfish OEM action
+ *  endpoint.  bmcweb on the HMC forwards this request to snoopd (lpc-snooper)
+ *  via D-Bus com.nvidia.L1Reset.Reset(), which issues the USB or I2C control
+ *  transfer to the CPU.  Retries up to 5 times with 2-second delays. */
+asio::awaitable<void> HmcInstaller::doL1Reset()
+{
+    // Build the Redfish path: <dotCakInitPath>/Oem/Nvidia/L1Reset
+    // e.g. /redfish/v1/Systems/HGX_Baseboard_0/Oem/Nvidia/L1Reset
+    const std::string l1ResetPath =
+        config_.hmc->dotCakInitPath + "/Oem/Nvidia/L1Reset";
+
+    lg2::info("L1 reset: posting to HMC Redfish endpoint {PATH}", "PATH",
+              l1ResetPath);
+
+    std::string lastError;
+    for (int attempt = 1; attempt <= 5; ++attempt)
+    {
+        lg2::info("L1 reset attempt {ATTEMPT}/5: POST {PATH}", "ATTEMPT",
+                  attempt, "PATH", l1ResetPath);
+        try
+        {
+            std::string response =
+                co_await httpRequest(http::verb::post, l1ResetPath, "{}");
+            lg2::info("L1 reset Redfish POST succeeded on attempt {ATTEMPT}: "
+                      "response={BODY}",
+                      "ATTEMPT", attempt, "BODY",
+                      response.empty() ? "(empty)" : response);
+            co_return;
+        }
+        catch (const boost::system::system_error& ex)
+        {
+            if (ex.code() == asio::error::operation_aborted)
+                throw;
+            lastError = ex.what();
+            lg2::warning("L1 reset attempt {ATTEMPT}/5 failed: {ERROR}",
+                         "ATTEMPT", attempt, "ERROR", lastError);
+        }
+        catch (const std::exception& ex)
+        {
+            lastError = ex.what();
+            lg2::warning("L1 reset attempt {ATTEMPT}/5 failed: {ERROR}",
+                         "ATTEMPT", attempt, "ERROR", lastError);
+        }
+
+        if (attempt < 5)
+        {
+            asio::steady_timer timer(co_await asio::this_coro::executor);
+            timer.expires_after(std::chrono::seconds(2));
+            co_await timer.async_wait(asio::use_awaitable);
+        }
+    }
+
+    throw std::runtime_error("L1 reset Redfish POST failed after 5 attempts: " +
+                             lastError);
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +463,22 @@ asio::awaitable<std::string> HmcInstaller::httpRequest(http::verb method,
 std::pair<std::string, std::string> HmcInstaller::parseHost() const
 {
     const std::string& h = config_.hmc->host;
+    if (!h.empty() && h.front() == '[')
+    {
+        auto close = h.find(']');
+        if (close == std::string::npos)
+        {
+            throw std::runtime_error("Invalid HMC host (unclosed bracket): " +
+                                     h);
+        }
+        std::string addr = h.substr(1, close - 1);
+        std::string port = "80";
+        if (close + 1 < h.size() && h[close + 1] == ':')
+        {
+            port = h.substr(close + 2);
+        }
+        return {addr, port};
+    }
     auto colon = h.rfind(':');
     if (colon != std::string::npos)
     {

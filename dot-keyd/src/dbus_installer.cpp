@@ -68,6 +68,37 @@ asio::awaitable<T> getPropertyAwaitable(sdbusplus::asio::connection& bus,
 // Virtual override methods — small, delegate to private helpers
 // ---------------------------------------------------------------------------
 
+asio::awaitable<bool> DbusInstaller::shouldSkip()
+{
+    try
+    {
+        std::string state = co_await readCakInitState();
+        if (state == "Complete")
+        {
+            lg2::info("DOTCAKInitialization=Complete — CAK already installed, "
+                      "skipping");
+            co_return true;
+        }
+        lg2::info("DOTCAKInitialization={STATE} — proceeding with installation",
+                  "STATE", state);
+    }
+    catch (const boost::system::system_error& ex)
+    {
+        if (ex.code() == asio::error::operation_aborted)
+            throw;
+        lg2::info("Could not read DOTCAKInitialization ({ERROR}), proceeding "
+                  "with installation",
+                  "ERROR", ex.what());
+    }
+    catch (const std::exception& ex)
+    {
+        lg2::info("Could not read DOTCAKInitialization ({ERROR}), proceeding "
+                  "with installation",
+                  "ERROR", ex.what());
+    }
+    co_return false;
+}
+
 asio::awaitable<void> DbusInstaller::doInstall(const json& payload)
 {
     std::set<std::string> donePaths;
@@ -274,6 +305,100 @@ asio::awaitable<std::string> DbusInstaller::readCakInitState()
     co_return co_await getPropertyAwaitable<std::string>(
         *bus_, kBootRawService, kBootCakPath, kBootProgressIntf,
         kBootProgressOemProp);
+}
+
+// ---------------------------------------------------------------------------
+// L1 reset via lpc-snooper D-Bus interface
+// ---------------------------------------------------------------------------
+
+/** Triggers an L1 SW main reset by calling com.nvidia.L1Reset.Reset() on
+ *  whichever D-Bus service implements that interface, discovered via
+ *  ObjectMapper GetSubTree.  Retries up to 5 times with 2-second delays. */
+asio::awaitable<void> DbusInstaller::doL1Reset()
+{
+    // Discover service + path via ObjectMapper rather than hardcoding them.
+    using SubTree = std::vector<std::pair<
+        std::string,
+        std::vector<std::pair<std::string, std::vector<std::string>>>>>;
+
+    SubTree subtree =
+        co_await asio::async_initiate<const asio::use_awaitable_t<>&,
+                                      void(boost::system::error_code, SubTree)>(
+            [this](auto&& handler) {
+                auto sh = std::make_shared<std::decay_t<decltype(handler)>>(
+                    std::forward<decltype(handler)>(handler));
+                bus_->async_method_call(
+                    [sh](boost::system::error_code ec, SubTree result) {
+                        (*sh)(ec, std::move(result));
+                    },
+                    "xyz.openbmc_project.ObjectMapper",
+                    "/xyz/openbmc_project/object_mapper",
+                    "xyz.openbmc_project.ObjectMapper", "GetSubTree", "/", 0,
+                    std::vector<std::string>{kL1ResetIntf});
+            },
+            asio::use_awaitable);
+
+    if (subtree.empty() || subtree.front().second.empty())
+    {
+        throw std::runtime_error("L1 reset: no D-Bus object implements " +
+                                 std::string(kL1ResetIntf));
+    }
+
+    std::string service = subtree.front().second.front().first;
+    std::string path = subtree.front().first;
+
+    lg2::info("L1 reset: calling {SVC} {PATH} {INTF}.Reset()", "SVC", service,
+              "PATH", path, "INTF", kL1ResetIntf);
+
+    std::string lastError;
+    for (int attempt = 1; attempt <= 5; ++attempt)
+    {
+        lg2::info("L1 reset D-Bus attempt {ATTEMPT}/5", "ATTEMPT", attempt);
+
+        try
+        {
+            co_await asio::async_initiate<const asio::use_awaitable_t<>&,
+                                          void(boost::system::error_code)>(
+                [this, &service, &path](auto&& handler) {
+                    auto sh = std::make_shared<std::decay_t<decltype(handler)>>(
+                        std::forward<decltype(handler)>(handler));
+                    bus_->async_method_call(
+                        [sh](boost::system::error_code callEc) {
+                            (*sh)(callEc);
+                        },
+                        service, path, kL1ResetIntf, "Reset");
+                },
+                asio::use_awaitable);
+
+            lg2::info("L1 reset D-Bus call succeeded on attempt {ATTEMPT}",
+                      "ATTEMPT", attempt);
+            co_return;
+        }
+        catch (const boost::system::system_error& ex)
+        {
+            if (ex.code() == asio::error::operation_aborted)
+                throw;
+            lastError = ex.what();
+        }
+        catch (const std::exception& ex)
+        {
+            lastError = ex.what();
+        }
+
+        lg2::warning("L1 reset D-Bus attempt {ATTEMPT}/5 failed: {ERROR}",
+                     "ATTEMPT", attempt, "ERROR", lastError);
+
+        if (attempt < 5)
+        {
+            auto executor = co_await asio::this_coro::executor;
+            asio::steady_timer timer(executor);
+            timer.expires_after(std::chrono::seconds(2));
+            co_await timer.async_wait(asio::use_awaitable);
+        }
+    }
+
+    throw std::runtime_error("L1 reset D-Bus call failed after 5 attempts: " +
+                             lastError);
 }
 
 // ---------------------------------------------------------------------------

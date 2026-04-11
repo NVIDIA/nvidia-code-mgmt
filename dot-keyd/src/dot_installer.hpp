@@ -70,7 +70,7 @@ class DotInstaller
         config_(config), bus_(std::move(bus))
     {}
 
-    const Config& config_;
+    Config config_;
     std::shared_ptr<sdbusplus::asio::connection> bus_;
 
     // Override points — keep these small; do the work in private methods.
@@ -87,9 +87,7 @@ class DotInstaller
     {
         co_return;
     }
-
-    // L1 reset — shared by all installers, implemented here.
-    void l1Reset();
+    virtual asio::awaitable<void> doL1Reset();
 
     // Retry loop for install operations.  fn(attempt) must return
     // awaitable<void>.
@@ -142,10 +140,6 @@ class DotInstaller
                                  std::to_string(config_.cakInstallRetries) +
                                  " attempts: " + lastError);
     }
-
-  private:
-    void writeI2cBytes(int bus, int addr, const std::vector<uint8_t>& bytes);
-    static int parseI2cAddr(const std::string& addrStr);
 };
 
 // Factory — selects the right subclass based on config.

@@ -32,6 +32,8 @@
 #include <string>
 #include <vector>
 
+using json = nlohmann::json;
+
 namespace
 {
 
@@ -50,7 +52,11 @@ bool isValidPem(const std::string& data)
 void ensureDir(const fs::path& path)
 {
     fs::create_directories(path);
-    ::chmod(path.c_str(), 0700);
+    if (::chmod(path.c_str(), 0700) != 0)
+    {
+        throw std::runtime_error("chmod failed on " + path.string() + ": " +
+                                 std::string(std::strerror(errno)));
+    }
 }
 
 void atomicWrite(const fs::path& path, const std::string& data)
@@ -91,7 +97,15 @@ void atomicWrite(const fs::path& path, const std::string& data)
                                  std::string(std::strerror(err)));
     }
     ::close(fd);
-    fs::rename(tmpPath, path);
+    try
+    {
+        fs::rename(tmpPath, path);
+    }
+    catch (...)
+    {
+        ::unlink(tmpPath.c_str());
+        throw;
+    }
 }
 
 std::string readFile(const fs::path& path)
