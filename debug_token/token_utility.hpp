@@ -74,7 +74,7 @@ struct TokenHeader
 // Type aliases for token handling
 using SerialNumber = std::string;
 using Token = std::vector<uint8_t>;
-using TokenMap = std::map<SerialNumber, Token>;
+using TokenMap = std::multimap<SerialNumber, Token>;
 
 struct TokenUtility
 {

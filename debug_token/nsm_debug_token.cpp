@@ -357,11 +357,11 @@ int UpdateDebugToken::nsmTokenInstall(TokenMap& tokens)
             std::variant<std::string> property;
             reply.read(property);
             const std::string serialNumber = std::get<std::string>(property);
-            if (tokens.find(serialNumber) != tokens.end())
+            auto it = tokens.find(serialNumber);
+            if (it != tokens.end())
             {
-                // Strip 44 bytes from the header
-                token = std::vector<uint8_t>(tokens[serialNumber].begin() + 44,
-                                             tokens[serialNumber].end());
+                token = std::vector<uint8_t>(it->second.begin() + 44,
+                                             it->second.end());
             }
             else
             {
@@ -737,7 +737,8 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
             reply.read(property);
             const std::string serialNumber = std::get<std::string>(property);
 
-            if (tokens.find(serialNumber) == tokens.end())
+            auto range = tokens.equal_range(serialNumber);
+            if (range.first == range.second)
             {
                 log<level::INFO>(
                     (path + ": No token for serial number: " + serialNumber)
@@ -749,42 +750,48 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
                 (path + ": Found token for serial number: " + serialNumber)
                     .c_str());
 
-            const Token& token = tokens[serialNumber];
-
-            int memfd = memfd_create("debug_token", MFD_CLOEXEC);
-            if (memfd < 0)
+            for (auto it = range.first; it != range.second; ++it)
             {
-                log<level::ERR>((path + ": Failed to create memfd: " +
-                                 std::string(strerror(errno)))
-                                    .c_str());
-                status = -1;
-                continue;
-            }
+                const Token& token = it->second;
 
-            if (write(memfd, token.data(), token.size()) !=
-                static_cast<ssize_t>(token.size()))
-            {
-                log<level::ERR>((path + ": Failed to write token to memfd: " +
-                                 std::string(strerror(errno)))
-                                    .c_str());
+                int memfd = memfd_create("debug_token", MFD_CLOEXEC);
+                if (memfd < 0)
+                {
+                    log<level::ERR>((path + ": Failed to create memfd: " +
+                                     std::string(strerror(errno)))
+                                        .c_str());
+                    status = -1;
+                    continue;
+                }
+
+                if (write(memfd, token.data(), token.size()) !=
+                    static_cast<ssize_t>(token.size()))
+                {
+                    log<level::ERR>((path +
+                                     ": Failed to write token to memfd: " +
+                                     std::string(strerror(errno)))
+                                        .c_str());
+                    close(memfd);
+                    status = -1;
+                    continue;
+                }
+
+                lseek(memfd, 0, SEEK_SET);
+
+                std::string asyncPath = handleAsyncCallInstallV2(path, memfd);
                 close(memfd);
-                status = -1;
-                continue;
-            }
 
-            lseek(memfd, 0, SEEK_SET);
-
-            std::string asyncPath = handleAsyncCallInstallV2(path, memfd);
-            close(memfd);
-
-            if (asyncPath.empty())
-            {
-                log<level::ERR>((path + ": Token install failed").c_str());
-                status = -1;
-            }
-            else
-            {
-                log<level::INFO>((path + ": Token install succeeded").c_str());
+                if (asyncPath.empty())
+                {
+                    log<level::ERR>((path + ": Token install failed").c_str());
+                    status = -1;
+                    continue;
+                }
+                else
+                {
+                    log<level::INFO>(
+                        (path + ": Token install succeeded").c_str());
+                }
             }
         }
         catch (const std::exception& e)
