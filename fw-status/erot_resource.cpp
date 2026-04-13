@@ -130,6 +130,7 @@ void ERoTResource::updateERoTHealth()
     {
         lg2::info("Device associated with {PATH} is in recovery", "PATH",
                   path.c_str());
+        commitRecoveryModeError(fetchEid());
 
         health(HealthServer::HealthType::Critical);
         state(OperationalStatusServer::StateType::StandbyOffline);

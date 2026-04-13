@@ -119,6 +119,7 @@ mctp_vdm::requester::Coroutine
 
     if (isAPInRecovery())
     {
+        commitRecoveryModeError(fetchEid());
         health(HealthServer::HealthType::Critical);
         state(OperationalStatusServer::StateType::StandbyOffline);
     }

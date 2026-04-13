@@ -142,6 +142,7 @@ void USBRcmResource::updateHealth()
     }
     else if (recoveryStatus == "In Recovery")
     {
+        commitRecoveryModeError(fetchEid());
         healthValue = HealthServer::HealthType::Critical;
         stateValue = OperationalStatusServer::StateType::StandbyOffline;
     }

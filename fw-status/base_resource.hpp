@@ -279,6 +279,13 @@ class BaseResource
         return chassisPowerState == chassisPowerOffState;
     }
 
+    /** @brief Commit a recovery-mode error to DeviceStatus via
+     *  phosphor-logging.
+     *
+     *  @param eid - MCTP Endpoint ID of the device
+     */
+    void commitRecoveryModeError(uint8_t eid);
+
   protected:
     const std::string path;
 

@@ -241,6 +241,7 @@ class GpuResource : public MCTPDiscoveryResource
         {
             lg2::info("Device associated with {PATH} is in recovery", "PATH",
                       path.c_str());
+            commitRecoveryModeError(fetchEid());
             healthValue = HealthServer::HealthType::Critical;
             stateValue = OperationalStatusServer::StateType::StandbyOffline;
         }

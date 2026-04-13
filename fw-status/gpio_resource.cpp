@@ -147,6 +147,7 @@ void GPIOResource::updateERoTHealth()
     {
         lg2::info("Device associated with {PATH} is in recovery", "PATH",
                   path.c_str());
+        commitRecoveryModeError(fetchEid());
 
         isFirmwareInRecovery = true;
         health(HealthServer::HealthType::Critical);
@@ -268,6 +269,7 @@ void GPIOResource::updateAPHealth(uint8_t type)
     }
     else
     {
+        commitRecoveryModeError(fetchEid());
         health(HealthServer::HealthType::Critical);
         state(OperationalStatusServer::StateType::StandbyOffline);
         lg2::info("Device associated with {OBJ} needs recovery", "OBJ",

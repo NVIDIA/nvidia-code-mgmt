@@ -26,6 +26,7 @@ libudev_dep = dependency('libudev', required: true)
 
 source_files = [
     'fw-status.cpp',
+    'base_resource.cpp',
     'mctp_discovery_resource.cpp',
     'ap_resource.cpp',
     'cpld_resource.cpp',

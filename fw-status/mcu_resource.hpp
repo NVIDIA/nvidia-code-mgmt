@@ -98,6 +98,8 @@ class MCUResource : public MCTPDiscoveryResource
         if (isInRecoveryMode)
         {
             lg2::info("MCU device {ID} is in recovery mode", "ID", deviceId);
+            commitRecoveryModeError(fetchEid());
+
             health(HealthServer::HealthType::Critical);
             state(OperationalStatusServer::StateType::StandbyOffline);
             return;
