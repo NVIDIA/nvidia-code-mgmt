@@ -212,16 +212,20 @@ class NVMeItemUpdater : public BaseItemUpdater
      *        from failing on the empty-list guard; applyTargetFilters() detects
      *        it and returns UpdateNone so the activation finishes as Active
      *        (good signal to PLDM, no failed task state).
+     *
+     *        readDeviceDetails() is overridden below to skip this value so
+     *        readExistingFirmWare() never registers a D-Bus match rule against
+     *        an invalid path.
      */
     static constexpr auto nvmeNoMatchSentinel = "__nvme_no_matching_devices__";
 
     /**
      * @brief Get inventory paths for NVMe devices, filtered by model.
      *
-     *        When no drives match, returns a single sentinel path so that
-     *        startActivation() does not immediately return Status::Failed.
-     *        applyTargetFilters() will then short-circuit to
-     * finishActivation().
+     *        Returns only paths whose model matches the configured modelName.
+     *        Returns a single sentinel path when no drives match so that
+     *        startActivation() does not immediately return Status::Failed;
+     *        applyTargetFilters() will short-circuit to UpdateNone instead.
      *
      * @return std::vector<std::string>
      */
@@ -251,11 +255,29 @@ class NVMeItemUpdater : public BaseItemUpdater
         {
             lg2::warning("No NVMe drives found matching model {MODEL}", "MODEL",
                          expectedModel);
-            // Return sentinel so startActivation() bypasses the empty-list
-            // early-exit; applyTargetFilters() handles this gracefully.
             return {std::string(nvmeNoMatchSentinel)};
         }
         return matchingPaths;
+    }
+
+    /**
+     * @brief Skip readDeviceDetails for the no-match sentinel path.
+     *
+     *        readExistingFirmWare() iterates over
+     * getItemUpdaterInventoryPaths() and calls readDeviceDetails() for each
+     * entry.  When the sentinel is present, the base implementation would try
+     * to register a D-Bus match rule using the sentinel string as an object
+     * path.  Because the sentinel is not a valid D-Bus path (no leading '/'),
+     * sd_bus_match rejects it with InvalidArgs and terminates the process.
+     * Return early to avoid that.
+     */
+    void readDeviceDetails(std::string& p) override
+    {
+        if (p == nvmeNoMatchSentinel)
+        {
+            return;
+        }
+        BaseItemUpdater::readDeviceDetails(p);
     }
 
     /**
