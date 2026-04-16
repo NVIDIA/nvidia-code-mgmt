@@ -477,3 +477,8 @@ option('DOT_KEYD_SUPPORT',
        type: 'feature',
        value: 'disabled',
        description: 'Enables dot-keyd support')
+
+option('NVSWITCH_CONFIG_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables NVSwitch OOB configuration manager')

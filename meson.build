@@ -600,6 +600,10 @@ libgpiocxx = dependency('libgpiodcxx', default_options: ['bindings=cxx'])
 
 add_project_link_arguments(['-lstdc++fs'], language: 'cpp')
 
+if get_option('NVSWITCH_CONFIG_SUPPORT').enabled()
+    add_project_arguments('-DNVSWITCH_CONFIG_SUPPORT', language: ['c', 'cpp'])
+endif
+
 subdir('src')
 subdir('fw-status')
 
@@ -665,4 +669,8 @@ endif
 
 if get_option('DOT_KEYD_SUPPORT').enabled()
     subdir('dot-keyd')
+endif
+
+if get_option('NVSWITCH_CONFIG_SUPPORT').enabled()
+    subdir('nvswitch-config')
 endif
