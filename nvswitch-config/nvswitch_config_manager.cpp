@@ -263,9 +263,8 @@ void NVSwitchConfigManager::discoverAndSubscribeDevices()
 
             for (const auto& [objPath, serviceMap] : subtree)
             {
-                lg2::error(
-                    "[FLOW] discoverAndSubscribeDevices: found path={PATH}",
-                    "PATH", objPath);
+                lg2::debug("discoverAndSubscribeDevices: found path={PATH}",
+                           "PATH", objPath);
                 subscribeToDevice(objPath);
             }
         },

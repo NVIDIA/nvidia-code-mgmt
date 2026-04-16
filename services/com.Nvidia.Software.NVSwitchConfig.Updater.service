@@ -1,0 +1,22 @@
+[Unit]
+Description=Nvidia NVSwitch OOB Configuration Manager
+Documentation=https://github.com/NVIDIA/nvdCodeMgmt
+# Wait for the dbus socket and nsmd to be ready before starting
+Requires=dbus.socket
+After=dbus.socket nsmd.service
+Wants=nsmd.service
+
+[Service]
+Type=dbus
+BusName=com.Nvidia.Software.NVSwitchConfig.Updater
+ExecStart=/usr/bin/nvswitch-config-manager
+Restart=always
+# Give in-flight config pushes time to complete before a restart
+TimeoutStopSec=30
+
+# Watchdog: kill and restart the service if it stops sending heartbeats.
+# The process pings sd_notify(WATCHDOG=1) every 15 s (half this interval).
+WatchdogSec=30
+
+[Install]
+WantedBy=multi-user.target
