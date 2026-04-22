@@ -48,8 +48,6 @@ class MCUResource : public MCTPDiscoveryResource
     {
         lg2::info("Creating MCU Resource: EID={EID}, DEVICE_ID={ID}", "EID",
                   eid, "ID", deviceId);
-
-        updateHealth();
     }
 
   private:

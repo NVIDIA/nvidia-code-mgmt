@@ -32,9 +32,6 @@ GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                                                       false);
 
     registerGPIOEvent();
-
-    // Call it one time to initialize the status
-    updateERoTHealth();
 }
 
 GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,

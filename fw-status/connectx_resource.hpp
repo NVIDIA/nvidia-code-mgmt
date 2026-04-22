@@ -68,8 +68,6 @@ class ConnectXResource : public MCTPDiscoveryResource
 
         createRecoveryModeInterface(bus, forceRecoveryChassisObjPath);
 
-        updateHealth();
-
         monitorSMAEndpoint();
     }
 

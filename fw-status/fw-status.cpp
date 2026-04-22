@@ -224,27 +224,27 @@ void applyChassisConnectionAndRefresh(const InterfaceMap& interfaces,
                                       BaseResource& resource,
                                       const std::string& initialPowerState)
 {
-    if (!hasProperty(interfaces, interface, "hasChassisPowerSource"))
+    if (hasProperty(interfaces, interface, "hasChassisPowerSource"))
     {
-        return;
+        resource.setConnectedToChassis(
+            getBool(interfaces, interface, "hasChassisPowerSource"));
+        if (resource.hasChassisPowerSource())
+        {
+            resource.setChassisPowerState(initialPowerState);
+        }
     }
 
-    resource.setConnectedToChassis(
-        getBool(interfaces, interface, "hasChassisPowerSource"));
-    if (resource.hasChassisPowerSource())
-    {
-        resource.setChassisPowerState(initialPowerState);
-    }
-
+    // Always trigger the first updateHealth() here.
+    // By this point the chassis power state (if any) has been set
+    // so the first probe sees correct state
     try
     {
         resource.updateHealth();
     }
     catch (const std::exception& e)
     {
-        lg2::error(
-            "Failed to refresh health for resource {PATH} after setting hasChassisPowerSource: {ERROR}",
-            "PATH", resource.getObjectPath(), "ERROR", e.what());
+        lg2::error("Failed to refresh health for resource {PATH}: {ERROR}",
+                   "PATH", resource.getObjectPath(), "ERROR", e.what());
     }
 }
 

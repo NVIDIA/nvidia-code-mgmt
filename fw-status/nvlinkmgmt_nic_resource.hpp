@@ -72,8 +72,6 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
 
         createRecoveryModeInterface(bus, forceRecoveryChassisObjPath);
 
-        updateHealth();
-
         monitorSMAEndpoint();
     }
 

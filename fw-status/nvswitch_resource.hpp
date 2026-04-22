@@ -67,8 +67,6 @@ class NVSwitchResource : public MCTPDiscoveryResource
 
         createRecoveryModeInterface(bus, forceRecoveryChassisObjPath);
 
-        updateHealth();
-
         monitorSMAEndpoint();
     }
 

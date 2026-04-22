@@ -41,8 +41,6 @@ USBRcmResource::USBRcmResource(sdbusplus::bus::bus& bus,
     {
         udevMonitor->registerCallback(usbPort, [this]() { updateHealth(); });
     }
-
-    updateHealth();
 }
 
 USBRcmResource::~USBRcmResource()

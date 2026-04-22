@@ -67,8 +67,6 @@ class GpuResource : public MCTPDiscoveryResource
             BootStatusServer::BootStatusTypes::OCPDeviceStatus);
 
         createRecoveryModeInterface(bus, forceRecoveryChassisObjPath);
-
-        updateHealth();
     }
 
     /**@brief Constructor for the GpuResource Class
@@ -106,8 +104,6 @@ class GpuResource : public MCTPDiscoveryResource
             BootStatusServer::BootStatusTypes::OCPDeviceStatus);
 
         createRecoveryModeInterface(bus, forceRecoveryChassisObjPath);
-
-        updateHealth();
 
         monitorSMAEndpoint();
     }
