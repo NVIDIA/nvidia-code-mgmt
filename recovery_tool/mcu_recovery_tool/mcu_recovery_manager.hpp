@@ -142,6 +142,14 @@ class MCURecoveryManager
     void updateAllDeviceInfo();
 
     /**
+     * @brief Updates the status of a specific MCU device.
+     *
+     * @param deviceId The MCU device identifier from configuration.
+     * @return True if the update is successful, false otherwise.
+     */
+    bool updateDevInfo(const std::string& deviceId);
+
+    /**
      * @brief Shows the status of all MCU devices.
      */
     void showAllDeviceStatus();
@@ -249,14 +257,6 @@ class MCURecoveryManager
      * @return The full port path for the MCU device.
      */
     std::string getFullPortPath(libusb_device* dev);
-
-    /**
-     * @brief Updates the status of a specific MCU device.
-     *
-     * @param deviceId The MCU device identifier from configuration.
-     * @return True if the update is successful, false otherwise.
-     */
-    bool updateDevInfo(const std::string& deviceId);
 
     /**
      * @brief Checks if the encrypt key is empty.
