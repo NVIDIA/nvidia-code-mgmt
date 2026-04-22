@@ -207,16 +207,69 @@ class NVMeItemUpdater : public BaseItemUpdater
     }
 
     /**
-     * @brief Get inventory paths for NVMe devices
+     * @brief Sentinel returned by getItemUpdaterInventoryPaths() when no drives
+     *        match the expected model.  Its presence prevents startActivation()
+     *        from failing on the empty-list guard; applyTargetFilters() detects
+     *        it and returns UpdateNone so the activation finishes as Active
+     *        (good signal to PLDM, no failed task state).
+     */
+    static constexpr auto nvmeNoMatchSentinel = "__nvme_no_matching_devices__";
+
+    /**
+     * @brief Get inventory paths for NVMe devices, filtered by model.
+     *
+     *        When no drives match, returns a single sentinel path so that
+     *        startActivation() does not immediately return Status::Failed.
+     *        applyTargetFilters() will then short-circuit to
+     * finishActivation().
      *
      * @return std::vector<std::string>
      */
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
-        // Base class automatically discovers devices via D-Bus signals
-        // and calls pathIsValidDevice() for validation
-        return BaseItemUpdater::getItemUpdaterInventoryPaths();
+        // Extract model name from composite "Manufacturer:Model:UUID" format
+        std::string expectedModel = modelName;
+        auto firstColon = modelName.find(':');
+        if (firstColon != std::string::npos)
+        {
+            auto secondColon = modelName.find(':', firstColon + 1);
+            expectedModel = (secondColon != std::string::npos)
+                                ? modelName.substr(firstColon + 1,
+                                                   secondColon - firstColon - 1)
+                                : modelName.substr(firstColon + 1);
+        }
+
+        std::vector<std::string> matchingPaths;
+        for (const auto& path : BaseItemUpdater::getItemUpdaterInventoryPaths())
+        {
+            if (getModel(path) == expectedModel)
+            {
+                matchingPaths.push_back(path);
+            }
+        }
+        if (matchingPaths.empty())
+        {
+            lg2::warning("No NVMe drives found matching model {MODEL}", "MODEL",
+                         expectedModel);
+            // Return sentinel so startActivation() bypasses the empty-list
+            // early-exit; applyTargetFilters() handles this gracefully.
+            return {std::string(nvmeNoMatchSentinel)};
+        }
+        return matchingPaths;
     }
+
+    /**
+     * @brief Apply target filters, short-circuiting to UpdateNone when no
+     *        NVMe devices match the firmware model.  UpdateNone causes
+     *        startActivation() to call finishActivation() → Status::Active,
+     *        sending a successful completion signal to PLDM without marking
+     *        the task as failed.
+     *
+     * @param targets
+     * @return TargetFilter
+     */
+    TargetFilter applyTargetFilters(
+        const std::vector<sdbusplus::message::object_path>& targets) override;
 
     /**
      * @brief Get D-Bus service name
