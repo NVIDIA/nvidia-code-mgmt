@@ -17,6 +17,3 @@ ExecStart=/bin/sh -c '\
 Restart=always
 Type=dbus
 BusName=com.Nvidia.Software.MCURecovery.Updater.%i
-
-[Install]
-WantedBy=multi-user.target
