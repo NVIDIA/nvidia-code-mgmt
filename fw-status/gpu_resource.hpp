@@ -160,7 +160,9 @@ class GpuResource : public MCTPDiscoveryResource
 
     /* @brief Override function for updating Health and Status of D-Bus object
      * based on Device Status and MCTP enumeration
-     * Uses OCP Recovery Protocol to fetch device status
+     * Uses OCP Recovery Protocol to fetch device status only when the MCTP
+     * EID is not enumerated. When the EID is enumerated, bootStatus is
+     * reported as DeviceHealthy without issuing the OCP command.
      *
      * @return void
      */
@@ -170,23 +172,41 @@ class GpuResource : public MCTPDiscoveryResource
         OperationalStatusServer::StateType stateValue;
         const bool mctpEnumerated = MCTPDiscoveryResource::isDeviceEnumerated();
 
-        if (!mctpEnumerated)
+        if (mctpEnumerated)
         {
-            if (isChassisPoweredOff())
-            {
-                healthValue = HealthServer::HealthType::Warning;
-                stateValue =
-                    OperationalStatusServer::StateType::UnavailableOffline;
-                health(healthValue);
-                state(stateValue);
+            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
+                      path.c_str());
 
-                if (inforomResource)
-                {
-                    inforomResource->health(healthValue);
-                    inforomResource->state(stateValue);
-                }
-                return;
+            bootStatus->bootStatus(std::vector<uint8_t>{static_cast<uint8_t>(
+                recovery_tool::DeviceStatus::DeviceHealthy)});
+
+            healthValue = HealthServer::HealthType::OK;
+            stateValue = OperationalStatusServer::StateType::Enabled;
+
+            health(healthValue);
+            state(stateValue);
+
+            if (inforomResource)
+            {
+                inforomResource->health(healthValue);
+                inforomResource->state(stateValue);
             }
+            return;
+        }
+
+        if (isChassisPoweredOff())
+        {
+            healthValue = HealthServer::HealthType::Warning;
+            stateValue = OperationalStatusServer::StateType::UnavailableOffline;
+            health(healthValue);
+            state(stateValue);
+
+            if (inforomResource)
+            {
+                inforomResource->health(healthValue);
+                inforomResource->state(stateValue);
+            }
+            return;
         }
 
         const auto& [ret, output, errorMsg] =
@@ -225,15 +245,8 @@ class GpuResource : public MCTPDiscoveryResource
         bootStatus->bootStatus(
             std::vector<uint8_t>(output.begin() + 1, output.end()));
 
-        if (mctpEnumerated)
-        {
-            lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
-                      path.c_str());
-            healthValue = HealthServer::HealthType::OK;
-            stateValue = OperationalStatusServer::StateType::Enabled;
-        }
-        else if (status != recovery_tool::DeviceStatus::DeviceHealthy and
-                 status != recovery_tool::DeviceStatus::RecoveryImgRunning)
+        if (status != recovery_tool::DeviceStatus::DeviceHealthy and
+            status != recovery_tool::DeviceStatus::RecoveryImgRunning)
         {
             lg2::info("Device associated with {PATH} is in recovery", "PATH",
                       path.c_str());
