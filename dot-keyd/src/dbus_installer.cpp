@@ -24,10 +24,13 @@
 #include <sdbusplus/message/native_types.hpp>
 #include <sdbusplus/message/types.hpp>
 
+#include <array>
 #include <chrono>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 using json = nlohmann::json;
 
@@ -97,6 +100,54 @@ asio::awaitable<bool> DbusInstaller::shouldSkip()
                   "ERROR", ex.what());
     }
     co_return false;
+}
+
+asio::awaitable<void> DbusInstaller::doPreInstallCheck()
+{
+    auto executor = co_await asio::this_coro::executor;
+    int timeoutMs = config_.timeouts.dotCakInitMs;
+    auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+
+    lg2::info("Pre-install check: waiting for DOTCAKInitialization=Waiting "
+              "(timeout {TIMEOUT}ms)",
+              "TIMEOUT", timeoutMs);
+
+    asio::steady_timer timer(executor);
+    while (true)
+    {
+        try
+        {
+            std::string state = co_await readCakInitState();
+            if (state != "EarlyBoot")
+            {
+                lg2::info(
+                    "Pre-install check passed: DOTCAKInitialization={STATE}",
+                    "STATE", state);
+                co_return;
+            }
+            lg2::debug("DOTCAKInitialization=EarlyBoot, waiting...");
+        }
+        catch (const boost::system::system_error& ex)
+        {
+            if (ex.code() == asio::error::operation_aborted)
+                throw;
+            lg2::debug("Could not read DOTCAKInitialization: {ERROR}", "ERROR",
+                       ex.what());
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline)
+        {
+            lg2::warning("Pre-install check timed out after {TIMEOUT}ms, "
+                         "proceeding anyway",
+                         "TIMEOUT", timeoutMs);
+            co_return;
+        }
+
+        timer.expires_after(
+            std::chrono::milliseconds(kDbusAsyncPollIntervalMs));
+        co_await timer.async_wait(asio::use_awaitable);
+    }
 }
 
 asio::awaitable<void> DbusInstaller::doInstall(const json& payload)
@@ -251,6 +302,7 @@ asio::awaitable<void> DbusInstaller::waitForCakComplete()
     asio::steady_timer timer(executor);
     while (true)
     {
+        std::optional<std::string> pendingError;
         try
         {
             std::string state = co_await readCakInitState();
@@ -264,6 +316,10 @@ asio::awaitable<void> DbusInstaller::waitForCakComplete()
             }
             if (std::chrono::steady_clock::now() >= deadline)
             {
+                if (co_await logSbiosFmcRecoveryStatus())
+                    throw CpuInRecoveryException(
+                        "CPUs are in firmware recovery — the installed CAK "
+                        "does not match the key used to sign SBIOS");
                 throw std::runtime_error(
                     "CAK verification failed: DOTCAKInitialization did not "
                     "reach Complete within " +
@@ -282,18 +338,28 @@ asio::awaitable<void> DbusInstaller::waitForCakComplete()
                 throw;
             if (std::chrono::steady_clock::now() >= deadline)
             {
-                throw std::runtime_error(
-                    "CAK verification failed: could not read "
-                    "DOTCAKInitialization within " +
-                    std::to_string(timeoutMs / 1000) +
-                    " seconds: " + ex.what());
+                pendingError = "CAK verification failed: could not read "
+                               "DOTCAKInitialization within " +
+                               std::to_string(timeoutMs / 1000) +
+                               " seconds: " + ex.what();
             }
-            lg2::debug("Failed to read DOTCAKInitialization: {ERROR}", "ERROR",
-                       ex.what());
+            else
+            {
+                lg2::debug("Failed to read DOTCAKInitialization: {ERROR}",
+                           "ERROR", ex.what());
+            }
         }
         catch (const std::runtime_error&)
         {
             throw;
+        }
+        if (pendingError)
+        {
+            if (co_await logSbiosFmcRecoveryStatus())
+                throw CpuInRecoveryException(
+                    "CPUs are in firmware recovery — the installed CAK "
+                    "does not match the key used to sign SBIOS");
+            throw std::runtime_error(*pendingError);
         }
         timer.expires_after(std::chrono::seconds(1));
         co_await timer.async_wait(asio::use_awaitable);
@@ -305,6 +371,66 @@ asio::awaitable<std::string> DbusInstaller::readCakInitState()
     co_return co_await getPropertyAwaitable<std::string>(
         *bus_, kBootRawService, kBootCakPath, kBootProgressIntf,
         kBootProgressOemProp);
+}
+
+// ---------------------------------------------------------------------------
+// SBIOS FMC recovery status check
+// ---------------------------------------------------------------------------
+
+/** Reads Health and State from each SBIOS_FMC_N software object published by
+ *  com.Nvidia.FWStatus and logs an error if the CPU is in firmware recovery
+ *  (Health=Critical, State=StandbyOffline), indicating a mismatched CAK.
+ *  Returns true if any CPU is in recovery. */
+asio::awaitable<bool> DbusInstaller::logSbiosFmcRecoveryStatus()
+{
+    static constexpr std::array<std::string_view, 2> kSwIds = {"SBIOS_FMC_0",
+                                                               "SBIOS_FMC_1"};
+
+    auto lastSegment = [](const std::string& s) -> std::string {
+        size_t pos = s.rfind('.');
+        return pos != std::string::npos ? s.substr(pos + 1) : s;
+    };
+
+    bool inRecovery = false;
+    for (const auto& swId : kSwIds)
+    {
+        const std::string path =
+            std::string(kSoftwareBasePath) + std::string(swId);
+        try
+        {
+            std::string health = co_await getPropertyAwaitable<std::string>(
+                *bus_, kFwStatusService, path, kDecoratorHealthIntf, "Health");
+            std::string state = co_await getPropertyAwaitable<std::string>(
+                *bus_, kFwStatusService, path, kDecoratorOperationalStatusIntf,
+                "State");
+
+            std::string healthStr = lastSegment(health);
+            std::string stateStr = lastSegment(state);
+
+            lg2::info(
+                "SBIOS FMC {ID} post-reset status: Health={HEALTH} State={STATE}",
+                "ID", swId, "HEALTH", healthStr, "STATE", stateStr);
+
+            if (healthStr == "Critical" && (stateStr == "StandbyOffline" ||
+                                            stateStr == "UnavailableOffline"))
+            {
+                lg2::error(
+                    "{ID} is in firmware recovery (Health={HEALTH} "
+                    "State={STATE}). The CPUs are in recovery — the installed "
+                    "CAK likely does not match the key used to sign SBIOS. "
+                    "Verify the correct CAK is being provisioned.",
+                    "ID", swId, "HEALTH", healthStr, "STATE", stateStr);
+                inRecovery = true;
+            }
+        }
+        catch (const std::exception& ex)
+        {
+            lg2::warning(
+                "Could not read SBIOS FMC recovery status for {ID}: {ERROR}",
+                "ID", swId, "ERROR", ex.what());
+        }
+    }
+    co_return inRecovery;
 }
 
 // ---------------------------------------------------------------------------

@@ -52,6 +52,18 @@ class CakInstallDeclinedException : public std::runtime_error
 };
 
 /**
+ * Thrown when post-install verification detects that the CPUs booted into
+ * firmware recovery, indicating a CAK/signing-key mismatch.
+ */
+class CpuInRecoveryException : public std::runtime_error
+{
+  public:
+    explicit CpuInRecoveryException(const std::string& msg) :
+        std::runtime_error(msg)
+    {}
+};
+
+/**
  * Base class for CAK installers.  Implements the Template Method pattern:
  * run() defines the invariant skeleton (load → install → L1 reset → verify)
  * while subclasses supply the flow-specific steps via small virtual methods

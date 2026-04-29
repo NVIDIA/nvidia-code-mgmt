@@ -22,10 +22,12 @@
 #include <nlohmann/json.hpp>
 #include <phosphor-logging/lg2.hpp>
 
+#include <array>
 #include <chrono>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -95,6 +97,7 @@ asio::awaitable<void> HmcInstaller::doVerify()
     lg2::info("Post-install verification: waiting for DOTCAKInitialization="
               "Complete (timeout={TIMEOUT}s)",
               "TIMEOUT", timeoutSecs);
+    bool failed = false;
     try
     {
         co_await waitForDotState("Volatile");
@@ -104,6 +107,14 @@ asio::awaitable<void> HmcInstaller::doVerify()
     {
         lg2::error("Post-install verification failed after {TIMEOUT}s: {ERROR}",
                    "TIMEOUT", timeoutSecs, "ERROR", ex.what());
+        failed = true;
+    }
+    if (failed)
+    {
+        if (co_await logSbiosFmcRecoveryStatus())
+            throw CpuInRecoveryException(
+                "CPUs are in firmware recovery — the installed CAK "
+                "does not match the key used to sign SBIOS");
         throw std::runtime_error(
             "CAK verification failed: system failed to boot within " +
             std::to_string(timeoutSecs) +
@@ -394,6 +405,59 @@ asio::awaitable<std::string> HmcInstaller::httpRequest(http::verb method,
                                  " from " + path);
     }
     co_return res.body();
+}
+
+// ---------------------------------------------------------------------------
+// SBIOS FMC recovery status check
+// ---------------------------------------------------------------------------
+
+/** Queries HGX_SBIOS_FMC_N FirmwareInventory entries and logs an error if
+ *  Health=Critical / State=StandbyOffline, which indicates CPUs booted into
+ *  firmware recovery — most likely caused by a mismatched CAK.
+ *  Returns true if any CPU is in recovery. */
+asio::awaitable<bool> HmcInstaller::logSbiosFmcRecoveryStatus()
+{
+    static constexpr std::array<std::string_view, 2> kFmcIds = {
+        "HGX_SBIOS_FMC_0", "HGX_SBIOS_FMC_1"};
+
+    bool inRecovery = false;
+    for (const auto& fmcId : kFmcIds)
+    {
+        const std::string path =
+            "/redfish/v1/UpdateService/FirmwareInventory/" + std::string(fmcId);
+        try
+        {
+            std::string response =
+                co_await httpRequest(http::verb::get, path, "");
+            json data = json::parse(response);
+
+            std::string health =
+                data.value("Status", json{}).value("Health", "");
+            std::string state = data.value("Status", json{}).value("State", "");
+
+            lg2::info(
+                "SBIOS FMC {ID} post-reset status: Health={HEALTH} State={STATE}",
+                "ID", fmcId, "HEALTH", health, "STATE", state);
+
+            if (health == "Critical" && state == "StandbyOffline")
+            {
+                lg2::error(
+                    "{ID} is in firmware recovery (Health=Critical, "
+                    "State=StandbyOffline). The installed CAK likely does not "
+                    "match the key used to sign SBIOS — verify the correct "
+                    "CAK is being provisioned.",
+                    "ID", fmcId);
+                inRecovery = true;
+            }
+        }
+        catch (const std::exception& ex)
+        {
+            lg2::warning(
+                "Could not read SBIOS FMC recovery status for {ID}: {ERROR}",
+                "ID", fmcId, "ERROR", ex.what());
+        }
+    }
+    co_return inRecovery;
 }
 
 // ---------------------------------------------------------------------------

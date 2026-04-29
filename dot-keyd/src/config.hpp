@@ -53,6 +53,12 @@ constexpr const char* kBootProgressIntf =
     "xyz.openbmc_project.State.Boot.Progress";
 constexpr const char* kBootProgressOemProp = "BootProgressOem";
 constexpr int kDbusAsyncPollIntervalMs = 500;
+constexpr const char* kFwStatusService = "com.Nvidia.FWStatus";
+constexpr const char* kSoftwareBasePath = "/xyz/openbmc_project/software/";
+constexpr const char* kDecoratorHealthIntf =
+    "xyz.openbmc_project.State.Decorator.Health";
+constexpr const char* kDecoratorOperationalStatusIntf =
+    "xyz.openbmc_project.State.Decorator.OperationalStatus";
 
 struct ExitCode
 {

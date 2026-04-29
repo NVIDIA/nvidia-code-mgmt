@@ -48,6 +48,7 @@ class HmcInstaller : public DotInstaller
   private:
     asio::awaitable<std::string> getCakInitState();
     asio::awaitable<void> waitForDotState(const std::string& expected);
+    asio::awaitable<bool> logSbiosFmcRecoveryStatus();
     asio::awaitable<std::pair<bool, std::string>> tryCakInitState();
     asio::awaitable<std::pair<bool, std::vector<std::string>>>
         pollDotStates(const std::string& expected);

@@ -408,6 +408,11 @@ static boost::asio::awaitable<void> runCakInstall(ServiceState svc)
         svc.lastInstallStatus = "Installed";
         lg2::info("CAK already installed on device: {MSG}", "MSG", ex.what());
     }
+    catch (const CpuInRecoveryException& ex)
+    {
+        svc.lastInstallStatus = "CPU_In_Recovery";
+        lg2::error("CPUs in firmware recovery: {ERROR}", "ERROR", ex.what());
+    }
     catch (const boost::system::system_error& ex)
     {
         if (ex.code() == boost::asio::error::operation_aborted)

@@ -37,6 +37,7 @@ class DbusInstaller : public DotInstaller
 
   protected:
     asio::awaitable<bool> shouldSkip() override;
+    asio::awaitable<void> doPreInstallCheck() override;
     asio::awaitable<void> doInstall(const json& payload) override;
     asio::awaitable<void> doVerify() override;
     asio::awaitable<void> doL1Reset() override;
@@ -47,5 +48,6 @@ class DbusInstaller : public DotInstaller
     asio::awaitable<std::string> pollAsyncStatus(const std::string& asyncPath);
     asio::awaitable<void> waitForCakComplete();
     asio::awaitable<std::string> readCakInitState();
+    asio::awaitable<bool> logSbiosFmcRecoveryStatus();
     static std::string toDbusAuthScheme(const std::string& scheme);
 };
