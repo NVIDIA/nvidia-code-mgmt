@@ -516,8 +516,8 @@ asio::awaitable<void> HmcInstaller::doL1Reset()
         }
     }
 
-    throw std::runtime_error("L1 reset Redfish POST failed after 5 attempts: " +
-                             lastError);
+    throw L1ResetFailedException(
+        "L1 reset Redfish POST failed after 5 attempts: " + lastError);
 }
 
 // ---------------------------------------------------------------------------

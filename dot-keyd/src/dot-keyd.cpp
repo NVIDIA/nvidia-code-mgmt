@@ -413,6 +413,18 @@ static boost::asio::awaitable<void> runCakInstall(ServiceState svc)
         svc.lastInstallStatus = "CPU_In_Recovery";
         lg2::error("CPUs in firmware recovery: {ERROR}", "ERROR", ex.what());
     }
+    catch (const CakInstallFailedException& ex)
+    {
+        svc.lastInstallStatus = "CAK_Install_Failed";
+        lg2::error("CAK installation failed after all retries: {ERROR}",
+                   "ERROR", ex.what());
+    }
+    catch (const L1ResetFailedException& ex)
+    {
+        svc.lastInstallStatus = "L1_Reset_Failed";
+        lg2::error("L1 reset failed after all retries: {ERROR}", "ERROR",
+                   ex.what());
+    }
     catch (const boost::system::system_error& ex)
     {
         if (ex.code() == boost::asio::error::operation_aborted)

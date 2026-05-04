@@ -64,6 +64,30 @@ class CpuInRecoveryException : public std::runtime_error
 };
 
 /**
+ * Thrown when CAK installation fails after exhausting all retry attempts.
+ * runCakInstall() maps this to the "CAK_Install_Failed" status.
+ */
+class CakInstallFailedException : public std::runtime_error
+{
+  public:
+    explicit CakInstallFailedException(const std::string& msg) :
+        std::runtime_error(msg)
+    {}
+};
+
+/**
+ * Thrown when L1 reset fails after exhausting all retry attempts.
+ * runCakInstall() maps this to the "L1_Reset_Failed" status.
+ */
+class L1ResetFailedException : public std::runtime_error
+{
+  public:
+    explicit L1ResetFailedException(const std::string& msg) :
+        std::runtime_error(msg)
+    {}
+};
+
+/**
  * Base class for CAK installers.  Implements the Template Method pattern:
  * run() defines the invariant skeleton (load → install → L1 reset → verify)
  * while subclasses supply the flow-specific steps via small virtual methods
@@ -147,10 +171,10 @@ class DotInstaller
                 co_await timer.async_wait(asio::use_awaitable);
             }
         }
-        throw std::runtime_error(std::string(label) +
-                                 " CAK installation failed after " +
-                                 std::to_string(config_.cakInstallRetries) +
-                                 " attempts: " + lastError);
+        throw CakInstallFailedException(
+            std::string(label) + " CAK installation failed after " +
+            std::to_string(config_.cakInstallRetries) +
+            " attempts: " + lastError);
     }
 };
 

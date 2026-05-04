@@ -523,8 +523,8 @@ asio::awaitable<void> DbusInstaller::doL1Reset()
         }
     }
 
-    throw std::runtime_error("L1 reset D-Bus call failed after 5 attempts: " +
-                             lastError);
+    throw L1ResetFailedException(
+        "L1 reset D-Bus call failed after 5 attempts: " + lastError);
 }
 
 // ---------------------------------------------------------------------------
