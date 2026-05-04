@@ -20,7 +20,7 @@ ExecStart=/bin/sh -c '\
           exit 1; \
         fi; \
         echo "Starting com.Nvidia.MCURecovery.Updater@$TARGET_VAR.service"; \
-        systemctl start "com.Nvidia.MCURecovery.Updater@$TARGET_VAR.service" || exit 1; \
+        systemctl --no-block start "com.Nvidia.MCURecovery.Updater@$TARGET_VAR.service" || exit 1; \
     done'
 
 [Install]
