@@ -470,10 +470,11 @@ asio::awaitable<bool> HmcInstaller::logSbiosFmcRecoveryStatus()
  *  transfer to the CPU.  Retries up to 5 times with 2-second delays. */
 asio::awaitable<void> HmcInstaller::doL1Reset()
 {
-    // Build the Redfish path: <dotCakInitPath>/Oem/Nvidia/L1Reset
-    // e.g. /redfish/v1/Systems/HGX_Baseboard_0/Oem/Nvidia/L1Reset
-    const std::string l1ResetPath =
-        config_.hmc->dotCakInitPath + "/Oem/Nvidia/L1Reset";
+    // Build the Redfish path:
+    // <dotCakInitPath>/Actions/Oem/NvidiaComputerSystem.L1Reset e.g.
+    // /redfish/v1/Systems/HGX_Baseboard_0/Actions/Oem/NvidiaComputerSystem.L1Reset
+    const std::string l1ResetPath = config_.hmc->dotCakInitPath +
+                                    "/Actions/Oem/NvidiaComputerSystem.L1Reset";
 
     lg2::info("L1 reset: posting to HMC Redfish endpoint {PATH}", "PATH",
               l1ResetPath);
