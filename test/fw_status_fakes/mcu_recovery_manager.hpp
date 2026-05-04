@@ -2,6 +2,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -20,6 +21,8 @@ struct MCUInfo
     uint16_t normalI2cAddress = 0;
     uint16_t recoveryI2cAddress = 0;
     uint16_t functionalPid = 0;
+    bool resetActiveLow = true;
+    bool recoveryActiveLow = true;
     enum class InterfaceType
     {
         USB,
@@ -27,6 +30,19 @@ struct MCUInfo
         Unknown
     } interfaceType = InterfaceType::Unknown;
 };
+
+inline std::optional<bool> parseActiveLowPolarity(const std::string& s)
+{
+    if (s == "ActiveLow")
+    {
+        return true;
+    }
+    if (s == "ActiveHigh")
+    {
+        return false;
+    }
+    return std::nullopt;
+}
 
 } // namespace mcu_recovery_manager
 

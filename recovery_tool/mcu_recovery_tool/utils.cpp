@@ -148,6 +148,39 @@ static std::optional<MCUInfo> populateMCUInfo(const std::string& objectPath,
     }
     info.recoveryGpioName = recoveryGpioNameOpt.value();
 
+    info.resetActiveLow = true;
+    if (const auto resetPolOpt =
+            getPropertyString(objectPath, "ResetGpioPolarity"))
+    {
+        const auto parsed = parseActiveLowPolarity(*resetPolOpt);
+        if (!parsed)
+        {
+            lg2::error("Invalid ResetGpioPolarity '{POL}' for {PATH} ({DEV}); "
+                       "skipping. Expected 'ActiveLow' or 'ActiveHigh'.",
+                       "POL", *resetPolOpt, "PATH", objectPath, "DEV",
+                       deviceName);
+            return std::nullopt;
+        }
+        info.resetActiveLow = *parsed;
+    }
+
+    info.recoveryActiveLow = true;
+    if (const auto recoveryPolOpt =
+            getPropertyString(objectPath, "RecoveryGpioPolarity"))
+    {
+        const auto parsed = parseActiveLowPolarity(*recoveryPolOpt);
+        if (!parsed)
+        {
+            lg2::error("Invalid RecoveryGpioPolarity '{POL}' for {PATH} "
+                       "({DEV}); skipping. Expected 'ActiveLow' or "
+                       "'ActiveHigh'.",
+                       "POL", *recoveryPolOpt, "PATH", objectPath, "DEV",
+                       deviceName);
+            return std::nullopt;
+        }
+        info.recoveryActiveLow = *parsed;
+    }
+
     info.device = deviceName;
 
     if (info.interfaceType == MCUInfo::InterfaceType::USB)
@@ -277,6 +310,69 @@ std::map<std::string, MCUInfo> parseJsonFile(const std::string& jsonFilePath)
         info.resetGpioName = item["ResetGpioName"];
         info.recoveryGpioName = item["RecoveryGpioName"];
         info.device = item["Name"];
+
+        info.resetActiveLow = true;
+        bool polarityInvalid = false;
+        if (item.contains("ResetGpioPolarity"))
+        {
+            if (!item["ResetGpioPolarity"].is_string())
+            {
+                lg2::error("ResetGpioPolarity for {DEV} is not a string; "
+                           "skipping entry.",
+                           "DEV", info.device);
+                polarityInvalid = true;
+            }
+            else
+            {
+                const auto pol = item["ResetGpioPolarity"].get<std::string>();
+                const auto parsed = parseActiveLowPolarity(pol);
+                if (!parsed)
+                {
+                    lg2::error(
+                        "Invalid ResetGpioPolarity '{POL}' for {DEV}; "
+                        "skipping. Expected 'ActiveLow' or 'ActiveHigh'.",
+                        "POL", pol, "DEV", info.device);
+                    polarityInvalid = true;
+                }
+                else
+                {
+                    info.resetActiveLow = *parsed;
+                }
+            }
+        }
+        info.recoveryActiveLow = true;
+        if (!polarityInvalid && item.contains("RecoveryGpioPolarity"))
+        {
+            if (!item["RecoveryGpioPolarity"].is_string())
+            {
+                lg2::error("RecoveryGpioPolarity for {DEV} is not a string; "
+                           "skipping entry.",
+                           "DEV", info.device);
+                polarityInvalid = true;
+            }
+            else
+            {
+                const auto pol =
+                    item["RecoveryGpioPolarity"].get<std::string>();
+                const auto parsed = parseActiveLowPolarity(pol);
+                if (!parsed)
+                {
+                    lg2::error("Invalid RecoveryGpioPolarity '{POL}' for "
+                               "{DEV}; skipping. Expected 'ActiveLow' or "
+                               "'ActiveHigh'.",
+                               "POL", pol, "DEV", info.device);
+                    polarityInvalid = true;
+                }
+                else
+                {
+                    info.recoveryActiveLow = *parsed;
+                }
+            }
+        }
+        if (polarityInvalid)
+        {
+            continue;
+        }
 
         if (info.interfaceType == MCUInfo::InterfaceType::USB)
         {

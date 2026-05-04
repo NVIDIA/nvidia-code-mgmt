@@ -32,6 +32,21 @@
 
 using namespace mcu_recovery_manager;
 
+namespace
+{
+/** Logical level for inactive (reset released, recovery strap deasserted). */
+int gpioInactive(bool activeLow)
+{
+    return activeLow ? 1 : 0;
+}
+
+/** Logical level for active (reset asserted, recovery strap asserted). */
+int gpioActive(bool activeLow)
+{
+    return activeLow ? 0 : 1;
+}
+} // namespace
+
 namespace mcu_recovery_manager
 {
 
@@ -167,11 +182,12 @@ bool MCURecoveryManager::initGpioLines()
                            mcuInfo.recoveryGpioName);
                 continue;
             }
-            // set the default value of the reset pin to 1
             mcuDevices[deviceId].resetPin.request(
-                {"mcu_recovery", gpiod::line_request::DIRECTION_OUTPUT, 0}, 1);
+                {"mcu_recovery", gpiod::line_request::DIRECTION_OUTPUT, 0},
+                gpioInactive(mcuInfo.resetActiveLow));
             mcuDevices[deviceId].recoveryPin.request(
-                {"mcu_recovery", gpiod::line_request::DIRECTION_OUTPUT, 0}, 1);
+                {"mcu_recovery", gpiod::line_request::DIRECTION_OUTPUT, 0},
+                gpioInactive(mcuInfo.recoveryActiveLow));
         }
         catch (const std::exception& e)
         {
@@ -218,11 +234,13 @@ void MCURecoveryManager::enterRecoveryMode(const std::string& deviceId)
                    mcuMap[deviceId].device);
         return;
     }
-    mcuDevices[deviceId].recoveryPin.set_value(0);
+    const auto& info = mcuMap.at(deviceId);
+    mcuDevices[deviceId].recoveryPin.set_value(
+        gpioActive(info.recoveryActiveLow));
     usleep(mcuResetActiveUs);
-    mcuDevices[deviceId].resetPin.set_value(0);
+    mcuDevices[deviceId].resetPin.set_value(gpioActive(info.resetActiveLow));
     usleep(mcuResetActiveUs);
-    mcuDevices[deviceId].resetPin.set_value(1);
+    mcuDevices[deviceId].resetPin.set_value(gpioInactive(info.resetActiveLow));
     sleep(mcuResetDelaySec);
 }
 
@@ -237,7 +255,7 @@ void MCURecoveryManager::enterRecoveryModeAll()
         return;
     }
 
-    // Step 1: Set all recovery pins LOW
+    // Step 1: Assert recovery strap on all devices
     for (auto& [deviceId, device] : mcuDevices)
     {
         if (!device.recoveryPin || !device.resetPin)
@@ -246,29 +264,32 @@ void MCURecoveryManager::enterRecoveryModeAll()
                        mcuMap[deviceId].device);
             continue;
         }
-        device.recoveryPin.set_value(0);
+        device.recoveryPin.set_value(
+            gpioActive(mcuMap.at(deviceId).recoveryActiveLow));
     }
     usleep(mcuResetActiveUs);
 
-    // Step 2: Set all reset pins LOW
+    // Step 2: Assert reset on all devices
     for (auto& [deviceId, device] : mcuDevices)
     {
         if (!device.recoveryPin || !device.resetPin)
         {
             continue;
         }
-        device.resetPin.set_value(0);
+        device.resetPin.set_value(
+            gpioActive(mcuMap.at(deviceId).resetActiveLow));
     }
     usleep(mcuResetActiveUs);
 
-    // Step 3: Set all reset pins HIGH
+    // Step 3: Release reset on all devices
     for (auto& [deviceId, device] : mcuDevices)
     {
         if (!device.recoveryPin || !device.resetPin)
         {
             continue;
         }
-        device.resetPin.set_value(1);
+        device.resetPin.set_value(
+            gpioInactive(mcuMap.at(deviceId).resetActiveLow));
     }
     sleep(mcuResetDelaySec);
 }
@@ -284,11 +305,13 @@ void MCURecoveryManager::exitRecoveryMode(const std::string& deviceId)
             "DEV", mcuMap[deviceId].device);
         return;
     }
-    mcuDevices[deviceId].recoveryPin.set_value(1);
+    const auto& info = mcuMap.at(deviceId);
+    mcuDevices[deviceId].recoveryPin.set_value(
+        gpioInactive(info.recoveryActiveLow));
     usleep(mcuResetActiveUs);
-    mcuDevices[deviceId].resetPin.set_value(0);
+    mcuDevices[deviceId].resetPin.set_value(gpioActive(info.resetActiveLow));
     usleep(mcuResetActiveUs);
-    mcuDevices[deviceId].resetPin.set_value(1);
+    mcuDevices[deviceId].resetPin.set_value(gpioInactive(info.resetActiveLow));
     sleep(mcuResetDelaySec);
 }
 
@@ -877,7 +900,8 @@ void MCURecoveryManager::performResetFlow()
             {
                 continue;
             }
-            device.resetPin.set_value(0);
+            device.resetPin.set_value(
+                gpioActive(mcuMap.at(deviceId).resetActiveLow));
         }
         usleep(mcuResetActiveUs);
 
@@ -888,7 +912,8 @@ void MCURecoveryManager::performResetFlow()
             {
                 continue;
             }
-            device.resetPin.set_value(1);
+            device.resetPin.set_value(
+                gpioInactive(mcuMap.at(deviceId).resetActiveLow));
         }
         sleep(mcuResetDelaySec);
 
