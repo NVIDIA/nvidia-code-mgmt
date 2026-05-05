@@ -50,15 +50,13 @@ asio::awaitable<bool> HmcInstaller::shouldSkip()
     co_return skip;
 }
 
-/** Waits for DOTState=Uninitialized (DOTCAKInitialization=Waiting) before
- * proceeding, then delays 1s. */
+/** Waits for DOTCAKInitialization=Waiting before proceeding, then delays 1s. */
 asio::awaitable<void> HmcInstaller::doPreInstallCheck()
 {
-    lg2::info(
-        "Pre-install check: waiting for DOTState=Uninitialized (DOTCAKInitialization=Waiting)");
+    lg2::info("Pre-install check: waiting for DOTCAKInitialization=Waiting");
     try
     {
-        co_await waitForDotState("Uninitialized");
+        co_await waitForCakInit("Waiting");
         lg2::info("Pre-install check passed");
     }
     catch (const CakInstallDeclinedException&)
@@ -89,8 +87,7 @@ asio::awaitable<void> HmcInstaller::doInstall(const json& payload)
     lg2::info("Redfish CAK install completed");
 }
 
-/** Waits for DOTCAKInitialization=Complete or DOTState=Volatile post-install.
- */
+/** Waits for DOTCAKInitialization=Complete post-install. */
 asio::awaitable<void> HmcInstaller::doVerify()
 {
     int timeoutSecs = config_.timeouts.installMs / 1000;
@@ -100,7 +97,7 @@ asio::awaitable<void> HmcInstaller::doVerify()
     bool failed = false;
     try
     {
-        co_await waitForDotState("Volatile");
+        co_await waitForCakInit("Complete");
         lg2::info("Post-install verification passed");
     }
     catch (const std::exception& ex)
@@ -153,19 +150,19 @@ asio::awaitable<std::string> HmcInstaller::getCakInitState()
 // State polling
 // ---------------------------------------------------------------------------
 
-/** Polls DOTState and DOTCAKInitialization until the expected state is reached
- *  or the configured timeout expires. */
-asio::awaitable<void> HmcInstaller::waitForDotState(const std::string& expected)
+/** Polls DOTCAKInitialization until the expected state is reached or the
+ *  configured timeout expires.  expected="Waiting" for pre-install,
+ *  expected="Complete" for post-install. */
+asio::awaitable<void> HmcInstaller::waitForCakInit(const std::string& expected)
 {
-    bool isBeforeInstall = (expected == "Uninitialized");
-    bool isAfterInstall = (expected == "Volatile");
-    std::string expectedCakInit = isBeforeInstall ? "Waiting" : "Complete";
+    bool isPreInstall = (expected == "Waiting");
 
     auto executor = co_await asio::this_coro::executor;
     auto startTime = std::chrono::steady_clock::now();
     auto deadline =
         startTime + std::chrono::milliseconds(config_.timeouts.installMs);
     asio::steady_timer timer(executor);
+    int unavailableCount = 0;
 
     while (true)
     {
@@ -173,104 +170,47 @@ asio::awaitable<void> HmcInstaller::waitForDotState(const std::string& expected)
                            std::chrono::steady_clock::now() - startTime)
                            .count();
 
-        auto [cakInitFetched, cakInitState] = co_await tryCakInitState();
+        std::string state = co_await getCakInitState();
 
-        if (cakInitFetched)
+        if (!state.empty())
         {
+            unavailableCount = 0;
             lg2::info("DOTCAKInitialization={STATE} (elapsed={ELAPSED}ms, "
                       "expecting={EXPECTED})",
-                      "STATE", cakInitState, "ELAPSED", elapsed, "EXPECTED",
-                      expectedCakInit);
-        }
+                      "STATE", state, "ELAPSED", elapsed, "EXPECTED", expected);
 
-        if (cakInitFetched && cakInitState == expectedCakInit)
-        {
-            lg2::info("DOTCAKInitialization={STATE} reached in {ELAPSED}ms",
-                      "STATE", cakInitState, "ELAPSED", elapsed);
-            co_return;
-        }
-        if (isBeforeInstall && cakInitFetched && cakInitState == "Complete")
-        {
-            throw CakInstallDeclinedException(
-                "DOTCAKInitialization=Complete before install — "
-                "CAK already installed");
-        }
-        if (isBeforeInstall && cakInitFetched)
-        {
-            if (std::chrono::steady_clock::now() >= deadline)
+            if (state == expected)
             {
-                throw std::runtime_error(
-                    "DOTCAKInitialization not " + expectedCakInit +
-                    " (current: " + cakInitState + ") before timeout");
+                lg2::info("DOTCAKInitialization={STATE} reached in {ELAPSED}ms",
+                          "STATE", state, "ELAPSED", elapsed);
+                co_return;
             }
-            timer.expires_after(std::chrono::milliseconds(200));
-            co_await timer.async_wait(asio::use_awaitable);
-            continue;
+
+            if (isPreInstall && state == "Complete")
+            {
+                throw CakInstallDeclinedException(
+                    "DOTCAKInitialization=Complete before install — "
+                    "CAK already installed");
+            }
         }
-
-        auto [allMatch, dotStates] = co_await pollDotStates(expected);
-        std::string statesStr = dotStatesToStr(dotStates);
-
-        bool cakInitMatch = cakInitFetched && cakInitState == expectedCakInit;
-        bool success = isAfterInstall ? (allMatch || cakInitMatch) : allMatch;
-
-        if (isAfterInstall)
+        else
         {
-            lg2::info("DOTState={STATES} elapsed={ELAPSED}ms", "STATES",
-                      statesStr, "ELAPSED", elapsed);
-        }
-
-        if (success)
-        {
-            co_return;
+            ++unavailableCount;
+            lg2::info("DOTCAKInitialization unavailable, will retry "
+                      "(attempt={COUNT}, elapsed={ELAPSED}ms)",
+                      "COUNT", unavailableCount, "ELAPSED", elapsed);
         }
 
         if (std::chrono::steady_clock::now() >= deadline)
         {
-            throw std::runtime_error(buildTimeoutError(
-                expected, expectedCakInit, cakInitFetched, cakInitState,
-                statesStr, isBeforeInstall, isAfterInstall));
+            throw std::runtime_error("DOTCAKInitialization did not reach " +
+                                     expected +
+                                     " within timeout. Current state: " +
+                                     (state.empty() ? "<unavailable>" : state));
         }
         timer.expires_after(std::chrono::milliseconds(200));
         co_await timer.async_wait(asio::use_awaitable);
     }
-}
-
-/** Wraps getCakInitState, returning a (fetched, state) pair. */
-asio::awaitable<std::pair<bool, std::string>> HmcInstaller::tryCakInitState()
-{
-    std::string state = co_await getCakInitState();
-    co_return std::make_pair(!state.empty(), state);
-}
-
-/** Fetches DOTState from each configured status path. */
-asio::awaitable<std::pair<bool, std::vector<std::string>>>
-    HmcInstaller::pollDotStates(const std::string& expected)
-{
-    std::vector<std::string> dotStates;
-    bool allMatch = true;
-
-    for (const auto& statusPath : config_.hmc->statusPaths)
-    {
-        try
-        {
-            std::string response =
-                co_await httpRequest(http::verb::get, statusPath, "");
-            json data = json::parse(response);
-            std::string state = data.value("DOTState", "");
-            dotStates.push_back(state);
-            if (state != expected)
-            {
-                allMatch = false;
-            }
-        }
-        catch (const std::exception&)
-        {
-            dotStates.push_back("");
-            allMatch = false;
-        }
-    }
-    co_return std::make_pair(allMatch, dotStates);
 }
 
 // ---------------------------------------------------------------------------
@@ -571,47 +511,4 @@ std::string HmcInstaller::base64Encode(const std::string& input)
         result += (i + 2 < input.size()) ? chars[val & 0x3f] : '=';
     }
     return result;
-}
-
-std::string HmcInstaller::dotStatesToStr(const std::vector<std::string>& states)
-{
-    std::string out;
-    for (size_t i = 0; i < states.size(); ++i)
-    {
-        if (i > 0)
-            out += ", ";
-        out += "CPU" + std::to_string(i) + "=" +
-               (states[i].empty() ? "<empty>" : states[i]);
-    }
-    return out;
-}
-
-std::string HmcInstaller::buildTimeoutError(
-    const std::string& expected, const std::string& expectedCakInit,
-    bool cakInitFetched, const std::string& cakInitState,
-    const std::string& statesStr, bool isBeforeInstall, bool isAfterInstall)
-{
-    if (isBeforeInstall)
-    {
-        if (!cakInitFetched)
-        {
-            return "DOTCAKInitialization not available and DOTState not " +
-                   expected +
-                   " for both CPUs before timeout. Final DOTState: " +
-                   statesStr;
-        }
-        return "DOTCAKInitialization not " + expectedCakInit +
-               " (current: " + cakInitState + ") and DOTState not " + expected +
-               " for both CPUs before timeout. Final DOTState: " + statesStr;
-    }
-    if (isAfterInstall)
-    {
-        return "Neither DOTState " + expected +
-               " for both CPUs (current: " + statesStr +
-               ") nor DOTCAKInitialization " + expectedCakInit + " (current: " +
-               (cakInitFetched ? cakInitState : "<not available>") +
-               ") before timeout";
-    }
-    return "DOTState not " + expected +
-           " for both CPUs before timeout. Final DOTState: " + statesStr;
 }

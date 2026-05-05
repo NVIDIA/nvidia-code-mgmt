@@ -47,11 +47,8 @@ class HmcInstaller : public DotInstaller
 
   private:
     asio::awaitable<std::string> getCakInitState();
-    asio::awaitable<void> waitForDotState(const std::string& expected);
+    asio::awaitable<void> waitForCakInit(const std::string& expected);
     asio::awaitable<bool> logSbiosFmcRecoveryStatus();
-    asio::awaitable<std::pair<bool, std::string>> tryCakInitState();
-    asio::awaitable<std::pair<bool, std::vector<std::string>>>
-        pollDotStates(const std::string& expected);
     asio::awaitable<void>
         sendToRemainingPaths(const std::string& payloadStr,
                              std::set<std::string>& donePaths);
@@ -59,14 +56,6 @@ class HmcInstaller : public DotInstaller
                                              const std::string& path,
                                              const std::string& body);
 
-    static std::string dotStatesToStr(const std::vector<std::string>& states);
-    static std::string buildTimeoutError(const std::string& expected,
-                                         const std::string& expectedCakInit,
-                                         bool cakInitFetched,
-                                         const std::string& cakInitState,
-                                         const std::string& statesStr,
-                                         bool isBeforeInstall,
-                                         bool isAfterInstall);
     static std::string base64Encode(const std::string& input);
     std::pair<std::string, std::string> parseHost() const;
 };
