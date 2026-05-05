@@ -174,6 +174,10 @@ static Config parseConfig(const json& data)
         timeouts.value("installMs", kDefaultInstallTimeoutMs);
     config.timeouts.dotCakInitMs =
         timeouts.value("dotCakInitMs", kDefaultDotCakInitTimeoutMs);
+    if (config.timeouts.installMs <= 0)
+        throw std::runtime_error("installMs must be positive");
+    if (config.timeouts.dotCakInitMs <= 0)
+        throw std::runtime_error("dotCakInitMs must be positive");
 
     config.maxCakBytes = data.value("maxCakBytes", kDefaultCakMaxBytes);
     config.allowCakReadout = data.value("allowCakReadout", true);

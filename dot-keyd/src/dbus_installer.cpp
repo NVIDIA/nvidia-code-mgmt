@@ -411,8 +411,7 @@ asio::awaitable<bool> DbusInstaller::logSbiosFmcRecoveryStatus()
                 "SBIOS FMC {ID} post-reset status: Health={HEALTH} State={STATE}",
                 "ID", swId, "HEALTH", healthStr, "STATE", stateStr);
 
-            if (healthStr == "Critical" && (stateStr == "StandbyOffline" ||
-                                            stateStr == "UnavailableOffline"))
+            if (healthStr == "Critical" && stateStr == "StandbyOffline")
             {
                 lg2::error(
                     "{ID} is in firmware recovery (Health={HEALTH} "
