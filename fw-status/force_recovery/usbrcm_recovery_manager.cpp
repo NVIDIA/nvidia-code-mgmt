@@ -17,7 +17,7 @@
 namespace nvidia::recovery
 {
 
-static constexpr int maxRetries = 3;
+static constexpr int maxRetries = 10;
 static constexpr int delayBetweenRetriesSec = 1;
 
 USBRCMRecoveryManager::USBRCMRecoveryManager(sdbusplus::bus_t& bus,
