@@ -165,9 +165,18 @@ class NVMeItemUpdater : public BaseItemUpdater
      * @brief Get devices to update based on target filters
      *
      * @param targetFilter
-     * @return std::string representing device IDs to update
+     * @return std::string representing drive names to update
      */
     std::string getDevicesToUpdate(const TargetFilter& targetFilter) const;
+
+    /**
+     * @brief Convert selected software targets to NVMe drive names.
+     *
+     * @param target software inventory target object path
+     * @return std::string NVMe drive name
+     */
+    std::string
+        validateTarget(const sdbusplus::message::object_path& target) override;
 
     /**
      * @brief Check if path is a valid NVMe device
