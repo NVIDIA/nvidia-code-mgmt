@@ -299,7 +299,9 @@ static ErrorMapping glacierRecoveryErrorMapping{
     {deviceRecoveryFailed,
      {"Recovery failed due to unknown error",
       "Check if firmware is in recovery, and try recovery again using the correct package."}},
-    {noDevicesFound, {"No Devices found to recover", ""}},
+    {noDevicesFound,
+     {"No Devices found to recover",
+      "Verify the target device is present and accessible, then retry recovery."}},
 };
 
 static ErrorMapping ocpRecoveryErrorMapping{
@@ -399,7 +401,9 @@ static ErrorMapping ocpRecoveryProtocolErrorMapping{
     {static_cast<ErrorCode>(OCPRecoveryProtocolError::GeneralProtocolError),
      {"General Protocol Error. Error in communicating with device",
       "Check if firmware is in recovery, and try recovery again using the correct package."}},
-    {noDevicesFound, {"No Devices found to recover", ""}},
+    {noDevicesFound,
+     {"No Devices found to recover",
+      "Verify the target device is present and accessible, then retry recovery."}},
 };
 
 static ErrorMapping mcuRecoveryErrorMapping{
@@ -431,7 +435,9 @@ static ErrorMapping mcuRecoveryErrorMapping{
     {deviceRecoveryFailed,
      {"Recovery failed due to unknown error",
       "Check if device is in ISP mode (recovery mode), and try recovery again using the correct package."}},
-    {noDevicesFound, {"No Devices found to recover", ""}},
+    {noDevicesFound,
+     {"No Devices found to recover",
+      "Verify the target device is present and accessible, then retry recovery."}},
 };
 
 static ErrorMapping usbRcmRecoveryErrorMapping{
@@ -661,7 +667,9 @@ static ErrorMapping usbRcmRecoveryErrorMapping{
     {deviceRecoveryFailed,
      {"Recovery failed due to unknown error",
       "Check device state and try recovery again using the correct package."}},
-    {noDevicesFound, {"No Devices found to recover", ""}},
+    {noDevicesFound,
+     {"No Devices found to recover",
+      "Verify the target device is present and accessible, then retry recovery."}},
 };
 
 static const RecoveryErrorMapping recoveryMappingTbl = {
