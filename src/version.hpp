@@ -405,7 +405,7 @@ class Version : public VersionInherit, public DBUSUtils
             if (!deviceQueue.empty())
             {
                 log<level::ERR>("Update timed out");
-                this->onUpdateFailed();
+                this->cancelInProgressUpdate();
             }
         });
         timer->start(std::chrono::seconds(timeout), false);
@@ -430,6 +430,15 @@ class Version : public VersionInherit, public DBUSUtils
      *
      */
     void onUpdateFailed();
+
+    /**
+     * @brief Cancel an in-progress activation. Stops the systemd update
+     *        unit started by doUpdate(), emits a
+     *        ResourceEvent.1.0.ResourceErrorsDetected log entry, and
+     *        runs the onUpdateFailed cascade. Invoked from the watchdog
+     *        timer.
+     */
+    void cancelInProgressUpdate();
 
     /**
      * @brief Prepares for image update

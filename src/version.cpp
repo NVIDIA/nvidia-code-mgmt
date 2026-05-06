@@ -148,6 +148,10 @@ bool Version::doUpdate()
 
 void Version::onUpdateDone()
 {
+    if (deviceQueue.empty())
+    {
+        return;
+    }
     if (activationProgress)
     {
         auto progress = activationProgress->progress() + progressStep;
@@ -160,6 +164,10 @@ void Version::onUpdateDone()
 
 void Version::onUpdateFailed()
 {
+    if (deviceQueue.empty())
+    {
+        return;
+    }
     logTransferFailed(itemUpdaterUtils->getName(), extendedVersion());
     log<level::ERR>("Failed to udpate device",
                     entry("device=%s", deviceQueue.front().c_str()));
@@ -168,6 +176,39 @@ void Version::onUpdateFailed()
     itemUpdaterUtils->cleanupImageUploadDir(path(), this);
     itemUpdaterUtils->readExistingFirmWare();
     requestedActivation(SoftwareActivation::RequestedActivations::None);
+}
+
+void Version::cancelInProgressUpdate()
+{
+    if (!deviceUpdateUnit.empty())
+    {
+        try
+        {
+            auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+                                              SYSTEMD_INTERFACE, "StopUnit");
+            method.append(deviceUpdateUnit, "replace");
+            bus.call_noreply(method);
+        }
+        catch (const SdBusError& e)
+        {
+            log<level::ERR>("Failed to stop update service",
+                            entry("UNIT=%s", deviceUpdateUnit.c_str()),
+                            entry("ERROR=%s", e.what()));
+        }
+        deviceUpdateUnit.clear();
+    }
+
+    std::map<std::string, std::string> addData;
+    addData["REDFISH_MESSAGE_ID"] = resourceErrorsDetected;
+    addData["REDFISH_MESSAGE_ARGS"] =
+        (itemUpdaterUtils->getName() + "," + "Update timed out");
+    addData["xyz.openbmc_project.Logging.Entry.Resolution"] =
+        "Retry firmware update operation";
+    addData["namespace"] = "FWUpdate";
+    Level level = Level::Critical;
+    createLog(resourceErrorsDetected, addData, level);
+
+    onUpdateFailed();
 }
 
 Version::Status Version::startActivation()
