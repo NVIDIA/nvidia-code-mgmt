@@ -28,6 +28,7 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <com/nvidia/Software/UpdateTimeout/server.hpp>
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/bus.hpp>
@@ -71,7 +72,8 @@ using VersionInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Common::server::UUID,
     sdbusplus::xyz::openbmc_project::Software::server::Activation,
     sdbusplus::xyz::openbmc_project::Software::server::ExtendedVersion,
-    sdbusplus::xyz::openbmc_project::Common::server::FilePath>;
+    sdbusplus::xyz::openbmc_project::Common::server::FilePath,
+    sdbusplus::com::nvidia::Software::server::UpdateTimeout>;
 
 using DeleteInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Object::server::Delete>;
@@ -290,6 +292,9 @@ class Version : public VersionInherit, public DBUSUtils
         path(filePath);
         extendedVersion(versionString);
         activation(activationStatus);
+        // Item Updater is fully constructed before any Version is created,
+        // so this virtual dispatch resolves to the derived getTimeout().
+        timeout(static_cast<uint64_t>(itemUpdaterUtils->getTimeout()));
 
         activationProgress = nullptr;
         updatePolicy = std::make_unique<UpdatePolicy>(bus, objPath);
