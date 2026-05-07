@@ -187,6 +187,11 @@ class NVMeItemUpdater : public BaseItemUpdater
      */
     bool pathIsValidDevice(std::string& p) override
     {
+        if (!p.starts_with(NVME_INVENTORY_PATH))
+        {
+            return false;
+        }
+
         constexpr const char* interface =
             "xyz.openbmc_project.Inventory.Item.StorageController";
         try
