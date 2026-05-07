@@ -716,10 +716,12 @@ class MessageRegistry
      * @param[in] recoveryProtocol - An enum of type RecoveryProtocol
      * @param[in] errorCode - recovery error code
      * @param[in] deviceName - device name
+     * @param[in] severity - log severity (defaults to Critical)
      */
     void createMessageRegistryResourceErrors(
         const std::string& messageID, const RecoveryProtocol& recoveryProtocol,
-        const ErrorCode& errorCode, const std::string& deviceName) const;
+        const ErrorCode& errorCode, const std::string& deviceName,
+        Level severity = Level::Critical) const;
 
   private:
     sdbusplus::bus::bus& bus;
