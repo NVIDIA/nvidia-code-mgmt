@@ -84,14 +84,15 @@ std::optional<std::tuple<std::string, std::string>>
 
 void MessageRegistry::createMessageRegistryResourceErrors(
     const std::string& messageID, const RecoveryProtocol& recoveryProtocol,
-    const ErrorCode& errorCode, const std::string& deviceName) const
+    const ErrorCode& errorCode, const std::string& deviceName,
+    Level severity) const
 {
     std::optional<std::tuple<std::string, std::string>> message =
         getMessage(recoveryProtocol, errorCode);
     if (message)
     {
         std::map<std::string, std::string> addData;
-        Level level = Level::Critical;
+        Level level = severity;
         addData["REDFISH_MESSAGE_ID"] = messageID;
         addData["REDFISH_MESSAGE_ARGS"] =
             (deviceName + "," + std::get<0>(*message));

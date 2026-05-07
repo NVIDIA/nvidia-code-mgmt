@@ -638,6 +638,8 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
         // check if MCU is locked
         if (secStateOutput.find("UNSECURE") != std::string::npos)
         {
+            // UNSECURE - MCU is unlocked / not fully provisioned. Log
+            // as warning so the Redfish Task is not flagged Critical.
             lg2::error("{DEV} Security State = UNSECURE", "DEV",
                        mcuMap[deviceId].device);
             if (messageRegistry)
@@ -646,7 +648,7 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
                     resourceErrorsDetected, RecoveryProtocol::MCURecovery,
                     static_cast<ErrorCode>(
                         MCURecoveryErrorCode::NotSecureDevice),
-                    mcuMap[deviceId].device);
+                    mcuMap[deviceId].device, Level::Warning);
             }
 
             lg2::info("Checking if encrypt key is set...");
