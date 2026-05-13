@@ -200,63 +200,6 @@ static bool setGpio(const std::string& pinName, int value)
     return executeCommand(command);
 }
 
-/**
- * @brief Configure recovery mode for a single board instance
- * @param configType Config type (C2, C1G2, or C2G4)
- * @param boardInstance Board instance number (0 or 1)
- * @param jsonOutput Output JSON object with board operation status
- */
-static void forceRecoveryModeBoardInstance(GpioConfig::ConfigType configType,
-                                           int boardInstance,
-                                           nlohmann::json& jsonOutput)
-{
-    jsonOutput.clear();
-
-    // Step 1: Assert reset for this board
-    auto reset = GpioConfig::getResetAssert(configType, boardInstance);
-    if (!setGpio(reset.pinName, reset.value))
-    {
-        jsonOutput["Status"] = "Failed";
-        jsonOutput["Error"] =
-            "Failed to assert reset for board " + std::to_string(boardInstance);
-        return;
-    }
-
-    // Step 2-4: Configure GPIOs for this board
-    bool boardSuccess = true;
-    std::string boardError;
-    auto configSeq =
-        GpioConfig::getGpioConfigSequence(configType, boardInstance);
-    for (const auto& cmd : configSeq)
-    {
-        if (!setGpio(cmd.pinName, cmd.value))
-        {
-            boardSuccess = false;
-            boardError = cmd.description;
-            break;
-        }
-    }
-
-    // Step 5: Release reset for this board
-    auto release = GpioConfig::getResetRelease(configType, boardInstance);
-    if (!setGpio(release.pinName, release.value))
-    {
-        boardSuccess = false;
-        // Only update error message if not already set (preserve first failure)
-        if (boardError.empty())
-        {
-            boardError = release.description;
-        }
-    }
-
-    // Output JSON
-    jsonOutput["Status"] = boardSuccess ? "Successful" : "Failed";
-    if (!boardSuccess && !boardError.empty())
-    {
-        jsonOutput["Error"] = boardError;
-    }
-}
-
 void forceRecoveryMode(const std::string& configTypeStr,
                        nlohmann::json& jsonOutput)
 {
@@ -271,27 +214,92 @@ void forceRecoveryMode(const std::string& configTypeStr,
         return;
     }
 
-    // Get board count for this config type
     const int boardCount = GpioConfig::getBoardCount(*configType);
 
-    // Configure recovery mode for all boards
+    // Drive the recovery sequence in three phases (assert all resets ->
+    // program all straps -> release all resets) so every CPU is held in
+    // reset for the entire strap-write window.
+    //
+    // This is required on HW revisions where BRD0_IST_SYS_RST_L-O also
+    // resets BRD1 (BRD1's own reset line is no-connect). With the previous
+    // per-board sequence, releasing BRD0's reset would let BRD1 boot
+    // before its straps were programmed, and BRD1 would sample stale
+    // strap state and miss forced recovery. Phased reset is also correct
+    // on older HW where each board has an independent reset line — both
+    // boards being held simultaneously is just a strict superset of the
+    // per-board behaviour.
+
+    auto recordBoardFailure = [&](int board, const std::string& err) {
+        std::string key = "Board" + std::to_string(board);
+        jsonOutput[key]["Status"] = "Failed";
+        jsonOutput[key]["Error"] = err;
+    };
+
     bool allSuccess = true;
+
+    // Phase 1: assert reset on every board.
     for (int i = 0; i < boardCount; ++i)
     {
-        nlohmann::json boardResult;
-        forceRecoveryModeBoardInstance(*configType, i, boardResult);
-
-        std::string boardKey = "Board" + std::to_string(i);
-        jsonOutput[boardKey] = boardResult;
-
-        // Track overall success
-        if (boardResult.contains("Status") && boardResult["Status"] == "Failed")
+        jsonOutput["Board" + std::to_string(i)]["Status"] = "Successful";
+        auto reset = GpioConfig::getResetAssert(*configType, i);
+        if (!setGpio(reset.pinName, reset.value))
         {
+            recordBoardFailure(i, "Failed to assert reset (pin " +
+                                      reset.pinName + ")");
             allSuccess = false;
         }
     }
 
-    // Set top-level status
+    // If any reset-assert failed, do not proceed. CPUs are in a mixed
+    // state; programming straps or releasing resets from here would only
+    // compound the problem.
+    if (!allSuccess)
+    {
+        jsonOutput["Status"] = "Failed";
+        return;
+    }
+
+    // Phase 2: program strap GPIOs for every board. With every CPU held in
+    // reset, the BootROMs cannot observe intermediate strap states.
+    for (int i = 0; i < boardCount; ++i)
+    {
+        auto configSeq = GpioConfig::getGpioConfigSequence(*configType, i);
+        for (const auto& cmd : configSeq)
+        {
+            if (!setGpio(cmd.pinName, cmd.value))
+            {
+                recordBoardFailure(i, cmd.description);
+                allSuccess = false;
+                break;
+            }
+        }
+    }
+
+    // If any strap write failed, leave every CPU in held-reset and bail.
+    // Releasing reset now would let a CPU boot with partial strap state,
+    // which we explicitly want to prevent.
+    if (!allSuccess)
+    {
+        jsonOutput["Status"] = "Failed";
+        return;
+    }
+
+    // Phase 3: release reset on every board. With every strap programmed
+    // and every reset still asserted, releasing in any order causes every
+    // BootROM to sample the recovery straps cleanly. On new HW the BRD1
+    // release is a no-op (line not connected); releasing BRD0 frees both
+    // boards simultaneously.
+    for (int i = 0; i < boardCount; ++i)
+    {
+        auto release = GpioConfig::getResetRelease(*configType, i);
+        if (!setGpio(release.pinName, release.value))
+        {
+            recordBoardFailure(i, "Failed to release reset (pin " +
+                                      release.pinName + ")");
+            allSuccess = false;
+        }
+    }
+
     jsonOutput["Status"] = allSuccess ? "Successful" : "Failed";
 }
 
