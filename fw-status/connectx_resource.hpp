@@ -78,6 +78,8 @@ class ConnectXResource : public MCTPDiscoveryResource
     std::string smaMctpObjectPath;
     std::unique_ptr<sdbusplus::bus::match_t> smaEndpointRemovedMatch;
     int const connectxPublishDelayInSeconds = 5;
+    static constexpr int recoveryConfirmAttempts = 5;
+    static constexpr int recoveryConfirmDelayMs = 1000;
 
     uint8_t smaEid;
     int busAddress;
@@ -196,13 +198,46 @@ class ConnectXResource : public MCTPDiscoveryResource
 
         if (inRecoveryState)
         {
-            lg2::info("Device associated with {PATH} is in recovery", "PATH",
-                      path.c_str());
-            commitRecoveryModeError(fetchEid());
+            // Re-read the bootrom status register before committing a
+            // recovery error. The register at 0x50084 can transiently
+            // report non-normal values while the device is transitioning
+            // to BOOT2 after a reset / firmware update / power cycle, and
+            // a single transient read should not raise FirmwareInRecovery.
+            for (int attempt = 0; attempt < recoveryConfirmAttempts; ++attempt)
+            {
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(recoveryConfirmDelayMs));
 
-            health(HealthServer::HealthType::Critical);
-            state(OperationalStatusServer::StateType::StandbyOffline);
-            return;
+                if (MCTPDiscoveryResource::isDeviceEnumerated())
+                {
+                    lg2::info("MCTP EID for {PATH} is enumerated", "PATH",
+                              path.c_str());
+                    health(HealthServer::HealthType::OK);
+                    state(OperationalStatusServer::StateType::Enabled);
+                    return;
+                }
+
+                auto [retryRet, retryOutput, retryErr] = getDeviceStatus();
+                if (retryRet && retryOutput[0] == 0x20 &&
+                    retryOutput[1] == 0x00 && retryOutput[2] == 0x00 &&
+                    retryOutput[3] == 0x19)
+                {
+                    bootStatus->bootStatus(retryOutput);
+                    inRecoveryState = false;
+                    break;
+                }
+            }
+
+            if (inRecoveryState)
+            {
+                lg2::info("Device associated with {PATH} is in recovery",
+                          "PATH", path.c_str());
+                commitRecoveryModeError(fetchEid());
+
+                health(HealthServer::HealthType::Critical);
+                state(OperationalStatusServer::StateType::StandbyOffline);
+                return;
+            }
         }
 
         lg2::warning("Device associated with {PATH} is healthy but MCTP "
