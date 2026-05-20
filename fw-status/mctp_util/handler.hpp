@@ -193,7 +193,7 @@ class Handler
     int runRegisteredRequest(uint8_t eid)
     {
         RequestValue* toRun = nullptr;
-        uint8_t instanceId = 0;
+        RequestKey toRunKey{};
         for (auto& handler : handlers)
         {
             auto& key = handler.first;
@@ -213,7 +213,7 @@ class Handler
             {
                 // First request of the EID
                 toRun = &handler.second;
-                instanceId = key.instanceId;
+                toRunKey = key;
             }
         }
 
@@ -223,8 +223,15 @@ class Handler
             auto rc = request->start();
             if (rc)
             {
-                instanceIdMgr.markFree(eid, instanceId);
+                // The send failed. The awaiter that owns the bound
+                // ResponseHandler is destroyed when await_suspend returns
+                // false, so the entry must be erased here — otherwise a
+                // later request that reuses this RequestKey will be silently
+                // dropped by emplace and a future Rx will invoke the stale
+                // (dangling) handler.
+                instanceIdMgr.markFree(eid, toRunKey.instanceId);
                 lg2::error("Failure to send the MCTP VDM request message");
+                handlers.erase(toRunKey);
                 return rc;
             }
 
@@ -235,9 +242,12 @@ class Handler
             }
             catch (const std::runtime_error& e)
             {
-                instanceIdMgr.markFree(eid, instanceId);
+                // Timer never armed, so removeRequestEntry will never run;
+                // erase the entry to avoid the same dangling-handler bug.
+                instanceIdMgr.markFree(eid, toRunKey.instanceId);
                 lg2::error("Failed to start the instance ID expiry timer.",
                            "ERROR", e);
+                handlers.erase(toRunKey);
                 return static_cast<int>(mctp_vdm::CompletionCodes::ErrGeneral);
             }
         }
@@ -402,7 +412,6 @@ struct SendRecvMctpVdmMsg
             std::move(
                 std::bind_front(&SendRecvMctpVdmMsg::HandleResponse, this)));
 
-        lg2::info("Register Request successful");
         if (rc)
         {
             lg2::error("registerRequest failed, rc={RC}", "RC",
@@ -410,6 +419,7 @@ struct SendRecvMctpVdmMsg
             return false;
         }
 
+        lg2::info("Register Request successful");
         resumeHandle = handle;
         return true;
     }
