@@ -25,10 +25,31 @@
 #include <phosphor-logging/lg2.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace mcu_recovery_manager
 {
+
+/**
+ * @brief Parse a polarity property string into the corresponding activeLow
+ *        flag. Accepts only the canonical values "ActiveHigh" or "ActiveLow";
+ *        anything else (typo, wrong D-Bus type that left an empty string, etc.)
+ *        returns std::nullopt so the caller can skip the MCU entry instead of
+ *        silently picking a polarity that may damage hardware.
+ */
+inline std::optional<bool> parseActiveLowPolarity(const std::string& value)
+{
+    if (value == "ActiveHigh")
+    {
+        return false;
+    }
+    if (value == "ActiveLow")
+    {
+        return true;
+    }
+    return std::nullopt;
+}
 
 // key is 48 bytes so it should be 96 characters
 constexpr uint8_t lenEncryptKey = 96;
@@ -56,6 +77,9 @@ struct MCUInfo
     uint16_t normalI2cAddress = 0;
     uint16_t recoveryI2cAddress = 0;
     uint16_t functionalPid = 0;
+    /** When true, logical 0 asserts reset / recovery strap (active-low net). */
+    bool resetActiveLow = true;
+    bool recoveryActiveLow = true;
     enum class InterfaceType
     {
         USB,

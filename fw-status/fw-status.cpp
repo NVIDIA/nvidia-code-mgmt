@@ -317,6 +317,41 @@ std::map<std::string, mcu_recovery_manager::MCUInfo> getMCUConfig()
             info.device = deviceName;
             info.resetGpioName = resetGpioName;
             info.recoveryGpioName = recoveryGpioName;
+            info.resetActiveLow = true;
+            if (hasProperty(interfaces, mcuObjInterface, "ResetGpioPolarity"))
+            {
+                const auto pol =
+                    getString(interfaces, mcuObjInterface, "ResetGpioPolarity");
+                const auto parsed =
+                    mcu_recovery_manager::parseActiveLowPolarity(pol);
+                if (!parsed)
+                {
+                    lg2::error(
+                        "Invalid ResetGpioPolarity '{POL}' for MCU {DEV}; "
+                        "skipping entry. Expected 'ActiveLow' or 'ActiveHigh'.",
+                        "POL", pol, "DEV", deviceName);
+                    continue;
+                }
+                info.resetActiveLow = *parsed;
+            }
+            info.recoveryActiveLow = true;
+            if (hasProperty(interfaces, mcuObjInterface,
+                            "RecoveryGpioPolarity"))
+            {
+                const auto pol = getString(interfaces, mcuObjInterface,
+                                           "RecoveryGpioPolarity");
+                const auto parsed =
+                    mcu_recovery_manager::parseActiveLowPolarity(pol);
+                if (!parsed)
+                {
+                    lg2::error(
+                        "Invalid RecoveryGpioPolarity '{POL}' for MCU {DEV}; "
+                        "skipping entry. Expected 'ActiveLow' or 'ActiveHigh'.",
+                        "POL", pol, "DEV", deviceName);
+                    continue;
+                }
+                info.recoveryActiveLow = *parsed;
+            }
 
             if (interfaceType == "I2C")
             {
