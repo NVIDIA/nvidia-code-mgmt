@@ -579,8 +579,8 @@ cdata.set_quoted('MODEL', 'Model')
 
 
 cdata.set_quoted('SYSTEMD_BUSNAME', 'org.freedesktop.systemd1')
-cdata.set_quoted('SYSTEMD_PATH' , '/org/freedesktop/systemd1')
-cdata.set_quoted('SYSTEMD_INTERFACE' , 'org.freedesktop.systemd1.Manager')
+cdata.set_quoted('SYSTEMD_PATH', '/org/freedesktop/systemd1')
+cdata.set_quoted('SYSTEMD_INTERFACE', 'org.freedesktop.systemd1.Manager')
 cdata.set_quoted('INVENTORY_PATH_BASE', get_option('INVENTORY_PATH_BASE'))
 cdata.set_quoted('IMG_DIR', get_option('IMG_DIR'))
 cdata.set_quoted('IMG_DIR_PERSIST', get_option('IMG_DIR_PERSIST'))
