@@ -65,17 +65,25 @@ DebugTokenInstallStatus
 
 int UpdateDebugToken::eraseDebugToken()
 {
-    int status = 0;
+    int status = eraseTokenSuccess;
     if (getErasePolicy() == "Manual")
     {
         log<level::INFO>("Erase policy set to manual, skipping operation.");
-        return status;
+        std::map<std::string, std::string> addData;
+        Level level = Level::Informational;
+        addData["REDFISH_MESSAGE_ID"] = debugTokenEraseSkipped;
+        addData["REDFISH_MESSAGE_ARGS"] = "erase policy is set to Manual";
+        addData["namespace"] = "FWUpdate";
+        createLog(debugTokenEraseSkipped, addData, level);
+        // Nothing was erased; signal skip so the caller does not report
+        // success.
+        return eraseTokenSkipped;
     }
 
     if (nsmTokenEraseV2() != 0)
     {
         log<level::ERR>("NSM V2 token erase failed");
-        status = -1;
+        status = eraseTokenFailed;
         return status;
     }
     else
