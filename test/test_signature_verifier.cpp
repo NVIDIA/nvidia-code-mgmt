@@ -399,3 +399,112 @@ TEST(SignatureVerifier, WrongPublicKeyFailsSignatureVerification)
                                           verifier.getSignature()));
     EXPECT_FALSE(verifier.verify());
 }
+
+// ========== Bounds-checking regression tests (CVE: short-image OOB) ==========
+
+namespace
+{
+void writeRawFile(const std::filesystem::path& path,
+                  const std::vector<uint8_t>& bytes)
+{
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
+} // namespace
+
+TEST(SignatureVerifier, ZeroByteImageLeavesVerifierUninitialized)
+{
+    ScopedTempDir tempDir;
+    auto path = tempDir.path() / "empty.bin";
+    writeRawFile(path, {});
+
+    SignatureVerifier verifier(path.string(), "ABCD");
+    EXPECT_FALSE(verifier.isInitialized());
+}
+
+TEST(SignatureVerifier, OneByteImageLeavesVerifierUninitialized)
+{
+    // Reproduces the reported ASAN OOB: a 1-byte file used to be accepted
+    // by loadImage() and then memcpy'd into a 950-byte Metadata struct.
+    ScopedTempDir tempDir;
+    auto path = tempDir.path() / "one-byte.bin";
+    writeRawFile(path, {0xAB});
+
+    SignatureVerifier verifier(path.string(), "ABCD");
+    EXPECT_FALSE(verifier.isInitialized());
+}
+
+TEST(SignatureVerifier, ImageJustUnderMetadataSizeRejected)
+{
+    ScopedTempDir tempDir;
+    auto path = tempDir.path() / "short.bin";
+    writeRawFile(path, std::vector<uint8_t>(sizeof(Metadata) - 1, 0));
+
+    SignatureVerifier verifier(path.string(), "ABCD");
+    EXPECT_FALSE(verifier.isInitialized());
+}
+
+TEST(SignatureVerifier, NvPayloadSizeBeyondImageReturnsEmptyDigest)
+{
+    ScopedTempDir tempDir;
+    auto image = createSignedImage(tempDir.path() / "signed-image.bin");
+
+    std::fstream file(image.filePath,
+                      std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    Metadata metadata{};
+    file.read(reinterpret_cast<char*>(&metadata), sizeof(metadata));
+    metadata.nvPayloadSize = 0xFFFFu; // larger than the file
+    file.seekp(0);
+    file.write(reinterpret_cast<const char*>(&metadata), sizeof(metadata));
+    file.close();
+
+    SignatureVerifier verifier(image.filePath.string(), image.publicKeyHex);
+    ASSERT_TRUE(verifier.isInitialized());
+    EXPECT_TRUE(verifier.getDigest().empty());
+    EXPECT_FALSE(verifier.verify());
+}
+
+TEST(SignatureVerifier, NvSignatureOffsetBeyondImageReturnsEmptySignature)
+{
+    ScopedTempDir tempDir;
+    auto image = createSignedImage(tempDir.path() / "signed-image.bin");
+
+    std::fstream file(image.filePath,
+                      std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    Metadata metadata{};
+    file.read(reinterpret_cast<char*>(&metadata), sizeof(metadata));
+    metadata.nvSignatureOffset = 0xFFFFu; // larger than the file
+    file.seekp(0);
+    file.write(reinterpret_cast<const char*>(&metadata), sizeof(metadata));
+    file.close();
+
+    SignatureVerifier verifier(image.filePath.string(), image.publicKeyHex);
+    ASSERT_TRUE(verifier.isInitialized());
+    EXPECT_TRUE(verifier.getSignature().empty());
+    EXPECT_FALSE(verifier.verify());
+}
+
+TEST(SignatureVerifier, ApFwImagesCntAboveTableMaxIsClamped)
+{
+    ScopedTempDir tempDir;
+    auto image = createSignedImage(tempDir.path() / "signed-image.bin");
+
+    std::fstream file(image.filePath,
+                      std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    Metadata metadata{};
+    file.read(reinterpret_cast<char*>(&metadata), sizeof(metadata));
+    metadata.apFwImagesCnt = 255; // hashTable is sized [8]
+    file.seekp(0);
+    file.write(reinterpret_cast<const char*>(&metadata), sizeof(metadata));
+    file.close();
+
+    SignatureVerifier verifier(image.filePath.string(), image.publicKeyHex);
+    ASSERT_TRUE(verifier.isInitialized());
+    // The valid entry [0] still matches; entries [1..7] are zeroed so
+    // their offset+length=0 satisfies the bounds check and the all-zero
+    // hash mismatch returns false cleanly — no OOB on the hashTable[].
+    EXPECT_FALSE(verifier.verifyApImageHash());
+}

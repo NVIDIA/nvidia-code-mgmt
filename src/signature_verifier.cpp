@@ -17,6 +17,8 @@
 
 #include "signature_verifier.hpp"
 
+#include <algorithm>
+
 std::vector<uint8_t> calculateSHA384(const std::vector<uint8_t>& buffer)
 {
     std::vector<uint8_t> hash(EVP_MAX_MD_SIZE);
@@ -91,6 +93,14 @@ bool SignatureVerifier::loadImage(const std::string& filename)
     }
 
     std::streamsize fileSize = file.tellg();
+    if (fileSize < 0 || static_cast<std::size_t>(fileSize) < sizeof(Metadata))
+    {
+        lg2::error(
+            "Image {PATH} too small ({SZ} bytes) — minimum {MIN} required",
+            "PATH", filename, "SZ", static_cast<int64_t>(fileSize), "MIN",
+            sizeof(Metadata));
+        return false;
+    }
     file.seekg(0, std::ios::beg);
 
     imageData.resize(fileSize);
@@ -107,8 +117,12 @@ bool SignatureVerifier::loadImage(const std::string& filename)
 
 bool SignatureVerifier::verifyApImageHash() const
 {
+    constexpr uint8_t kHashTableMax =
+        sizeof(metadata.hashTable) / sizeof(metadata.hashTable[0]);
+    const uint8_t count =
+        std::min<uint8_t>(metadata.apFwImagesCnt, kHashTableMax);
     // Compare hash value of AP Images
-    for (uint8_t i = 0; i < metadata.apFwImagesCnt; ++i)
+    for (uint8_t i = 0; i < count; ++i)
     {
         uint32_t offset = metadata.imageOffset + metadata.hashTable[i].offset;
         uint32_t length = metadata.hashTable[i].length;
@@ -149,6 +163,12 @@ bool SignatureVerifier::verifyApImageHash() const
 
 std::vector<uint8_t> SignatureVerifier::getDigest() const
 {
+    if (metadata.nvPayloadSize > imageData.size())
+    {
+        lg2::error("nvPayloadSize {SZ} exceeds image size {IS}", "SZ",
+                   metadata.nvPayloadSize, "IS", imageData.size());
+        return {};
+    }
     const std::vector<uint8_t> payload(
         imageData.begin(), imageData.begin() + metadata.nvPayloadSize);
 
@@ -157,6 +177,14 @@ std::vector<uint8_t> SignatureVerifier::getDigest() const
 
 std::vector<uint8_t> SignatureVerifier::getSignature() const
 {
+    if (metadata.nvSignatureOffset > imageData.size() ||
+        imageData.size() - metadata.nvSignatureOffset <
+            P384_ECDSA_SIGNATURE_LEN)
+    {
+        lg2::error("Signature offset {OFF} out of bounds (image size {IS})",
+                   "OFF", metadata.nvSignatureOffset, "IS", imageData.size());
+        return {};
+    }
     auto nvSignature = imageData.data() + metadata.nvSignatureOffset;
     return signatureToDerFormat(std::bit_cast<const uint8_t*>(nvSignature));
 }
@@ -232,6 +260,12 @@ bool SignatureVerifier::verify()
 
     // get the signature and turn into DER format
     auto signature = getSignature();
+
+    if (digest.empty() || signature.empty())
+    {
+        lg2::error("Signature verification failed: empty digest or signature");
+        return false;
+    }
 
     if (verifySignature(digest, signature))
     {
