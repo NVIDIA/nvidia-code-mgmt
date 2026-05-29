@@ -43,26 +43,39 @@ asio::awaitable<void> DotInstaller::run()
 
     lg2::info("Starting CAK provisioning");
     fs::path payloadFile = payloadPath(config_.keyStorePath);
-    if (!fs::exists(payloadFile))
-    {
-        throw std::runtime_error("No CAK payload found");
-    }
 
     json payload;
-    try
+    if (fs::exists(payloadFile))
     {
-        payload = json::parse(readFile(payloadFile));
+        // An installed key always takes precedence over a baked-in key.
+        lg2::info("Using installed CAK from key store");
+        try
+        {
+            payload = json::parse(readFile(payloadFile));
+            validateDotPayload(payload);
+        }
+        catch (const json::parse_error& ex)
+        {
+            throw std::runtime_error("Invalid JSON in CAK payload file: " +
+                                     std::string(ex.what()));
+        }
+        catch (const std::exception& ex)
+        {
+            throw std::runtime_error(
+                "Invalid or unreadable CAK payload file: " +
+                std::string(ex.what()));
+        }
+    }
+    else if (auto baked = bakedCakPayload(config_))
+    {
+        // No installed key, but one was baked into the binary at build time.
+        lg2::info("Using compiled-in (baked) CAK; no installed key present");
+        payload = std::move(*baked);
         validateDotPayload(payload);
     }
-    catch (const json::parse_error& ex)
+    else
     {
-        throw std::runtime_error("Invalid JSON in CAK payload file: " +
-                                 std::string(ex.what()));
-    }
-    catch (const std::exception& ex)
-    {
-        throw std::runtime_error("Invalid or unreadable CAK payload file: " +
-                                 std::string(ex.what()));
+        throw std::runtime_error("No CAK payload found");
     }
 
     co_await doPreInstallCheck();

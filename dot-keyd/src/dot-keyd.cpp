@@ -16,6 +16,7 @@
  */
 
 #include "cak.hpp"
+#include "cak_baked_key.hpp"
 #include "config.hpp"
 #include "dot_installer.hpp"
 
@@ -281,7 +282,8 @@ static int installFlow(const Args& args)
             return ExitCode::kInvalidCak;
         }
     }
-    else if (!fs::exists(payloadPath(config.keyStorePath)))
+    else if (!fs::exists(payloadPath(config.keyStorePath)) &&
+             !dot::kCakKeyBaked)
     {
         std::cerr << "CAK is required (no stored CAK found)\n";
         return ExitCode::kInvalidArgs;

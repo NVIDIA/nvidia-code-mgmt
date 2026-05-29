@@ -478,6 +478,11 @@ option('DOT_KEYD_SUPPORT',
        value: 'disabled',
        description: 'Enables dot-keyd support')
 
+option('DOT_KEYD_CAK_KEY',
+       type: 'string',
+       value: '',
+       description: 'Raw CAK PEM public key baked into the dot-keyd binary. Newlines may be passed escaped as \\n. When set, dot-keyd can provision this key with no runtime install step; an installed key in the key store always takes precedence. Empty = no baked key (runtime install required).')
+
 option('NVSWITCH_CONFIG_SUPPORT',
        type: 'feature',
        value: 'disabled',
