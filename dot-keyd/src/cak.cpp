@@ -17,6 +17,8 @@
 
 #include "cak.hpp"
 
+#include "cak_baked_key.hpp"
+
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -415,22 +417,46 @@ std::string extractCakFromJson(const std::string& jsonPayload)
 }
 
 // ---------------------------------------------------------------------------
-// CAK key storage
+// CAK payload assembly
 // ---------------------------------------------------------------------------
 
-void storeCak(const Config& config, const std::string& cakBytes)
+json buildCakPayload(const Config& config, const std::string& cakBytes)
 {
-    validateCakBytes(cakBytes, config.maxCakBytes);
-
-    json payload = {
+    return json{
         {"CAKKey", {{"AuthenticationScheme", "Ecdsa"}, {"ECDSAKey", cakBytes}}},
         {"LockDisable", true},
         {"VendorMinimumSecurityVersion",
          config.minimumSecurityVersion.value_or(0)},
         {"OwnerMinimumSecurityVersion",
          config.minimumSecurityVersion.value_or(0)}};
+}
 
-    atomicWrite(payloadPath(config.keyStorePath), payload.dump());
+std::optional<json> bakedCakPayload(const Config& config)
+{
+    if constexpr (!dot::kCakKeyBaked)
+    {
+        return std::nullopt;
+    }
+    else
+    {
+        std::string pem(dot::kCakKeyBakedPem);
+        normalizePemKeyFormat(pem);
+        validateCakBytes(pem, config.maxCakBytes);
+        return buildCakPayload(config, pem);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CAK key storage
+// ---------------------------------------------------------------------------
+
+void storeCak(const Config& config, const std::string& cakBytes)
+{
+    std::string pem(cakBytes);
+    normalizePemKeyFormat(pem);
+    validateCakBytes(pem, config.maxCakBytes);
+    atomicWrite(payloadPath(config.keyStorePath),
+                buildCakPayload(config, pem).dump());
 }
 
 void deleteCak(const Config& config)

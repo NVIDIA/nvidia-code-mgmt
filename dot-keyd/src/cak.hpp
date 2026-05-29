@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,22 @@ void validateCakBytes(const std::string& data, size_t maxBytes);
 void normalizePemKeyFormat(std::string& key);
 void validateDotPayload(const nlohmann::json& payload);
 std::string extractCakFromJson(const std::string& jsonPayload);
+
+// ---------------------------------------------------------------------------
+// CAK payload assembly
+// ---------------------------------------------------------------------------
+
+// Builds the DOT install payload JSON from a CAK PEM public key, filling in the
+// standard defaults (AuthenticationScheme=Ecdsa, LockDisable=true, no LAKKey,
+// and both MinimumSecurityVersion fields from config, defaulting to 0).
+nlohmann::json buildCakPayload(const Config& config,
+                               const std::string& cakBytes);
+
+// Returns the install payload synthesized from the compiled-in (baked) CAK PEM
+// public key, or std::nullopt when no key was baked in at build time
+// (-Dcak_key / DOT_KEYD_CAK_KEY empty). The baked PEM is normalized and
+// validated before use.
+std::optional<nlohmann::json> bakedCakPayload(const Config& config);
 
 // ---------------------------------------------------------------------------
 // CAK key storage
