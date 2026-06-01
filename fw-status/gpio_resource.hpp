@@ -122,6 +122,11 @@ class GPIOResource : public BaseResource
      */
     void waitForGPIOEvent();
 
+    /** @brief Disable GPIO event handling and clear the cached GPIO line.
+     *
+     */
+    void clearGPIOEvent();
+
     /** @brief function to request gpio line and register callback for gpio
      * event
      *
