@@ -19,7 +19,13 @@
 #include "gpio_resource.hpp"
 
 #include <cerrno>
+#include <chrono>
 #include <system_error>
+
+namespace
+{
+constexpr auto gpioEventRetryInterval = std::chrono::seconds(5);
+}
 
 GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                            sdeventplus::Event& event, const uint64_t i2cBus,
@@ -92,6 +98,7 @@ void GPIOResource::waitForGPIOEvent()
                 "GPIO line {GPIO} is no longer available: {ERROR}. Disabling GPIO event source.",
                 "GPIO", gpioLineName, "ERROR", e.what());
             clearGPIOEvent();
+            startGPIOEventRetry();
             return;
         }
 
@@ -145,14 +152,15 @@ void GPIOResource::clearGPIOEvent()
     }
 }
 
-void GPIOResource::registerGPIOEvent()
+bool GPIOResource::registerGPIOEvent()
 {
     lg2::info("Registering... event callback for {GPIO}", "GPIO", gpioLineName);
     gpioLine = gpiod::find_line(gpioLineName);
     if (!gpioLine)
     {
         lg2::error("Failed to find the {GPIO} line", "GPIO", gpioLineName);
-        return;
+        clearGPIOEvent();
+        return false;
     }
 
     try
@@ -164,19 +172,79 @@ void GPIOResource::registerGPIOEvent()
     {
         lg2::error("Failed to request events for {GPIO}: {ERROR}", "GPIO",
                    gpioLineName, "ERROR", e.what());
-        return;
+        clearGPIOEvent();
+        return false;
     }
 
     auto gpioLineFd = gpioLine.event_get_fd();
     if (gpioLineFd < 0)
     {
         lg2::error("Failed to get {GPIO} fd", "GPIO", gpioLineName);
-        return;
+        clearGPIOEvent();
+        return false;
     }
     gpioEvent = std::make_unique<sdeventplus::source::IO>(
         sdEvent, gpioLineFd, EPOLLIN,
         std::bind(&GPIOResource::waitForGPIOEvent, this));
     gpioEvent->set_enabled(sdeventplus::source::Enabled::On);
+    return true;
+}
+
+void GPIOResource::startGPIOEventRetry()
+{
+    if (!gpioRetryTimer)
+    {
+        gpioRetryTimer = std::make_unique<sdbusplus::Timer>(
+            sdEvent.get(),
+            std::bind(&GPIOResource::retryGPIOEventRegistration, this));
+    }
+
+    if (gpioRetryTimer->isRunning())
+    {
+        return;
+    }
+
+    try
+    {
+        gpioRetryTimer->start(gpioEventRetryInterval, true);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to start GPIO event retry timer for {GPIO}: {ERR}",
+                   "GPIO", gpioLineName, "ERR", e.what());
+    }
+}
+
+void GPIOResource::stopGPIOEventRetry()
+{
+    if (!gpioRetryTimer || !gpioRetryTimer->isRunning())
+    {
+        return;
+    }
+
+    auto rc = gpioRetryTimer->stop();
+    if (rc)
+    {
+        lg2::error("Failed to stop GPIO event retry timer for {GPIO}. RC={RC}",
+                   "GPIO", gpioLineName, "RC", rc);
+    }
+}
+
+void GPIOResource::retryGPIOEventRegistration()
+{
+    if (gpioEvent)
+    {
+        stopGPIOEventRetry();
+        return;
+    }
+
+    if (!registerGPIOEvent())
+    {
+        return;
+    }
+
+    stopGPIOEventRetry();
+    updateHealth();
 }
 
 void GPIOResource::updateERoTHealth()
