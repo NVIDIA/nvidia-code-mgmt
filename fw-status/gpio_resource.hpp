@@ -24,6 +24,7 @@
 #include <gpiod.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
+#include <sdbusplus/timer.hpp>
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/source/event.hpp>
 #include <sdeventplus/source/io.hpp>
@@ -109,6 +110,7 @@ class GPIOResource : public BaseResource
     gpiod::line gpioLine;
     gpiod::line_event lineEvent;
     std::unique_ptr<sdeventplus::source::IO> gpioEvent;
+    std::unique_ptr<sdbusplus::Timer> gpioRetryTimer;
     std::unique_ptr<glacier_recovery_tool::glacier_recovery_commands::
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
@@ -131,7 +133,22 @@ class GPIOResource : public BaseResource
      * event
      *
      */
-    void registerGPIOEvent();
+    bool registerGPIOEvent();
+
+    /** @brief Start retrying GPIO event registration.
+     *
+     */
+    void startGPIOEventRetry();
+
+    /** @brief Stop retrying GPIO event registration.
+     *
+     */
+    void stopGPIOEventRetry();
+
+    /** @brief Try to re-register the GPIO event from the retry timer.
+     *
+     */
+    void retryGPIOEventRegistration();
 
     /** @brief function to update Health and State of ERoT D-Bus object
      *         Uses Glacier Crisis Recovery Protocol to fetch device status
