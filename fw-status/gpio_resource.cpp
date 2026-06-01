@@ -18,6 +18,9 @@
 
 #include "gpio_resource.hpp"
 
+#include <cerrno>
+#include <system_error>
+
 GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                            sdeventplus::Event& event, const uint64_t i2cBus,
                            const uint64_t i2cAddress, uint8_t eid,
@@ -77,7 +80,24 @@ GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
 
 void GPIOResource::waitForGPIOEvent()
 {
-    lineEvent = gpioLine.event_read();
+    try
+    {
+        lineEvent = gpioLine.event_read();
+    }
+    catch (const std::system_error& e)
+    {
+        if (e.code().value() == ENODEV)
+        {
+            lg2::warning(
+                "GPIO line {GPIO} is no longer available: {ERROR}. Disabling GPIO event source.",
+                "GPIO", gpioLineName, "ERROR", e.what());
+            clearGPIOEvent();
+            return;
+        }
+
+        throw;
+    }
+
     if (lineEvent.event_type == gpiod::line_event::RISING_EDGE)
         lg2::info("{GPIO} is rising", "GPIO", gpioLineName);
     else
@@ -89,6 +109,39 @@ void GPIOResource::waitForGPIOEvent()
     else
     {
         updateAPHealth(EDGE_TRIGGER);
+    }
+}
+
+void GPIOResource::clearGPIOEvent()
+{
+    if (gpioEvent)
+    {
+        try
+        {
+            gpioEvent->set_enabled(sdeventplus::source::Enabled::Off);
+        }
+        catch (const std::exception& e)
+        {
+            lg2::warning("Failed to disable GPIO event source for {GPIO}: {ERR}",
+                         "GPIO", gpioLineName, "ERR", e.what());
+        }
+
+        gpioEvent.reset();
+    }
+
+    if (gpioLine)
+    {
+        try
+        {
+            gpioLine.release();
+        }
+        catch (const std::exception& e)
+        {
+            lg2::warning("Failed to release GPIO line {GPIO}: {ERR}", "GPIO",
+                         gpioLineName, "ERR", e.what());
+        }
+
+        gpioLine = gpiod::line{};
     }
 }
 
