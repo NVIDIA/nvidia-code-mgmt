@@ -26,6 +26,9 @@
 
 #include <chrono>
 #include <map>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <variant>
 
 namespace nvidia::prebootdiag
@@ -33,20 +36,91 @@ namespace nvidia::prebootdiag
 
 using namespace constants;
 
+namespace
+{
+
+std::runtime_error dbusError(const std::string& operation,
+                             const boost::system::error_code& ec)
+{
+    return std::runtime_error(operation + " failed: " + ec.message());
+}
+
+template <typename Result, typename... InputArgs>
+boost::asio::awaitable<std::pair<boost::system::error_code, Result>>
+    asyncMethodCall(std::shared_ptr<sdbusplus::asio::connection> bus,
+                    const std::string& service, const std::string& path,
+                    const std::string& iface, const std::string& method,
+                    const InputArgs&... inputArgs)
+{
+    using ResultChannel = boost::asio::experimental::concurrent_channel<void(
+        boost::system::error_code, Result)>;
+    auto channel = std::make_shared<ResultChannel>(
+        co_await boost::asio::this_coro::executor, 1);
+
+    bus->async_method_call(
+        [channel](boost::system::error_code ec, Result result) mutable {
+            channel->try_send(ec, std::move(result));
+        },
+        service, path, iface, method, inputArgs...);
+
+    auto [ec, result] = co_await channel->async_receive(
+        boost::asio::as_tuple(boost::asio::use_awaitable));
+    co_return std::make_pair(ec, std::move(result));
+}
+
+template <typename... InputArgs>
+boost::asio::awaitable<boost::system::error_code>
+    asyncMethodCallNoReturn(std::shared_ptr<sdbusplus::asio::connection> bus,
+                            const std::string& service, const std::string& path,
+                            const std::string& iface, const std::string& method,
+                            const InputArgs&... inputArgs)
+{
+    using ResultChannel = boost::asio::experimental::concurrent_channel<void(
+        boost::system::error_code)>;
+    auto channel = std::make_shared<ResultChannel>(
+        co_await boost::asio::this_coro::executor, 1);
+
+    bus->async_method_call(
+        [channel](boost::system::error_code ec) mutable {
+            channel->try_send(ec);
+        },
+        service, path, iface, method, inputArgs...);
+
+    auto [ec] = co_await channel->async_receive(
+        boost::asio::as_tuple(boost::asio::use_awaitable));
+    co_return ec;
+}
+
+std::string
+    getStringPropertyValue(const std::variant<std::string>& propertyValue,
+                           const std::string& operation)
+{
+    if (const auto* value = std::get_if<std::string>(&propertyValue))
+    {
+        return *value;
+    }
+    throw std::runtime_error(operation + " returned a non-string property");
+}
+
+} // namespace
+
 SdbusHandler::SdbusHandler(std::shared_ptr<sdbusplus::asio::connection> bus) :
     bus(std::move(bus))
 {}
 
-std::string SdbusHandler::getSettingsStringProperty(const std::string& propName)
+boost::asio::awaitable<std::string>
+    SdbusHandler::getSettingsStringProperty(const std::string& propName)
 {
-    auto method =
-        bus->new_method_call(settingsService, diagObjPath, propsIface, "Get");
-    method.append(diagIface, propName);
-    auto reply = bus->call(method);
+    const std::string operation = "Read Settings property " + propName;
+    auto [ec, value] = co_await asyncMethodCall<std::variant<std::string>>(
+        bus, settingsService, diagObjPath, propsIface, "Get", diagIface,
+        propName);
+    if (ec)
+    {
+        throw dbusError(operation, ec);
+    }
 
-    std::variant<std::string> value;
-    reply.read(value);
-    return std::get<std::string>(value);
+    co_return getStringPropertyValue(value, operation);
 }
 
 boost::asio::awaitable<bool>
@@ -69,21 +143,14 @@ boost::asio::awaitable<bool>
 {
     auto path = std::string(nsmObjPathPrefix) + std::to_string(eid);
 
-    sdbusplus::object_path asyncObjPath;
-    try
+    auto [ec, asyncObjPath] = co_await asyncMethodCall<sdbusplus::object_path>(
+        bus, nsmService, path, nsmAsyncSetIface, "Set", iface,
+        std::string{asyncValueProperty}, std::variant<std::string>{configJson});
+    if (ec)
     {
-        auto method = bus->new_method_call(nsmService, path.c_str(),
-                                           nsmAsyncSetIface, "Set");
-        method.append(iface, std::string{asyncValueProperty},
-                      std::variant<std::string>{configJson});
-        auto reply = bus->call(method);
-        reply.read(asyncObjPath);
-    }
-    catch (const sdbusplus::exception_t& e)
-    {
-        lg2::error(
-            "PreBootDiag: Async.Set on iface={IFACE} EID={EID} failed: {ERR}",
-            "IFACE", iface, "EID", eid, "ERR", e.what());
+        lg2::error("PreBootDiag: Async.Set on iface={IFACE} EID={EID} "
+                   "failed: {ERR}",
+                   "IFACE", iface, "EID", eid, "ERR", ec.message());
         co_return false;
     }
 
@@ -157,26 +224,22 @@ boost::asio::awaitable<bool>
     // already fired with no listener, but the property reflects the
     // terminal value — read it explicitly. Duplicate resolution from
     // match-then-Get (or vice versa) is harmless thanks to try_send.
-    try
+    auto [statusEc, currentStatus] =
+        co_await asyncMethodCall<std::variant<std::string>>(
+            bus, nsmService, path.str, propsIface, "Get",
+            std::string{nsmAsyncStatusIface}, std::string{"Status"});
+    if (!statusEc)
     {
-        auto getMethod =
-            bus->new_method_call(nsmService, path.str.c_str(),
-                                 "org.freedesktop.DBus.Properties", "Get");
-        getMethod.append(std::string{nsmAsyncStatusIface},
-                         std::string{"Status"});
-        auto reply = bus->call(getMethod);
-        std::variant<std::string> currentStatus;
-        reply.read(currentStatus);
         if (const auto* statusStr = std::get_if<std::string>(&currentStatus))
         {
             resolveIfTerminal(*statusStr);
         }
     }
-    catch (const std::exception& e)
+    else
     {
         lg2::warning(
             "PreBootDiag: post-match Get on Async.Status failed (will rely on signal): {ERR}",
-            "ERR", e.what());
+            "ERR", statusEc.message());
     }
 
     auto [ec, success] = co_await promise->async_receive(
@@ -190,104 +253,109 @@ boost::asio::awaitable<bool>
     co_return success;
 }
 
-void SdbusHandler::setSettingsStringProperty(const std::string& propName,
-                                             const std::string& value)
+boost::asio::awaitable<void>
+    SdbusHandler::setSettingsStringProperty(const std::string& propName,
+                                            const std::string& value)
 {
-    try
+    auto ec = co_await asyncMethodCallNoReturn(
+        bus, settingsService, diagObjPath, propsIface, "Set", diagIface,
+        propName, std::variant<std::string>(value));
+    if (ec)
     {
-        auto method = bus->new_method_call(settingsService, diagObjPath,
-                                           propsIface, "Set");
-        method.append(diagIface, propName, std::variant<std::string>(value));
-        bus->call_noreply(method);
+        lg2::error("PreBootDiag: setSettingsStringProperty {PROP} failed: "
+                   "{ERR}",
+                   "PROP", propName, "ERR", ec.message());
+        throw dbusError("Set Settings property " + propName, ec);
     }
-    catch (const std::exception& e)
-    {
-        lg2::error(
-            "PreBootDiag: setSettingsStringProperty {PROP} failed: {ERR}",
-            "PROP", propName, "ERR", e.what());
-        throw;
-    }
+    co_return;
 }
 
-DiagStatus SdbusHandler::getDiagStatus()
+boost::asio::awaitable<DiagStatus> SdbusHandler::getDiagStatus()
 {
-    try
-    {
-        auto method = bus->new_method_call(settingsService, diagObjPath,
-                                           propsIface, "Get");
-        method.append(diagIface, "DiagStatus");
-        auto reply = bus->call(method);
-
-        std::variant<uint8_t> value;
-        reply.read(value);
-        return static_cast<DiagStatus>(std::get<uint8_t>(value));
-    }
-    catch (const std::exception& e)
+    auto [ec, value] = co_await asyncMethodCall<std::variant<uint8_t>>(
+        bus, settingsService, diagObjPath, propsIface, "Get", diagIface,
+        "DiagStatus");
+    if (ec)
     {
         lg2::warning("PreBootDiag: Failed to read DiagStatus: {ERR}", "ERR",
-                     e.what());
-        return DiagStatus::NotStarted;
+                     ec.message());
+        co_return DiagStatus::NotStarted;
     }
-}
 
-void SdbusHandler::setDiagStatus(DiagStatus status)
-{
-    auto method =
-        bus->new_method_call(settingsService, diagObjPath, propsIface, "Set");
-    method.append(diagIface, "DiagStatus",
-                  std::variant<uint8_t>(static_cast<uint8_t>(status)));
-    bus->call_noreply(method);
-}
-
-void SdbusHandler::setDiagMode(bool mode)
-{
-    auto method =
-        bus->new_method_call(settingsService, diagObjPath, propsIface, "Set");
-    method.append(diagIface, "DiagMode", std::variant<bool>(mode));
-    bus->call_noreply(method);
-}
-
-bool SdbusHandler::hasDiagConfig()
-{
-    try
+    const auto* status = std::get_if<uint8_t>(&value);
+    if (status == nullptr)
     {
-        auto method = bus->new_method_call(settingsService, diagObjPath,
-                                           propsIface, "Get");
-        method.append(diagIface, "DiagConfig");
-        auto reply = bus->call(method);
-
-        std::variant<std::string> value;
-        reply.read(value);
-        const auto& config = std::get<std::string>(value);
-        return !config.empty() && config != "[]";
+        lg2::warning("PreBootDiag: DiagStatus D-Bus reply had invalid type");
+        co_return DiagStatus::NotStarted;
     }
-    catch (const std::exception& e)
+    co_return static_cast<DiagStatus>(*status);
+}
+
+boost::asio::awaitable<void> SdbusHandler::setDiagStatus(DiagStatus status)
+{
+    auto ec = co_await asyncMethodCallNoReturn(
+        bus, settingsService, diagObjPath, propsIface, "Set", diagIface,
+        "DiagStatus", std::variant<uint8_t>(static_cast<uint8_t>(status)));
+    if (ec)
+    {
+        lg2::error("PreBootDiag: Failed to set DiagStatus: {ERR}", "ERR",
+                   ec.message());
+        throw dbusError("Set DiagStatus", ec);
+    }
+    co_return;
+}
+
+boost::asio::awaitable<void> SdbusHandler::setDiagMode(bool mode)
+{
+    auto ec = co_await asyncMethodCallNoReturn(
+        bus, settingsService, diagObjPath, propsIface, "Set", diagIface,
+        "DiagMode", std::variant<bool>(mode));
+    if (ec)
+    {
+        lg2::error("PreBootDiag: Failed to set DiagMode: {ERR}", "ERR",
+                   ec.message());
+        throw dbusError("Set DiagMode", ec);
+    }
+    co_return;
+}
+
+boost::asio::awaitable<bool> SdbusHandler::hasDiagConfig()
+{
+    auto [ec, value] = co_await asyncMethodCall<std::variant<std::string>>(
+        bus, settingsService, diagObjPath, propsIface, "Get", diagIface,
+        "DiagConfig");
+    if (ec)
     {
         lg2::warning("PreBootDiag: Failed to read DiagConfig: {ERR}", "ERR",
-                     e.what());
-        return false;
+                     ec.message());
+        co_return false;
     }
+
+    const auto* config = std::get_if<std::string>(&value);
+    if (config == nullptr)
+    {
+        lg2::warning("PreBootDiag: DiagConfig D-Bus reply had invalid type");
+        co_return false;
+    }
+    co_return !config->empty() && *config != "[]";
 }
 
-void SdbusHandler::createErrorLog(const std::string& message,
-                                  const std::string& additionalInfo)
+boost::asio::awaitable<void>
+    SdbusHandler::createErrorLog(const std::string& message,
+                                 const std::string& additionalInfo)
 {
-    try
-    {
-        std::map<std::string, std::string> additionalData;
-        additionalData["PACKAGE_ID"] = additionalInfo;
+    std::map<std::string, std::string> additionalData;
+    additionalData["PACKAGE_ID"] = additionalInfo;
 
-        auto method =
-            bus->new_method_call(logService, logObjPath, logIface, "Create");
-        method.append(message, "xyz.openbmc_project.Logging.Entry.Level.Error",
-                      additionalData);
-        bus->call_noreply(method);
-    }
-    catch (const std::exception& e)
+    auto ec = co_await asyncMethodCallNoReturn(
+        bus, logService, logObjPath, logIface, "Create", message,
+        "xyz.openbmc_project.Logging.Entry.Level.Error", additionalData);
+    if (ec)
     {
         lg2::error("PreBootDiag: Failed to create log entry: {ERR}", "ERR",
-                   e.what());
+                   ec.message());
     }
+    co_return;
 }
 
 } // namespace nvidia::prebootdiag

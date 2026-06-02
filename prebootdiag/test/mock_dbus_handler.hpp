@@ -23,7 +23,7 @@
 namespace nvidia::prebootdiag
 {
 
-/// @brief Mock D-Bus handler — wraps synchronous gmock methods into
+/// @brief Mock D-Bus handler - wraps synchronous gmock methods into
 /// coroutines. NSM events are no longer property-watched; they arrive via
 /// the App.Notify method on PreBootDiag itself, so the previous
 /// event-queue plumbing has been removed.
@@ -46,9 +46,10 @@ class MockDbusHandler : public DbusHandlerInterface
                 (const std::string& message,
                  const std::string& additionalInfo));
 
-    std::string getSettingsStringProperty(const std::string& propName) override
+    boost::asio::awaitable<std::string>
+        getSettingsStringProperty(const std::string& propName) override
     {
-        return mockGetSettingsStringProperty(propName);
+        co_return mockGetSettingsStringProperty(propName);
     }
 
     boost::asio::awaitable<bool>
@@ -64,36 +65,42 @@ class MockDbusHandler : public DbusHandlerInterface
         co_return mockCallNsmConfigSetTID(eid, configJson);
     }
 
-    void setSettingsStringProperty(const std::string& propName,
-                                   const std::string& value) override
+    boost::asio::awaitable<void>
+        setSettingsStringProperty(const std::string& propName,
+                                  const std::string& value) override
     {
         mockSetSettingsStringProperty(propName, value);
+        co_return;
     }
 
-    DiagStatus getDiagStatus() override
+    boost::asio::awaitable<DiagStatus> getDiagStatus() override
     {
-        return mockGetDiagStatus();
+        co_return mockGetDiagStatus();
     }
 
-    void setDiagStatus(DiagStatus status) override
+    boost::asio::awaitable<void> setDiagStatus(DiagStatus status) override
     {
         mockSetDiagStatus(status);
+        co_return;
     }
 
-    void setDiagMode(bool mode) override
+    boost::asio::awaitable<void> setDiagMode(bool mode) override
     {
         mockSetDiagMode(mode);
+        co_return;
     }
 
-    bool hasDiagConfig() override
+    boost::asio::awaitable<bool> hasDiagConfig() override
     {
-        return mockHasDiagConfig();
+        co_return mockHasDiagConfig();
     }
 
-    void createErrorLog(const std::string& message,
-                        const std::string& additionalInfo) override
+    boost::asio::awaitable<void>
+        createErrorLog(const std::string& message,
+                       const std::string& additionalInfo) override
     {
         mockCreateErrorLog(message, additionalInfo);
+        co_return;
     }
 };
 

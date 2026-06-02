@@ -37,7 +37,7 @@ class DbusHandlerInterface
   public:
     virtual ~DbusHandlerInterface() = default;
 
-    virtual std::string
+    virtual boost::asio::awaitable<std::string>
         getSettingsStringProperty(const std::string& propName) = 0;
 
     /// Push a SystemConfig payload to nsmd via com.nvidia.Async.Set on the
@@ -53,19 +53,21 @@ class DbusHandlerInterface
     virtual boost::asio::awaitable<bool>
         callNsmConfigSetTID(uint8_t eid, const std::string& configJson) = 0;
 
-    virtual void setSettingsStringProperty(const std::string& propName,
-                                           const std::string& value) = 0;
+    virtual boost::asio::awaitable<void>
+        setSettingsStringProperty(const std::string& propName,
+                                  const std::string& value) = 0;
 
-    virtual DiagStatus getDiagStatus() = 0;
+    virtual boost::asio::awaitable<DiagStatus> getDiagStatus() = 0;
 
-    virtual void setDiagStatus(DiagStatus status) = 0;
+    virtual boost::asio::awaitable<void> setDiagStatus(DiagStatus status) = 0;
 
-    virtual void setDiagMode(bool mode) = 0;
+    virtual boost::asio::awaitable<void> setDiagMode(bool mode) = 0;
 
-    virtual bool hasDiagConfig() = 0;
+    virtual boost::asio::awaitable<bool> hasDiagConfig() = 0;
 
-    virtual void createErrorLog(const std::string& message,
-                                const std::string& additionalInfo) = 0;
+    virtual boost::asio::awaitable<void>
+        createErrorLog(const std::string& message,
+                       const std::string& additionalInfo) = 0;
 };
 
 class SdbusHandler : public DbusHandlerInterface
@@ -73,7 +75,8 @@ class SdbusHandler : public DbusHandlerInterface
   public:
     explicit SdbusHandler(std::shared_ptr<sdbusplus::asio::connection> bus);
 
-    std::string getSettingsStringProperty(const std::string& propName) override;
+    boost::asio::awaitable<std::string>
+        getSettingsStringProperty(const std::string& propName) override;
 
     boost::asio::awaitable<bool>
         callNsmConfigSetSystem(uint8_t eid,
@@ -83,19 +86,21 @@ class SdbusHandler : public DbusHandlerInterface
         callNsmConfigSetTID(uint8_t eid,
                             const std::string& configJson) override;
 
-    void setSettingsStringProperty(const std::string& propName,
-                                   const std::string& value) override;
+    boost::asio::awaitable<void>
+        setSettingsStringProperty(const std::string& propName,
+                                  const std::string& value) override;
 
-    DiagStatus getDiagStatus() override;
+    boost::asio::awaitable<DiagStatus> getDiagStatus() override;
 
-    void setDiagStatus(DiagStatus status) override;
+    boost::asio::awaitable<void> setDiagStatus(DiagStatus status) override;
 
-    void setDiagMode(bool mode) override;
+    boost::asio::awaitable<void> setDiagMode(bool mode) override;
 
-    bool hasDiagConfig() override;
+    boost::asio::awaitable<bool> hasDiagConfig() override;
 
-    void createErrorLog(const std::string& message,
-                        const std::string& additionalInfo) override;
+    boost::asio::awaitable<void>
+        createErrorLog(const std::string& message,
+                       const std::string& additionalInfo) override;
 
   private:
     /// Shared body for callNsmConfigSetSystem and callNsmConfigSetTID. Issues
@@ -106,7 +111,7 @@ class SdbusHandler : public DbusHandlerInterface
                                               const std::string& iface,
                                               const std::string& configJson);
 
-    /// Block until the com.nvidia.Async.Status.Status property at `path`
+    /// Wait until the com.nvidia.Async.Status.Status property at `path`
     /// transitions to a terminal state. Returns true iff it lands on
     /// "Success".
     boost::asio::awaitable<bool>

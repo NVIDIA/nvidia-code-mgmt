@@ -282,7 +282,7 @@ boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
 
     try
     {
-        auto status = dbus->getDiagStatus();
+        auto status = co_await dbus->getDiagStatus();
         if (status == DiagStatus::TestRunning ||
             status == DiagStatus::InProgress)
         {
@@ -292,15 +292,15 @@ boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
             throw std::runtime_error("Diagnostic test already running");
         }
 
-        if (!dbus->hasDiagConfig())
+        if (!co_await dbus->hasDiagConfig())
         {
             lg2::error("PreBootDiag: No DiagConfig in Settings, aborting");
             throw std::runtime_error("No DiagConfig present in Settings");
         }
 
-        dbus->setDiagStatus(DiagStatus::InProgress);
-        dbus->setDiagMode(true);
-        dbus->setSettingsStringProperty("DiagResult", "[]");
+        co_await dbus->setDiagStatus(DiagStatus::InProgress);
+        co_await dbus->setDiagMode(true);
+        co_await dbus->setSettingsStringProperty("DiagResult", "[]");
         lg2::info("PreBootDiag: Session started, DiagStatus=InProgress");
 
         initGpioSequence();
@@ -323,8 +323,8 @@ boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
 
         try
         {
-            dbus->setDiagStatus(DiagStatus::Abort);
-            dbus->setDiagMode(false);
+            co_await dbus->setDiagStatus(DiagStatus::Abort);
+            co_await dbus->setDiagMode(false);
         }
         catch (const std::exception& se)
         {
@@ -334,7 +334,7 @@ boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
 
         try
         {
-            dbus->createErrorLog(
+            co_await dbus->createErrorLog(
                 "PreBootDiag diagnostic failed: " + failureReason, "");
         }
         catch (const std::exception& le)
@@ -511,15 +511,15 @@ boost::asio::awaitable<void> PreBootDiag::listenForEvents()
                 break;
             case StateType::HeartbeatReceived:
                 lg2::info("PreBootDiag: NSM state -> HeartbeatReceived");
-                dbus->setDiagStatus(DiagStatus::TestRunning);
+                co_await dbus->setDiagStatus(DiagStatus::TestRunning);
                 break;
             case StateType::ResultReceived:
                 lg2::info("PreBootDiag: NSM state -> ResultReceived");
-                handleResultReceived(event.payload);
+                co_await handleResultReceived(event.payload);
                 break;
             case StateType::SessionEnded:
-                dbus->setDiagStatus(DiagStatus::NotStarted);
-                dbus->setDiagMode(false);
+                co_await dbus->setDiagStatus(DiagStatus::NotStarted);
+                co_await dbus->setDiagMode(false);
                 lg2::info("PreBootDiag: Diagnostic session ended");
                 co_return;
             default:
@@ -551,14 +551,16 @@ boost::asio::awaitable<void>
     }
     uint8_t eid = payloadJson["Eid"].get<uint8_t>();
 
-    auto systemConfig = dbus->getSettingsStringProperty("DiagSystemConfig");
+    auto systemConfig =
+        co_await dbus->getSettingsStringProperty("DiagSystemConfig");
     bool ok = co_await dbus->callNsmConfigSetSystem(eid, systemConfig);
     if (!ok)
     {
         std::string msg =
             "SystemConfig push failed for EID=" + std::to_string(eid);
         lg2::error("PreBootDiag: {MSG}", "MSG", msg);
-        dbus->createErrorLog("PreBootDiag: " + msg, std::to_string(eid));
+        co_await dbus->createErrorLog("PreBootDiag: " + msg,
+                                      std::to_string(eid));
         throw std::runtime_error(msg);
     }
     lg2::info("PreBootDiag: SystemConfig sent to nsmd EID={EID}", "EID", eid);
@@ -591,7 +593,7 @@ boost::asio::awaitable<void>
 
     uint8_t requestedTid = payloadJson["Tid"].get<uint8_t>();
     uint8_t eid = payloadJson["Eid"].get<uint8_t>();
-    auto allConfigs = dbus->getSettingsStringProperty("DiagConfig");
+    auto allConfigs = co_await dbus->getSettingsStringProperty("DiagConfig");
 
     nlohmann::json configArray;
     try
@@ -624,7 +626,7 @@ boost::asio::awaitable<void>
                           std::to_string(requestedTid);
         lg2::error("PreBootDiag: {MSG} (DiagConfig has {N} entries)", "MSG",
                    msg, "N", configArray.size());
-        dbus->createErrorLog("PreBootDiag: " + msg, "");
+        co_await dbus->createErrorLog("PreBootDiag: " + msg, "");
         throw std::runtime_error(msg);
     }
 
@@ -635,21 +637,22 @@ boost::asio::awaitable<void>
             "TIDConfig push failed for TID=" + std::to_string(requestedTid) +
             " EID=" + std::to_string(eid);
         lg2::error("PreBootDiag: {MSG}", "MSG", msg);
-        dbus->createErrorLog("PreBootDiag: " + msg,
-                             std::to_string(eid) +
-                                 ":TID=" + std::to_string(requestedTid));
+        co_await dbus->createErrorLog(
+            "PreBootDiag: " + msg,
+            std::to_string(eid) + ":TID=" + std::to_string(requestedTid));
         throw std::runtime_error(msg);
     }
     lg2::info("PreBootDiag: TIDConfig for TID={TID} sent to nsmd EID={EID}",
               "TID", lg2::hex, requestedTid, "EID", eid);
 }
 
-void PreBootDiag::handleResultReceived(const std::string& payload)
+boost::asio::awaitable<void>
+    PreBootDiag::handleResultReceived(const std::string& payload)
 {
     if (payload.empty())
     {
         lg2::info("PreBootDiag: ResultReceived with empty payload, ignoring");
-        return;
+        co_return;
     }
 
     nlohmann::json newResult;
@@ -672,7 +675,7 @@ void PreBootDiag::handleResultReceived(const std::string& payload)
     nlohmann::json resultsArray = nlohmann::json::array();
     try
     {
-        auto existing = dbus->getSettingsStringProperty("DiagResult");
+        auto existing = co_await dbus->getSettingsStringProperty("DiagResult");
         if (!existing.empty())
         {
             auto parsed = nlohmann::json::parse(existing);
@@ -691,11 +694,12 @@ void PreBootDiag::handleResultReceived(const std::string& payload)
     }
 
     resultsArray.push_back(newResult);
-    dbus->setSettingsStringProperty("DiagResult", resultsArray.dump());
-    dbus->setDiagStatus(DiagStatus::Completed);
+    co_await dbus->setSettingsStringProperty("DiagResult", resultsArray.dump());
+    co_await dbus->setDiagStatus(DiagStatus::Completed);
     lg2::info("PreBootDiag: Result appended for TID={TID}, total={N}", "TID",
               lg2::hex, newResult.value("Tid", static_cast<uint8_t>(0)), "N",
               resultsArray.size());
+    co_return;
 }
 
 void PreBootDiag::recoverCpus()

@@ -88,7 +88,8 @@ class PreBootDiag
         handleSystemConfigRequested(const std::string& payload);
     boost::asio::awaitable<void>
         handleTIDConfigRequested(const std::string& payload);
-    void handleResultReceived(const std::string& payload);
+    boost::asio::awaitable<void>
+        handleResultReceived(const std::string& payload);
 
     boost::asio::io_context& io;
     std::shared_ptr<sdbusplus::asio::connection> bus;
