@@ -190,7 +190,7 @@ void PreBootDiag::updateState(const std::string& state,
             }
             auto name = payloadJson["PostCodeName"].get<std::string>();
 
-            if (name == postCodePscFmcBootModeDiag)
+            if (name == postCodePscFmcBootModePrebootDiag)
             {
                 if (pscFmcPostCodeReceived)
                 {
@@ -212,10 +212,11 @@ void PreBootDiag::updateState(const std::string& state,
                 {
                     lg2::error("PreBootDiag: {N} received before {P}, aborting "
                                "session",
-                               "N", name, "P", postCodePscFmcBootModeDiag);
+                               "N", name, "P",
+                               postCodePscFmcBootModePrebootDiag);
                     abortReason = std::string("Out-of-order post code: ") +
                                   name + " received before " +
-                                  postCodePscFmcBootModeDiag;
+                                  postCodePscFmcBootModePrebootDiag;
                     abortRequested = true;
                     if (gateWaitTimer)
                     {
@@ -462,8 +463,8 @@ boost::asio::awaitable<void> PreBootDiag::waitForPostCodes()
     };
 
     // Phase 1: PSC-FMC (short window, ~30s).
-    co_await waitForPostCode(postCodePscFmcBootModeDiag, pscFmcPostCodeReceived,
-                             pscFmcWaitDuration);
+    co_await waitForPostCode(postCodePscFmcBootModePrebootDiag,
+                             pscFmcPostCodeReceived, pscFmcWaitDuration);
 
     // Phase 2: MB2 (long window, ~15min — covers CPU mem training).
     co_await waitForPostCode(postCodeMb2CcplexPrebootDiagEntry,

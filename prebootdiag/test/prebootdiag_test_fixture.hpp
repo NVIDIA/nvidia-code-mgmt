@@ -76,7 +76,7 @@ class PreBootDiagFixture : public ::testing::Test
         setEnabled(true);
         if (passGates)
         {
-            sendPostCode(constants::postCodePscFmcBootModeDiag);
+            sendPostCode(constants::postCodePscFmcBootModePrebootDiag);
             sendPostCode(constants::postCodeMb2CcplexPrebootDiagEntry);
         }
         return diag;

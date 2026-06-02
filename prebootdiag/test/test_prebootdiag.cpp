@@ -130,7 +130,7 @@ TEST_F(PreBootDiagTest, DuplicateEnableRejected)
 TEST_F(PreBootDiagTest, UpdateWithoutSessionThrows)
 {
     auto diag = create();
-    EXPECT_THROW(sendPostCode(postCodePscFmcBootModeDiag),
+    EXPECT_THROW(sendPostCode(postCodePscFmcBootModePrebootDiag),
                  sdbusplus::exception_t);
 }
 
@@ -173,8 +173,8 @@ TEST_F(PreBootDiagTest, UpdateGateIdempotent)
     auto diag = create();
     setEnabled(true);
 
-    sendPostCode(postCodePscFmcBootModeDiag);
-    EXPECT_NO_THROW(sendPostCode(postCodePscFmcBootModeDiag));
+    sendPostCode(postCodePscFmcBootModePrebootDiag);
+    EXPECT_NO_THROW(sendPostCode(postCodePscFmcBootModePrebootDiag));
     sendPostCode(postCodeMb2CcplexPrebootDiagEntry);
     EXPECT_NO_THROW(sendPostCode(postCodeMb2CcplexPrebootDiagEntry));
     sendStateUpdate(stateSessionEnded);
@@ -194,8 +194,8 @@ TEST_F(PreBootDiagTest, PostCodeGateWaitTimesOut)
         .Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Abort)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
-    EXPECT_CALL(*mockDbus,
-                mockCreateErrorLog(HasSubstr(postCodePscFmcBootModeDiag), _))
+    EXPECT_CALL(*mockDbus, mockCreateErrorLog(
+                               HasSubstr(postCodePscFmcBootModePrebootDiag), _))
         .Times(1);
 
     auto diag = create();
@@ -316,7 +316,7 @@ TEST_F(PreBootDiagTest, OnlyFirstPostCodeTimesOut)
     auto diag = create();
     diag->setPostCodeGateWaitTimeoutForTest(std::chrono::milliseconds(50));
     setEnabled(true);
-    sendPostCode(postCodePscFmcBootModeDiag);
+    sendPostCode(postCodePscFmcBootModePrebootDiag);
     io.run();
 }
 

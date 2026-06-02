@@ -64,7 +64,8 @@ constexpr auto stateSessionEnded =
 
 // PostCodeName values carried in the PostCodeReceived payload. Both must
 // arrive, in this order, to satisfy the pre-NSM-loop gate.
-constexpr auto postCodePscFmcBootModeDiag = "PSC_FMC_PC_BOOT_MODE_DIAG";
+constexpr auto postCodePscFmcBootModePrebootDiag =
+    "PSC_FMC_PC_BOOT_MODE_PREBOOT_DIAG";
 constexpr auto postCodeMb2CcplexPrebootDiagEntry =
     "MB2_PC_CCPLEX_PREBOOT_DIAG_ENTRY";
 

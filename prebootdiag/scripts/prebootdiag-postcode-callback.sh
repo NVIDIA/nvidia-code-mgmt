@@ -13,7 +13,7 @@ if [ $# -ne 1 ]; then
 Usage: $0 <PostCodeName>
 
   PostCodeName: one of
-    PSC_FMC_PC_BOOT_MODE_DIAG
+    PSC_FMC_PC_BOOT_MODE_PREBOOT_DIAG
     MB2_PC_CCPLEX_PREBOOT_DIAG_ENTRY
 EOF
     exit 1
@@ -25,7 +25,7 @@ NAME="$1"
 # busctl. prebootdiag also rejects unknowns, but failing here ties the error
 # to the systemd unit's journal entry.
 case "$NAME" in
-    PSC_FMC_PC_BOOT_MODE_DIAG|MB2_PC_CCPLEX_PREBOOT_DIAG_ENTRY)
+    PSC_FMC_PC_BOOT_MODE_PREBOOT_DIAG|MB2_PC_CCPLEX_PREBOOT_DIAG_ENTRY)
         ;;
     *)
         echo "Unknown PostCodeName '$NAME'" >&2

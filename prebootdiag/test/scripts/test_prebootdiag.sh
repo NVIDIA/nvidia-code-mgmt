@@ -7,7 +7,8 @@
 #   pushes them into prebootdiag via com.nvidia.PreBootDiag.App.Notify
 #   instead of the previous DiagSession property. prebootdiag itself is
 #   driven purely by App.Notify calls — the two ordered boot-mode post
-#   codes (PSC_FMC_PC_BOOT_MODE_DIAG, then MB2_PC_CCPLEX_PREBOOT_DIAG_ENTRY)
+#   codes (PSC_FMC_PC_BOOT_MODE_PREBOOT_DIAG, then
+#   MB2_PC_CCPLEX_PREBOOT_DIAG_ENTRY)
 #   come from the postcode-manager and are simulated in this script via
 #   busctl App.Notify calls carrying a JSON payload with PostCodeName.
 #   Enable/disable is via the standard
@@ -66,7 +67,7 @@ S_POSTCODE="${STATE_PREFIX}.PostCodeReceived"
 S_SYSCFG="${STATE_PREFIX}.SystemConfigRequested"
 
 # PostCodeName values carried in the PostCodeReceived payload (ordered).
-PC_PSC_FMC="PSC_FMC_PC_BOOT_MODE_DIAG"
+PC_PSC_FMC="PSC_FMC_PC_BOOT_MODE_PREBOOT_DIAG"
 PC_MB2="MB2_PC_CCPLEX_PREBOOT_DIAG_ENTRY"
 
 DIAG_CONFIG='[{"Tid":1,"TestDuration":2,"Loops":100,"LogLevel":1,"DynamicData":[170,187,204,221]}]'
@@ -1133,7 +1134,7 @@ check_status 0 # InProgress, waiting for PSC-FMC
 info "Waiting 35s with no post codes for PSC-FMC timeout (30s + margin)..."
 sleep 35
 check_status 3 # Abort — PSC-FMC didn't arrive
-check_journal_for "Timed out waiting for PSC_FMC_PC_BOOT_MODE_DIAG" \
+check_journal_for "Timed out waiting for PSC_FMC_PC_BOOT_MODE_PREBOOT_DIAG" \
     "Journal logs PSC-FMC post-code timeout"
 pass "PSC-FMC post-code timeout correctly aborted session"
 
