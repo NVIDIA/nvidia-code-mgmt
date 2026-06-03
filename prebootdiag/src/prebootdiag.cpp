@@ -286,7 +286,7 @@ boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
             status == DiagStatus::InProgress)
         {
             lg2::error(
-                "PreBootDiag: DiagStatus is 0x{STATUS}, cannot start session",
+                "PreBootDiag: DiagStatus is {STATUS}, cannot start session",
                 "STATUS", lg2::hex, static_cast<uint8_t>(status));
             throw std::runtime_error("Diagnostic test already running");
         }
@@ -639,7 +639,7 @@ boost::asio::awaitable<void>
                                  ":TID=" + std::to_string(requestedTid));
         throw std::runtime_error(msg);
     }
-    lg2::info("PreBootDiag: TIDConfig for TID=0x{TID} sent to nsmd EID={EID}",
+    lg2::info("PreBootDiag: TIDConfig for TID={TID} sent to nsmd EID={EID}",
               "TID", lg2::hex, requestedTid, "EID", eid);
 }
 
@@ -692,7 +692,7 @@ void PreBootDiag::handleResultReceived(const std::string& payload)
     resultsArray.push_back(newResult);
     dbus->setSettingsStringProperty("DiagResult", resultsArray.dump());
     dbus->setDiagStatus(DiagStatus::Completed);
-    lg2::info("PreBootDiag: Result appended for TID=0x{TID}, total={N}", "TID",
+    lg2::info("PreBootDiag: Result appended for TID={TID}, total={N}", "TID",
               lg2::hex, newResult.value("Tid", static_cast<uint8_t>(0)), "N",
               resultsArray.size());
 }
