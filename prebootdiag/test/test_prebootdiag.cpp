@@ -17,6 +17,8 @@
 #include "constants.hpp"
 #include "prebootdiag_test_fixture.hpp"
 
+#include <format>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -25,10 +27,26 @@ namespace nvidia::prebootdiag
 
 using namespace constants;
 using ::testing::_;
+using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::Return;
 
 using PreBootDiagTest = PreBootDiagFixture;
+
+namespace
+{
+
+std::string resetGpio(int board)
+{
+    return std::format(istSysRstGpioFormat, static_cast<int>(board));
+}
+
+std::string bootChainGpio(int board)
+{
+    return std::format(cpuBootChain0GpioFormat, static_cast<int>(board));
+}
+
+} // namespace
 
 // Happy path: gates pass, one TID runs to completion, session ends cleanly.
 TEST_F(PreBootDiagTest, HappyPathFullSession)
@@ -371,28 +389,26 @@ TEST_F(PreBootDiagTest, BootChainGpiosDrivenOnEnable)
 {
     testing::Sequence gpioSeq;
     // Init Phase 1: pulse reset asserted on every board (transient).
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 0)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 0)).InSequence(gpioSeq);
     // Init Phase 2: hold boot-chain straps high for the session.
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd0Gpio, 1))
-        .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd1Gpio, 1))
-        .InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(1), 1)).InSequence(gpioSeq);
     // Init Phase 3: pulse reset deasserted (transient).
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 1)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 1)).InSequence(gpioSeq);
     // Cleanup Phase 1: drive held straps low, then release.
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd0Gpio, 0))
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(1), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio,
+                releasePins(ElementsAre(bootChainGpio(0), bootChainGpio(1))))
         .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd1Gpio, 0))
-        .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, releasePins(_)).InSequence(gpioSeq);
     // Cleanup Phase 2: pulse reset asserted.
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 0)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 0)).InSequence(gpioSeq);
     // Cleanup Phase 3: pulse reset deasserted so CPUs re-enter normal boot.
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 1)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 1)).InSequence(gpioSeq);
 
     EXPECT_CALL(*mockDbus, mockGetDiagStatus())
         .WillOnce(Return(DiagStatus::NotStarted));
@@ -409,6 +425,96 @@ TEST_F(PreBootDiagTest, BootChainGpiosDrivenOnEnable)
     io.run();
 }
 
+// If BRD1 is absent, the diagnostic session still runs and every GPIO phase
+// uses only BRD0 lines.
+TEST_F(PreBootDiagTest, SingleBoardGpiosUsedWhenBrd1Missing)
+{
+    EXPECT_CALL(*mockGpio, isPinAvailable(resetGpio(1)))
+        .WillOnce(Return(false));
+    EXPECT_CALL(*mockGpio, isPinAvailable(bootChainGpio(1)))
+        .WillOnce(Return(false));
+    EXPECT_CALL(*mockGpio, setPin(HasSubstr("BRD1_"), _)).Times(0);
+    EXPECT_CALL(*mockGpio, holdPin(HasSubstr("BRD1_"), _)).Times(0);
+
+    testing::Sequence gpioSeq;
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, releasePins(ElementsAre(bootChainGpio(0))))
+        .InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 1)).InSequence(gpioSeq);
+
+    EXPECT_CALL(*mockDbus, mockGetDiagStatus())
+        .WillOnce(Return(DiagStatus::NotStarted));
+    EXPECT_CALL(*mockDbus, mockHasDiagConfig()).WillOnce(Return(true));
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::InProgress)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
+        .Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::NotStarted)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
+
+    auto diag = createAndStart();
+    sendStateUpdate(stateSessionEnded);
+    io.run();
+}
+
+// BRD0 is mandatory; if any required BRD0 line is missing, the session aborts
+// before GPIO init and records the missing pin in the standard error log path.
+TEST_F(PreBootDiagTest, MissingBrd0GpioAbortsSession)
+{
+    EXPECT_CALL(*mockGpio, isPinAvailable(resetGpio(0)))
+        .WillOnce(Return(false));
+    EXPECT_CALL(*mockGpio, setPin(_, _)).Times(0);
+    EXPECT_CALL(*mockGpio, holdPin(_, _)).Times(0);
+    EXPECT_CALL(*mockGpio, releasePins(ElementsAre())).Times(1);
+
+    EXPECT_CALL(*mockDbus, mockGetDiagStatus())
+        .WillOnce(Return(DiagStatus::NotStarted));
+    EXPECT_CALL(*mockDbus, mockHasDiagConfig()).WillOnce(Return(true));
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::InProgress)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
+        .Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Abort)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
+    EXPECT_CALL(*mockDbus, mockCreateErrorLog(HasSubstr(resetGpio(0)), _))
+        .Times(1);
+
+    auto diag = create();
+    setEnabled(true);
+    io.run();
+}
+
+// Partial BRD1 availability is a board-detection fault. The session aborts
+// before GPIO init and cleanup remains a no-op because no GPIOs were touched.
+TEST_F(PreBootDiagTest, PartialBrd1GpioAvailabilityAbortsSession)
+{
+    EXPECT_CALL(*mockGpio, isPinAvailable(bootChainGpio(1)))
+        .WillOnce(Return(false));
+    EXPECT_CALL(*mockGpio, setPin(_, _)).Times(0);
+    EXPECT_CALL(*mockGpio, holdPin(_, _)).Times(0);
+    EXPECT_CALL(*mockGpio, releasePins(ElementsAre())).Times(1);
+
+    EXPECT_CALL(*mockDbus, mockGetDiagStatus())
+        .WillOnce(Return(DiagStatus::NotStarted));
+    EXPECT_CALL(*mockDbus, mockHasDiagConfig()).WillOnce(Return(true));
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::InProgress)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
+        .Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Abort)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
+    EXPECT_CALL(*mockDbus, mockCreateErrorLog(HasSubstr(bootChainGpio(1)), _))
+        .Times(1);
+
+    auto diag = create();
+    setEnabled(true);
+    io.run();
+}
+
 // First reset-assert failing in initGpioSequence aborts before any
 // strap is touched. Cleanup still runs best-effort (all six writes,
 // none of which touch the boot-chain-to-1 lines).
@@ -416,24 +522,24 @@ TEST_F(PreBootDiagTest, GpioSetFailureAbortsSession)
 {
     testing::Sequence gpioSeq;
     // Init Phase 1 first call fails → initGpioSequence throws here.
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 0))
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 0))
         .InSequence(gpioSeq)
         .WillOnce(Return(std::make_error_code(std::errc::io_error)));
     // Cleanup Phase 1: drive boot-chain straps low, then release.
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd0Gpio, 0))
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(1), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio,
+                releasePins(ElementsAre(bootChainGpio(0), bootChainGpio(1))))
         .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd1Gpio, 0))
-        .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, releasePins(_)).InSequence(gpioSeq);
     // Cleanup Phase 2: pulse reset asserted on both boards.
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 0)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 0)).InSequence(gpioSeq);
     // Cleanup Phase 3: pulse reset deasserted.
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 1)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 1)).InSequence(gpioSeq);
     // Init Phase 2 never runs — boot-chain is never driven to 1.
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd0Gpio, 1)).Times(0);
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd1Gpio, 1)).Times(0);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(0), 1)).Times(0);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(1), 1)).Times(0);
 
     EXPECT_CALL(*mockDbus, mockGetDiagStatus())
         .WillOnce(Return(DiagStatus::NotStarted));
@@ -459,27 +565,25 @@ TEST_F(PreBootDiagTest, BootChainGpiosClearedOnAbort)
 {
     testing::Sequence gpioSeq;
     // Init: pulse reset, hold straps high, pulse reset deasserted.
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 0)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 0)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd0Gpio, 1))
-        .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd1Gpio, 1))
-        .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 1)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(1), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 1)).InSequence(gpioSeq);
     // Cleanup: drive straps low + releasePins FIRST so prebootdiag drops
     // ownership of the boot chain, then pulse IST_SYS_RST 0→1 to bring
     // CPUs back into normal boot. Clearing straps before any reset edge
     // prevents an early/glitched BootROM sample from re-latching diag.
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd0Gpio, 0))
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, holdPin(bootChainGpio(1), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio,
+                releasePins(ElementsAre(bootChainGpio(0), bootChainGpio(1))))
         .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, holdPin(cpuBootChain0Brd1Gpio, 0))
-        .InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, releasePins(_)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 0)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 0)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd0Gpio, 1)).InSequence(gpioSeq);
-    EXPECT_CALL(*mockGpio, setPin(istSysRstBrd1Gpio, 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 0)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(0), 1)).InSequence(gpioSeq);
+    EXPECT_CALL(*mockGpio, setPin(resetGpio(1), 1)).InSequence(gpioSeq);
 
     EXPECT_CALL(*mockDbus, mockGetDiagStatus())
         .WillOnce(Return(DiagStatus::NotStarted));

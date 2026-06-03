@@ -26,12 +26,14 @@ namespace nvidia::prebootdiag
 class MockGpioHandler : public GpioHandlerInterface
 {
   public:
+    MOCK_METHOD(bool, isPinAvailable, (const std::string& lineName),
+                (override));
     MOCK_METHOD(std::error_code, setPin,
                 (const std::string& lineName, int value), (override));
     MOCK_METHOD(std::error_code, holdPin,
                 (const std::string& lineName, int value), (override));
     MOCK_METHOD(void, releaseAllPins, (), (override));
-    MOCK_METHOD(void, releasePins, (std::initializer_list<const char*> names),
+    MOCK_METHOD(void, releasePins, (std::span<const std::string> names),
                 (override));
 };
 

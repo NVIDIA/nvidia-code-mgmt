@@ -50,6 +50,8 @@ class PreBootDiagFixture : public ::testing::Test
 
         // Permissive default so tests that don't care about the GPIO
         // sequence still pass; tests that DO care override with EXPECT_CALL.
+        EXPECT_CALL(*mockGpio, isPinAvailable(::testing::_))
+            .WillRepeatedly(::testing::Return(true));
         ON_CALL(*mockGpio, setPin(::testing::_, ::testing::_))
             .WillByDefault(::testing::Return(std::error_code{}));
         ON_CALL(*mockGpio, holdPin(::testing::_, ::testing::_))

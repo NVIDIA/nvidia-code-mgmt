@@ -48,6 +48,20 @@ LibGpioHandler::~LibGpioHandler()
     releaseAllPins();
 }
 
+bool LibGpioHandler::isPinAvailable(const std::string& lineName)
+{
+    try
+    {
+        return static_cast<bool>(gpiod::find_line(lineName));
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("PreBootDiag: GPIO availability check failed {LINE}: {ERR}",
+                   "LINE", lineName, "ERR", e.what());
+        return false;
+    }
+}
+
 std::error_code LibGpioHandler::setPin(const std::string& lineName, int value)
 {
     try
@@ -114,11 +128,10 @@ std::error_code LibGpioHandler::holdPin(const std::string& lineName, int value)
 }
 
 std::error_code
-    GpioHandlerInterface::setPins(std::initializer_list<const char*> names,
-                                  int value)
+    GpioHandlerInterface::setPins(std::span<const std::string> names, int value)
 {
     std::error_code firstErr;
-    for (const char* name : names)
+    for (const auto& name : names)
     {
         if (auto ec = setPin(name, value); ec && !firstErr)
         {
@@ -129,11 +142,11 @@ std::error_code
 }
 
 std::error_code
-    GpioHandlerInterface::holdPins(std::initializer_list<const char*> names,
+    GpioHandlerInterface::holdPins(std::span<const std::string> names,
                                    int value)
 {
     std::error_code firstErr;
-    for (const char* name : names)
+    for (const auto& name : names)
     {
         if (auto ec = holdPin(name, value); ec && !firstErr)
         {
@@ -165,10 +178,10 @@ void LibGpioHandler::releaseAllPins()
     heldLines.clear();
 }
 
-void LibGpioHandler::releasePins(std::initializer_list<const char*> names)
+void LibGpioHandler::releasePins(std::span<const std::string> names)
 {
     std::size_t released = 0;
-    for (const char* name : names)
+    for (const auto& name : names)
     {
         auto it = heldLines.find(name);
         if (it == heldLines.end())

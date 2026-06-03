@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace nvidia::prebootdiag
 {
@@ -75,6 +76,7 @@ class PreBootDiag
     void updateState(const std::string& state, const std::string& payload);
 
     boost::asio::awaitable<void> runDiagnosticSession();
+    void checkGpios();
     void initGpioSequence();
     boost::asio::awaitable<void> waitForPostCodes();
     boost::asio::awaitable<void> listenForEvents();
@@ -128,6 +130,9 @@ class PreBootDiag
     using EventChannel = boost::asio::experimental::channel<void(
         boost::system::error_code, EventEntry)>;
     std::unique_ptr<EventChannel> eventChannel;
+
+    std::vector<std::string> activeResetGpios;
+    std::vector<std::string> activeBootChainGpios;
 
     std::unique_ptr<GpioHandlerInterface> gpio;
     std::unique_ptr<DbusHandlerInterface> dbus;

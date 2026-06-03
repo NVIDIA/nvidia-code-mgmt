@@ -24,13 +24,63 @@
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/exception.hpp>
 
+#include <array>
+#include <format>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 namespace nvidia::prebootdiag
 {
 
 using namespace constants;
+
+namespace
+{
+
+std::tuple<std::string, std::string> makeBoardGpioNames(int board)
+{
+    return {std::format(istSysRstGpioFormat, static_cast<int>(board)),
+            std::format(cpuBootChain0GpioFormat, static_cast<int>(board))};
+}
+
+std::vector<std::string> findMissingGpios(GpioHandlerInterface& gpio,
+                                          const std::string& resetGpio,
+                                          const std::string& bootChainGpio)
+{
+    std::vector<std::string> missing;
+    const std::array<const std::string*, 2> required{
+        &resetGpio,
+        &bootChainGpio,
+    };
+
+    for (const auto* name : required)
+    {
+        if (!gpio.isPinAvailable(*name))
+        {
+            missing.push_back(*name);
+        }
+    }
+
+    return missing;
+}
+
+std::string joinGpios(const std::vector<std::string>& names)
+{
+    std::string joined;
+    for (const auto& name : names)
+    {
+        if (!joined.empty())
+        {
+            joined += ", ";
+        }
+        joined += name;
+    }
+    return joined;
+}
+
+} // namespace
 
 PreBootDiag::PreBootDiag(boost::asio::io_context& io,
                          std::shared_ptr<sdbusplus::asio::connection> bus,
@@ -279,6 +329,8 @@ void PreBootDiag::updateState(const std::string& state,
 boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
 {
     std::string failureReason;
+    activeResetGpios.clear();
+    activeBootChainGpios.clear();
 
     try
     {
@@ -303,6 +355,7 @@ boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
         co_await dbus->setSettingsStringProperty("DiagResult", "[]");
         lg2::info("PreBootDiag: Session started, DiagStatus=InProgress");
 
+        checkGpios();
         initGpioSequence();
 
         co_await waitForPostCodes();
@@ -358,10 +411,55 @@ boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
     }
 }
 
+void PreBootDiag::checkGpios()
+{
+    activeResetGpios.clear();
+    activeBootChainGpios.clear();
+
+    auto [board0ResetGpio, board0BootChainGpio] = makeBoardGpioNames(0);
+    if (auto missing =
+            findMissingGpios(*gpio, board0ResetGpio, board0BootChainGpio);
+        !missing.empty())
+    {
+        auto missingNames = joinGpios(missing);
+        lg2::error("PreBootDiag: Required BRD0 GPIOs missing: {PINS}", "PINS",
+                   missingNames);
+        throw std::runtime_error("Required BRD0 GPIOs missing: " +
+                                 missingNames);
+    }
+
+    auto [board1ResetGpio, board1BootChainGpio] = makeBoardGpioNames(1);
+    auto missing =
+        findMissingGpios(*gpio, board1ResetGpio, board1BootChainGpio);
+    if (missing.size() == 1)
+    {
+        auto missingNames = joinGpios(missing);
+        lg2::error("PreBootDiag: Partial BRD1 GPIO availability: {PINS}",
+                   "PINS", missingNames);
+        throw std::runtime_error("Partial BRD1 GPIO availability: " +
+                                 missingNames);
+    }
+
+    activeResetGpios.push_back(std::move(board0ResetGpio));
+    activeBootChainGpios.push_back(std::move(board0BootChainGpio));
+
+    if (missing.size() == 2)
+    {
+        lg2::error(
+            "PreBootDiag: Optional BRD1 GPIOs missing, continuing with BRD0 "
+            "only: {PINS}",
+            "PINS", joinGpios(missing));
+        return;
+    }
+
+    activeResetGpios.push_back(std::move(board1ResetGpio));
+    activeBootChainGpios.push_back(std::move(board1BootChainGpio));
+}
+
 void PreBootDiag::initGpioSequence()
 {
     // Phase 1: assert reset on every board before touching any straps.
-    if (auto ec = gpio->setPins({istSysRstBrd0Gpio, istSysRstBrd1Gpio}, 0))
+    if (auto ec = gpio->setPins(activeResetGpios, 0))
     {
         throw std::runtime_error(std::string("Failed to assert reset: ") +
                                  ec.message());
@@ -371,8 +469,7 @@ void PreBootDiag::initGpioSequence()
     // remain driven by prebootdiag for the entire session — any reset the
     // CPUs see (now or later, before clearBootChainGpios) must sample
     // strap=1 at BootROM time. Released lines revert to kernel defaults.
-    if (auto ec =
-            gpio->holdPins({cpuBootChain0Brd0Gpio, cpuBootChain0Brd1Gpio}, 1))
+    if (auto ec = gpio->holdPins(activeBootChainGpios, 1))
     {
         throw std::runtime_error(
             std::string("Failed to hold boot-chain strap: ") + ec.message());
@@ -380,7 +477,7 @@ void PreBootDiag::initGpioSequence()
 
     // Phase 3: release reset; CPUs sample the new straps and enter
     // preboot-diag boot.
-    if (auto ec = gpio->setPins({istSysRstBrd0Gpio, istSysRstBrd1Gpio}, 1))
+    if (auto ec = gpio->setPins(activeResetGpios, 1))
     {
         throw std::runtime_error(std::string("Failed to release reset: ") +
                                  ec.message());
@@ -397,17 +494,17 @@ void PreBootDiag::clearBootChainGpios()
     // cleared sample, then release them so normal boot sees the kernel
     // default. Strap must transition to 0 before any reset edge so an
     // early/glitched BootROM sample can't re-latch diag mode.
-    gpio->holdPins({cpuBootChain0Brd0Gpio, cpuBootChain0Brd1Gpio}, 0);
-    gpio->releasePins({cpuBootChain0Brd0Gpio, cpuBootChain0Brd1Gpio});
+    gpio->holdPins(activeBootChainGpios, 0);
+    gpio->releasePins(activeBootChainGpios);
 
     // Phase 2: pulse reset asserted to stop the running diag firmware.
     // Transient: line is released back to the kernel after the write so
     // prebootdiag does not retain ownership of IST_SYS_RST.
-    gpio->setPins({istSysRstBrd0Gpio, istSysRstBrd1Gpio}, 0);
+    gpio->setPins(activeResetGpios, 0);
 
     // Phase 3: pulse reset deasserted; CPUs sample the cleared straps
     // and re-enter normal boot. Transient as well.
-    gpio->setPins({istSysRstBrd0Gpio, istSysRstBrd1Gpio}, 1);
+    gpio->setPins(activeResetGpios, 1);
 }
 
 boost::asio::awaitable<void> PreBootDiag::waitForPostCodes()

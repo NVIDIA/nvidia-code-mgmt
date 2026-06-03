@@ -18,8 +18,8 @@
 
 #include <gpiod.hpp>
 
-#include <initializer_list>
 #include <map>
+#include <span>
 #include <string>
 #include <system_error>
 
@@ -30,6 +30,8 @@ class GpioHandlerInterface
 {
   public:
     virtual ~GpioHandlerInterface() = default;
+    // Availability probe used before a session builds its active GPIO list.
+    virtual bool isPinAvailable(const std::string& lineName) = 0;
     // Transient write: request the line, drive `value`, release. The
     // kernel reclaims the line as soon as this returns. Use for IST_SYS_RST
     // pulses where prebootdiag must not retain ownership of the reset
@@ -47,26 +49,25 @@ class GpioHandlerInterface
     virtual void releaseAllPins() = 0;
     // Release a specific subset of held lines by name. Names not currently
     // held are silently skipped — best-effort cleanup.
-    virtual void releasePins(std::initializer_list<const char*> names) = 0;
+    virtual void releasePins(std::span<const std::string> names) = 0;
 
     // Batch sugar: apply `value` to every line in `names`. Continues
     // through the list on error so best-effort callers can discard the
     // return; returns the first non-success error_code encountered, or
     // success if all writes succeeded.
-    std::error_code setPins(std::initializer_list<const char*> names,
-                            int value);
-    std::error_code holdPins(std::initializer_list<const char*> names,
-                             int value);
+    std::error_code setPins(std::span<const std::string> names, int value);
+    std::error_code holdPins(std::span<const std::string> names, int value);
 };
 
 class LibGpioHandler : public GpioHandlerInterface
 {
   public:
     ~LibGpioHandler() override;
+    bool isPinAvailable(const std::string& lineName) override;
     std::error_code setPin(const std::string& lineName, int value) override;
     std::error_code holdPin(const std::string& lineName, int value) override;
     void releaseAllPins() override;
-    void releasePins(std::initializer_list<const char*> names) override;
+    void releasePins(std::span<const std::string> names) override;
 
   private:
     std::map<std::string, gpiod::line> heldLines;
