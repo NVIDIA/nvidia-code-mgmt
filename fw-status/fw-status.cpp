@@ -399,6 +399,33 @@ std::map<std::string, mcu_recovery_manager::MCUInfo> getMCUConfig()
 }
 
 /**
+ * @brief Re-evaluate health/state for every registered resource.
+ *
+ * Used as the recovery-complete callback for the SetRecoveryMode managers: once
+ * a force recovery is confirmed, the dependent resources (e.g. the USB RCM
+ * SBIOS_FMC/SBIOS_FW objects) must refresh so the firmware inventory reports
+ * the in-recovery state immediately, rather than waiting for a udev/MCTP/power
+ * event that may not occur on the recovery transition. updateHealth() only
+ * updates D-Bus properties (no object creation), so it is safe to call
+ * repeatedly.
+ */
+void refreshAllResourceHealth()
+{
+    for (auto& resource : resources)
+    {
+        try
+        {
+            resource->updateHealth();
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("Failed to refresh health for resource {PATH}: {ERR}",
+                       "PATH", resource->getObjectPath(), "ERR", e.what());
+        }
+    }
+}
+
+/**
  * @brief Publish the D-Bus recovery object
  *
  * @return None
@@ -413,13 +440,29 @@ void publishDBusRecoveryObject()
 
     auto mcuMap = getMCUConfig();
 
-    if (!mcuMap.empty())
+    // EntityManager publishes recovery configs incrementally, so this function
+    // may run more than once (see checkEntityManagerAvailability). Guard the
+    // MCU recovery manager singleton so a later invocation does not rebuild it.
+    if (!mcuRecoveryManager && !mcuMap.empty())
     {
         mcuRecoveryManager =
             std::make_shared<mcu_recovery_manager::MCURecoveryManager>();
         auto messageRegistry = std::make_unique<MessageRegistry>(getBus());
         mcuRecoveryManager->initialize(mcuMap, std::move(messageRegistry));
     }
+
+    // Recovery-mode managers (SetRecoveryMode interface) are not tracked in
+    // `resources`, so unlike resources they are not dedup'd by the object-path
+    // check below. Guard against re-creating a manager on a chassis path that
+    // already has one when this function runs again for late-published configs;
+    // re-registering an existing sdbusplus object would throw.
+    auto recoveryManagerExists = [](const std::string& path) {
+        return std::find_if(recoveryModeManagers.begin(),
+                            recoveryModeManagers.end(),
+                            [&path](const auto& mgr) {
+                                return mgr->getObjectPath() == path;
+                            }) != recoveryModeManagers.end();
+    };
 
     for (const auto& [emObjectPath, interfaces] : managedObjects)
     {
@@ -1130,7 +1173,8 @@ void publishDBusRecoveryObject()
 
             // Create MCURecoveryModeManager for D-Bus SetRecoveryMode interface
             if (mcuRecoveryManager && !forceRecoveryChassisObjPath.empty() &&
-                !deviceName.empty())
+                !deviceName.empty() &&
+                !recoveryManagerExists(forceRecoveryChassisObjPath))
             {
                 try
                 {
@@ -1143,6 +1187,8 @@ void publishDBusRecoveryObject()
                             getBus(), forceRecoveryChassisName,
                             forceRecoveryChassisObjPath, mcuRecoveryManager,
                             deviceName));
+                    recoveryModeManagers.back()->setRecoveryCompleteCallback(
+                        refreshAllResourceHealth);
                 }
                 catch (const std::exception& e)
                 {
@@ -1171,17 +1217,23 @@ void publishDBusRecoveryObject()
                 interfaces, usbRcmForceRecoveryObjInterface, "ConfigType");
             auto chassisObjPath = getChassisObjPath(forceRecoveryChassisName);
 
-            try
+            if (!recoveryManagerExists(chassisObjPath))
             {
-                recoveryModeManagers.push_back(
-                    std::make_unique<nvidia::recovery::USBRCMRecoveryManager>(
-                        getBus(), forceRecoveryChassisName, chassisObjPath,
-                        configType));
-            }
-            catch (const std::exception& e)
-            {
-                lg2::error("Failed to create USBRCMRecoveryManager: {ERR}",
-                           "ERR", e.what());
+                try
+                {
+                    recoveryModeManagers.push_back(
+                        std::make_unique<
+                            nvidia::recovery::USBRCMRecoveryManager>(
+                            getBus(), forceRecoveryChassisName, chassisObjPath,
+                            configType));
+                    recoveryModeManagers.back()->setRecoveryCompleteCallback(
+                        refreshAllResourceHealth);
+                }
+                catch (const std::exception& e)
+                {
+                    lg2::error("Failed to create USBRCMRecoveryManager: {ERR}",
+                               "ERR", e.what());
+                }
             }
         }
         else if (interfaces.contains(usbRcmObjInterface))
@@ -1266,6 +1318,22 @@ void publishDBusRecoveryObject()
                 "/xyz/openbmc_project/software/";
             const auto primaryObjPath = softwareObjPath + fmcComponentName;
             const auto companionObjPath = softwareObjPath + fwsComponentName;
+
+            // The top-of-loop dedup keys on the EM object path
+            // (e.g. FW_CPU_0), which differs from this resource's software path
+            // (e.g. SBIOS_FMC_0), so guard explicitly here. Without this, a
+            // re-publish for late-added configs would attempt to re-register an
+            // existing object and fail with "File exists".
+            if (std::find_if(resources.begin(), resources.end(),
+                             [&primaryObjPath](const auto& resource) {
+                                 return resource->getObjectPath() ==
+                                        primaryObjPath;
+                             }) != resources.end())
+            {
+                lg2::info("USB RCM resource already registered: {PATH}", "PATH",
+                          primaryObjPath);
+                continue;
+            }
 
             resources.push_back(std::make_unique<USBRcmResource>(
                 getBus(), primaryObjPath, eid, usbPort, companionObjPath,
@@ -1467,23 +1535,26 @@ bool checkForRecoveryConfigEMObjects()
 
 /**
  * @brief Checks the availability of the EntityManager service and triggers
- *        the publishing of the D-Bus recovery object based on the presence
- *        of recovery configurations.
+ *        the publishing of the D-Bus recovery objects.
  *
- * This function first attempts to retrieve the recovery configurations using
- * the 'checkForRecoveryConfigEMObjects()' function. If no configurations are
- * found (i.e., the vector is empty), it sets up a D-Bus match rule to listen
- * for the addition of specific interfaces on the EntityManager service. When
- * such an interface is added, the function will publish the D-Bus recovery
- * object via the 'publishDBusRecoveryObject()' function.
+ * EntityManager publishes recovery configuration objects incrementally, and the
+ * different recovery types (Glacier, MCU, USBRCM, ...) all share the generic
+ * 'recoveryConfigIntfName' marker interface. A single snapshot taken when the
+ * first config appears can therefore miss configs (e.g. USBRCM) that are
+ * published a moment later, which would leave their D-Bus objects (including
+ * the USBRCM 'com.nvidia.SetRecoveryMode' interface on the chassis)
+ * unregistered.
  *
- * If the recovery configurations are already present, the function immediately
- * publishes the DBus recovery object without waiting for any interface to be
- * added.
+ * To be robust against this startup race, the interfacesAdded match is kept
+ * armed for the lifetime of the service and 'publishDBusRecoveryObject()' is
+ * (re)invoked every time a recovery config interface is added. That function is
+ * idempotent: existing resources and recovery-mode managers are not recreated,
+ * so late-published configs are picked up while already-created ones are left
+ * untouched. Any configs already present are published immediately as well.
  */
 void checkEntityManagerAvailability()
 {
-    if (!checkForRecoveryConfigEMObjects())
+    if (!entityManagerServiceMatch)
     {
         entityManagerServiceMatch = std::make_unique<sdbusplus::bus::match_t>(
             getBus(), MatchRules::interfacesAdded(entityManagerObjManager),
@@ -1496,14 +1567,16 @@ void checkEntityManagerAvailability()
                 {
                     if (interfaceName == recoveryConfigIntfName)
                     {
+                        // Idempotent: only newly-published configs are acted
+                        // on.
                         publishDBusRecoveryObject();
-                        entityManagerServiceMatch.reset();
                         break;
                     }
                 }
             });
     }
-    else
+
+    if (checkForRecoveryConfigEMObjects())
     {
         publishDBusRecoveryObject();
     }

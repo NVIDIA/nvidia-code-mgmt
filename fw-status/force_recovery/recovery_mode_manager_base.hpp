@@ -11,6 +11,7 @@
 #include <sdbusplus/server.hpp>
 #include <xyz/openbmc_project/Common/error.hpp>
 
+#include <functional>
 #include <string>
 
 namespace nvidia::recovery
@@ -40,6 +41,18 @@ class RecoveryModeManagerBase : public SetRecoveryModeInherit
         return objectPath;
     }
 
+    /** @brief Register a callback invoked after a force recovery completes
+     *  successfully. Used to refresh dependent resource health so Redfish
+     *  reflects the new in-recovery state immediately: a device that was
+     *  already enumerated before recovery transitions into recovery via a udev
+     *  'change' (which the monitor ignores) rather than an 'add', so nothing
+     *  else re-triggers the resource's updateHealth().
+     */
+    void setRecoveryCompleteCallback(std::function<void()> cb)
+    {
+        onRecoveryComplete = std::move(cb);
+    }
+
     void setRecoveryMode() override
     {
         lg2::info("Performing force recovery for {CHASSIS}", "CHASSIS",
@@ -59,12 +72,30 @@ class RecoveryModeManagerBase : public SetRecoveryModeInherit
             throw sdbusplus::xyz::openbmc_project::Common::Error::
                 InternalFailure();
         }
+
+        // Recovery confirmed. Refresh dependent resource health now so the
+        // firmware inventory reflects the in-recovery state without waiting for
+        // an external event that may never arrive.
+        if (onRecoveryComplete)
+        {
+            try
+            {
+                onRecoveryComplete();
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error(
+                    "Recovery-complete callback failed for {CHASSIS}: {ERR}",
+                    "CHASSIS", chassisName, "ERR", e.what());
+            }
+        }
     }
 
   protected:
     virtual void performForceRecovery() = 0;
     std::string chassisName;
     std::string objectPath;
+    std::function<void()> onRecoveryComplete;
 };
 
 } // namespace nvidia::recovery
