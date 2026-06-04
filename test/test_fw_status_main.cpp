@@ -2089,9 +2089,10 @@ TEST_F(FWStatusMainTest, CheckEntityManagerAvailabilityPublishesOnSignal)
     if (resources.empty())
     {
         EXPECT_NO_THROW(publishDBusRecoveryObject());
-        entityManagerServiceMatch.reset();
     }
-    EXPECT_EQ(entityManagerServiceMatch, nullptr);
+    // The match stays armed for the service lifetime (see the enumeration-race
+    // fix), so it remains non-null after publishing rather than being reset.
+    EXPECT_NE(entityManagerServiceMatch, nullptr);
     ASSERT_EQ(resources.size(), 1u);
 }
 
@@ -2112,7 +2113,10 @@ TEST_F(FWStatusMainTest,
         mctpEndpointIntfName, "EID", static_cast<uint8_t>(46));
 
     checkEntityManagerAvailability();
-    EXPECT_EQ(entityManagerServiceMatch, nullptr);
+    // The interfacesAdded match is kept armed for the service lifetime, even
+    // when recovery configs are already present, so that configs published
+    // later (EntityManager publishes incrementally) are still picked up.
+    EXPECT_NE(entityManagerServiceMatch, nullptr);
     ASSERT_EQ(resources.size(), 1u);
 }
 
