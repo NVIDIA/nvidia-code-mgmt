@@ -25,22 +25,102 @@
 namespace
 {
 constexpr auto gpioEventRetryInterval = std::chrono::seconds(5);
+constexpr auto defaultPollingInterval = std::chrono::milliseconds(1000);
+constexpr auto minPollingInterval = std::chrono::milliseconds(100);
+
+GPIOResource::MonitorMode parseMonitorMode(const std::string& monitorMode)
+{
+    if (monitorMode.empty() || monitorMode == "Interrupt")
+    {
+        return GPIOResource::MonitorMode::Interrupt;
+    }
+
+    if (monitorMode == "Polling")
+    {
+        return GPIOResource::MonitorMode::Polling;
+    }
+
+    lg2::warning("Invalid GPIO monitor mode {MODE}. Use Interrupt as default",
+                 "MODE", monitorMode);
+
+    return GPIOResource::MonitorMode::Interrupt;
 }
+
+int parseGPIOPolarity(const std::string& gpioPolarity)
+{
+    if (gpioPolarity.empty() || gpioPolarity == "ActiveHigh")
+    {
+        return gpiod::line::ACTIVE_HIGH;
+    }
+
+    if (gpioPolarity == "ActiveLow")
+    {
+        return gpiod::line::ACTIVE_LOW;
+    }
+
+    lg2::warning(
+        "Invalid type for GPIO polarity {TYPE}. Use ActiveHigh as default",
+        "TYPE", gpioPolarity);
+    return gpiod::line::ACTIVE_HIGH;
+}
+
+std::chrono::milliseconds
+    getPollingInterval(std::optional<uint64_t> pollingIntervalMs)
+{
+    if (!pollingIntervalMs.has_value())
+    {
+        return defaultPollingInterval;
+    }
+
+    if (pollingIntervalMs.value() == 0)
+    {
+        lg2::warning("PollingIntervalMs is 0. Use {VALUE} ms as default",
+                     "VALUE", defaultPollingInterval.count());
+        return defaultPollingInterval;
+    }
+
+    auto interval = std::chrono::milliseconds(pollingIntervalMs.value());
+    if (interval < minPollingInterval)
+    {
+        lg2::warning(
+            "PollingIntervalMs {VALUE} ms is too small. Clamp to {MIN} ms",
+            "VALUE", interval.count(), "MIN", minPollingInterval.count());
+        return minPollingInterval;
+    }
+
+    return interval;
+}
+} // namespace
 
 GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                            sdeventplus::Event& event, const uint64_t i2cBus,
                            const uint64_t i2cAddress, uint8_t eid,
-                           const std::string& gpio, const std::string& target) :
+                           const std::string& gpio, const std::string& target,
+                           const std::string& monitorModeConfig,
+                           std::optional<uint64_t> pollingIntervalMs,
+                           const std::string& gpioPolarity) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
-    systemTarget(target), isEROT(true)
+    systemTarget(target), isEROT(true),
+    polarity(parseGPIOPolarity(gpioPolarity)),
+    monitorMode(parseMonitorMode(monitorModeConfig)),
+    pollingInterval(getPollingInterval(pollingIntervalMs))
 {
-    isFirmwareInRecovery = false;
     glacierRecoveryObj =
         std::make_unique<glacier_recovery_tool::glacier_recovery_commands::
                              GlacierRecoveryCommands>(i2cBus, i2cAddress,
                                                       false);
 
-    registerGPIOEvent();
+    lg2::info("GPIO {GPIO} monitor mode: {MODE}", "GPIO", gpioLineName, "MODE",
+              monitorMode == MonitorMode::Polling ? "Polling" : "Interrupt");
+
+    if (monitorMode == MonitorMode::Polling)
+    {
+        startGPIOPolling();
+    }
+    else if (!registerGPIOEvent())
+    {
+        startGPIOEventRetry();
+    }
 }
 
 GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
@@ -52,8 +132,8 @@ GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                            const std::string chassisObjPath,
                            std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
-    risingTarget(risingTarget), fallingTarget(fallingTarget), isEROT(false),
-    mctpVdmHelper(mctpVdmHelper)
+    risingTarget(risingTarget), fallingTarget(fallingTarget),
+    polarity(parseGPIOPolarity(gpioPolarity)), mctpVdmHelper(mctpVdmHelper)
 {
     if (!chassisObjPath.empty())
     {
@@ -63,25 +143,24 @@ GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
             BootStatusServer::BootStatusTypes::ERoTBootStatus);
     }
 
-    if (gpioPolarity == "ActiveHigh")
-    {
-        polarity = gpiod::line::ACTIVE_HIGH;
-    }
-    else if (gpioPolarity == "ActiveLow")
-    {
-        polarity = gpiod::line::ACTIVE_LOW;
-    }
-    else
-    {
-        lg2::error(
-            "Invalid type for GPIO polarity {TYPE}. Use ActiveHigh as default",
-            "TYPE", gpioPolarity);
-        polarity = gpiod::line::ACTIVE_HIGH;
-    }
-
     initAPHealth();
 
-    registerGPIOEvent();
+    if (!registerGPIOEvent())
+    {
+        startGPIOEventRetry();
+    }
+}
+
+GPIOResource::~GPIOResource()
+{
+    stopGPIOPolling();
+    stopGPIOEventRetry();
+    clearGPIOEvent();
+
+    if (co && co.done())
+    {
+        co.destroy();
+    }
 }
 
 void GPIOResource::waitForGPIOEvent()
@@ -129,8 +208,9 @@ void GPIOResource::clearGPIOEvent()
         }
         catch (const std::exception& e)
         {
-            lg2::warning("Failed to disable GPIO event source for {GPIO}: {ERR}",
-                         "GPIO", gpioLineName, "ERR", e.what());
+            lg2::warning(
+                "Failed to disable GPIO event source for {GPIO}: {ERR}", "GPIO",
+                gpioLineName, "ERR", e.what());
         }
 
         gpioEvent.reset();
@@ -150,6 +230,8 @@ void GPIOResource::clearGPIOEvent()
 
         gpioLine = gpiod::line{};
     }
+
+    lastGpioValue.reset();
 }
 
 bool GPIOResource::registerGPIOEvent()
@@ -247,6 +329,145 @@ void GPIOResource::retryGPIOEventRegistration()
     updateHealth();
 }
 
+void GPIOResource::startGPIOPolling()
+{
+    lg2::info("Starting GPIO polling for {GPIO} every {INTERVAL_MS} ms", "GPIO",
+              gpioLineName, "INTERVAL_MS", pollingInterval.count());
+
+    if (!gpioPollingTimer)
+    {
+        gpioPollingTimer = std::make_unique<sdbusplus::Timer>(
+            sdEvent.get(), std::bind(&GPIOResource::pollGpio, this));
+    }
+
+    if (!requestGPIOInputLine())
+    {
+        lg2::warning(
+            "Initial acquisition of GPIO {GPIO} failed; polling will retry",
+            "GPIO", gpioLineName);
+    }
+
+    if (gpioPollingTimer->isRunning())
+    {
+        return;
+    }
+
+    try
+    {
+        gpioPollingTimer->start(pollingInterval, true);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to start GPIO polling timer for {GPIO}: {ERR}",
+                   "GPIO", gpioLineName, "ERR", e.what());
+    }
+}
+
+void GPIOResource::stopGPIOPolling()
+{
+    if (!gpioPollingTimer || !gpioPollingTimer->isRunning())
+    {
+        return;
+    }
+
+    auto rc = gpioPollingTimer->stop();
+    if (rc)
+    {
+        lg2::error("Failed to stop GPIO polling timer for {GPIO}. RC={RC}",
+                   "GPIO", gpioLineName, "RC", rc);
+    }
+}
+
+bool GPIOResource::requestGPIOInputLine()
+{
+    if (gpioLine)
+    {
+        return true;
+    }
+
+    gpioLine = gpiod::find_line(gpioLineName);
+    if (!gpioLine)
+    {
+        lg2::error("Failed to find the {GPIO} line", "GPIO", gpioLineName);
+        return false;
+    }
+
+    try
+    {
+        gpioLine.request(
+            {"fw-status", gpiod::line_request::DIRECTION_INPUT, {}});
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to request line for {GPIO}: {ERROR}", "GPIO",
+                   gpioLineName, "ERROR", e.what());
+        gpioLine = gpiod::line{};
+        return false;
+    }
+
+    return true;
+}
+
+void GPIOResource::pollGpio()
+{
+    if (!requestGPIOInputLine())
+    {
+        return;
+    }
+
+    int value = 0;
+    try
+    {
+        value = gpioLine.get_value();
+    }
+    catch (const std::system_error& e)
+    {
+        if (e.code().value() == ENODEV)
+        {
+            lg2::warning(
+                "GPIO line {GPIO} is no longer available while polling: {ERROR}",
+                "GPIO", gpioLineName, "ERROR", e.what());
+        }
+        else
+        {
+            lg2::error("Failed to read GPIO {GPIO} while polling: {ERROR}",
+                       "GPIO", gpioLineName, "ERROR", e.what());
+        }
+
+        clearGPIOEvent();
+        return;
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to read GPIO {GPIO} while polling: {ERROR}", "GPIO",
+                   gpioLineName, "ERROR", e.what());
+        clearGPIOEvent();
+        return;
+    }
+
+    const auto previousValue = lastGpioValue;
+    const bool changed =
+        previousValue.has_value() && previousValue.value() != value;
+    lastGpioValue = value;
+
+    if (!previousValue.has_value())
+    {
+        updateERoTHealth();
+        return;
+    }
+
+    if (changed)
+    {
+        updateERoTHealth();
+    }
+}
+
+bool GPIOResource::isGPIOActive(int value) const
+{
+    return (value && polarity == gpiod::line::ACTIVE_HIGH) ||
+           (!value && polarity == gpiod::line::ACTIVE_LOW);
+}
+
 void GPIOResource::updateERoTHealth()
 {
     if (isChassisPoweredOff())
@@ -336,9 +557,36 @@ void GPIOResource::updateAPHealth(uint8_t type)
             }
             break;
         case LEVEL_TRIGGER:
-            val = gpioLine.get_value();
-            if ((val && polarity == gpiod::line::ACTIVE_HIGH) ||
-                (!val && polarity == gpiod::line::ACTIVE_LOW))
+            try
+            {
+                val = gpioLine.get_value();
+            }
+            catch (const std::system_error& e)
+            {
+                if (e.code().value() == ENODEV)
+                {
+                    lg2::warning(
+                        "GPIO line {GPIO} is no longer available while reading level: {ERROR}",
+                        "GPIO", gpioLineName, "ERROR", e.what());
+                }
+                else
+                {
+                    lg2::error("Failed to read GPIO {GPIO} level: {ERROR}",
+                               "GPIO", gpioLineName, "ERROR", e.what());
+                }
+
+                clearGPIOEvent();
+                return;
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error("Failed to read GPIO {GPIO} level: {ERROR}", "GPIO",
+                           gpioLineName, "ERROR", e.what());
+                clearGPIOEvent();
+                return;
+            }
+
+            if (isGPIOActive(val))
             {
                 healthy = true;
 
@@ -398,27 +646,18 @@ void GPIOResource::updateAPHealth(uint8_t type)
 void GPIOResource::initAPHealth()
 {
     lg2::info("Initializing... {OBJ} status", "OBJ", path.c_str());
-    gpioLine = gpiod::find_line(gpioLineName);
-    if (!gpioLine)
+    if (!requestGPIOInputLine())
     {
-        lg2::error("Failed to find the {GPIO} line", "GPIO", gpioLineName);
         return;
     }
 
-    try
-    {
-        gpioLine.request(
-            {"fw-status", gpiod::line_request::DIRECTION_INPUT, {}});
-    }
-    catch (const std::exception& e)
-    {
-        lg2::error("Failed to request line for {GPIO}: {ERROR}", "GPIO",
-                   gpioLineName, "ERROR", e.what());
-        return;
-    }
     updateAPHealth(LEVEL_TRIGGER);
 
-    gpioLine.release();
+    if (gpioLine)
+    {
+        gpioLine.release();
+        gpioLine = gpiod::line{};
+    }
 }
 
 mctp_vdm::requester::Coroutine GPIOResource::updateBootStatusAsync()

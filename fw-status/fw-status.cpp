@@ -1068,9 +1068,41 @@ void publishDBusRecoveryObject()
                     getUint64(interfaces, gpioObjInterface, "I2CAddress");
                 const auto target =
                     getString(interfaces, gpioObjInterface, "Target");
+                std::string monitorMode;
+                if (hasProperty(interfaces, gpioObjInterface, "MonitorMode"))
+                {
+                    monitorMode =
+                        getString(interfaces, gpioObjInterface, "MonitorMode");
+                }
+
+                std::optional<uint64_t> pollingIntervalMs;
+                if (hasProperty(interfaces, gpioObjInterface,
+                                "PollingIntervalMs"))
+                {
+                    const auto& value =
+                        interfaces.at(gpioObjInterface).at("PollingIntervalMs");
+                    if (const auto* interval = std::get_if<uint64_t>(&value))
+                    {
+                        pollingIntervalMs = *interval;
+                    }
+                    else
+                    {
+                        lg2::warning(
+                            "Invalid PollingIntervalMs type for {PATH}; using default polling interval",
+                            "PATH", emObjectPath);
+                    }
+                }
+
+                std::string polarity;
+                if (hasProperty(interfaces, gpioObjInterface, "Polarity"))
+                {
+                    polarity =
+                        getString(interfaces, gpioObjInterface, "Polarity");
+                }
+
                 resources.push_back(std::make_unique<GPIOResource>(
                     getBus(), objPath, event, i2cBus, i2cAddress, eid, gpio,
-                    target));
+                    target, monitorMode, pollingIntervalMs, polarity));
             }
             else
             {
