@@ -11,6 +11,7 @@
 #include <chrono>
 #include <coroutine>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -84,7 +85,8 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversERoTAndAPBranches)
         glacier_recovery_tool::glacier_recovery_commands::RecoveryResult::Ok));
 
     GPIOResource erot(bus, "/xyz/openbmc_project/software/erot-gpio", event, 1,
-                      0x50, 30, "EROT_GPIO", "erot.target");
+                      0x50, 30, "EROT_GPIO", "erot.target", "Interrupt",
+                      std::nullopt, "ActiveHigh");
     static_cast<BaseResource&>(erot).updateHealth();
     EXPECT_EQ(erot.state(), OperationalStatusServer::StateType::StandbyOffline);
 
@@ -425,7 +427,8 @@ TEST_F(FWStatusGlacierGpioTest,
                                  RecoveryResult::FirmwareNotInRecovery));
     GPIOResource erotEvent(bus, "/xyz/openbmc_project/software/erot-event",
                            event, 2, 0x51, 32, "EROT_EVENT_GPIO",
-                           "erot-event.target");
+                           "erot-event.target", "Interrupt", std::nullopt,
+                           "ActiveHigh");
     test::fw_status_fake_glacier::pushResult(
         static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
                                  RecoveryResult::FirmwareNotInRecovery));
@@ -438,7 +441,8 @@ TEST_F(FWStatusGlacierGpioTest,
                                  RecoveryResult::FirmwareNotInRecovery));
     GPIOResource erotBadFd(bus, "/xyz/openbmc_project/software/erot-badfd",
                            event, 3, 0x52, 33, "EROT_BADFD_GPIO",
-                           "erot-badfd.target");
+                           "erot-badfd.target", "Interrupt", std::nullopt,
+                           "ActiveHigh");
     EXPECT_EQ(erotBadFd.gpioEvent, nullptr);
 
     test::fw_status_fake_gpio::lines["EROT_OFF_GPIO"] = {};
@@ -447,7 +451,8 @@ TEST_F(FWStatusGlacierGpioTest,
         static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
                                  RecoveryResult::FirmwareNotInRecovery));
     GPIOResource erotOff(bus, "/xyz/openbmc_project/software/erot-off", event,
-                         4, 0x53, 34, "EROT_OFF_GPIO", "erot-off.target");
+                         4, 0x53, 34, "EROT_OFF_GPIO", "erot-off.target",
+                         "Interrupt", std::nullopt, "ActiveHigh");
     erotOff.setConnectedToChassis(true);
     erotOff.setChassisPowerState(
         "xyz.openbmc_project.State.Chassis.PowerState.Off");

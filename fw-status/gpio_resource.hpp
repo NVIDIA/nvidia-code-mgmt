@@ -29,7 +29,9 @@
 #include <sdeventplus/source/event.hpp>
 #include <sdeventplus/source/io.hpp>
 
+#include <chrono>
 #include <memory>
+#include <optional>
 #include <unordered_set>
 
 /** @class GPIOResource
@@ -37,6 +39,14 @@
  */
 class GPIOResource : public BaseResource
 {
+  public:
+    enum class MonitorMode : uint8_t
+    {
+        Interrupt,
+        Polling
+    };
+
+  private:
     enum : uint8_t
     {
         LEVEL_TRIGGER = 0,
@@ -56,12 +66,18 @@ class GPIOResource : public BaseResource
      * @param eid - MCTP Endpoint ID of the Resource
      * @param gpio - GPIO line name
      * @param target - systemd unit to be executed when ERoT is recovered
+     * @param monitorMode - GPIO monitor mode
+     * @param pollingIntervalMs - GPIO polling interval in milliseconds
+     * @param gpioPolarity - GPIO polarity
      *
      */
     GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                  sdeventplus::Event& event, const uint64_t i2cBus,
                  const uint64_t i2cAddress, uint8_t eid,
-                 const std::string& gpio, const std::string& target);
+                 const std::string& gpio, const std::string& target,
+                 const std::string& monitorMode,
+                 std::optional<uint64_t> pollingIntervalMs,
+                 const std::string& gpioPolarity);
 
     /** @brief Constructor for the GPIOResource Class - Monitoring GPIO
      * Interrupt for Non-ERoT devices Updates Health and Status of the D-Bus
@@ -89,13 +105,7 @@ class GPIOResource : public BaseResource
                  const std::string chassisObjPath,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
 
-    ~GPIOResource() override
-    {
-        if (co && co.done())
-        {
-            co.destroy();
-        }
-    }
+    ~GPIOResource() override;
 
   private:
     sdeventplus::Event& sdEvent;
@@ -104,13 +114,17 @@ class GPIOResource : public BaseResource
     std::string systemTarget;
     std::string risingTarget;
     std::string fallingTarget;
-    bool isFirmwareInRecovery;
-    bool isEROT;
+    bool isFirmwareInRecovery = false;
+    bool isEROT = false;
     int polarity;
+    MonitorMode monitorMode = MonitorMode::Interrupt;
+    std::chrono::milliseconds pollingInterval{0};
+    std::optional<int> lastGpioValue;
     gpiod::line gpioLine;
     gpiod::line_event lineEvent;
     std::unique_ptr<sdeventplus::source::IO> gpioEvent;
     std::unique_ptr<sdbusplus::Timer> gpioRetryTimer;
+    std::unique_ptr<sdbusplus::Timer> gpioPollingTimer;
     std::unique_ptr<glacier_recovery_tool::glacier_recovery_commands::
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
@@ -149,6 +163,32 @@ class GPIOResource : public BaseResource
      *
      */
     void retryGPIOEventRegistration();
+
+    /** @brief Start polling the GPIO input line.
+     *
+     */
+    void startGPIOPolling();
+
+    /** @brief Stop GPIO polling.
+     *
+     */
+    void stopGPIOPolling();
+
+    /** @brief Request the GPIO line as input for polling.
+     *
+     * @return true if the GPIO line is ready for get_value(), false otherwise.
+     */
+    bool requestGPIOInputLine();
+
+    /** @brief Poll the GPIO line and update health when the value changes.
+     *
+     */
+    void pollGpio();
+
+    /** @brief Check whether a GPIO value matches the configured active level.
+     *
+     */
+    bool isGPIOActive(int value) const;
 
     /** @brief function to update Health and State of ERoT D-Bus object
      *         Uses Glacier Crisis Recovery Protocol to fetch device status
@@ -216,7 +256,14 @@ class GPIOResource : public BaseResource
     {
         if (isEROT)
         {
-            updateERoTHealth();
+            if (monitorMode == MonitorMode::Polling)
+            {
+                pollGpio();
+            }
+            else
+            {
+                updateERoTHealth();
+            }
         }
         else if (isChassisPoweredOff())
         {
