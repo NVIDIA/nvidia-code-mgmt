@@ -615,7 +615,7 @@ boost::asio::awaitable<void> PreBootDiag::listenForEvents()
                 co_await handleResultReceived(event.payload);
                 break;
             case StateType::SessionEnded:
-                co_await dbus->setDiagStatus(DiagStatus::NotStarted);
+                co_await dbus->setDiagStatus(DiagStatus::Completed);
                 co_await dbus->setDiagMode(false);
                 lg2::info("PreBootDiag: Diagnostic session ended");
                 co_return;
@@ -792,7 +792,6 @@ boost::asio::awaitable<void>
 
     resultsArray.push_back(newResult);
     co_await dbus->setSettingsStringProperty("DiagResult", resultsArray.dump());
-    co_await dbus->setDiagStatus(DiagStatus::Completed);
     lg2::info("PreBootDiag: Result appended for TID={TID}, total={N}", "TID",
               lg2::hex, newResult.value("Tid", static_cast<uint8_t>(0)), "N",
               resultsArray.size());

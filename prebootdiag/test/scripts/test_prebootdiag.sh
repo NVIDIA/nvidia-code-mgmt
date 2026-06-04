@@ -144,6 +144,26 @@ function wait_for_status() {
     fail "DiagStatus expected $expected within ${timeout}s, got: $status"
 }
 
+function wait_for_diag_result_contains() {
+    local pattern=$1
+    local timeout=${2:-10}
+    local label=${3:-"DiagResult contains '$pattern'"}
+    local result
+    local elapsed=0
+    while [ "$elapsed" -lt "$timeout" ]; do
+        result=$(busctl get-property "$SETTINGS_SVC" "$DIAG_OBJ" "$DIAG_IFACE" DiagResult 2>&1) || true
+        if echo "$result" | grep -q "$pattern"; then
+            echo "  DiagResult: $result (after ${elapsed}s)"
+            pass "$label"
+            return 0
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    echo "  DiagResult: $result (timed out after ${timeout}s)"
+    fail "$label"
+}
+
 function mark_journal() {
     # Save current journal line count as a checkpoint.
     # check_journal_for will only search lines added after this mark.
@@ -712,10 +732,11 @@ check_redfish_status 5 # RF_48 (TestRunning)
 
 step "Trigger test result -> ResultReceived (SADD TC-20)"
 trigger_result
-wait_for_status 2 10 # Completed
-check_redfish_status 2 # RF_45 (Completed)
+wait_for_status 5 10 # Still TestRunning until SessionEnded
+check_redfish_status 5 # RF_48 (TestRunning)
 
 step "Verify DiagResult content (SADD FR-11, FR-13)"
+wait_for_diag_result_contains 'Tid' 10 "DiagResult populated after ResultReceived"
 result=$(busctl get-property "$SETTINGS_SVC" "$DIAG_OBJ" "$DIAG_IFACE" DiagResult 2>&1) || true
 echo "  DiagResult: $result"
 if echo "$result" | grep -q '^s "'; then
@@ -737,8 +758,8 @@ check_redfish_result_present # RF_42 (DiagResult visible via Redfish GET)
 
 step "Trigger finished -> SessionEnded (session end)"
 trigger_finished
-wait_for_status 4 10 # NotStarted
-check_redfish_status 4 # RF_47 (Not Started)
+wait_for_status 2 10 # Completed
+check_redfish_status 2 # RF_45 (Completed)
 
 # ─────────────────────────────────────────────
 # Verify clean state after session
@@ -783,9 +804,9 @@ info "Sending heartbeat 3 of 3"
 trigger_heartbeat
 wait_for_status 5 10 # TestRunning
 trigger_result
-wait_for_status 2 10 # Completed
+wait_for_status 5 10 # Still TestRunning until SessionEnded
 trigger_finished
-wait_for_status 4 10 # NotStarted
+wait_for_status 2 10 # Completed
 pass "Multiple heartbeats handled correctly"
 
 step "Multiple TID config requests (SADD Flow 3 per-TID loop)"
@@ -809,7 +830,7 @@ wait_settle
 trigger_result
 wait_settle
 trigger_finished
-wait_for_status 4 10 # NotStarted
+wait_for_status 2 10 # Completed
 pass "Multiple TID config requests handled correctly"
 # Restore default config for subsequent tests
 seed_configs
@@ -947,14 +968,14 @@ else
     fail "DiagResult missing results — not all 3 TIDs present"
 fi
 trigger_finished
-wait_for_status 4 10 # NotStarted
+wait_for_status 2 10 # Completed
 pass "Per-TID config filtering and result accumulation completed"
 
 step "Error result from firmware (testplan.py Test 1 — non-zero Result code)"
 # Use valid configs so the session reaches the result-receiving stage. The
 # "error" semantic is exercised via trigger_result_with 1 15 — the Result
 # field carries the firmware error code while the session itself completes
-# normally (service treats any result as completion).
+# normally when SessionEnded arrives.
 ensure_fresh_session
 seed_configs
 enable_via_redfish >/dev/null 2>&1 || true
@@ -969,7 +990,8 @@ trigger_heartbeat
 wait_settle
 # Firmware returns error result (15 = 0xf) for invalid duration level
 trigger_result_with 1 15
-wait_for_status 2 10 # Completed (service treats any result as completion)
+wait_for_status 5 10 # Still TestRunning until SessionEnded
+wait_for_diag_result_contains 'Result' 10 "DiagResult populated after error result"
 result=$(busctl get-property "$SETTINGS_SVC" "$DIAG_OBJ" "$DIAG_IFACE" DiagResult 2>&1) || true
 echo "  DiagResult: $result"
 if echo "$result" | grep -q 'Result'; then
@@ -978,8 +1000,8 @@ else
     fail "DiagResult not set after error result"
 fi
 trigger_finished
-wait_for_status 4 10 # NotStarted
-pass "Error result handled gracefully — session completed and reset"
+wait_for_status 2 10 # Completed
+pass "Error result handled gracefully — session completed"
 
 mark_journal
 step "Invalid SystemConfig rejected by nsmd aborts session (DIAG_SYS_CONFIG_ERR)"
@@ -1024,7 +1046,7 @@ sleep 1
 trigger_finished
 # Polling wait — rapid-fire events queue up while the service awaits
 # Async.Set completion on each config push (can take 4–5s under load).
-wait_for_status 4 15 # NotStarted (session completed)
+wait_for_status 2 15 # Completed
 result=$(busctl get-property "$SETTINGS_SVC" "$DIAG_OBJ" "$DIAG_IFACE" DiagResult 2>&1) || true
 echo "  DiagResult: $result"
 if echo "$result" | grep -q 'Tid'; then
@@ -1050,7 +1072,7 @@ trigger_heartbeat
 trigger_result_with 1 0
 sleep 1
 trigger_finished
-wait_for_status 4 15
+wait_for_status 2 15
 result=$(busctl get-property "$SETTINGS_SVC" "$DIAG_OBJ" "$DIAG_IFACE" DiagResult 2>&1) || true
 echo "  DiagResult: $result"
 if echo "$result" | grep -q 'Tid'; then
@@ -1077,7 +1099,7 @@ trigger_heartbeat
 trigger_result_with 1 0
 sleep 1
 trigger_finished
-wait_for_status 4 15
+wait_for_status 2 15
 result=$(busctl get-property "$SETTINGS_SVC" "$DIAG_OBJ" "$DIAG_IFACE" DiagResult 2>&1) || true
 echo "  DiagResult: $result"
 if echo "$result" | grep -q 'Tid'; then
@@ -1107,7 +1129,7 @@ trigger_finished
 # Polling wait — rapid-fire events queue up while the service awaits
 # Async.Set completion on the config push (which can take 4–5s under
 # load); single sleep+check races the session-end transition.
-wait_for_status 4 15
+wait_for_status 2 15
 result=$(busctl get-property "$SETTINGS_SVC" "$DIAG_OBJ" "$DIAG_IFACE" DiagResult 2>&1) || true
 echo "  DiagResult: $result"
 if echo "$result" | grep -q 'Result'; then

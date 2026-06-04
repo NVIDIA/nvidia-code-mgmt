@@ -31,7 +31,7 @@ using ::testing::Return;
 using HeartbeatTest = PreBootDiagFixture;
 
 // Multiple heartbeats before a result — all accepted, DiagStatus transitions
-// to TestRunning on the first one and stays there until Result arrives.
+// to TestRunning on the first one and stays there until SessionEnded arrives.
 TEST_F(HeartbeatTest, MultipleHeartbeatsBeforeResult)
 {
     EXPECT_CALL(*mockGpio, setPin(_, _))
@@ -47,7 +47,6 @@ TEST_F(HeartbeatTest, MultipleHeartbeatsBeforeResult)
         .Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::TestRunning)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Completed)).Times(1);
-    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::NotStarted)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
 
     EXPECT_CALL(*mockDbus, mockGetSettingsStringProperty("DiagResult"))

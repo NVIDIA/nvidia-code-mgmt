@@ -59,7 +59,6 @@ TEST_F(PreBootDiagTest, HappyPathFullSession)
     EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::TestRunning)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Completed)).Times(1);
-    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::NotStarted)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
 
     EXPECT_CALL(*mockDbus, mockGetSettingsStringProperty("DiagSystemConfig"))
@@ -185,7 +184,7 @@ TEST_F(PreBootDiagTest, UpdateGateIdempotent)
     EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
         .Times(1);
-    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::NotStarted)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Completed)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
 
     auto diag = create();
@@ -417,7 +416,7 @@ TEST_F(PreBootDiagTest, BootChainGpiosDrivenOnEnable)
     EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
         .Times(1);
-    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::NotStarted)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Completed)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
 
     auto diag = createAndStart();
@@ -453,7 +452,7 @@ TEST_F(PreBootDiagTest, SingleBoardGpiosUsedWhenBrd1Missing)
     EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
         .Times(1);
-    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::NotStarted)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Completed)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
 
     auto diag = createAndStart();
@@ -615,8 +614,7 @@ TEST_F(PreBootDiagTest, ResultAccumulationMultipleTids)
     EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
         .Times(1);
-    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Completed)).Times(3);
-    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::NotStarted)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Completed)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
 
     // Each handleResultReceived reads existing DiagResult then writes updated
