@@ -58,6 +58,13 @@ struct ChipTiming
     int writeTimeSeconds;
 };
 
+enum class SpiFailureReason
+{
+    None,
+    HostPowerNotOff,
+    Unavailable,
+};
+
 class Spi : public SpiIntf
 {
     enum class Operation
@@ -134,9 +141,10 @@ class Spi : public SpiIntf
      * @brief function to start SPI operation
      *
      * @param ops The operation type (Erase or Read)
-     * @return bool True if operation started successfully, false otherwise
+     * @return SpiFailureReason::None if operation started successfully,
+     *         otherwise the reason the operation could not start
      */
-    bool startSpiOperation(Operation ops);
+    SpiFailureReason startSpiOperation(Operation ops);
 
     /**
      * @brief function to execute flashrom command with given arguments

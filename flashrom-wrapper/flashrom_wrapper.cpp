@@ -41,6 +41,16 @@ std::mutex usbPortMutex;
 
 std::atomic<uint32_t> objIndex{0};
 
+[[noreturn]] static void throwSpiFailure(SpiFailureReason reason)
+{
+    if (reason == SpiFailureReason::HostPowerNotOff)
+    {
+        throw sdbusplus::error::xyz::openbmc_project::common::NotAllowed{};
+    }
+
+    throw sdbusplus::error::xyz::openbmc_project::common::Unavailable{};
+}
+
 /**
  * @brief function to get the singleton ASIO connection
  *
@@ -368,7 +378,8 @@ sdbusplus::message::object_path Spi::startUpdate(
         "NAME", name, "SIZE", totalBytes, "FILE", tempFilePath);
 
     // Check if operation can be started
-    if (!startSpiOperation(Operation::Write))
+    SpiFailureReason startFailure = startSpiOperation(Operation::Write);
+    if (startFailure != SpiFailureReason::None)
     {
         lg2::error("[SPI: {NAME}] Cannot start write operation.", "NAME", name);
         unlink(tempFilePath.c_str()); // Delete temporary file
@@ -387,10 +398,11 @@ sdbusplus::message::object_path Spi::startUpdate(
 
 sdbusplus::message::object_path Spi::eraseSpi()
 {
-    if (!startSpiOperation(Operation::Erase))
+    SpiFailureReason startFailure = startSpiOperation(Operation::Erase);
+    if (startFailure != SpiFailureReason::None)
     {
         lg2::error("[SPI: {NAME}] Cannot start erase operation.", "NAME", name);
-        throw sdbusplus::error::xyz::openbmc_project::common::Unavailable{};
+        throwSpiFailure(startFailure);
     }
 
     std::vector<std::string> args = prepareArgs(Operation::Erase);
@@ -402,10 +414,11 @@ sdbusplus::message::object_path Spi::eraseSpi()
 
 sdbusplus::message::object_path Spi::readSpi()
 {
-    if (!startSpiOperation(Operation::Read))
+    SpiFailureReason startFailure = startSpiOperation(Operation::Read);
+    if (startFailure != SpiFailureReason::None)
     {
         lg2::error("[SPI: {NAME}] Cannot start read operation.", "NAME", name);
-        throw sdbusplus::error::xyz::openbmc_project::common::Unavailable{};
+        throwSpiFailure(startFailure);
     }
 
     std::vector<std::string> args = prepareArgs(Operation::Read);
@@ -537,7 +550,7 @@ bool Spi::getUsbDevNum()
     return true;
 }
 
-bool Spi::startSpiOperation(Operation ops)
+SpiFailureReason Spi::startSpiOperation(Operation ops)
 {
     // Check if USB port is already in use by another SPI device
     if (isUsbInUse(usbPort))
@@ -545,19 +558,19 @@ bool Spi::startSpiOperation(Operation ops)
         lg2::error(
             "[SPI: {NAME}] USB port {PORT} is already in use by another SPI device.",
             "NAME", name, "PORT", usbPort);
-        return false;
+        return SpiFailureReason::Unavailable;
     }
 
     if (!isHostPowerOff())
     {
         lg2::error("[SPI: {NAME}] Host is not powered off.", "NAME", name);
-        return false;
+        return SpiFailureReason::HostPowerNotOff;
     }
     lg2::info("[SPI: {NAME}] Host is powered off.", "NAME", name);
     if (!getUsbDevNum())
     {
         lg2::error("[SPI: {NAME}] Failed to get Device number", "NAME", name);
-        return false;
+        return SpiFailureReason::Unavailable;
     }
 
     // Check and create /var/emmc/spi_dump directory if it doesn't exist
@@ -565,7 +578,7 @@ bool Spi::startSpiOperation(Operation ops)
     {
         lg2::error("[SPI: {NAME}] Failed to create directory {DIR}", "NAME",
                    name, "DIR", spiDumpDir);
-        return false;
+        return SpiFailureReason::Unavailable;
     }
 
     setSpiMux();
@@ -576,7 +589,7 @@ bool Spi::startSpiOperation(Operation ops)
         lg2::error("[SPI: {NAME}] Failed to mark USB port {PORT} as in use.",
                    "NAME", name, "PORT", usbPort);
         resetSpiMux();
-        return false;
+        return SpiFailureReason::Unavailable;
     }
 
     // Dynamically detect chip model
@@ -586,7 +599,7 @@ bool Spi::startSpiOperation(Operation ops)
         lg2::error("[SPI: {NAME}] Failed to detect chip model", "NAME", name);
         releaseUsb(usbPort);
         resetSpiMux();
-        return false;
+        return SpiFailureReason::Unavailable;
     }
 
     // Update chip member variable with detected model
@@ -660,7 +673,7 @@ bool Spi::startSpiOperation(Operation ops)
 
     updateProgress();
 
-    return true;
+    return SpiFailureReason::None;
 }
 
 void Spi::finishSpiOperation(SpiProgress::OperationStatus opStatus)
