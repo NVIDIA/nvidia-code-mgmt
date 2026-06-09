@@ -45,6 +45,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <optional>
 #include <variant>
@@ -1692,6 +1694,7 @@ void checkEntityManagerAvailability()
  * @return int Exit status
  */
 int main()
+try
 {
     auto& bus = getBus();
     bus.request_name(fwStatusService);
@@ -1730,4 +1733,12 @@ int main()
     checkEntityManagerAvailability();
 
     event.loop();
+}
+catch (const std::exception&)
+{
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    return EXIT_FAILURE;
 }

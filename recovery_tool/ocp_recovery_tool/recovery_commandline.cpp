@@ -48,11 +48,10 @@ DeviceStatus OCPRecoveryCommandLine::getDeviceStatus() const noexcept
 std::pair<RecoveryStatus, uint8_t>
     OCPRecoveryCommandLine::getRecoveryStatus() const noexcept
 {
-    auto [success, hexData, errMsg] =
-        recoveryCommands->getRecoveryStatusCommand();
-
     try
     {
+        auto [success, hexData, errMsg] =
+            recoveryCommands->getRecoveryStatusCommand();
         if (success)
         {
             // Extract recovery status from bits [3:0] of hexData[1]

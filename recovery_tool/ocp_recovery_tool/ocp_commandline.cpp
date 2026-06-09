@@ -9,6 +9,8 @@
 #include <CLI/CLI.hpp>
 #include <phosphor-logging/lg2.hpp>
 
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
 
 using RecoveryReturnCode = ocp_recovery_commandline::RecoveryReturnCode;
@@ -275,6 +277,7 @@ std::string getRecoveryImagePath(const std::string& dirPath)
 }
 
 int main(int argc, char** argv)
+try
 {
     CLI::App app{"Command line interface for OCP recovery"};
     CommandOptions opts{};
@@ -322,4 +325,12 @@ int main(int argc, char** argv)
         return 1;
     }
     return performRecovery(opts);
+}
+catch (const std::exception&)
+{
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    return EXIT_FAILURE;
 }

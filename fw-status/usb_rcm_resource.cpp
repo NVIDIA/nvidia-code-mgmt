@@ -36,10 +36,15 @@ USBRcmResource::USBRcmResource(sdbusplus::bus::bus& bus,
         "EID", eid, "PORT", usbPort, "PRIMARY", objPath, "COMPANION",
         companionObjPath);
 
-    // Register for USB device add events to refresh health status
-    if (udevMonitor)
+    // Register for USB device add events to refresh health status.
+    // Use `this->udevMonitor` (member) explicitly — the local parameter of
+    // the same name has been moved-from in the member-init list above, so
+    // checking the unqualified `udevMonitor` here is statically guaranteed
+    // to fall through (Coverity DEADCODE).
+    if (this->udevMonitor)
     {
-        udevMonitor->registerCallback(usbPort, [this]() { updateHealth(); });
+        this->udevMonitor->registerCallback(usbPort,
+                                            [this]() { updateHealth(); });
     }
 }
 

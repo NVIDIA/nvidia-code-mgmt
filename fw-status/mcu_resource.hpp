@@ -75,7 +75,7 @@ class MCUResource : public MCTPDiscoveryResource
             }
         }
 
-        mcuRecoveryManager->updateDevInfo(deviceId);
+        (void)mcuRecoveryManager->updateDevInfo(deviceId);
         auto isHealthy = mcuRecoveryManager->isHealthy(deviceId);
         auto isInRecoveryMode = mcuRecoveryManager->isInRecoveryMode(deviceId);
 

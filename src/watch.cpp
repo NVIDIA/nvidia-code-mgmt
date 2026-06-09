@@ -115,10 +115,21 @@ int Watch::callback(sd_event_source* /* s */, int fd, uint32_t revents,
                                  std::strerror(error));
     }
 
-    auto offset = 0;
-    while (offset < bytes)
+    ssize_t offset = 0;
+    while (offset + static_cast<ssize_t>(offsetof(inotify_event, name)) <=
+           bytes)
     {
         auto event = reinterpret_cast<inotify_event*>(&buffer[offset]);
+        // Validate the full record (header + variable-length name) fits
+        // in the buffer before any read of event->mask / event->wd /
+        // event->name. event->len comes from the kernel and Coverity
+        // treats it as a tainted scalar (overrun).
+        ssize_t recordSize =
+            static_cast<ssize_t>(offsetof(inotify_event, name)) + event->len;
+        if (recordSize <= 0 || offset + recordSize > bytes)
+        {
+            break;
+        }
         if ((event->mask & IN_CLOSE_WRITE) && !(event->mask & IN_ISDIR))
         {
             auto parentPath = static_cast<Watch*>(userdata)->wds[event->wd];
@@ -131,11 +142,7 @@ int Watch::callback(sd_event_source* /* s */, int fd, uint32_t revents,
                                 entry("IMAGE=%s", imagePath.c_str()));
             }
         }
-        offset += offsetof(inotify_event, name) + event->len;
-        if (0 >= offset) // check to ensure tainted input from buffer
-        {
-            break;
-        }
+        offset += recordSize;
     }
 
     return 0;
