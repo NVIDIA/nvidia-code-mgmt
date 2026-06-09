@@ -66,7 +66,7 @@ static bool isGlacierDevice(nvidia::software::updater::InterfaceMap interfaces,
     return false;
 }
 
-int main(int argc, char** argv)
+int glacier_service_main(int argc, char** argv)
 {
     if (argc < 2)
     {
@@ -243,4 +243,29 @@ int main(int argc, char** argv)
         }
     }
     return recoveryTaskState;
+}
+
+// In the unit-test build this `main` is renamed to a throwaway via
+// -Dmain=glacier_unused_main (see test/meson.build), matching the
+// `#define main <renamed>` idiom used by the other *_main tests, so it does
+// not collide with gtest's main. The tested entry point remains
+// glacier_service_main(), which stays catch-free so its EXPECT_THROW cases
+// still propagate.
+int main(int argc, char** argv)
+{
+    try
+    {
+        return glacier_service_main(argc, argv);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Glacier recovery main exited with exception: {ERROR}",
+                   "ERROR", e.what());
+        return EXIT_FAILURE;
+    }
+    catch (...)
+    {
+        lg2::error("Glacier recovery main exited with unknown exception");
+        return EXIT_FAILURE;
+    }
 }

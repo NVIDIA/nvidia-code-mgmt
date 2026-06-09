@@ -188,21 +188,30 @@ enum class ProgressStatus
 [[nodiscard]] USBRCMRecoveryErrorCode
     progressCodeToRecoveryErrorCode(uint32_t progressCode) noexcept
 {
-    const auto info = ProgressCodeParser::getProgressCodeInfo(progressCode);
-
-    if (info.type != ProgressCodeParser::CodeType::Error)
+    try
     {
-        return USBRCMRecoveryErrorCode::ImageTransferFailed;
-    }
+        const auto info = ProgressCodeParser::getProgressCodeInfo(progressCode);
 
-    switch (info.subClass)
-    {
-        case ProgressCodeParser::SubClass::PSC_ROM:
-            return pscRomErrorToRecoveryErrorCode(info.operation);
-        case ProgressCodeParser::SubClass::PSC_FMC:
-            return pscFmcErrorToRecoveryErrorCode(info.operation);
-        default:
+        if (info.type != ProgressCodeParser::CodeType::Error)
+        {
             return USBRCMRecoveryErrorCode::ImageTransferFailed;
+        }
+
+        switch (info.subClass)
+        {
+            case ProgressCodeParser::SubClass::PSC_ROM:
+                return pscRomErrorToRecoveryErrorCode(info.operation);
+            case ProgressCodeParser::SubClass::PSC_FMC:
+                return pscFmcErrorToRecoveryErrorCode(info.operation);
+            default:
+                return USBRCMRecoveryErrorCode::ImageTransferFailed;
+        }
+    }
+    catch (...)
+    {
+        // Function is noexcept; any exception from getProgressCodeInfo or
+        // the subClass error mappers would otherwise std::terminate.
+        return USBRCMRecoveryErrorCode::ImageTransferFailed;
     }
 }
 

@@ -308,6 +308,7 @@ RecoveryResult executeRecoveryTask(const RecoveryTask& task,
 }
 
 int main(int argc, char** argv)
+try
 {
     if (argc < 2)
     {
@@ -531,4 +532,12 @@ int main(int argc, char** argv)
               "SUCCESS", successCount, "FAIL", failCount);
 
     return recoveryTaskState;
+}
+catch (const std::exception&)
+{
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    return EXIT_FAILURE;
 }

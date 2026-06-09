@@ -246,8 +246,8 @@ class Spi : public SpiIntf
     std::unique_ptr<sdbusplus::bus::match_t> hostPowerStateMatch;
     // Reference to current flashrom process for timeout handling
     std::shared_ptr<boost::process::v2::process> currentProcess;
-    int expectedOpTimeSec;
-    int currentProgress;
+    int expectedOpTimeSec = 0;
+    int currentProgress = 0;
 
     // Mapping table for chip types and their expected operation times
     static const std::vector<ChipTiming> chipTimingMap;

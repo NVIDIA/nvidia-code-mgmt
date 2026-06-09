@@ -117,6 +117,7 @@ static void print_wrong_arg_exit(void)
 }
 
 int main(int argc, char** argv)
+try
 {
     std::string updater = "";
     auto ret = 0;
@@ -353,4 +354,12 @@ int main(int argc, char** argv)
     sd_event_unref(loop);
 
     return 0;
+}
+catch (const std::exception&)
+{
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    return EXIT_FAILURE;
 }

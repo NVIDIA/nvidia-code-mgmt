@@ -20,12 +20,15 @@
 #include <CLI/CLI.hpp>
 
 #include <chrono>
+#include <cstdlib>
+#include <exception>
 #include <stdexcept>
 #include <thread>
 
 using namespace mcu_recovery_manager;
 
 int main(int argc, char* argv[])
+try
 {
     CLI::App app{"MCU Recovery Tool"};
     // Require at least one subcommand
@@ -333,4 +336,12 @@ int main(int argc, char* argv[])
         std::cerr << "Error: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }
+}
+catch (const std::exception&)
+{
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    return EXIT_FAILURE;
 }

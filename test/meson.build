@@ -911,7 +911,7 @@ glacier_main_test_lib = static_library(
     cpp_args: [
         '-fno-inline',
         '-DGlacierRecoveryCommands=FakeGlacierRecoveryCommands',
-        '-Dmain=glacier_service_main',
+        '-Dmain=glacier_unused_main',
         '-Dsleep=fake_sleep',
     ],
     include_directories: include_directories(
