@@ -124,10 +124,15 @@ bool SignatureVerifier::verifyApImageHash() const
     // Compare hash value of AP Images
     for (uint8_t i = 0; i < count; ++i)
     {
-        uint32_t offset = metadata.imageOffset + metadata.hashTable[i].offset;
-        uint32_t length = metadata.hashTable[i].length;
+        // Compute offset in 64-bit so imageOffset + hashTable[i].offset cannot
+        // wrap (the static_cast forces 64-bit arithmetic; without it the
+        // addition would still wrap in 32-bit before being widened).
+        const uint64_t offset = static_cast<uint64_t>(metadata.imageOffset) +
+                                metadata.hashTable[i].offset;
+        const uint64_t length = metadata.hashTable[i].length;
+        const uint64_t imageSize = imageData.size();
 
-        if (offset + length <= imageData.size())
+        if (offset <= imageSize && length <= imageSize - offset)
         {
             std::vector<uint8_t> image(imageData.begin() + offset,
                                        imageData.begin() + offset + length);

@@ -145,6 +145,55 @@ std::string publicKeyToHex(const EVP_PKEY* publicKey)
     return toHex(std::string(data, static_cast<std::size_t>(length)));
 }
 
+// Sign a SHA-384 digest with the given P-384 key and return the raw 96-byte
+// R||S signature in the layout the verifier expects.
+std::vector<uint8_t> signDigest(EVP_PKEY* key,
+                                const std::vector<uint8_t>& digest)
+{
+    EvpPkeyCtxPtr signCtx(EVP_PKEY_CTX_new(key, nullptr), &EVP_PKEY_CTX_free);
+    if (!signCtx)
+    {
+        throw std::runtime_error("Failed to allocate sign context");
+    }
+    if (EVP_PKEY_sign_init(signCtx.get()) <= 0)
+    {
+        throw std::runtime_error("EVP_PKEY_sign_init failed");
+    }
+    size_t derSigLen = 0;
+    if (EVP_PKEY_sign(signCtx.get(), nullptr, &derSigLen, digest.data(),
+                      digest.size()) <= 0)
+    {
+        throw std::runtime_error("Failed to size DER signature");
+    }
+    std::vector<uint8_t> derSignature(derSigLen);
+    if (EVP_PKEY_sign(signCtx.get(), derSignature.data(), &derSigLen,
+                      digest.data(), digest.size()) <= 0)
+    {
+        throw std::runtime_error("Failed to sign digest");
+    }
+    derSignature.resize(derSigLen);
+
+    const unsigned char* derData = derSignature.data();
+    EcdsaSigPtr sig(d2i_ECDSA_SIG(nullptr, &derData, derSignature.size()),
+                    &ECDSA_SIG_free);
+    if (!sig)
+    {
+        throw std::runtime_error("Failed to decode DER signature");
+    }
+
+    const BIGNUM* r = nullptr;
+    const BIGNUM* s = nullptr;
+    ECDSA_SIG_get0(sig.get(), &r, &s);
+    auto rBytes = bnToFixedBytes(r, P384_ECDSA_SIGNATURE_LEN / 2);
+    auto sBytes = bnToFixedBytes(s, P384_ECDSA_SIGNATURE_LEN / 2);
+
+    std::vector<uint8_t> rawSignature;
+    rawSignature.reserve(P384_ECDSA_SIGNATURE_LEN);
+    rawSignature.insert(rawSignature.end(), rBytes.begin(), rBytes.end());
+    rawSignature.insert(rawSignature.end(), sBytes.begin(), sBytes.end());
+    return rawSignature;
+}
+
 SignedImage createSignedImage(const std::filesystem::path& filePath)
 {
     auto key = generateP384Key();
@@ -179,49 +228,65 @@ SignedImage createSignedImage(const std::filesystem::path& filePath)
         fileData.begin(), fileData.begin() + image.metadata.nvPayloadSize);
     image.digest = calculateSHA384(payload);
 
-    EvpPkeyCtxPtr signCtx(EVP_PKEY_CTX_new(key.get(), nullptr),
-                          &EVP_PKEY_CTX_free);
-    if (!signCtx)
-    {
-        throw std::runtime_error("Failed to allocate sign context");
-    }
-    if (EVP_PKEY_sign_init(signCtx.get()) <= 0)
-    {
-        throw std::runtime_error("EVP_PKEY_sign_init failed");
-    }
-    size_t derSigLen = 0;
-    if (EVP_PKEY_sign(signCtx.get(), nullptr, &derSigLen, image.digest.data(),
-                      image.digest.size()) <= 0)
-    {
-        throw std::runtime_error("Failed to size DER signature");
-    }
-    std::vector<uint8_t> derSignature(derSigLen);
-    if (EVP_PKEY_sign(signCtx.get(), derSignature.data(), &derSigLen,
-                      image.digest.data(), image.digest.size()) <= 0)
-    {
-        throw std::runtime_error("Failed to sign digest");
-    }
-    derSignature.resize(derSigLen);
+    image.rawSignature = signDigest(key.get(), image.digest);
 
-    const unsigned char* derData = derSignature.data();
-    EcdsaSigPtr sig(d2i_ECDSA_SIG(nullptr, &derData, derSignature.size()),
-                    &ECDSA_SIG_free);
-    if (!sig)
+    std::copy(image.rawSignature.begin(), image.rawSignature.end(),
+              fileData.begin() + image.metadata.nvSignatureOffset);
+
+    std::ofstream output(filePath, std::ios::binary);
+    output.write(reinterpret_cast<const char*>(fileData.data()),
+                 fileData.size());
+    output.close();
+
+    return image;
+}
+
+// Build a correctly signed image whose single AP hash region ends exactly at
+// the end of the file (imageOffset + offset + length == file size). The
+// signature region is placed before the AP region so the AP bytes do not
+// depend on the signature (which is computed last), avoiding a circular
+// dependency.
+SignedImage
+    createSignedImageEndingAtBoundary(const std::filesystem::path& filePath)
+{
+    auto key = generateP384Key();
+
+    constexpr uint32_t apLength = 64;
+    const uint32_t signatureOffset = sizeof(Metadata);
+    const uint32_t apOffset = signatureOffset + P384_ECDSA_SIGNATURE_LEN;
+    const std::size_t fileSize = apOffset + apLength;
+
+    SignedImage image;
+    image.filePath = filePath;
+    image.publicKeyHex = publicKeyToHex(key.get());
+    image.metadata.imageOffset = apOffset;
+    image.metadata.apFwImagesCnt = 1;
+    image.metadata.hashTable[0].offset = 0;
+    image.metadata.hashTable[0].length = apLength;
+    image.metadata.nvPayloadSize = static_cast<uint16_t>(sizeof(Metadata));
+    image.metadata.nvSignatureOffset = static_cast<uint16_t>(signatureOffset);
+
+    std::vector<uint8_t> fileData(fileSize, 0);
+    for (std::size_t i = 0; i < apLength; ++i)
     {
-        throw std::runtime_error("Failed to decode DER signature");
+        fileData[apOffset + i] = static_cast<uint8_t>(i + 1U);
     }
 
-    const BIGNUM* r = nullptr;
-    const BIGNUM* s = nullptr;
-    ECDSA_SIG_get0(sig.get(), &r, &s);
-    auto rBytes = bnToFixedBytes(r, P384_ECDSA_SIGNATURE_LEN / 2);
-    auto sBytes = bnToFixedBytes(s, P384_ECDSA_SIGNATURE_LEN / 2);
-    image.rawSignature.reserve(P384_ECDSA_SIGNATURE_LEN);
-    image.rawSignature.insert(image.rawSignature.end(), rBytes.begin(),
-                              rBytes.end());
-    image.rawSignature.insert(image.rawSignature.end(), sBytes.begin(),
-                              sBytes.end());
+    std::vector<uint8_t> apImage(fileData.begin() + apOffset,
+                                 fileData.begin() + apOffset + apLength);
+    auto apHash = calculateSHA384(apImage);
+    std::memcpy(image.metadata.hashTable[0].hash, apHash.data(),
+                SHA384_DIGEST_LENGTH);
 
+    // Finalize metadata (now containing the AP hash) before computing the
+    // payload digest so the signature covers the final metadata bytes.
+    std::memcpy(fileData.data(), &image.metadata, sizeof(Metadata));
+
+    std::vector<uint8_t> payload(
+        fileData.begin(), fileData.begin() + image.metadata.nvPayloadSize);
+    image.digest = calculateSHA384(payload);
+
+    image.rawSignature = signDigest(key.get(), image.digest);
     std::copy(image.rawSignature.begin(), image.rawSignature.end(),
               fileData.begin() + image.metadata.nvSignatureOffset);
 
@@ -507,4 +572,136 @@ TEST(SignatureVerifier, ApFwImagesCntAboveTableMaxIsClamped)
     // their offset+length=0 satisfies the bounds check and the all-zero
     // hash mismatch returns false cleanly — no OOB on the hashTable[].
     EXPECT_FALSE(verifier.verifyApImageHash());
+}
+
+// ===== Integer-overflow regression tests (CVE: wrapped offset/length OOB) ====
+//
+// verifyApImageHash() computes offset = imageOffset + hashTable[i].offset and
+// length = hashTable[i].length, then checks offset + length <= imageData.size()
+// before slicing imageData[offset, offset + length). In the original code these
+// were uint32_t, so attacker-controlled metadata could wrap the additions: the
+// guard passed while the slice started far out of bounds. The fix widens the
+// arithmetic to 64-bit (with a static_cast<uint64_t> on the first operand so
+// the addition itself happens in 64-bit). Run tests 1 and 2 under ASan; the
+// unfixed code performs an out-of-bounds read there.
+
+// Test 1: the guard sum wraps via a large imageOffset.
+// Unfixed: 0xFFFFFF00 + 0x180 wraps to 0x80, passes the guard, and the slice
+// starts ~4 GiB out of bounds. Fixed: the 64-bit sum exceeds the file size, so
+// verifyApImageHash() returns false with no out-of-bounds access.
+TEST(SignatureVerifier, GuardSumWrapsViaLargeImageOffset)
+{
+    ScopedTempDir tempDir;
+    auto image = createSignedImage(tempDir.path() / "signed-image.bin");
+
+    std::fstream file(image.filePath,
+                      std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    Metadata metadata{};
+    file.read(reinterpret_cast<char*>(&metadata), sizeof(metadata));
+    metadata.imageOffset = 0xFFFFFF00u;
+    metadata.hashTable[0].offset = 0;
+    metadata.hashTable[0].length = 0x180u;
+    file.seekp(0);
+    file.write(reinterpret_cast<const char*>(&metadata), sizeof(metadata));
+    file.close();
+
+    SignatureVerifier verifier(image.filePath.string(), image.publicKeyHex);
+    ASSERT_TRUE(verifier.isInitialized());
+    EXPECT_FALSE(verifier.verifyApImageHash());
+    EXPECT_FALSE(verifier.verify());
+}
+
+// Test 2: the guard sum wraps via a large length field instead of the offset.
+// Unfixed: imageOffset + offset is in range but + 0xFFFFFFF0 wraps the guard.
+// Fixed: the 64-bit sum exceeds the file size, so the function returns false.
+TEST(SignatureVerifier, GuardSumWrapsViaLargeLength)
+{
+    ScopedTempDir tempDir;
+    auto image = createSignedImage(tempDir.path() / "signed-image.bin");
+
+    std::fstream file(image.filePath,
+                      std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    Metadata metadata{};
+    file.read(reinterpret_cast<char*>(&metadata), sizeof(metadata));
+    metadata.imageOffset = sizeof(Metadata);
+    metadata.hashTable[0].offset = 0x10u;
+    metadata.hashTable[0].length = 0xFFFFFFF0u;
+    file.seekp(0);
+    file.write(reinterpret_cast<const char*>(&metadata), sizeof(metadata));
+    file.close();
+
+    SignatureVerifier verifier(image.filePath.string(), image.publicKeyHex);
+    ASSERT_TRUE(verifier.isInitialized());
+    EXPECT_FALSE(verifier.verifyApImageHash());
+    EXPECT_FALSE(verifier.verify());
+}
+
+// Test 3: a wrapped start offset that lands back in bounds at the wrong region.
+// imageOffset + hashTable[0].offset == 0x80000000 + 0x80000040 wraps (in
+// 32-bit) to 0x40; the unfixed code then hashes the in-bounds-but-wrong bytes
+// [0x40, 0x60). We plant that region's real SHA-384 in hashTable[0].hash, so
+// the unfixed code returns true. The fix widens the addition to 0x100000040,
+// which fails the guard, so verifyApImageHash() returns false.
+//
+// This test specifically catches a fix that widens only the guard (the second
+// addition) but leaves the first addition in 32-bit — i.e. one that forgot the
+// static_cast<uint64_t>. The planted hash is essential: without it both fixed
+// and unfixed code would return false for a different reason.
+TEST(SignatureVerifier, WrappedStartOffsetPassesGuard)
+{
+    ScopedTempDir tempDir;
+    auto image = createSignedImage(tempDir.path() / "signed-image.bin");
+
+    // Read the raw file so we can hash the exact in-bounds region [0x40, 0x60)
+    // that the unfixed code would slice once the start offset wraps to 0x40.
+    std::ifstream in(image.filePath, std::ios::binary);
+    ASSERT_TRUE(in.is_open());
+    std::vector<uint8_t> fileBytes((std::istreambuf_iterator<char>(in)),
+                                   std::istreambuf_iterator<char>());
+    in.close();
+    ASSERT_GE(fileBytes.size(), 0x60u);
+
+    constexpr uint32_t wrappedStart = 0x40u;
+    constexpr uint32_t wrappedLength = 0x20u;
+    std::vector<uint8_t> wrappedRegion(fileBytes.begin() + wrappedStart,
+                                       fileBytes.begin() + wrappedStart +
+                                           wrappedLength);
+    auto wrappedHash = calculateSHA384(wrappedRegion);
+
+    std::fstream file(image.filePath,
+                      std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    Metadata metadata{};
+    file.read(reinterpret_cast<char*>(&metadata), sizeof(metadata));
+    metadata.imageOffset = 0x80000000u;
+    metadata.hashTable[0].offset = 0x80000040u;
+    metadata.hashTable[0].length = wrappedLength;
+    std::memcpy(metadata.hashTable[0].hash, wrappedHash.data(),
+                SHA384_DIGEST_LENGTH);
+    file.seekp(0);
+    file.write(reinterpret_cast<const char*>(&metadata), sizeof(metadata));
+    file.close();
+
+    SignatureVerifier verifier(image.filePath.string(), image.publicKeyHex);
+    ASSERT_TRUE(verifier.isInitialized());
+    EXPECT_FALSE(verifier.verifyApImageHash());
+}
+
+// Test 4: a correctly signed image whose AP hash region ends exactly at the end
+// of the file (imageOffset + offset + length == imageData.size()). This must
+// still verify. It guards against an over-tightened fix that changes the guard
+// from <= to <, which would reject this legitimate boundary case.
+TEST(SignatureVerifier, ValidImageEndingAtBoundaryVerifies)
+{
+    ScopedTempDir tempDir;
+    auto image =
+        createSignedImageEndingAtBoundary(tempDir.path() / "boundary.bin");
+
+    SignatureVerifier verifier(image.filePath.string(), image.publicKeyHex);
+    ASSERT_TRUE(verifier.isInitialized());
+    EXPECT_TRUE(verifier.verifyApImageHash());
+    EXPECT_EQ(verifier.getDigest(), image.digest);
+    EXPECT_TRUE(verifier.verify());
 }
