@@ -4,5 +4,6 @@ Description=Update NVMe drives %I
 [Service]
 Type=oneshot
 RemainAfterExit=no
-Environment="ARGS=%I"
-ExecStart=/usr/bin/nvme-fw-update $ARGS 
+EnvironmentFile=/run/nvidia-nvme-update/%i.env
+ExecStart=/usr/bin/nvme-fw-update ${FW_IMAGE} ${FW_VERSION} ${FW_PREFIX} $FW_TARGETS
+ExecStopPost=-/bin/rm -f /run/nvidia-nvme-update/%i.env
