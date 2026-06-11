@@ -376,6 +376,10 @@ boost::asio::awaitable<void> PreBootDiag::runDiagnosticSession()
 
         try
         {
+            if (abortRequested && abortReason.empty())
+            {
+                co_await dbus->setSettingsStringProperty("DiagResult", "[]");
+            }
             co_await dbus->setDiagStatus(DiagStatus::Abort);
             co_await dbus->setDiagMode(false);
         }

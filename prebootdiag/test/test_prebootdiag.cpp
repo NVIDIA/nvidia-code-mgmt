@@ -346,7 +346,7 @@ TEST_F(PreBootDiagTest, DisableAbortsSession)
     EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::InProgress)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
-        .Times(1);
+        .Times(2);
     EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Abort)).Times(1);
     EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
     EXPECT_CALL(*mockDbus, mockCreateErrorLog(HasSubstr("aborted"), _))
