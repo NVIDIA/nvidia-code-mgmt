@@ -106,7 +106,13 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversERoTAndAPBranches)
                     "AP_GPIO", "rise.target", "fall.target", "InvalidPolarity",
                     "/xyz/openbmc_project/state/chassis/ap",
                     std::make_shared<MCTPVdmHelper>());
+    ASSERT_NE(ap.resourceDbusObj, nullptr);
+    EXPECT_EQ(ap.health(), HealthServer::HealthType::OK);
+    EXPECT_EQ(ap.state(), OperationalStatusServer::StateType::Enabled);
+    ap.hideWhenHealthy = true;
+    ap.updateHealthyState();
     EXPECT_EQ(ap.resourceDbusObj, nullptr);
+    ap.hideWhenHealthy = false;
     EXPECT_EQ(test::fw_status_fake_dbus::startedUnits,
               std::vector<std::string>{"rise.target"});
 

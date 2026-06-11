@@ -1068,6 +1068,13 @@ void publishDBusRecoveryObject()
             const auto eid = eidOpt.value();
             const auto gpio = getString(interfaces, gpioObjInterface, "GPIO");
             const auto isErot = getBool(interfaces, gpioObjInterface, "IsERoT");
+            bool hideWhenHealthy = false;
+            if (hasProperty(interfaces, gpioObjInterface, "HideWhenHealthy"))
+            {
+                hideWhenHealthy =
+                    getBool(interfaces, gpioObjInterface, "HideWhenHealthy");
+            }
+
             if (isErot)
             {
                 lg2::info("Found GPIO recovery Object (ERoT): {PATH}", "PATH",
@@ -1112,7 +1119,8 @@ void publishDBusRecoveryObject()
 
                 resources.push_back(std::make_unique<GPIOResource>(
                     getBus(), objPath, event, i2cBus, i2cAddress, eid, gpio,
-                    target, monitorMode, pollingIntervalMs, polarity));
+                    target, monitorMode, pollingIntervalMs, polarity,
+                    hideWhenHealthy));
             }
             else
             {
@@ -1137,7 +1145,8 @@ void publishDBusRecoveryObject()
                 }
                 resources.push_back(std::make_unique<GPIOResource>(
                     getBus(), objPath, event, eid, gpio, risingTarget,
-                    fallingTarget, polarity, chassisObjPath, mctpVdmHelper));
+                    fallingTarget, polarity, chassisObjPath, mctpVdmHelper,
+                    hideWhenHealthy));
             }
 
             applyChassisConnectionAndRefresh(interfaces, gpioObjInterface,

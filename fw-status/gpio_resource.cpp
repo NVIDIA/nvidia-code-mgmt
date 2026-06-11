@@ -98,9 +98,10 @@ GPIOResource::GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
                            const std::string& gpio, const std::string& target,
                            const std::string& monitorModeConfig,
                            std::optional<uint64_t> pollingIntervalMs,
-                           const std::string& gpioPolarity) :
+                           const std::string& gpioPolarity,
+                           bool hideWhenHealthy) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
-    systemTarget(target), isEROT(true),
+    systemTarget(target), isEROT(true), hideWhenHealthy(hideWhenHealthy),
     polarity(parseGPIOPolarity(gpioPolarity)),
     monitorMode(parseMonitorMode(monitorModeConfig)),
     pollingInterval(getPollingInterval(pollingIntervalMs))
@@ -123,17 +124,16 @@ GPIOResource::GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
     }
 }
 
-GPIOResource::GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
-                           sdeventplus::Event& event, uint8_t eid,
-                           const std::string& gpio,
-                           const std::string& risingTarget,
-                           const std::string& fallingTarget,
-                           const std::string& gpioPolarity,
-                           const std::string chassisObjPath,
-                           std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
+GPIOResource::GPIOResource(
+    sdbusplus::bus_t& bus, const std::string& objPath,
+    sdeventplus::Event& event, uint8_t eid, const std::string& gpio,
+    const std::string& risingTarget, const std::string& fallingTarget,
+    const std::string& gpioPolarity, const std::string chassisObjPath,
+    std::shared_ptr<MCTPVdmHelper> mctpVdmHelper, bool hideWhenHealthy) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
     risingTarget(risingTarget), fallingTarget(fallingTarget),
-    polarity(parseGPIOPolarity(gpioPolarity)), mctpVdmHelper(mctpVdmHelper)
+    hideWhenHealthy(hideWhenHealthy), polarity(parseGPIOPolarity(gpioPolarity)),
+    mctpVdmHelper(mctpVdmHelper)
 {
     if (!chassisObjPath.empty())
     {
@@ -469,6 +469,18 @@ bool GPIOResource::isGPIOActive(int value) const
            (!value && polarity == gpiod::line::ACTIVE_LOW);
 }
 
+void GPIOResource::updateHealthyState()
+{
+    if (hideWhenHealthy)
+    {
+        deleteDbusObject();
+        return;
+    }
+
+    health(HealthServer::HealthType::OK);
+    state(OperationalStatusServer::StateType::Enabled);
+}
+
 void GPIOResource::updateERoTHealth()
 {
     if (isChassisPoweredOff())
@@ -512,7 +524,7 @@ void GPIOResource::updateERoTHealth()
         dbusUtil.restartSystemUnit(systemTarget);
         isFirmwareInRecovery = false;
     }
-    deleteDbusObject();
+    updateHealthyState();
     return;
 }
 
@@ -630,7 +642,7 @@ void GPIOResource::updateAPHealth(uint8_t type)
 
     if (healthy)
     {
-        deleteDbusObject();
+        updateHealthyState();
         lg2::info("Device associated with {OBJ} is healthy", "OBJ",
                   path.c_str());
     }

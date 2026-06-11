@@ -69,6 +69,7 @@ class GPIOResource : public BaseResource
      * @param monitorMode - GPIO monitor mode
      * @param pollingIntervalMs - GPIO polling interval in milliseconds
      * @param gpioPolarity - GPIO polarity
+     * @param hideWhenHealthy - Whether to hide the D-Bus object when healthy
      *
      */
     GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
@@ -77,7 +78,7 @@ class GPIOResource : public BaseResource
                  const std::string& gpio, const std::string& target,
                  const std::string& monitorMode,
                  std::optional<uint64_t> pollingIntervalMs,
-                 const std::string& gpioPolarity);
+                 const std::string& gpioPolarity, bool hideWhenHealthy = false);
 
     /** @brief Constructor for the GPIOResource Class - Monitoring GPIO
      * Interrupt for Non-ERoT devices Updates Health and Status of the D-Bus
@@ -96,6 +97,7 @@ class GPIOResource : public BaseResource
      * @param chassisObjPath - Path of the Chassis D-Bus object to publish
      * BootStatus
      * @param mctpVdmHelper - MCTP VDM helper object
+     * @param hideWhenHealthy - Whether to hide the D-Bus object when healthy
      */
     GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
                  sdeventplus::Event& event, uint8_t eid,
@@ -103,7 +105,8 @@ class GPIOResource : public BaseResource
                  const std::string& fallingTarget,
                  const std::string& gpioPolarity,
                  const std::string chassisObjPath,
-                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
+                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
+                 bool hideWhenHealthy = false);
 
     ~GPIOResource() override;
 
@@ -116,6 +119,7 @@ class GPIOResource : public BaseResource
     std::string fallingTarget;
     bool isFirmwareInRecovery = false;
     bool isEROT = false;
+    bool hideWhenHealthy = false;
     int polarity;
     MonitorMode monitorMode = MonitorMode::Interrupt;
     std::chrono::milliseconds pollingInterval{0};
@@ -189,6 +193,11 @@ class GPIOResource : public BaseResource
      *
      */
     bool isGPIOActive(int value) const;
+
+    /** @brief Publish healthy status or hide the object for legacy configs.
+     *
+     */
+    void updateHealthyState();
 
     /** @brief function to update Health and State of ERoT D-Bus object
      *         Uses Glacier Crisis Recovery Protocol to fetch device status
