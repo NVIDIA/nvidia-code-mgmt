@@ -27,7 +27,11 @@
 
 #include <cerrno>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <list>
+#include <optional>
 #include <sstream>
 
 using namespace mcu_recovery_manager;
@@ -381,6 +385,199 @@ void MCURecoveryManager::updateDevHealth(const std::string& deviceId,
     mcuDevices[deviceId].inRecoveryMode = hasHidClass;
 }
 
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+static bool isIspUsbPid(uint16_t pid)
+{
+    return pid == mcuIspPidCf1d || pid == mcuIspPidCf1e;
+}
+
+static std::optional<uint32_t>
+    readSysfsUsbUint(const std::filesystem::path& path)
+{
+    std::ifstream in(path);
+    if (!in)
+    {
+        return std::nullopt;
+    }
+    uint32_t value = 0;
+    in >> value;
+    if (in.fail())
+    {
+        return std::nullopt;
+    }
+    return value;
+}
+
+static std::optional<uint16_t>
+    readSysfsUsbHex16(const std::filesystem::path& path)
+{
+    std::ifstream in(path);
+    if (!in)
+    {
+        return std::nullopt;
+    }
+    std::string value;
+    in >> value;
+    if (in.fail())
+    {
+        return std::nullopt;
+    }
+    try
+    {
+        return static_cast<uint16_t>(std::stoul(value, nullptr, 16));
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+struct SysfsUsbIdentity
+{
+    uint8_t bus = 0;
+    uint8_t devAddr = 0;
+    uint16_t vendorId = 0;
+    uint16_t productId = 0;
+};
+
+static std::optional<SysfsUsbIdentity>
+    readSysfsUsbIdentity(const std::string& usbPort)
+{
+    const std::filesystem::path base =
+        std::filesystem::path("/sys/bus/usb/devices") / usbPort;
+    if (!std::filesystem::exists(base))
+    {
+        return std::nullopt;
+    }
+
+    auto busOpt = readSysfsUsbUint(base / "busnum");
+    auto devOpt = readSysfsUsbUint(base / "devnum");
+    auto vidOpt = readSysfsUsbHex16(base / "idVendor");
+    auto pidOpt = readSysfsUsbHex16(base / "idProduct");
+    if (!busOpt || !devOpt || !vidOpt || !pidOpt)
+    {
+        return std::nullopt;
+    }
+    if (*busOpt > std::numeric_limits<uint8_t>::max() ||
+        *devOpt > std::numeric_limits<uint8_t>::max())
+    {
+        return std::nullopt;
+    }
+
+    SysfsUsbIdentity id{};
+    id.bus = static_cast<uint8_t>(*busOpt);
+    id.devAddr = static_cast<uint8_t>(*devOpt);
+    id.vendorId = *vidOpt;
+    id.productId = *pidOpt;
+    return id;
+}
+
+bool MCURecoveryManager::resetUsbContext()
+{
+    for (auto& [deviceId, device] : mcuDevices)
+    {
+        device.curUsbDevice = nullptr;
+        device.hasMctpClass = false;
+    }
+
+    if (context)
+    {
+        libusb_exit(context);
+        context = nullptr;
+    }
+
+    if (libusb_init(&context) < 0)
+    {
+        lg2::error("Failed to reinitialize libusb after USB rescan");
+        return false;
+    }
+
+    return true;
+}
+
+bool MCURecoveryManager::isInRecoveryMode(const std::string& deviceId)
+{
+    try
+    {
+        if (mcuDevices.at(deviceId).inRecoveryMode)
+        {
+            return true;
+        }
+
+        const auto& info = mcuMap.at(deviceId);
+        if (info.interfaceType == MCUInfo::InterfaceType::USB)
+        {
+            const auto sysfsId = readSysfsUsbIdentity(info.usbPort);
+            if (sysfsId && isIspUsbPid(sysfsId->productId))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    catch (const std::out_of_range& oor)
+    {
+        lg2::error(
+            "Device '{ID}' not found in mcuMap or mcuDevices. Error: {ERROR}",
+            "ID", deviceId, "ERROR", oor.what());
+        return false;
+    }
+}
+
+bool MCURecoveryManager::refreshUsbForBlhost(const std::string& deviceId)
+{
+    const auto& usbPort = mcuMap.at(deviceId).usbPort;
+    constexpr int maxAttempts = 10;
+
+    for (int attempt = 1; attempt <= maxAttempts; ++attempt)
+    {
+        if (!resetUsbContext())
+        {
+            sleep(2);
+            continue;
+        }
+
+        updateUsbDevInfo(deviceId);
+
+        const uint8_t libusbAddr = mcuDevices[deviceId].curUsbDevAddr;
+        const auto sysfsId = readSysfsUsbIdentity(usbPort);
+        if (!sysfsId || !isIspUsbPid(sysfsId->productId))
+        {
+            lg2::info("Waiting for ISP USB on {PORT} (attempt {CURRENT}/{MAX})",
+                      "PORT", usbPort, "CURRENT", attempt, "MAX", maxAttempts);
+            sleep(2);
+            continue;
+        }
+
+        mcuDevices[deviceId].curUsbBus = sysfsId->bus;
+        mcuDevices[deviceId].curUsbDevAddr = sysfsId->devAddr;
+        mcuDevices[deviceId].curUsbDesc.idVendor = sysfsId->vendorId;
+        mcuDevices[deviceId].curUsbDesc.idProduct = sysfsId->productId;
+
+        if (sysfsId->devAddr != libusbAddr)
+        {
+            lg2::info(
+                "Using sysfs devnum {SYSFS} for {PORT} (libusb had {LIBUSB})",
+                "SYSFS", sysfsId->devAddr, "PORT", usbPort, "LIBUSB",
+                libusbAddr);
+        }
+
+        lg2::info(
+            "Resolved USB for blhost on {DEV} at {PORT}: bus={BUS} addr={ADDR} vid:pid=0x{VID}:0x{PID}",
+            "DEV", mcuMap[deviceId].device, "PORT", usbPort, "BUS",
+            mcuDevices[deviceId].curUsbBus, "ADDR",
+            mcuDevices[deviceId].curUsbDevAddr, "VID",
+            toHexString(mcuDevices[deviceId].curUsbDesc.idVendor), "PID",
+            toHexString(mcuDevices[deviceId].curUsbDesc.idProduct));
+        return true;
+    }
+
+    lg2::error("Failed to resolve ISP USB for blhost on {PORT}", "PORT",
+               usbPort);
+    return false;
+}
+#endif // USB_RECOVERY_COMPAT_NO_UDEV
+
 bool MCURecoveryManager::updateUsbDevInfo(const std::string& deviceId)
 {
     const uint8_t maxRetries = 5;
@@ -389,6 +586,23 @@ bool MCURecoveryManager::updateUsbDevInfo(const std::string& deviceId)
 
     while (retries < maxRetries)
     {
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+        if (retries > 0)
+        {
+            lg2::info("Refreshing libusb context before USB rescan on {PORT}",
+                      "PORT", usbPort);
+            if (!resetUsbContext())
+            {
+                retries++;
+                if (retries < maxRetries)
+                {
+                    sleep(2);
+                }
+                continue;
+            }
+        }
+#endif
+
         libusb_device** deviceList = nullptr;
         ssize_t deviceCount = libusb_get_device_list(context, &deviceList);
         mcuDevices[deviceId].curUsbDevice = nullptr;
@@ -420,6 +634,12 @@ bool MCURecoveryManager::updateUsbDevInfo(const std::string& deviceId)
                     retries++;
                     break;
                 }
+
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+                mcuDevices[deviceId].curUsbBus = libusb_get_bus_number(device);
+                mcuDevices[deviceId].curUsbDevAddr =
+                    libusb_get_device_address(device);
+#endif
 
                 libusb_config_descriptor* config = nullptr;
                 ret = libusb_get_active_config_descriptor(device, &config);
@@ -604,6 +824,17 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
     std::string blhostTarget;
     if (info.interfaceType == MCUInfo::InterfaceType::USB)
     {
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+        if (!refreshUsbForBlhost(deviceId))
+        {
+            lg2::error(
+                "Failed to refresh ISP USB device info before blhost for {DEV}",
+                "DEV", info.device);
+            handleRecoveryError(deviceId);
+            return;
+        }
+#endif
+
         std::string usbBusDev = std::to_string(getBusNumber(deviceId)) + ":" +
                                 std::to_string(getDeviceNumber(deviceId));
         std::string usbVidPid =
@@ -727,6 +958,13 @@ void MCURecoveryManager::performRecovery(const std::string& deviceId,
 
         // exit recovery mode
         exitRecoveryMode(deviceId);
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+        if (!resetUsbContext())
+        {
+            handleRecoveryError(deviceId);
+            return;
+        }
+#endif
         if (!updateDevInfo(deviceId))
         {
             handleRecoveryError(deviceId);

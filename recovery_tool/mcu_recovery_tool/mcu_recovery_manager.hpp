@@ -54,6 +54,8 @@ inline std::optional<bool> parseActiveLowPolarity(const std::string& value)
 // key is 48 bytes so it should be 96 characters
 constexpr uint8_t lenEncryptKey = 96;
 constexpr uint16_t nvdaVendorId = 0x0955;
+constexpr uint16_t mcuIspPidCf1d = 0xcf1d;
+constexpr uint16_t mcuIspPidCf1e = 0xcf1e;
 constexpr uint32_t mcuResetActiveUs = 500000;
 constexpr uint32_t mcuResetDelaySec = 3;
 
@@ -100,6 +102,10 @@ struct MCUDevice
 {
     libusb_device* curUsbDevice = nullptr;
     libusb_device_descriptor curUsbDesc{};
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+    uint8_t curUsbBus = 0;
+    uint8_t curUsbDevAddr = 0;
+#endif
     gpiod::line resetPin{};
     gpiod::line recoveryPin{};
     bool inRecoveryMode = false;
@@ -218,6 +224,9 @@ class MCURecoveryManager
      * @param deviceId The MCU device identifier from configuration.
      * @return True if the MCU device is in recovery mode, false otherwise.
      */
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+    bool isInRecoveryMode(const std::string& deviceId);
+#else
     bool isInRecoveryMode(const std::string& deviceId)
     {
         try
@@ -231,6 +240,7 @@ class MCURecoveryManager
             return false;
         }
     }
+#endif
 
     /**
      * @brief Enters the recovery mode for a specific MCU device.
@@ -323,7 +333,11 @@ class MCURecoveryManager
      */
     uint8_t getBusNumber(const std::string& deviceId)
     {
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+        return mcuDevices.at(deviceId).curUsbBus;
+#else
         return libusb_get_bus_number(mcuDevices[deviceId].curUsbDevice);
+#endif
     }
 
     /**
@@ -334,7 +348,11 @@ class MCURecoveryManager
      */
     uint8_t getDeviceNumber(const std::string& deviceId)
     {
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+        return mcuDevices.at(deviceId).curUsbDevAddr;
+#else
         return libusb_get_device_address(mcuDevices[deviceId].curUsbDevice);
+#endif
     }
 
     /**
@@ -352,6 +370,26 @@ class MCURecoveryManager
      * @param deviceId The MCU device identifier from configuration.
      */
     void handleRecoveryError(const std::string& deviceId);
+
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+    /**
+     * @brief Drops cached libusb device references and reopens the context.
+     *
+     * USB re-enumeration can leave libusb with stale descriptors until the
+     * context is closed and recreated.
+     *
+     * @return True if libusb was reinitialized successfully.
+     */
+    bool resetUsbContext();
+
+    /**
+     * @brief Refreshes USB bus/devnum/PID for blhost after ISP re-enumeration.
+     *
+     * @param deviceId The MCU device identifier from configuration.
+     * @return True when the device is in ISP mode with a resolved bus/devnum.
+     */
+    bool refreshUsbForBlhost(const std::string& deviceId);
+#endif
 
     /**
      * @brief Updates the status of a specific USB MCU device.

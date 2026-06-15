@@ -524,6 +524,13 @@ if get_option('MCU_RECOVERY_SUPPORT').enabled()
     cdata.set('MCU_RECOVERY_TIMEOUT', get_option('MCU_RECOVERY_TIMEOUT'))
 endif
 
+if get_option('USB_RECOVERY_COMPAT_NO_UDEV').enabled()
+    add_project_arguments(
+        '-DUSB_RECOVERY_COMPAT_NO_UDEV',
+        language: ['c', 'cpp'],
+    )
+endif
+
 if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
     add_project_arguments('-DSPI_PROGRAMMER_SUPPORT', language: ['c', 'cpp'])
     cdata.set_quoted(
