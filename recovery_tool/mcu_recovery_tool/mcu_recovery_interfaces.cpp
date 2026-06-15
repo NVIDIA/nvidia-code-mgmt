@@ -258,7 +258,11 @@ try
 
         // Step 2: Wait for USB re-enumeration with polling
         lg2::info("Waiting for USB re-enumeration...");
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+        constexpr int maxRetries = 10;
+#else
         constexpr int maxRetries = 3;
+#endif
         constexpr int retryIntervalMs = 1000;
         bool allDevicesReady = false;
 
@@ -266,7 +270,19 @@ try
         {
             std::this_thread::sleep_for(
                 std::chrono::milliseconds(retryIntervalMs));
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+            // isInRecoveryMode() reads a USB MCU's state from sysfs, so
+            // only the I2C MCUs need a rescan.
+            for (const auto& [deviceId, mcuInfo] : mcuConfig)
+            {
+                if (mcuInfo.interfaceType == MCUInfo::InterfaceType::I2C)
+                {
+                    recoveryManager.updateDevInfo(deviceId);
+                }
+            }
+#else
             recoveryManager.updateAllDeviceInfo();
+#endif
 
             size_t detectedCount = 0;
             for (const auto& [deviceId, mcuInfo] : mcuConfig)

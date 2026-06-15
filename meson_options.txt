@@ -222,6 +222,11 @@ option('MCU_RECOVERY_TIMEOUT',
        type: 'integer',
        description: 'MCU Recovery timeout in seconds.')
 
+option('USB_RECOVERY_COMPAT_NO_UDEV',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables workarounds for libusb built without udev (e.g. the vHMC container), whose device list misses USB re-enumeration: MCU recovery re-creates the libusb context and reads the MCU USB identity from sysfs')
+
 option('DEBUG_TOKEN_SUPPORT',
        type: 'feature',
        value: 'disabled',
