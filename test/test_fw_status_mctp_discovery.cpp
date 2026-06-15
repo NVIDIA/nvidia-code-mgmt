@@ -402,8 +402,11 @@ extern "C" int __wrap_sd_bus_call(sd_bus*, sd_bus_message* request, uint64_t,
 
     if (fakeBusCalls.passThroughAll)
     {
-        return __real_sd_bus_call(sd_bus_message_get_bus(request), request, 0,
-                                  ret_error, reply);
+        int r = __real_sd_bus_call(sd_bus_message_get_bus(request), request, 0,
+                                   ret_error, reply);
+        if (r < 0 && ret_error)
+            sd_bus_error_free(ret_error);
+        return r;
     }
 
     if (isGetSubTree)
@@ -450,8 +453,11 @@ extern "C" int __wrap_sd_bus_call(sd_bus*, sd_bus_message* request, uint64_t,
         });
     }
 
-    return __real_sd_bus_call(sd_bus_message_get_bus(request), request, 0,
-                              ret_error, reply);
+    int r = __real_sd_bus_call(sd_bus_message_get_bus(request), request, 0,
+                               ret_error, reply);
+    if (r < 0 && ret_error)
+        sd_bus_error_free(ret_error);
+    return r;
 }
 
 TEST_F(FWStatusMctpDiscoveryTest, DiscoveryCoversConstructorPopulateAndSignal)

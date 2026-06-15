@@ -1,0 +1,9 @@
+# sdbusplus loads as a shared library, so --wrap=sd_bus_call does not intercept
+# calls originating from within libsdbusplus. When the real sd_bus_call returns
+# an error, libsystemd allocates error strings via sd_bus_error_copy that
+# sdbusplus does not free after constructing the exception.
+leak:sd_bus_error_copy
+
+# Python GLib/GI bindings allocate strings during test teardown via the GLib
+# main loop and GObject type system; these are not freed before process exit.
+leak:g_strdup_printf

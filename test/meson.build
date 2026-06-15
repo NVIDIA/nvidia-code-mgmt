@@ -610,6 +610,9 @@ test(
         ],
         dependencies: [test_dep, update_debug_token_test_dep],
     ),
+    env: [
+        'LSAN_OPTIONS=suppressions=' + meson.current_source_dir() / 'lsan.supp',
+    ],
     workdir: meson.current_source_dir(),
 )
 
@@ -952,6 +955,9 @@ test(
         meson.current_source_dir() / 'run_glacier_recovery_integration.py',
         glacier_recovery_exe.full_path(),
         glacier_preload.full_path(),
+    ],
+    env: [
+        'LSAN_OPTIONS=suppressions=' + meson.current_source_dir() / 'lsan.supp',
     ],
     workdir: meson.current_source_dir(),
     depends: [glacier_recovery_exe, glacier_preload],
@@ -1355,6 +1361,9 @@ test(
             '../fw-status/mctp_util',
         ),
     ),
+    env: [
+        'LSAN_OPTIONS=suppressions=' + meson.current_source_dir() / 'lsan.supp',
+    ],
     workdir: meson.current_source_dir(),
 )
 
