@@ -38,7 +38,7 @@ void reset()
 namespace sdbusplus::bus
 {
 
-inline bus new_default_for_test()
+inline sdbusplus::bus_t new_default_for_test()
 {
     return sdbusplus::get_mocked_new(
         &::code_manager_main_test::sharedSdbusMock);
@@ -63,7 +63,7 @@ int TestBaseController::processExistingImages()
     return ::code_manager_main_test::processExistingImagesResult;
 }
 
-int TestBaseController::startWatching(sdbusplus::bus::bus&, sd_event*)
+int TestBaseController::startWatching(sdbusplus::bus_t&, sd_event*)
 {
     ++::code_manager_main_test::startWatchingCalls;
     return ::code_manager_main_test::startWatchingResult;

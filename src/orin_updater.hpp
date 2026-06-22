@@ -40,7 +40,7 @@ class ORINItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    ORINItemUpdater(sdbusplus::bus::bus& bus) :
+    ORINItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, ORIN_SUPPORTED_MODEL, ORIN_INVENTORY_IFACE, "ORIN",
                         ORIN_BUSNAME_UPDATER, ORIN_UPDATE_SERVICE, false,
                         ORIN_BUSNAME_INVENTORY)

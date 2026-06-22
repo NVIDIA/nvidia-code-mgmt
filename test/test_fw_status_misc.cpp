@@ -155,7 +155,7 @@ namespace
 class TestDiscoveryResource : public MCTPDiscoveryResource
 {
   public:
-    TestDiscoveryResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    TestDiscoveryResource(sdbusplus::bus_t& bus, const std::string& objPath,
                           uint8_t eid) :
         MCTPDiscoveryResource(bus, objPath, eid)
     {}
@@ -233,7 +233,7 @@ sdbusplus::message::message makeInterfacesAddedSignal(
     auto msg = sender.new_signal("/au/com/codeconstruct/mctp1",
                                  "org.freedesktop.DBus.ObjectManager",
                                  "InterfacesAdded");
-    msg.append(sdbusplus::message::object_path(objectPath), interfaces);
+    msg.append(sdbusplus::object_path(objectPath), interfaces);
     return msg;
 }
 
@@ -244,7 +244,7 @@ sdbusplus::message::message
     auto msg = sender.new_signal("/au/com/codeconstruct/mctp1",
                                  "org.freedesktop.DBus.ObjectManager",
                                  "InterfacesRemoved");
-    msg.append(sdbusplus::message::object_path(objectPath),
+    msg.append(sdbusplus::object_path(objectPath),
                std::vector<std::string>{mctpEndpointIntfName});
     return msg;
 }

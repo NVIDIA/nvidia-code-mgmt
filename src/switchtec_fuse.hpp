@@ -37,10 +37,10 @@ class SwitchtecFuse : public BaseItemUpdater
 {
     std::unique_ptr<SoftwareVersion> softwareVersionObj;
     // sdbusplus::bus::match_t propertiesChangedSignalCurrentHostState;
-    sdbusplus::bus::match::match _match;
+    sdbusplus::bus::match_t _match;
 
   public:
-    SwitchtecFuse(sdbusplus::bus::bus& bus) :
+    SwitchtecFuse(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, SWITCHTEC_SUPPORTED_MODEL,
                         SWITCHTEC_INVENTORY_IFACE, "PCIE_SWITCH_FUSE",
                         SWITCHTEC_BUSNAME_UPDATER, SWITCHTEC_FUSE_SERVICE,
@@ -163,7 +163,7 @@ class SwitchtecFuse : public BaseItemUpdater
      * @param objpath
      * @param versionId
      */
-    void createInventory(sdbusplus::bus::bus& bus, const std::string& objPath)
+    void createInventory(sdbusplus::bus_t& bus, const std::string& objPath)
     {
         getVersion("");
         softwareVersionObj = std::make_unique<SoftwareVersion>(bus, objPath);

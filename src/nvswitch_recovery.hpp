@@ -32,7 +32,7 @@ namespace updater
 class NVSwitchRecoveryUpdater : public BaseItemUpdater
 {
   public:
-    NVSwitchRecoveryUpdater(sdbusplus::bus::bus& bus) :
+    NVSwitchRecoveryUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(
             bus, NVSWITCH_RECOVERY_SUPPORTED_MODEL,
             NVSWITCH_RECOVERY_INVENTORY_IFACE, NVSWITCH_RECOVERY_NAME,

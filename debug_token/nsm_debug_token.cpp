@@ -80,7 +80,7 @@ std::string UpdateDebugToken::makeDebugTokenMethodCall(
             method.append(std::get<std::vector<uint8_t>>(arg));
         }
         auto reply = bus.call(method);
-        sdbusplus::message::object_path asyncPath;
+        sdbusplus::object_path asyncPath;
         reply.read(asyncPath);
         return asyncPath;
     }
@@ -479,7 +479,7 @@ std::string UpdateDebugToken::handleAsyncCallInstallV2(const std::string& path,
         installMethod.append(sdbusplus::message::unix_fd(memfd));
         auto installReply = bus.call(installMethod);
 
-        sdbusplus::message::object_path asyncPath;
+        sdbusplus::object_path asyncPath;
         installReply.read(asyncPath);
         asyncObjectPath = std::string(asyncPath);
 
@@ -590,7 +590,7 @@ std::string UpdateDebugToken::handleAsyncCallEraseV2(const std::string& path)
         eraseMethod.append(eraseType, tokenType);
         auto eraseReply = bus.call(eraseMethod);
 
-        sdbusplus::message::object_path asyncPath;
+        sdbusplus::object_path asyncPath;
         eraseReply.read(asyncPath);
         asyncObjectPath = std::string(asyncPath);
 

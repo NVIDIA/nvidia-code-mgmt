@@ -110,7 +110,7 @@ class SdbusHandler : public DbusHandlerInterface
     /// transitions to a terminal state. Returns true iff it lands on
     /// "Success".
     boost::asio::awaitable<bool>
-        waitForAsyncCompletion(const sdbusplus::message::object_path& path);
+        waitForAsyncCompletion(const sdbusplus::object_path& path);
 
     std::shared_ptr<sdbusplus::asio::connection> bus;
 };

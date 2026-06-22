@@ -71,7 +71,7 @@ class GPIOResource : public BaseResource
      * @param gpioPolarity - GPIO polarity
      *
      */
-    GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
                  sdeventplus::Event& event, const uint64_t i2cBus,
                  const uint64_t i2cAddress, uint8_t eid,
                  const std::string& gpio, const std::string& target,
@@ -97,7 +97,7 @@ class GPIOResource : public BaseResource
      * BootStatus
      * @param mctpVdmHelper - MCTP VDM helper object
      */
-    GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
                  sdeventplus::Event& event, uint8_t eid,
                  const std::string& gpio, const std::string& risingTarget,
                  const std::string& fallingTarget,

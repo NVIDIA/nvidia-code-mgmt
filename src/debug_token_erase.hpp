@@ -45,7 +45,7 @@ class DebugTokenEraseItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    DebugTokenEraseItemUpdater(sdbusplus::bus::bus& bus) :
+    DebugTokenEraseItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(
             bus, DEBUG_TOKEN_ERASE_SUPPORTED_MODEL, DEBUG_TOKEN_INVENTORY_IFACE,
             DEBUG_TOKEN_ERASE_NAME, DEBUG_TOKEN_ERASE_BUSNAME_UPDATER,

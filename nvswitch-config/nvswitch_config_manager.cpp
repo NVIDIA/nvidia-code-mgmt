@@ -233,7 +233,7 @@ void NVSwitchConfigManager::setupSignalWatchers()
         match::rules::member("InterfacesAdded");
 
     signalMatches_.push_back(std::make_unique<sdbusplus::bus::match_t>(
-        static_cast<sdbusplus::bus::bus&>(*conn_), ifacesAddedRule,
+        static_cast<sdbusplus::bus_t&>(*conn_), ifacesAddedRule,
         [this](sdbusplus::message::message& msg) { onInterfacesAdded(msg); }));
 
     // Kick off the initial async device discovery; will execute once
@@ -289,7 +289,7 @@ void NVSwitchConfigManager::subscribeToDevice(const std::string& devicePath)
                                   match::rules::path(devicePath);
 
     signalMatches_.push_back(std::make_unique<sdbusplus::bus::match_t>(
-        static_cast<sdbusplus::bus::bus&>(*conn_), matchRule,
+        static_cast<sdbusplus::bus_t&>(*conn_), matchRule,
         [this, devicePath](sdbusplus::message::message& /*msg*/) {
             onConfigUpdateSignal(devicePath);
         }));
@@ -305,7 +305,7 @@ void NVSwitchConfigManager::onInterfacesAdded(sdbusplus::message::message& msg)
                                      std::string, std::vector<std::string>>;
     using IfaceMap = std::map<std::string, std::map<std::string, PropVariant>>;
 
-    sdbusplus::message::object_path objPath;
+    sdbusplus::object_path objPath;
     IfaceMap interfaces;
     try
     {
@@ -500,7 +500,7 @@ void NVSwitchConfigManager::sendNextBlob(std::shared_ptr<BlobSendContext> ctx)
     // returning, so the original fd can be closed immediately afterwards.
     conn_->async_method_call(
         [this, ctx](boost::system::error_code ec,
-                    sdbusplus::message::object_path asyncPath) {
+                    sdbusplus::object_path asyncPath) {
             const auto& e = ctx->blobs[ctx->current];
             if (ec)
             {

@@ -172,11 +172,11 @@ sdbusplus::message::message makeMctpSignal(sdbusplus::bus_t& sender,
         {mctpEndpointIntfName, {{"EID", eid}}}};
     if (member == "InterfacesAdded")
     {
-        msg.append(sdbusplus::message::object_path(objectPath), interfaces);
+        msg.append(sdbusplus::object_path(objectPath), interfaces);
     }
     else
     {
-        msg.append(sdbusplus::message::object_path(objectPath),
+        msg.append(sdbusplus::object_path(objectPath),
                    std::vector<std::string>{mctpEndpointIntfName});
     }
     return msg;
@@ -200,7 +200,7 @@ sdbusplus::message::message
     auto msg =
         sender.new_signal(loggingObjPath, "org.freedesktop.DBus.ObjectManager",
                           "InterfacesAdded");
-    msg.append(sdbusplus::message::object_path(objectPath), interfaces);
+    msg.append(sdbusplus::object_path(objectPath), interfaces);
     return msg;
 }
 
@@ -457,7 +457,7 @@ TEST_F(CpldResourceTest, SMAEndpointSignalsCoverIgnoredAndMissingEidBranches)
     auto missingInterface = signalBus.new_signal(
         mctpObjMgrPath.data(), "org.freedesktop.DBus.ObjectManager",
         "InterfacesAdded");
-    missingInterface.append(sdbusplus::message::object_path(expectedPath),
+    missingInterface.append(sdbusplus::object_path(expectedPath),
                             nvidia::software::updater::InterfaceMap{});
     EXPECT_GT(
         dispatchMatchCallback(resource.smaEndpointAddedMatch, missingInterface),
@@ -468,7 +468,7 @@ TEST_F(CpldResourceTest, SMAEndpointSignalsCoverIgnoredAndMissingEidBranches)
                                           "org.freedesktop.DBus.ObjectManager",
                                           "InterfacesAdded");
     wrongType.append(
-        sdbusplus::message::object_path(expectedPath),
+        sdbusplus::object_path(expectedPath),
         nvidia::software::updater::InterfaceMap{
             {mctpEndpointIntfName, {{"EID", std::string("bad-eid")}}}});
     EXPECT_GT(dispatchMatchCallback(resource.smaEndpointAddedMatch, wrongType),
@@ -479,7 +479,7 @@ TEST_F(CpldResourceTest, SMAEndpointSignalsCoverIgnoredAndMissingEidBranches)
                                            "org.freedesktop.DBus.ObjectManager",
                                            "InterfacesAdded");
     missingEid.append(
-        sdbusplus::message::object_path(expectedPath),
+        sdbusplus::object_path(expectedPath),
         nvidia::software::updater::InterfaceMap{{mctpEndpointIntfName, {}}});
     EXPECT_GT(dispatchMatchCallback(resource.smaEndpointAddedMatch, missingEid),
               0);

@@ -39,10 +39,10 @@ class SMCUManager
     SMCUManager(SMCUManager&&) = delete;
     SMCUManager& operator=(SMCUManager&&) = delete;
 
-    SMCUManager(sdbusplus::bus::bus& bus, std::string basePath);
+    SMCUManager(sdbusplus::bus_t& bus, std::string basePath);
 
   private:
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     std::unique_ptr<Smcu> smcuInvs;
 };

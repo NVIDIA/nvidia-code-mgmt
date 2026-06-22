@@ -54,7 +54,7 @@ using ObjectPath = std::string;
 using Interfaces = std::vector<std::string>;
 using PropertyMap = std::map<Property, Value>;
 using InterfaceMap = std::map<Interface, PropertyMap>;
-using ObjectValueTree = std::map<sdbusplus::message::object_path, InterfaceMap>;
+using ObjectValueTree = std::map<sdbusplus::object_path, InterfaceMap>;
 using MapperServiceMap = std::vector<std::pair<std::string, Interfaces>>;
 using GetSubTreeResponse = std::vector<std::pair<ObjectPath, MapperServiceMap>>;
 
@@ -80,7 +80,7 @@ class DBUSUtils
      *
      * @param bus
      */
-    DBUSUtils(sdbusplus::bus::bus& bus) : bus(bus)
+    DBUSUtils(sdbusplus::bus_t& bus) : bus(bus)
     {}
     /**
      * @brief get inventory objects of interface
@@ -227,7 +227,7 @@ class DBUSUtils
         const std::string& errorMsg, const std::string& resolution) const;
 
   protected:
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
   private:
     /**

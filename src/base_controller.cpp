@@ -72,7 +72,7 @@ int BaseController::processImage(const std::string& imagePath)
     return 0;
 }
 
-int BaseController::startWatching(sdbusplus::bus::bus& bus, sd_event* loop)
+int BaseController::startWatching(sdbusplus::bus_t& bus, sd_event* loop)
 {
     // On fly
     try

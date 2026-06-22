@@ -1263,10 +1263,10 @@ TEST_F(MctpScriptedMockedTest, GetMCTPManagedObjectsAggregatesServices)
 
     auto objects = udt.getMCTPManagedObjects();
     EXPECT_EQ(objects.size(), 2u);
-    EXPECT_TRUE(objects.contains(sdbusplus::message::object_path{
-        "/au/com/codeconstruct/mctp1/network/1/42"}));
-    EXPECT_TRUE(objects.contains(sdbusplus::message::object_path{
-        "/xyz/openbmc_project/mctp/network/8/55"}));
+    EXPECT_TRUE(objects.contains(
+        sdbusplus::object_path{"/au/com/codeconstruct/mctp1/network/1/42"}));
+    EXPECT_TRUE(objects.contains(
+        sdbusplus::object_path{"/xyz/openbmc_project/mctp/network/8/55"}));
 }
 
 TEST_F(MctpScriptedMockedTest, GetMCTPManagedObjectsReturnsEmptyOnServiceError)
@@ -1323,8 +1323,8 @@ TEST_F(MctpScriptedMockedTest,
 
     auto objects = udt.getMCTPManagedObjects();
     EXPECT_EQ(objects.size(), 1u);
-    EXPECT_TRUE(objects.contains(sdbusplus::message::object_path{
-        "/au/com/codeconstruct/mctp1/network/1/42"}));
+    EXPECT_TRUE(objects.contains(
+        sdbusplus::object_path{"/au/com/codeconstruct/mctp1/network/1/42"}));
 }
 
 TEST_F(MctpScriptedMockedTest, UpdateEndPointsSuccessPath)

@@ -43,7 +43,7 @@ class USBRCMRecovery : public BaseItemUpdater
      *
      * @param bus D-Bus connection
      */
-    USBRCMRecovery(sdbusplus::bus::bus& bus) :
+    USBRCMRecovery(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, USBRCM_RECOVERY_SUPPORTED_MODEL,
                         USBRCM_RECOVERY_INVENTORY_IFACE, USBRCM_RECOVERY_NAME,
                         USBRCM_RECOVERY_BUSNAME_UPDATER,

@@ -28,7 +28,7 @@ class OCPRecovery : public BaseItemUpdater
      *
      * @param bus
      */
-    OCPRecovery(sdbusplus::bus::bus& bus) :
+    OCPRecovery(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, GPU_OCP_RECOVERY_SUPPORTED_MODEL,
                         GPU_OCP_RECOVERY_INVENTORY_IFACE, GPU_OCP_RECOVERY_NAME,
                         GPU_OCP_RECOVERY_BUSNAME_UPDATER,

@@ -18,7 +18,7 @@
 
 #include "erot_resource.hpp"
 
-ERoTResource::ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+ERoTResource::ERoTResource(sdbusplus::bus_t& bus, const std::string& objPath,
                            sdeventplus::Event& event, const uint64_t i2cBus,
                            const uint64_t i2cAddress, uint8_t eid,
                            uint8_t apEid, const std::string chassisObjPath,
@@ -48,7 +48,7 @@ ERoTResource::ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
         });
 }
 
-ERoTResource::ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+ERoTResource::ERoTResource(sdbusplus::bus_t& bus, const std::string& objPath,
                            sdeventplus::Event& event, uint8_t eid,
                            const std::string chassisObjPath,
                            const bool isRecoverable,

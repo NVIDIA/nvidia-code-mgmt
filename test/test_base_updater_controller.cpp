@@ -79,7 +79,7 @@ struct OwnedMessage
 };
 
 template <typename... Args>
-OwnedMessage makeSignalMessage(sdbusplus::bus::bus& bus, const char* path,
+OwnedMessage makeSignalMessage(sdbusplus::bus_t& bus, const char* path,
                                Args&&... args)
 {
     OwnedMessage owned;
@@ -104,7 +104,7 @@ class ProcessCaptureUpdater : public BaseItemUpdater
         std::string uniqueIdentifier;
     };
 
-    ProcessCaptureUpdater(sdbusplus::bus::bus& bus,
+    ProcessCaptureUpdater(sdbusplus::bus_t& bus,
                           const std::string& supportedDevices =
                               "NVIDIA:Model-A:uuid-1|NVIDIA:Model-B:uuid-2") :
         BaseItemUpdater(bus, supportedDevices, ITEM_IFACE, "Updater", "bus",
@@ -175,7 +175,7 @@ class ProcessCaptureUpdater : public BaseItemUpdater
 class TestableItemUpdater : public BaseItemUpdater
 {
   public:
-    TestableItemUpdater(sdbusplus::bus::bus& bus) :
+    TestableItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, "NVIDIA:Model-A:uuid-1", ITEM_IFACE, "Updater",
                         "bus", "svc@.service", false, "inventory.bus")
     {}
@@ -260,8 +260,7 @@ class TestableItemUpdater : public BaseItemUpdater
         return pathValidValue;
     }
 
-    std::string
-        validateTarget(const sdbusplus::message::object_path& target) override
+    std::string validateTarget(const sdbusplus::object_path& target) override
     {
         if (forceEmptyValidatedTarget)
         {
@@ -289,7 +288,7 @@ class TestableItemUpdater : public BaseItemUpdater
 class FilteringItemUpdater : public BaseItemUpdater
 {
   public:
-    FilteringItemUpdater(sdbusplus::bus::bus& bus,
+    FilteringItemUpdater(sdbusplus::bus_t& bus,
                          const std::string& service = "svc@.service") :
         BaseItemUpdater(bus, "NVIDIA:Model-A:uuid-1", ITEM_IFACE, "Updater",
                         "bus", service, false, "inventory.bus")
@@ -332,7 +331,7 @@ class FilteringItemUpdater : public BaseItemUpdater
 class ControllerUpdater : public BaseItemUpdater
 {
   public:
-    ControllerUpdater(sdbusplus::bus::bus& bus) :
+    ControllerUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, "NVIDIA:Model-A:uuid-1", ITEM_IFACE, "Updater",
                         "bus", "svc@.service", false, "inventory.bus")
     {}
@@ -391,7 +390,7 @@ class ControllerUpdater : public BaseItemUpdater
 class NoUuidUpdater : public BaseItemUpdater
 {
   public:
-    NoUuidUpdater(sdbusplus::bus::bus& bus) :
+    NoUuidUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, "", ITEM_IFACE, "Updater", "bus", "svc@.service",
                         false, "inventory.bus")
     {}
@@ -496,7 +495,7 @@ TEST_F(BaseUpdaterControllerTest, BaseItemUpdaterAccessorHelpersExposeDefaults)
     EXPECT_FALSE(updater.needVerify());
     std::string devicePath = "/xyz/device";
     EXPECT_TRUE(updater.pathIsValidDevice(devicePath));
-    EXPECT_EQ(updater.validateTarget(sdbusplus::message::object_path(
+    EXPECT_EQ(updater.validateTarget(sdbusplus::object_path(
                   "/xyz/openbmc_project/inventory/gpu0")),
               "gpu0");
     EXPECT_EQ(updater.getIdProperty("ignored"), "Version123");
@@ -803,9 +802,9 @@ TEST_F(BaseUpdaterControllerTest,
     EXPECT_EQ(allTargets.type, TargetFilterType::UpdateAll);
     EXPECT_TRUE(allTargets.targets.empty());
 
-    std::vector<sdbusplus::message::object_path> targets{
-        sdbusplus::message::object_path("/xyz/openbmc_project/inventory/gpu0"),
-        sdbusplus::message::object_path("/xyz/openbmc_project/inventory/gpu1")};
+    std::vector<sdbusplus::object_path> targets{
+        sdbusplus::object_path("/xyz/openbmc_project/inventory/gpu0"),
+        sdbusplus::object_path("/xyz/openbmc_project/inventory/gpu1")};
     auto selected = updater.applyTargetFilters(targets);
     EXPECT_EQ(selected.type, TargetFilterType::UpdateSelected);
     ASSERT_EQ(selected.targets.size(), 2u);
@@ -819,8 +818,8 @@ TEST_F(BaseUpdaterControllerTest,
     TestableItemUpdater updater(bus);
     updater.forceEmptyValidatedTarget = true;
 
-    std::vector<sdbusplus::message::object_path> targets{
-        sdbusplus::message::object_path("/xyz/openbmc_project/inventory/gpu0")};
+    std::vector<sdbusplus::object_path> targets{
+        sdbusplus::object_path("/xyz/openbmc_project/inventory/gpu0")};
     auto filtered = updater.applyTargetFilters(targets);
 
     EXPECT_EQ(filtered.type, TargetFilterType::UpdateNone);

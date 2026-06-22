@@ -228,7 +228,7 @@ class OCPRecoveryCommandLine
     std::string device;
     std::unique_ptr<recovery_tool::recovery_commands::OCPRecoveryCommands>
         recoveryCommands;
-    sdbusplus::bus::bus bus = sdbusplus::bus::new_default();
+    sdbusplus::bus_t bus = sdbusplus::bus::new_default();
     MessageRegistry registry;
 };
 

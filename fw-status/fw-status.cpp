@@ -1512,7 +1512,7 @@ void armCentralizedPowerStateWatcherRetry()
         [](sdbusplus::message::message& msg) {
             try
             {
-                sdbusplus::message::object_path objPath;
+                sdbusplus::object_path objPath;
                 std::map<std::string, std::map<std::string, Value>> interfaces;
 
                 msg.read(objPath, interfaces);
@@ -1601,7 +1601,7 @@ void checkEntityManagerAvailability()
         entityManagerServiceMatch = std::make_unique<sdbusplus::bus::match_t>(
             getBus(), MatchRules::interfacesAdded(entityManagerObjManager),
             []([[maybe_unused]] sdbusplus::message::message& msg) {
-                sdbusplus::message::object_path objPath;
+                sdbusplus::object_path objPath;
                 std::map<std::string, std::map<std::string, Value>> interfaces;
                 msg.read(objPath, interfaces);
 

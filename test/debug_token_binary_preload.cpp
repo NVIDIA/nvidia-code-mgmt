@@ -1414,7 +1414,7 @@ void pushObjectPath(const char* path)
                                            sd_bus_message** reply) {
             return makeMethodReturn(
                 request, reply, [&](sdbusplus::message::message& response) {
-                    response.append(sdbusplus::message::object_path{ownedPath});
+                    response.append(sdbusplus::object_path{ownedPath});
                 });
         });
 }

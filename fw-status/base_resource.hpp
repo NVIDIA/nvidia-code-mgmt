@@ -57,7 +57,7 @@ namespace MatchRules = sdbusplus::bus::match::rules;
 class ResourceInterfaces : public ResourceInterfacesInherit
 {
   public:
-    ResourceInterfaces(sdbusplus::bus::bus& sdbus, const std::string& objPath) :
+    ResourceInterfaces(sdbusplus::bus_t& sdbus, const std::string& objPath) :
         ResourceInterfacesInherit(sdbus, objPath.c_str(),
                                   action::emit_interface_added)
     {}
@@ -72,7 +72,7 @@ class ResourceInterfaces : public ResourceInterfacesInherit
 class BootStatus : public BootStatusInterfaceInherit
 {
   public:
-    BootStatus(sdbusplus::bus::bus& sdbus, const std::string& objPath) :
+    BootStatus(sdbusplus::bus_t& sdbus, const std::string& objPath) :
         BootStatusInterfaceInherit(sdbus, objPath.c_str(),
                                    action::emit_interface_added)
     {}
@@ -95,8 +95,7 @@ class SetRecoveryModeInterface : public SetRecoveryModeInterfaceInherit
      * recovery
      *
      */
-    SetRecoveryModeInterface(sdbusplus::bus::bus& sdbus,
-                             const std::string& path,
+    SetRecoveryModeInterface(sdbusplus::bus_t& sdbus, const std::string& path,
                              std::function<void()> recoveryCallback) :
         SetRecoveryModeInterfaceInherit(sdbus, path.c_str(),
                                         action::emit_interface_added),
@@ -134,7 +133,7 @@ class SetRecoveryModeInterface : public SetRecoveryModeInterfaceInherit
 class BaseResource
 {
   public:
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     /**@brief Constructor for the BaseResource Class
      *
@@ -142,7 +141,7 @@ class BaseResource
      * @param objPath - Path of D-Bus object to publish
      *
      */
-    BaseResource(sdbusplus::bus::bus& bus, const std::string& objPath) :
+    BaseResource(sdbusplus::bus_t& bus, const std::string& objPath) :
         bus(bus), path(objPath)
     {}
 

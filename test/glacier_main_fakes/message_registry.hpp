@@ -42,7 +42,7 @@ inline void resetFakeMessageRegistryCalls()
 class MessageRegistry
 {
   public:
-    explicit MessageRegistry(sdbusplus::bus::bus&)
+    explicit MessageRegistry(sdbusplus::bus_t&)
     {}
 
     void createMessageRegistry(const std::string& messageID,

@@ -143,7 +143,7 @@ class CPLDItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    CPLDItemUpdater(sdbusplus::bus::bus& bus, const std::string& model,
+    CPLDItemUpdater(sdbusplus::bus_t& bus, const std::string& model,
                     const std::string& target) :
         BaseItemUpdater(bus, model, CPLD_INVENTORY_IFACE, "CPLD",
                         CPLD_BUSNAME_UPDATER + target, CPLD_UPDATE_SERVICE,

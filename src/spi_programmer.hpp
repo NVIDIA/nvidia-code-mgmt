@@ -27,7 +27,7 @@ class SPIProgrammer : public BaseItemUpdater
      *
      * @param bus dbus reference
      */
-    SPIProgrammer(sdbusplus::bus::bus& bus) :
+    SPIProgrammer(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, SPI_PROGRAMMER_SUPPORTED_MODEL,
                         SPI_PROGRAMMER_INVENTORY_IFACE, SPI_PROGRAMMER_NAME,
                         SPI_PROGRAMMER_BUSNAME_UPDATER,

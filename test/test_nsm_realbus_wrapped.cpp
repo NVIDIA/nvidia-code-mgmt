@@ -324,7 +324,7 @@ dbus::ObjectValueTree buildObjectValueTree(const ManagedObjects& objects)
             }
             interfaceMap.emplace(iface, std::move(propertyMap));
         }
-        objectTree.emplace(sdbusplus::message::object_path{path},
+        objectTree.emplace(sdbusplus::object_path{path},
                            std::move(interfaceMap));
     }
     return objectTree;
@@ -489,7 +489,7 @@ void pushObjectPath(const char* path)
         [path](sd_bus_message* request, sd_bus_message** reply) {
             return makeMethodReturn(
                 request, reply, [&](sdbusplus::message::message& response) {
-                    response.append(sdbusplus::message::object_path{path});
+                    response.append(sdbusplus::object_path{path});
                 });
         });
 }
@@ -610,8 +610,8 @@ class ScopedDbusService
     {
         bus.request_name(serviceName.c_str());
         const int rc = sd_bus_add_object_vtable(
-            sdbusplus::bus::details::bus_friend::get_busp(bus), &slot,
-            path.c_str(), interface.c_str(), vtable, userdata);
+            sdbusplus::details::bus_friend::get_busp(bus), &slot, path.c_str(),
+            interface.c_str(), vtable, userdata);
         if (rc < 0)
         {
             throw std::runtime_error("failed to register test D-Bus service");
@@ -686,7 +686,7 @@ class ScopedMultiPathDbusService
         {
             sd_bus_slot* slot = nullptr;
             const int rc = sd_bus_add_object_vtable(
-                sdbusplus::bus::details::bus_friend::get_busp(bus), &slot,
+                sdbusplus::details::bus_friend::get_busp(bus), &slot,
                 object.path.c_str(), object.interface.c_str(), object.vtable,
                 object.userdata);
             if (rc < 0)
@@ -807,7 +807,7 @@ int handleNsmInstallToken(sd_bus_message* raw, void* userdata, sd_bus_error*)
     }
 
     return sendMethodReturn(raw, [&](auto& response) {
-        response.append(sdbusplus::message::object_path{it->second});
+        response.append(sdbusplus::object_path{it->second});
     });
 }
 
@@ -856,7 +856,7 @@ int handleLegacyDebugTokenGetStatus(sd_bus_message* raw, void* userdata,
     const auto asyncPath = it->second.front();
     it->second.pop_front();
     return sendMethodReturn(raw, [&](auto& response) {
-        response.append(sdbusplus::message::object_path{asyncPath});
+        response.append(sdbusplus::object_path{asyncPath});
     });
 }
 
@@ -877,7 +877,7 @@ int handleLegacyDebugTokenDisableTokens(sd_bus_message* raw, void* userdata,
     const auto asyncPath = it->second.front();
     it->second.pop_front();
     return sendMethodReturn(raw, [&](auto& response) {
-        response.append(sdbusplus::message::object_path{asyncPath});
+        response.append(sdbusplus::object_path{asyncPath});
     });
 }
 
@@ -910,7 +910,7 @@ int handleLegacyDebugTokenInstallToken(sd_bus_message* raw, void* userdata,
     const auto asyncPath = it->second.front();
     it->second.pop_front();
     return sendMethodReturn(raw, [&](auto& response) {
-        response.append(sdbusplus::message::object_path{asyncPath});
+        response.append(sdbusplus::object_path{asyncPath});
     });
 }
 
@@ -1383,9 +1383,8 @@ WrappedSdBusInterface wrappedSdBusInterface;
 sdbusplus::bus_t makeWrappedBus()
 {
     auto rawBus = sdbusplus::bus::new_default();
-    return sdbusplus::bus_t(
-        sdbusplus::bus::details::bus_friend::get_busp(rawBus),
-        &wrappedSdBusInterface);
+    return sdbusplus::bus_t(sdbusplus::details::bus_friend::get_busp(rawBus),
+                            &wrappedSdBusInterface);
 }
 
 // ========================== Test fixture =================================

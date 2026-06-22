@@ -77,7 +77,7 @@ class FPGAItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    FPGAItemUpdater(sdbusplus::bus::bus& bus) :
+    FPGAItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, FPGA_SUPPORTED_MODEL, FPGA_INVENTORY_IFACE, "FPGA",
                         FPGA_BUSNAME_UPDATER, FPGA_UPDATE_SERVICE, false,
                         FPGA_BUSNAME_INVENTORY)

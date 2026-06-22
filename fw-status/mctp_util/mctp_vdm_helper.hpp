@@ -92,7 +92,7 @@ class MCTPVdmHelper : public mctp_vdm::MctpDiscoveryHandlerIntf
      *  @param[in] sockHandler - MCTP socket handler
      *  @param[in] instanceIdMgr - Instance ID Manager
      */
-    explicit MCTPVdmHelper(sdbusplus::bus::bus& bus,
+    explicit MCTPVdmHelper(sdbusplus::bus_t& bus,
                            mctp_vdm::requester::Handler& reqHandler,
                            mctp_socket::Handler& sockHandler,
                            mctp_vdm::InstanceIdMgr& instanceIdMgr);
@@ -110,7 +110,7 @@ class MCTPVdmHelper : public mctp_vdm::MctpDiscoveryHandlerIntf
 
   private:
     /** @brief reference to the systemd bus */
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     mctp_vdm::requester::Handler& reqHandler;
 

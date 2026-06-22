@@ -22,8 +22,7 @@ using namespace nvidia::smcu::common;
 namespace nvidia::smcu::manager
 {
 
-SMCUManager::SMCUManager(sdbusplus::bus::bus& bus, std::string basePath) :
-    bus(bus)
+SMCUManager::SMCUManager(sdbusplus::bus_t& bus, std::string basePath) : bus(bus)
 {
     try
     {

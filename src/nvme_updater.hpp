@@ -99,7 +99,7 @@ class NVMeItemUpdater : public BaseItemUpdater
      * @param bus dbus reference
      * @param together update everything together
      */
-    NVMeItemUpdater(sdbusplus::bus::bus& bus, bool together,
+    NVMeItemUpdater(sdbusplus::bus_t& bus, bool together,
                     const std::string& model, const std::string& target) :
         BaseItemUpdater(bus, model, NVME_INVENTORY_IFACE, NVME_NAME,
                         NVME_BUSNAME_UPDATER + target, NVME_UPDATE_SERVICE,
@@ -175,8 +175,7 @@ class NVMeItemUpdater : public BaseItemUpdater
      * @param target software inventory target object path
      * @return std::string NVMe drive name
      */
-    std::string
-        validateTarget(const sdbusplus::message::object_path& target) override;
+    std::string validateTarget(const sdbusplus::object_path& target) override;
 
     /**
      * @brief Check if path is a valid NVMe device
@@ -305,7 +304,7 @@ class NVMeItemUpdater : public BaseItemUpdater
      * @return TargetFilter
      */
     TargetFilter applyTargetFilters(
-        const std::vector<sdbusplus::message::object_path>& targets) override;
+        const std::vector<sdbusplus::object_path>& targets) override;
 
     /**
      * @brief Get D-Bus service name

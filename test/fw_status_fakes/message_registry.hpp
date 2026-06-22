@@ -5,6 +5,6 @@
 class MessageRegistry
 {
   public:
-    explicit MessageRegistry(sdbusplus::bus::bus&)
+    explicit MessageRegistry(sdbusplus::bus_t&)
     {}
 };

@@ -499,9 +499,8 @@ TEST_F(FWStatusMctpDiscoveryTest, DiscoveryCoversConstructorPopulateAndSignal)
     auto msg = bus.new_method_call(
         "xyz.openbmc_project.FakeService", "/xyz/openbmc_project/fake",
         "xyz.openbmc_project.FakeInterface", "FakeMethod");
-    msg.append(
-        sdbusplus::message::object_path("/xyz/openbmc_project/mctp/device0"),
-        validInterfaces);
+    msg.append(sdbusplus::object_path("/xyz/openbmc_project/mctp/device0"),
+               validInterfaces);
     EXPECT_ANY_THROW(discovery.discoverEndpoints(msg));
 
     discovery.handleMctpEndpoints({});
@@ -619,13 +618,13 @@ TEST_F(FWStatusMctpDiscoveryTest,
          {{"svc.good", {"iface"}}, {"svc.fail", {"iface"}}}}};
     dbus::ObjectValueTree managedObjects;
     managedObjects.emplace(
-        sdbusplus::message::object_path("/xyz/openbmc_project/mctp/device0"),
+        sdbusplus::object_path("/xyz/openbmc_project/mctp/device0"),
         validInterfaces);
     managedObjects.emplace(
-        sdbusplus::message::object_path("/xyz/openbmc_project/mctp/device1"),
+        sdbusplus::object_path("/xyz/openbmc_project/mctp/device1"),
         noVdmInterfaces);
     managedObjects.emplace(
-        sdbusplus::message::object_path("/xyz/openbmc_project/mctp/device2"),
+        sdbusplus::object_path("/xyz/openbmc_project/mctp/device2"),
         missingEndpointInterfaces);
     fakeBusCalls.managedObjectResponses.push_back(std::move(managedObjects));
     fakeBusCalls.managedObjectResponses.push_back(std::nullopt);
@@ -637,9 +636,8 @@ TEST_F(FWStatusMctpDiscoveryTest,
     auto signal =
         bus.new_signal("/xyz/openbmc_project/mctp",
                        "org.freedesktop.DBus.ObjectManager", "InterfacesAdded");
-    signal.append(
-        sdbusplus::message::object_path("/xyz/openbmc_project/mctp/device3"),
-        validInterfaces);
+    signal.append(sdbusplus::object_path("/xyz/openbmc_project/mctp/device3"),
+                  validInterfaces);
     (void)sd_bus_message_seal(signal.get(), 0, 0);
     sd_bus_message_rewind(signal.get(), true);
     discovery.discoverEndpoints(signal);
@@ -960,7 +958,7 @@ TEST_F(FWStatusMctpDiscoveryTest,
 
     dbus::ObjectValueTree managedObjects;
     managedObjects.emplace(
-        sdbusplus::message::object_path("/xyz/openbmc_project/mctp/device13"),
+        sdbusplus::object_path("/xyz/openbmc_project/mctp/device13"),
         validInterfaces);
     fakeBusCalls.managedObjectResponses.push_back(std::move(managedObjects));
     fakeBusCalls.failManagedObjects.insert("svc.two");

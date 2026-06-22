@@ -54,7 +54,7 @@ class USBRcmResource : public MCTPDiscoveryResource
      * @param udevMonitor - Shared pointer to UdevMonitor for USB device events
      *
      */
-    USBRcmResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    USBRcmResource(sdbusplus::bus_t& bus, const std::string& objPath,
                    uint8_t eid, const std::string& usbPort,
                    const std::string& companionObjPath,
                    std::shared_ptr<UdevMonitor> udevMonitor);

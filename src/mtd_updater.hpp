@@ -49,7 +49,7 @@ class MTDItemUpdater : public BaseItemUpdater
     bool nostrip;
 
   public:
-    MTDItemUpdater(sdbusplus::bus::bus& bus, std::string mtdN,
+    MTDItemUpdater(sdbusplus::bus_t& bus, std::string mtdN,
                    std::string modelName, bool nostrip) :
         BaseItemUpdater(bus, modelName, MTD_INVENTORY_IFACE,
                         computeInventory(mtdN), MTD_BUSNAME_UPDATER_BASE + mtdN,

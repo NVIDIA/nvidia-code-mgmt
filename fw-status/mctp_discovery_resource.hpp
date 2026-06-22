@@ -51,7 +51,7 @@ class MCTPDiscoveryResource : public BaseResource
      * @param eid - MCTP Endpoint ID of the Resource
      *
      */
-    MCTPDiscoveryResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    MCTPDiscoveryResource(sdbusplus::bus_t& bus, const std::string& objPath,
                           uint8_t eid) : BaseResource(bus, objPath), eid(eid)
     {
         monitorMCTPEndpoint();

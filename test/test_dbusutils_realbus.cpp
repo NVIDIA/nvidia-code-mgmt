@@ -47,7 +47,7 @@ struct OwnedMessage
     sdbusplus::message::message msg;
 };
 
-sd_bus_message* makeRawSignal(sdbusplus::bus::bus& bus, const char* path)
+sd_bus_message* makeRawSignal(sdbusplus::bus_t& bus, const char* path)
 {
     auto msg = bus.new_signal(path, "a.b", "TestSignal");
     return msg.release();
@@ -60,7 +60,7 @@ void finalizeMessage(OwnedMessage& owned, sd_bus_message* rawMsg)
     owned.msg = sdbusplus::message::message(rawMsg, std::false_type{});
 }
 
-OwnedMessage makeInterfacesAddedMessage(sdbusplus::bus::bus& bus,
+OwnedMessage makeInterfacesAddedMessage(sdbusplus::bus_t& bus,
                                         const char* signalPath,
                                         const char* objectPath,
                                         const char* interface)
@@ -128,7 +128,7 @@ void appendProperty(sd_bus_message* rawMsg, const char* key,
     }
 }
 
-OwnedMessage makePropertiesChangedMessage(sdbusplus::bus::bus& bus,
+OwnedMessage makePropertiesChangedMessage(sdbusplus::bus_t& bus,
                                           const char* path,
                                           const char* interface,
                                           const Properties& properties)
@@ -158,7 +158,7 @@ OwnedMessage makePropertiesChangedMessage(sdbusplus::bus::bus& bus,
     return owned;
 }
 
-OwnedMessage makeJobRemovedMessage(sdbusplus::bus::bus& bus, const char* path,
+OwnedMessage makeJobRemovedMessage(sdbusplus::bus_t& bus, const char* path,
                                    uint32_t jobId, const char* jobPath,
                                    const char* unit, const char* result)
 {
@@ -175,7 +175,7 @@ OwnedMessage makeJobRemovedMessage(sdbusplus::bus::bus& bus, const char* path,
 class RealBusUpdater : public BaseItemUpdater
 {
   public:
-    RealBusUpdater(sdbusplus::bus::bus& bus) :
+    RealBusUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, "NVIDIA:Model-A:uuid-1", ITEM_IFACE, "Updater",
                         "bus", "svc@.service", false, inventoryService)
     {}

@@ -79,7 +79,7 @@ class BaseController
      * @param loop
      * @return int
      */
-    int startWatching(sdbusplus::bus::bus& bus, sd_event* loop);
+    int startWatching(sdbusplus::bus_t& bus, sd_event* loop);
 
     /**
      * @brief Updates devices using existing images

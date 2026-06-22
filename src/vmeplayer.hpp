@@ -17,8 +17,7 @@ class VmePlayer : public BaseItemUpdater
     std::string vmeName;
 
   public:
-    VmePlayer(sdbusplus::bus::bus& bus, std::string vmeN,
-              std::string modelName) :
+    VmePlayer(sdbusplus::bus_t& bus, std::string vmeN, std::string modelName) :
         BaseItemUpdater(bus, modelName, VMEPLAYER_INVENTORY_IFACE,
                         "VMEPLAYER_" + vmeN, VMEPLAYER_BUSNAME_UPDATER + vmeN,
                         VMEPLAYER_SERVICE, false,

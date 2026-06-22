@@ -219,29 +219,30 @@ asio::awaitable<void> DbusInstaller::install(const json& payload,
 
         lg2::info("Calling DotCAKInstall on {PATH}", "PATH", objPath);
 
-        auto asyncObjPath = co_await asio::async_initiate<
-            const asio::use_awaitable_t<>&,
-            void(boost::system::error_code, sdbusplus::message::object_path)>(
-            [this, &objPath, &cakAuthEnum, &cakEcdsaKey, &cakLmsKey,
-             &lakAuthEnum, &lakEcdsaKey, &lakLmsKey, lockDisable, ownerMinSvn,
-             vendorMinSvn](auto&& handler) {
-                // async_method_call uses move_only_function internally, so the
-                // handler can be move-only.  Wrap in a concrete lambda with an
-                // explicit (error_code, object_path) signature so
-                // callable_traits::args_t can introspect the return type.
-                auto sh = std::make_shared<std::decay_t<decltype(handler)>>(
-                    std::forward<decltype(handler)>(handler));
-                bus_->async_method_call(
-                    [sh](boost::system::error_code ec,
-                         sdbusplus::message::object_path path) {
-                        (*sh)(ec, std::move(path));
-                    },
-                    kNsmService, objPath, kDotActionIntf, "DotCAKInstall",
-                    cakAuthEnum, cakEcdsaKey, cakLmsKey, lakAuthEnum,
-                    lakEcdsaKey, lakLmsKey, lockDisable, ownerMinSvn,
-                    vendorMinSvn);
-            },
-            asio::use_awaitable);
+        auto asyncObjPath =
+            co_await asio::async_initiate<const asio::use_awaitable_t<>&,
+                                          void(boost::system::error_code,
+                                               sdbusplus::object_path)>(
+                [this, &objPath, &cakAuthEnum, &cakEcdsaKey, &cakLmsKey,
+                 &lakAuthEnum, &lakEcdsaKey, &lakLmsKey, lockDisable,
+                 ownerMinSvn, vendorMinSvn](auto&& handler) {
+                    // async_method_call uses move_only_function internally, so
+                    // the handler can be move-only.  Wrap in a concrete lambda
+                    // with an explicit (error_code, object_path) signature so
+                    // callable_traits::args_t can introspect the return type.
+                    auto sh = std::make_shared<std::decay_t<decltype(handler)>>(
+                        std::forward<decltype(handler)>(handler));
+                    bus_->async_method_call(
+                        [sh](boost::system::error_code ec,
+                             sdbusplus::object_path path) {
+                            (*sh)(ec, std::move(path));
+                        },
+                        kNsmService, objPath, kDotActionIntf, "DotCAKInstall",
+                        cakAuthEnum, cakEcdsaKey, cakLmsKey, lakAuthEnum,
+                        lakEcdsaKey, lakLmsKey, lockDisable, ownerMinSvn,
+                        vendorMinSvn);
+                },
+                asio::use_awaitable);
 
         std::string asyncPath = asyncObjPath;
         lg2::info("DotCAKInstall async operation at {ASYNC}", "ASYNC",

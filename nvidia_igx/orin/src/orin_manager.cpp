@@ -22,8 +22,7 @@ using namespace nvidia::orin::common;
 namespace nvidia::orin::manager
 {
 
-ORINManager::ORINManager(sdbusplus::bus::bus& bus, std::string basePath) :
-    bus(bus)
+ORINManager::ORINManager(sdbusplus::bus_t& bus, std::string basePath) : bus(bus)
 {
     try
     {

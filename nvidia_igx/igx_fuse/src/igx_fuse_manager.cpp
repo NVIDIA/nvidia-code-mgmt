@@ -22,7 +22,7 @@ using namespace nvidia::igxfuse::common;
 namespace nvidia::igxfuse::manager
 {
 
-IGXFUSEManager::IGXFUSEManager(sdbusplus::bus::bus& bus, std::string basePath) :
+IGXFUSEManager::IGXFUSEManager(sdbusplus::bus_t& bus, std::string basePath) :
     bus(bus)
 {
     try

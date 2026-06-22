@@ -107,7 +107,7 @@ class SoftwareVersion : public softwareVersionInherit
      *  @param[in] bus - Bus to attach to
      *  @param[in] objPath - D-Bus object path
      */
-    SoftwareVersion(sdbusplus::bus::bus& bus, const std::string& objPath) :
+    SoftwareVersion(sdbusplus::bus_t& bus, const std::string& objPath) :
         softwareVersionInherit(bus, objPath.c_str(),
                                action::emit_interface_added)
 
@@ -137,7 +137,7 @@ class SoftwareSettings : public softwareSettingsInherit
      *  @param[in] bus - Bus to attach to
      *  @param[in] objPath - D-Bus object path
      */
-    SoftwareSettings(sdbusplus::bus::bus& bus, const std::string& objPath) :
+    SoftwareSettings(sdbusplus::bus_t& bus, const std::string& objPath) :
         softwareSettingsInherit(bus, objPath.c_str(),
                                 action::emit_interface_added)
 
@@ -158,7 +158,7 @@ class ActivationProgress : public ActivationProgressInherit
      * @param bus
      * @param path
      */
-    ActivationProgress(sdbusplus::bus::bus& bus, const std::string& path) :
+    ActivationProgress(sdbusplus::bus_t& bus, const std::string& path) :
         ActivationProgressInherit(bus, path.c_str(),
                                   action::emit_interface_added)
     {
@@ -184,7 +184,7 @@ class Delete : public DeleteInherit
      * @param path
      * @param parent
      */
-    Delete(sdbusplus::bus::bus& bus, const std::string& path, Version& parent) :
+    Delete(sdbusplus::bus_t& bus, const std::string& path, Version& parent) :
         DeleteInherit(bus, path.c_str(), action::emit_interface_added),
         parent(parent)
     {
@@ -215,7 +215,7 @@ class UpdatePolicy : public UpdatePolicyInherit
      *  @param[in] bus - Bus to attach to
      *  @param[in] objPath - D-Bus object path
      */
-    UpdatePolicy(sdbusplus::bus::bus& bus, const std::string& objPath) :
+    UpdatePolicy(sdbusplus::bus_t& bus, const std::string& objPath) :
         UpdatePolicyInherit(bus, objPath.c_str(), action::emit_interface_added)
 
     {}
@@ -235,7 +235,7 @@ class DeviceSKU : public SKUInherit
      *  @param[in] bus - Bus to attach t
      *  @param[in] objPath - D-Bus object path
      */
-    DeviceSKU(sdbusplus::bus::bus& bus, const std::string& objPath) :
+    DeviceSKU(sdbusplus::bus_t& bus, const std::string& objPath) :
         SKUInherit(bus, objPath.c_str(), action::emit_interface_added)
 
     {}
@@ -266,7 +266,7 @@ class Version : public VersionInherit, public DBUSUtils
      * @param activationListener
      * @param itemUpdaterUtils
      */
-    Version(sdbusplus::bus::bus& bus, const std::string& versionString,
+    Version(sdbusplus::bus_t& bus, const std::string& versionString,
             const std::string& objPath, const std::string& uniqueId,
             const std::string& versionId, const std::string& filePath,
             const Status& activationStatus, const std::string& model,

@@ -159,7 +159,7 @@ namespace
 class CountingMCTPResource : public MCTPDiscoveryResource
 {
   public:
-    CountingMCTPResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    CountingMCTPResource(sdbusplus::bus_t& bus, const std::string& objPath,
                          uint8_t eid) : MCTPDiscoveryResource(bus, objPath, eid)
     {}
 
@@ -178,7 +178,7 @@ sdbusplus::message::message makeInterfacesAddedMessage(
     auto msg =
         bus.new_signal("/au/com/codeconstruct/mctp1",
                        "org.freedesktop.DBus.ObjectManager", "InterfacesAdded");
-    msg.append(sdbusplus::message::object_path(path), interfaces);
+    msg.append(sdbusplus::object_path(path), interfaces);
     return msg;
 }
 
@@ -197,7 +197,7 @@ sdbusplus::message::message
     auto msg = bus.new_signal("/au/com/codeconstruct/mctp1",
                               "org.freedesktop.DBus.ObjectManager",
                               "InterfacesRemoved");
-    msg.append(sdbusplus::message::object_path(path),
+    msg.append(sdbusplus::object_path(path),
                std::vector<std::string>{mctpEndpointIntfName});
     return msg;
 }
@@ -607,7 +607,7 @@ TEST_F(FWStatusResourceTest,
         mctpObjMgrPath.data(), "org.freedesktop.DBus.ObjectManager",
         "InterfacesAdded");
     missingIntfAdd.append(
-        sdbusplus::message::object_path(
+        sdbusplus::object_path(
             "/au/com/codeconstruct/mctp1/networks/1/endpoints/99"),
         nvidia::software::updater::InterfaceMap{});
     EXPECT_GT(
@@ -860,7 +860,7 @@ TEST_F(FWStatusResourceTest,
         mctpObjMgrPath.data(), "org.freedesktop.DBus.ObjectManager",
         "InterfacesAdded");
     missingIntfAdd.append(
-        sdbusplus::message::object_path(
+        sdbusplus::object_path(
             "/au/com/codeconstruct/mctp1/networks/1/endpoints/100"),
         nvidia::software::updater::InterfaceMap{});
     EXPECT_GT(
@@ -1029,7 +1029,7 @@ TEST_F(FWStatusResourceTest, NVSwitchDirectHelpersCoverI2CAndGpioBranches)
         mctpObjMgrPath.data(), "org.freedesktop.DBus.ObjectManager",
         "InterfacesAdded");
     missingIntfAdd.append(
-        sdbusplus::message::object_path(
+        sdbusplus::object_path(
             "/au/com/codeconstruct/mctp1/networks/1/endpoints/2"),
         nvidia::software::updater::InterfaceMap{});
     EXPECT_GT(

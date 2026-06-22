@@ -53,7 +53,7 @@ class ConnectXResource : public MCTPDiscoveryResource
      * @param flashNotPresentGpioName - GPIO name for flash-not-present (e.g.
      * from FlashNotPresentGPIO config)
      */
-    ConnectXResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    ConnectXResource(sdbusplus::bus_t& bus, const std::string& objPath,
                      const std::string& chassisObjPath,
                      const std::string& forceRecoveryChassisObjPath,
                      const uint64_t i2cBus, const uint64_t i2cAddress,
@@ -102,8 +102,7 @@ class ConnectXResource : public MCTPDiscoveryResource
      * SetRecoveryMode interface. If empty, the interface is not created.
      */
     void createRecoveryModeInterface(
-        sdbusplus::bus::bus& bus,
-        const std::string& forceRecoveryChassisObjPath)
+        sdbusplus::bus_t& bus, const std::string& forceRecoveryChassisObjPath)
     {
         if (forceRecoveryChassisObjPath.empty())
         {
@@ -296,7 +295,7 @@ class ConnectXResource : public MCTPDiscoveryResource
                 [this](sdbusplus::message::message& msg) {
                     try
                     {
-                        sdbusplus::message::object_path addedPath;
+                        sdbusplus::object_path addedPath;
                         nvidia::software::updater::InterfaceMap interfaces;
                         msg.read(addedPath, interfaces);
 
@@ -331,7 +330,7 @@ class ConnectXResource : public MCTPDiscoveryResource
                 [this](sdbusplus::message::message& msg) {
                     try
                     {
-                        sdbusplus::message::object_path removedPath;
+                        sdbusplus::object_path removedPath;
                         msg.read(removedPath);
 
                         if (removedPath.str == smaMctpObjectPath)

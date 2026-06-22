@@ -40,7 +40,7 @@ class PEXItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    PEXItemUpdater(sdbusplus::bus::bus& bus) :
+    PEXItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, PEX_SUPPORTED_MODEL, PEX_INVENTORY_IFACE, "PEX",
                         PEX_BUSNAME_UPDATER, PEX_UPDATE_SERVICE, false,
                         PEX_BUSNAME_INVENTORY)

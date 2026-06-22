@@ -56,7 +56,7 @@ static auto& getAsioConnection()
 /**
  * @brief function to get the singleton D-Bus connection
  *
- * @return sdbusplus::bus::bus& Reference to the D-Bus connection
+ * @return sdbusplus::bus_t& Reference to the D-Bus connection
  */
 static auto& getBus()
 {
@@ -307,11 +307,11 @@ int Spi::getExpectedTime(Operation ops) const
     }
 }
 
-sdbusplus::message::object_path Spi::startUpdate(
+sdbusplus::object_path Spi::startUpdate(
     sdbusplus::message::unix_fd image,
     ApplyTimeIntf::RequestedApplyTimes applyTime [[maybe_unused]],
     bool forceUpdate [[maybe_unused]],
-    std::vector<sdbusplus::message::object_path> targets [[maybe_unused]])
+    std::vector<sdbusplus::object_path> targets [[maybe_unused]])
 {
     // Extract file descriptor from unix_fd
     int imageFd = image;
@@ -381,11 +381,11 @@ sdbusplus::message::object_path Spi::startUpdate(
     executeFlashrom(args, Operation::Write);
 
     // Return the path to the progress object
-    return sdbusplus::message::object_path(std::string(spiStatusPath) + "_" +
-                                           std::to_string(objIndex - 1));
+    return sdbusplus::object_path(std::string(spiStatusPath) + "_" +
+                                  std::to_string(objIndex - 1));
 }
 
-sdbusplus::message::object_path Spi::eraseSpi()
+sdbusplus::object_path Spi::eraseSpi()
 {
     if (!startSpiOperation(Operation::Erase))
     {
@@ -396,11 +396,11 @@ sdbusplus::message::object_path Spi::eraseSpi()
     std::vector<std::string> args = prepareArgs(Operation::Erase);
     executeFlashrom(args, Operation::Erase);
     // Return the path to the progress object
-    return sdbusplus::message::object_path(std::string(spiStatusPath) + "_" +
-                                           std::to_string(objIndex - 1));
+    return sdbusplus::object_path(std::string(spiStatusPath) + "_" +
+                                  std::to_string(objIndex - 1));
 }
 
-sdbusplus::message::object_path Spi::readSpi()
+sdbusplus::object_path Spi::readSpi()
 {
     if (!startSpiOperation(Operation::Read))
     {
@@ -411,8 +411,8 @@ sdbusplus::message::object_path Spi::readSpi()
     std::vector<std::string> args = prepareArgs(Operation::Read);
     executeFlashrom(args, Operation::Read);
     // Return the path to the progress object
-    return sdbusplus::message::object_path(std::string(spiStatusPath) + "_" +
-                                           std::to_string(objIndex - 1));
+    return sdbusplus::object_path(std::string(spiStatusPath) + "_" +
+                                  std::to_string(objIndex - 1));
 }
 
 std::vector<std::string> Spi::prepareArgs(Operation ops)
@@ -1133,7 +1133,7 @@ void tryPopulateSpiObjects()
         inventoryObjectMatch = std::make_unique<sdbusplus::bus::match_t>(
             getBus(), MatchRules::interfacesAdded(inventoryRootPath),
             []([[maybe_unused]] sdbusplus::message::message& msg) {
-                sdbusplus::message::object_path objPath;
+                sdbusplus::object_path objPath;
                 std::map<std::string, std::map<std::string, Value>> interfaces;
                 msg.read(objPath, interfaces);
 

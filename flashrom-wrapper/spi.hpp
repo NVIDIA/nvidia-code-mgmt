@@ -68,7 +68,7 @@ class Spi : public SpiIntf
     };
 
   public:
-    Spi(sdbusplus::bus::bus& bus, const std::string& objPath,
+    Spi(sdbusplus::bus_t& bus, const std::string& objPath,
         const std::string& usbPort, const std::string& name,
         const std::string& programmer, const std::string& type,
         const std::string& chipSelect,
@@ -89,18 +89,18 @@ class Spi : public SpiIntf
     /**
      * @brief D-Bus method to erase SPI flash memory
      *
-     * @return sdbusplus::message::object_path The object path of the progress
+     * @return sdbusplus::object_path The object path of the progress
      * tracking object
      */
-    sdbusplus::message::object_path eraseSpi();
+    sdbusplus::object_path eraseSpi();
 
     /**
      * @brief D-Bus method to read SPI flash memory
      *
-     * @return sdbusplus::message::object_path The object path of the progress
+     * @return sdbusplus::object_path The object path of the progress
      * tracking object
      */
-    sdbusplus::message::object_path readSpi();
+    sdbusplus::object_path readSpi();
 
     /**
      * @brief D-Bus method to write/update SPI flash memory with new firmware
@@ -113,14 +113,14 @@ class Spi : public SpiIntf
      * (currently unused)
      * @param targets List of target object paths for the update (currently
      * unused)
-     * @return sdbusplus::message::object_path The object path of the progress
+     * @return sdbusplus::object_path The object path of the progress
      * tracking object
      */
-    sdbusplus::message::object_path startUpdate(
+    sdbusplus::object_path startUpdate(
         sdbusplus::message::unix_fd image,
         ApplyTimeIntf::RequestedApplyTimes applyTime [[maybe_unused]],
         bool forceUpdate [[maybe_unused]],
-        std::vector<sdbusplus::message::object_path> targets [[maybe_unused]]);
+        std::vector<sdbusplus::object_path> targets [[maybe_unused]]);
 
     /**
      * @brief function to prepare command line arguments for flashrom operation

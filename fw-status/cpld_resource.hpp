@@ -52,7 +52,7 @@ class CpldResource : public BaseResource
      * @param smaEid   - MCTP EID of the SMA/MCU managing this CPLD
      * @param deviceId - monitor-eventing device ID (e.g. "CPLD_0")
      */
-    CpldResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    CpldResource(sdbusplus::bus_t& bus, const std::string& objPath,
                  uint8_t smaEid, const std::string& deviceId);
 
   private:

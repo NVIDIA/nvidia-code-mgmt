@@ -59,7 +59,7 @@ class VersionInterface : public VersionObject
      * @param path
      * @param fwversion
      */
-    VersionInterface(sdbusplus::bus::bus& bus, const std::string& path,
+    VersionInterface(sdbusplus::bus_t& bus, const std::string& path,
                      std::string& fwversion) :
         VersionObject(bus, path.c_str(), action::emit_interface_added)
     {
@@ -80,7 +80,7 @@ class Orin : public OrinInherit, public Util
     Orin& operator=(Orin&&) = delete;
     ~Orin() = default;
 
-    Orin(sdbusplus::bus::bus& bus, const std::string& objPath) :
+    Orin(sdbusplus::bus_t& bus, const std::string& objPath) :
         OrinInherit(bus, (objPath).c_str()), bus(bus), inventoryPath(objPath)
     {
         sdbusplus::xyz::openbmc_project::Inventory::server::Item::prettyName(
@@ -89,7 +89,7 @@ class Orin : public OrinInherit, public Util
         registerSoftwareVersion(bus, objPath);
     }
 
-    void registerSoftwareVersion(sdbusplus::bus::bus& bus,
+    void registerSoftwareVersion(sdbusplus::bus_t& bus,
                                  const std::string& /* ifPath */)
     {
         std::string swpath = SW_INV_PATH;
@@ -122,7 +122,7 @@ class Orin : public OrinInherit, public Util
 
   private:
     /** @brief systemd bus member */
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
     std::string inventoryPath;
     std::unique_ptr<VersionInterface> VersionObj;
 };

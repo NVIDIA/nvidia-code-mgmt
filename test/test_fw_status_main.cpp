@@ -45,7 +45,7 @@ inline sdbusplus::bus_t sharedMockBus =
 namespace sdbusplus::bus
 {
 
-inline bus new_default_for_test()
+inline sdbusplus::bus_t new_default_for_test()
 {
     return sdbusplus::get_mocked_new(&::sharedSdbusMock);
 }
@@ -283,7 +283,7 @@ extern "C" struct udev_device* __wrap_udev_device_unref(struct udev_device* dev)
 class ThrowingResource : public BaseResource
 {
   public:
-    ThrowingResource(sdbusplus::bus::bus& bus, const std::string& path) :
+    ThrowingResource(sdbusplus::bus_t& bus, const std::string& path) :
         BaseResource(bus, path)
     {}
 
@@ -497,7 +497,7 @@ sdbusplus::message::message makeObjectManagerSignal(
     auto msg =
         sender.new_signal(signalPath.c_str(),
                           "org.freedesktop.DBus.ObjectManager", member.c_str());
-    msg.append(sdbusplus::message::object_path(objectPath), interfaces);
+    msg.append(sdbusplus::object_path(objectPath), interfaces);
     return msg;
 }
 
@@ -556,8 +556,8 @@ class ObjectMapperService
         state.subtreePaths = std::move(subtreePaths);
         bus.request_name(MAPPER_BUSNAME);
         const int rc = sd_bus_add_object_vtable(
-            sdbusplus::bus::details::bus_friend::get_busp(bus), &slot,
-            MAPPER_PATH, MAPPER_INTERFACE, objectMapperVTable, &state);
+            sdbusplus::details::bus_friend::get_busp(bus), &slot, MAPPER_PATH,
+            MAPPER_INTERFACE, objectMapperVTable, &state);
         if (rc < 0)
         {
             throw std::runtime_error(
@@ -2168,7 +2168,7 @@ TEST_F(FWStatusMainTest, CpldResourceCoversLookupAndWrongRemoveBranches)
         mctpObjMgrPath.data(), "org.freedesktop.DBus.ObjectManager",
         "InterfacesRemoved");
     wrongRemove.append(
-        sdbusplus::message::object_path(
+        sdbusplus::object_path(
             "/au/com/codeconstruct/mctp1/networks/1/endpoints/other"),
         std::vector<std::string>{mctpEndpointIntfName});
     EXPECT_GT(

@@ -342,7 +342,7 @@ void BaseItemUpdater::newDeviceAdded(sdbusplus::message::message& msg)
 {
     try
     {
-        sdbusplus::message::object_path objPath;
+        sdbusplus::object_path objPath;
         std::map<std::string, std::map<std::string, DbusVariant>> interfaces;
         msg.read(objPath, interfaces);
 
@@ -362,7 +362,7 @@ void BaseItemUpdater::newDeviceAdded(sdbusplus::message::message& msg)
 }
 
 TargetFilter BaseItemUpdater::applyTargetFilters(
-    const std::vector<sdbusplus::message::object_path>& targets)
+    const std::vector<sdbusplus::object_path>& targets)
 {
     TargetFilter targetFilter = {TargetFilterType::UpdateNone, {}};
     if (targets.size() == 0)

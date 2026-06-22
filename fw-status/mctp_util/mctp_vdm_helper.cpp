@@ -26,7 +26,7 @@
 
 using namespace mctp_vdm;
 
-MCTPVdmHelper::MCTPVdmHelper(sdbusplus::bus::bus& bus,
+MCTPVdmHelper::MCTPVdmHelper(sdbusplus::bus_t& bus,
                              mctp_vdm::requester::Handler& reqHandler,
                              mctp_socket::Handler& sockHandler,
                              mctp_vdm::InstanceIdMgr& instanceIdMgr) :

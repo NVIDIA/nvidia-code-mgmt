@@ -32,7 +32,7 @@ namespace updater
 class NVLinkManagementNICRecoveryUpdater : public BaseItemUpdater
 {
   public:
-    NVLinkManagementNICRecoveryUpdater(sdbusplus::bus::bus& bus) :
+    NVLinkManagementNICRecoveryUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, NVLINKMANAGEMENTNIC_RECOVERY_SUPPORTED_MODEL,
                         NVLINKMANAGEMENTNIC_RECOVERY_INVENTORY_IFACE,
                         NVLINKMANAGEMENTNIC_RECOVERY_NAME,

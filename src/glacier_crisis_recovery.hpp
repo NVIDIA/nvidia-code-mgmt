@@ -20,7 +20,7 @@ class GlacierRecovery : public BaseItemUpdater
      * @param bus dbus reference
      * @param together update everything together
      */
-    GlacierRecovery(sdbusplus::bus::bus& bus) :
+    GlacierRecovery(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, GLACIER_RECOVERY_SUPPORTED_MODEL,
                         GLACIER_RECOVERY_INVENTORY_IFACE, GLACIER_RECOVERY_NAME,
                         GLACIER_RECOVERY_BUSNAME_UPDATER,

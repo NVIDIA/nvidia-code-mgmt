@@ -54,8 +54,8 @@ class APResource : public MCTPDiscoveryResource
      * @param erotResource - Pointer to the associated ERoT resource
      *
      */
-    APResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-               uint8_t apEid, ERoTResource* erotResource) :
+    APResource(sdbusplus::bus_t& bus, const std::string& objPath, uint8_t apEid,
+               ERoTResource* erotResource) :
         MCTPDiscoveryResource(bus, objPath, apEid), erotResource(erotResource)
     {
         initializeHealth().detach();

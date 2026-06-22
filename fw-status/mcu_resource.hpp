@@ -39,8 +39,8 @@ class MCUResource : public MCTPDiscoveryResource
      * @param mcuRecoveryManager - Shared pointer to MCU Recovery Manager
      *
      */
-    MCUResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                uint8_t eid, const std::string& deviceId,
+    MCUResource(sdbusplus::bus_t& bus, const std::string& objPath, uint8_t eid,
+                const std::string& deviceId,
                 std::shared_ptr<mcu_recovery_manager::MCURecoveryManager>
                     mcuRecoveryManager) :
         MCTPDiscoveryResource(bus, objPath, eid), deviceId(deviceId),

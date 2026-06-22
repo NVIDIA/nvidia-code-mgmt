@@ -32,7 +32,7 @@ namespace updater
 class ConnectXRecoveryUpdater : public BaseItemUpdater
 {
   public:
-    ConnectXRecoveryUpdater(sdbusplus::bus::bus& bus) :
+    ConnectXRecoveryUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(
             bus, CONNECTX_RECOVERY_SUPPORTED_MODEL,
             CONNECTX_RECOVERY_INVENTORY_IFACE, CONNECTX_RECOVERY_NAME,

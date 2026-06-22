@@ -22,7 +22,7 @@ inline ObjectValueTree fakeManagedObjects{};
 class DBUSUtils
 {
   public:
-    explicit DBUSUtils(sdbusplus::bus::bus&)
+    explicit DBUSUtils(sdbusplus::bus_t&)
     {}
 
     template <typename T>

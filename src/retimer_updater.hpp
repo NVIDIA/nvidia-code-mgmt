@@ -92,7 +92,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param bus dbus reference
      * @param together update everything together
      */
-    ReTimerItemUpdater(sdbusplus::bus::bus& bus, bool together) :
+    ReTimerItemUpdater(sdbusplus::bus_t& bus, bool together) :
         BaseItemUpdater(bus, RT_SUPPORTED_MODEL, RT_INVENTORY_IFACE, RT_NAME,
                         RT_BUSNAME_UPDATER, RT_UPDATE_SERVICE, together,
                         RT_BUSNAME_INVENTORY)
@@ -311,7 +311,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
         return RT_BUSNAME_INVENTORY;
     }
 
-    std::string validateTarget(const sdbusplus::message::object_path& target)
+    std::string validateTarget(const sdbusplus::object_path& target)
     {
         uint deviceId;
         int ret =
@@ -378,8 +378,7 @@ class ReTimerItemUpdater : public BaseItemUpdater
      * @param objPath - dbus path of the object
      * @return void
      */
-    void createSKUInventory(sdbusplus::bus::bus& bus,
-                            const std::string& objPath)
+    void createSKUInventory(sdbusplus::bus_t& bus, const std::string& objPath)
     {
 
         deviceSKUInventoryObj = std::make_unique<DeviceSKU>(bus, objPath);

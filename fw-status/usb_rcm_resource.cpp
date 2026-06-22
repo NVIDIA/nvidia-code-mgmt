@@ -22,7 +22,7 @@
 
 #include <phosphor-logging/lg2.hpp>
 
-USBRcmResource::USBRcmResource(sdbusplus::bus::bus& bus,
+USBRcmResource::USBRcmResource(sdbusplus::bus_t& bus,
                                const std::string& objPath, uint8_t eid,
                                const std::string& usbPort,
                                const std::string& companionObjPath,

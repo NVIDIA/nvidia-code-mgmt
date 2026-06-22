@@ -241,8 +241,8 @@ static std::string driveNameFromPath(const std::string& path)
     return std::filesystem::path(path).filename().string();
 }
 
-std::string NVMeItemUpdater::validateTarget(
-    const sdbusplus::message::object_path& target)
+std::string
+    NVMeItemUpdater::validateTarget(const sdbusplus::object_path& target)
 {
     std::string driveName = target.filename();
     if (driveName.starts_with("FW_"))
@@ -374,7 +374,7 @@ std::string
 }
 
 TargetFilter NVMeItemUpdater::applyTargetFilters(
-    const std::vector<sdbusplus::message::object_path>& targets)
+    const std::vector<sdbusplus::object_path>& targets)
 {
     TargetFilter filter = BaseItemUpdater::applyTargetFilters(targets);
     if (getDevicesToUpdate(filter).empty())

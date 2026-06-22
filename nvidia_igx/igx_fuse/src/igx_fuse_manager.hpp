@@ -39,10 +39,10 @@ class IGXFUSEManager
     IGXFUSEManager(IGXFUSEManager&&) = delete;
     IGXFUSEManager& operator=(IGXFUSEManager&&) = delete;
 
-    IGXFUSEManager(sdbusplus::bus::bus& bus, std::string basePath);
+    IGXFUSEManager(sdbusplus::bus_t& bus, std::string basePath);
 
   private:
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     std::unique_ptr<IgxFuse> igxfuseInvs;
 };

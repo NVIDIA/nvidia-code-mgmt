@@ -36,7 +36,7 @@ namespace updater
 class JamPlayer : public BaseItemUpdater
 {
   public:
-    JamPlayer(sdbusplus::bus::bus& bus) :
+    JamPlayer(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, JAMPLAYER_SUPPORTED_MODEL,
                         JAMPLAYER_INVENTORY_IFACE, "JAMPLAYER",
                         JAMPLAYER_BUSNAME_UPDATER, JAMPLAYER_SERVICE, false,

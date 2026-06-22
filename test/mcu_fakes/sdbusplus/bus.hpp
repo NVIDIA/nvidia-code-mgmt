@@ -104,3 +104,8 @@ inline bus new_default()
 }
 
 } // namespace sdbusplus::bus
+
+namespace sdbusplus
+{
+using bus_t = bus::bus;
+}

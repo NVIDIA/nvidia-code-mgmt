@@ -35,7 +35,7 @@ class IGXFUSEItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    IGXFUSEItemUpdater(sdbusplus::bus::bus& bus) :
+    IGXFUSEItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, IGX_FUSE_SUPPORTED_MODEL, IGX_FUSE_INVENTORY_IFACE,
                         "IGXFUSE", IGX_FUSE_BUSNAME_UPDATER,
                         IGX_FUSE_UPDATE_SERVICE, false,

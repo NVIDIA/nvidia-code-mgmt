@@ -62,7 +62,7 @@ void MCTPDiscoveryResource::monitorMCTPEndpoint()
             [this](sdbusplus::message::message& msg) {
                 try
                 {
-                    sdbusplus::message::object_path addedPath;
+                    sdbusplus::object_path addedPath;
                     nvidia::software::updater::InterfaceMap interfaces;
                     msg.read(addedPath, interfaces);
 
@@ -98,7 +98,7 @@ void MCTPDiscoveryResource::monitorMCTPEndpoint()
             [this](sdbusplus::message::message& msg) {
                 try
                 {
-                    sdbusplus::message::object_path removedPath;
+                    sdbusplus::object_path removedPath;
                     msg.read(removedPath);
 
                     if (removedPath.str == mctpObjectPath)

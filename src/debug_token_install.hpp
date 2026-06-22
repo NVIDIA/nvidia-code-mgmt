@@ -45,7 +45,7 @@ class DebugTokenInstallItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    DebugTokenInstallItemUpdater(sdbusplus::bus::bus& bus) :
+    DebugTokenInstallItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, DEBUG_TOKEN_INSTALL_SUPPORTED_MODEL,
                         DEBUG_TOKEN_INVENTORY_IFACE, DEBUG_TOKEN_INSTALL_NAME,
                         DEBUG_TOKEN_INSTALL_BUSNAME_UPDATER,

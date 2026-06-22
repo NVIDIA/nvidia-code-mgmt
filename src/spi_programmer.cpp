@@ -80,7 +80,7 @@ void SPIProgrammer::tryPopulateSpiSwObjects()
         inventoryObjectMatch = std::make_unique<sdbusplus::bus::match_t>(
             bus, MatchRules::interfacesAdded(inventoryRootPath),
             [this]([[maybe_unused]] sdbusplus::message::message& msg) {
-                sdbusplus::message::object_path objPath;
+                sdbusplus::object_path objPath;
                 std::map<std::string, std::map<std::string, Value>> interfaces;
                 msg.read(objPath, interfaces);
 

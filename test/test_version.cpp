@@ -39,7 +39,7 @@ struct OwnedMessage
 };
 
 template <typename... Args>
-OwnedMessage makeSignalMessage(sdbusplus::bus::bus& bus, const char* path,
+OwnedMessage makeSignalMessage(sdbusplus::bus_t& bus, const char* path,
                                Args&&... args)
 {
     OwnedMessage owned;
@@ -124,8 +124,8 @@ class FakeItemUpdaterUtils : public ItemUpdaterUtils
         return dbusService;
     }
 
-    TargetFilter applyTargetFilters(
-        const std::vector<sdbusplus::message::object_path>&) override
+    TargetFilter
+        applyTargetFilters(const std::vector<sdbusplus::object_path>&) override
     {
         return filter;
     }

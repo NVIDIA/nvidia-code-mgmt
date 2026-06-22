@@ -38,7 +38,7 @@ using nvidia::software::updater::InterfaceMap;
 class TestMCTPResource : public MCTPDiscoveryResource
 {
   public:
-    TestMCTPResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    TestMCTPResource(sdbusplus::bus_t& bus, const std::string& objPath,
                      uint8_t eid) : MCTPDiscoveryResource(bus, objPath, eid)
     {}
 
@@ -103,7 +103,7 @@ sdbusplus::message::message
     auto msg =
         bus.new_signal("/au/com/codeconstruct/mctp1",
                        "org.freedesktop.DBus.ObjectManager", "InterfacesAdded");
-    msg.append(sdbusplus::message::object_path(path), interfaces);
+    msg.append(sdbusplus::object_path(path), interfaces);
     return msg;
 }
 
@@ -121,7 +121,7 @@ sdbusplus::message::message
     auto msg = bus.new_signal("/au/com/codeconstruct/mctp1",
                               "org.freedesktop.DBus.ObjectManager",
                               "InterfacesRemoved");
-    msg.append(sdbusplus::message::object_path(path),
+    msg.append(sdbusplus::object_path(path),
                std::vector<std::string>{mctpEndpointIntfName});
     return msg;
 }

@@ -69,7 +69,7 @@ boost::asio::awaitable<bool>
 {
     auto path = std::string(nsmObjPathPrefix) + std::to_string(eid);
 
-    sdbusplus::message::object_path asyncObjPath;
+    sdbusplus::object_path asyncObjPath;
     try
     {
         auto method = bus->new_method_call(nsmService, path.c_str(),
@@ -94,8 +94,8 @@ boost::asio::awaitable<bool>
     co_return co_await waitForAsyncCompletion(asyncObjPath);
 }
 
-boost::asio::awaitable<bool> SdbusHandler::waitForAsyncCompletion(
-    const sdbusplus::message::object_path& path)
+boost::asio::awaitable<bool>
+    SdbusHandler::waitForAsyncCompletion(const sdbusplus::object_path& path)
 {
     using ResultChannel = boost::asio::experimental::concurrent_channel<void(
         boost::system::error_code, bool)>;

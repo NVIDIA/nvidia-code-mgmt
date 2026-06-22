@@ -35,7 +35,7 @@ class SEPItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    SEPItemUpdater(sdbusplus::bus::bus& bus) :
+    SEPItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, SEP_SUPPORTED_MODEL, SEP_INVENTORY_IFACE, "SEP",
                         SEP_BUSNAME_UPDATER, SEP_UPDATE_SERVICE, false,
                         SEP_BUSNAME_INVENTORY)

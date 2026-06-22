@@ -59,8 +59,7 @@ class BaseItemUpdater :
      * @param serviceName
      * @param updateTogether
      */
-    BaseItemUpdater(sdbusplus::bus::bus& bus,
-                    const std::string& supportedDevices,
+    BaseItemUpdater(sdbusplus::bus_t& bus, const std::string& supportedDevices,
                     const std::string& inventoryIface, const std::string& name,
                     const std::string& busName, const std::string& serviceName,
                     bool updateTogether, const std::string& inventoryBusName) :
@@ -485,8 +484,7 @@ class BaseItemUpdater :
      * @param target
      * @return std::string
      */
-    virtual std::string
-        validateTarget(const sdbusplus::message::object_path& target)
+    virtual std::string validateTarget(const sdbusplus::object_path& target)
     {
         return target.filename();
     }
@@ -508,8 +506,8 @@ class BaseItemUpdater :
      * @param targets
      * @return TargetFilter
      */
-    TargetFilter applyTargetFilters(
-        const std::vector<sdbusplus::message::object_path>& targets);
+    TargetFilter
+        applyTargetFilters(const std::vector<sdbusplus::object_path>& targets);
 
     /**
      * @brief Get timeout in seconds. Device implmenetation should override this

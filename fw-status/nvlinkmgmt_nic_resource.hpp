@@ -53,7 +53,7 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
      * @param resetGpioName - GPIO name for reset (e.g. from ResetGPIO config)
      * @param flashNotPresentGpioName - GPIO name for flash-not-present
      */
-    NVLinkMgmtNicResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+    NVLinkMgmtNicResource(sdbusplus::bus_t& bus, const std::string& objPath,
                           const std::string& chassisObjPath,
                           const std::string& forceRecoveryChassisObjPath,
                           const uint64_t i2cBus, const uint64_t i2cAddress,
@@ -108,8 +108,7 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
                                                               0x84};
 
     void createRecoveryModeInterface(
-        sdbusplus::bus::bus& bus,
-        const std::string& forceRecoveryChassisObjPath)
+        sdbusplus::bus_t& bus, const std::string& forceRecoveryChassisObjPath)
     {
         if (forceRecoveryChassisObjPath.empty())
         {
@@ -240,7 +239,7 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
                 [this](sdbusplus::message::message& msg) {
                     try
                     {
-                        sdbusplus::message::object_path addedPath;
+                        sdbusplus::object_path addedPath;
                         nvidia::software::updater::InterfaceMap interfaces;
                         msg.read(addedPath, interfaces);
 
@@ -275,7 +274,7 @@ class NVLinkMgmtNicResource : public MCTPDiscoveryResource
                 [this](sdbusplus::message::message& msg) {
                     try
                     {
-                        sdbusplus::message::object_path removedPath;
+                        sdbusplus::object_path removedPath;
                         msg.read(removedPath);
 
                         if (removedPath.str == smaMctpObjectPath)

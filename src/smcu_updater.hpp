@@ -115,7 +115,7 @@ class SMCUItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    SMCUItemUpdater(sdbusplus::bus::bus& bus) :
+    SMCUItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, SMCU_SUPPORTED_MODEL, SMCU_INVENTORY_IFACE, "SMCU",
                         SMCU_BUSNAME_UPDATER, SMCU_UPDATE_SERVICE, false,
                         SMCU_BUSNAME_INVENTORY)

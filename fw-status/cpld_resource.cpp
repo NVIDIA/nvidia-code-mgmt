@@ -59,7 +59,7 @@ bool hasLoggingEntryPrefix(const std::string& objectPath)
 
 namespace MatchRules = sdbusplus::bus::match::rules;
 
-CpldResource::CpldResource(sdbusplus::bus::bus& bus, const std::string& objPath,
+CpldResource::CpldResource(sdbusplus::bus_t& bus, const std::string& objPath,
                            uint8_t smaEid, const std::string& deviceId) :
     BaseResource(bus, objPath), smaEid(smaEid), deviceId(deviceId)
 {
@@ -108,7 +108,7 @@ void CpldResource::monitorSMAEndpoint()
         [this](sdbusplus::message::message& msg) {
             try
             {
-                sdbusplus::message::object_path addedPath;
+                sdbusplus::object_path addedPath;
                 nvidia::software::updater::InterfaceMap interfaces;
                 msg.read(addedPath, interfaces);
 
@@ -141,7 +141,7 @@ void CpldResource::monitorSMAEndpoint()
         [this](sdbusplus::message::message& msg) {
             try
             {
-                sdbusplus::message::object_path removedPath;
+                sdbusplus::object_path removedPath;
                 msg.read(removedPath);
 
                 if (removedPath.str == smaEndpointObjectPath)
@@ -250,7 +250,7 @@ void CpldResource::monitorLoggingEvents()
         [this](sdbusplus::message::message& msg) {
             try
             {
-                sdbusplus::message::object_path addedPath;
+                sdbusplus::object_path addedPath;
                 LoggingInterfaceMap interfaces;
                 msg.read(addedPath, interfaces);
 

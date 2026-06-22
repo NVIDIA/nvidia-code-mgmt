@@ -43,7 +43,7 @@ using Value =
 
 using PropertyMap = std::map<Property, Value>;
 using InterfaceMap = std::map<Interface, PropertyMap>;
-using ObjectValueTree = std::map<sdbusplus::message::object_path, InterfaceMap>;
+using ObjectValueTree = std::map<sdbusplus::object_path, InterfaceMap>;
 using Service = std::string;
 using Interfaces = std::vector<Interface>;
 using MapperServiceMap = std::vector<std::pair<Service, Interfaces>>;
@@ -396,7 +396,7 @@ class UpdateDebugToken : public TokenUtility
      *
      * @param[in] bus
      */
-    UpdateDebugToken(sdbusplus::bus::bus& bus) : bus(bus)
+    UpdateDebugToken(sdbusplus::bus_t& bus) : bus(bus)
     {}
     /**
      * @brief install debug token for all matching devices
@@ -520,7 +520,7 @@ class UpdateDebugToken : public TokenUtility
                              const EID& eid);
 
   private:
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
     /* device map of EID to serial number */
     DeviceMap devices;
     /* map of UUID to EID */

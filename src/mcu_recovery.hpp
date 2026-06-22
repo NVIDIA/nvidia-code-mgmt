@@ -39,7 +39,7 @@ class MCURecovery : public BaseItemUpdater
      * @param model model name
      * @param target target name of the MCU
      */
-    MCURecovery(sdbusplus::bus::bus& bus, const std::string& model,
+    MCURecovery(sdbusplus::bus_t& bus, const std::string& model,
                 const std::string& target) :
         BaseItemUpdater(
             bus, model, MCU_RECOVERY_INVENTORY_IFACE, MCU_RECOVERY_NAME,

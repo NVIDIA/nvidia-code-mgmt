@@ -18,7 +18,7 @@ namespace updater
 class VHMCItemUpdater : public BaseItemUpdater
 {
   public:
-    VHMCItemUpdater(sdbusplus::bus::bus& bus) :
+    VHMCItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, VHMC_SUPPORTED_MODEL, VHMC_INVENTORY_IFACE, "VHMC",
                         VHMC_BUSNAME_UPDATER, VHMC_UPDATE_SERVICE, false,
                         VHMC_BUSNAME_INVENTORY)

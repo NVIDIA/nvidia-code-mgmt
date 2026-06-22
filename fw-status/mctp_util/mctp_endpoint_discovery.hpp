@@ -63,12 +63,12 @@ class MctpDiscovery
      *  @param[in] list - initializer list to the MctpDiscoveryHandlerIntf
      */
     explicit MctpDiscovery(
-        sdbusplus::bus::bus& bus, mctp_socket::Handler& handler,
+        sdbusplus::bus_t& bus, mctp_socket::Handler& handler,
         std::initializer_list<MctpDiscoveryHandlerIntf*> list);
 
   private:
     /** @brief reference to the systemd bus */
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     /** @brief Used to watch for new MCTP endpoints */
     sdbusplus::bus::match_t mctpEndpointAddedSignal;

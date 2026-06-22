@@ -686,7 +686,7 @@ static const RecoveryErrorMapping recoveryMappingTbl = {
 class MessageRegistry
 {
   public:
-    MessageRegistry(sdbusplus::bus::bus& bus) : bus(bus)
+    MessageRegistry(sdbusplus::bus_t& bus) : bus(bus)
     {}
     /**
      * @brief log message registry entry
@@ -724,7 +724,7 @@ class MessageRegistry
         Level severity = Level::Critical) const;
 
   private:
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
     /**
      * @brief Create a Log entry
      *

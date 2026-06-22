@@ -98,7 +98,7 @@ class PSUItemUpdater : public BaseItemUpdater
      *
      * @param bus
      */
-    PSUItemUpdater(sdbusplus::bus::bus& bus) :
+    PSUItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, PSU_SUPPORTED_MODEL, PSU_INVENTORY_IFACE, "PSU",
                         PSU_BUSNAME_UPDATER, PSU_UPDATE_SERVICE, false,
                         PSU_BUSNAME_INVENTORY)

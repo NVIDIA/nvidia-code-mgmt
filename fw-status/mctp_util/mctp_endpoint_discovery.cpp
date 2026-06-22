@@ -37,7 +37,7 @@ namespace mctp_vdm
 using namespace dbus;
 
 MctpDiscovery::MctpDiscovery(
-    sdbusplus::bus::bus& bus, mctp_socket::Handler& handler,
+    sdbusplus::bus_t& bus, mctp_socket::Handler& handler,
     std::initializer_list<MctpDiscoveryHandlerIntf*> list) :
     bus(bus), mctpEndpointAddedSignal(
                   bus,
@@ -161,7 +161,7 @@ void MctpDiscovery::discoverEndpoints(sdbusplus::message::message& msg)
 {
     mctp::Infos mctpInfos;
 
-    sdbusplus::message::object_path objPath;
+    sdbusplus::object_path objPath;
     dbus::InterfaceMap interfaces;
     msg.read(objPath, interfaces);
     std::string obPath = objPath;

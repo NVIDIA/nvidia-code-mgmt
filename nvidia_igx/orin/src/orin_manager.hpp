@@ -39,10 +39,10 @@ class ORINManager
     ORINManager(ORINManager&&) = delete;
     ORINManager& operator=(ORINManager&&) = delete;
 
-    ORINManager(sdbusplus::bus::bus& bus, std::string basePath);
+    ORINManager(sdbusplus::bus_t& bus, std::string basePath);
 
   private:
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     std::unique_ptr<Orin> orinInvs;
 };
