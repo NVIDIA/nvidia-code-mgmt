@@ -40,9 +40,11 @@
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/server.hpp>
 #include <sdbusplus/server/manager.hpp>
+#include <sdbusplus/timer.hpp>
 #include <sdeventplus/event.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <optional>
 
@@ -75,6 +77,13 @@ constexpr auto recoveryConfigIntfName =
 constexpr auto chassisInterface = "xyz.openbmc_project.State.Chassis";
 constexpr auto stateBasePath = "/xyz/openbmc_project/state";
 
+// Delay between observing a chassis power state change (e.g. a power cycle) and
+// re-checking the fw-status of devices. This gives the devices time to settle
+// after the power transition before they are probed over MCTP/I2C. Configurable
+// via the FWSTATUS_POWER_STATE_SETTLE_DELAY_SEC meson option (config.h).
+constexpr auto powerStateSettleDelaySeconds =
+    FWSTATUS_POWER_STATE_SETTLE_DELAY_SEC;
+
 using namespace phosphor::logging;
 using namespace nvidia::software::updater;
 using namespace mctp_vdm;
@@ -84,6 +93,11 @@ std::vector<std::unique_ptr<BaseResource>> resources;
 std::unique_ptr<sdbusplus::bus::match_t> entityManagerServiceMatch;
 std::unique_ptr<sdbusplus::bus::match_t> chassisPowerStateMatch;
 std::unique_ptr<sdbusplus::bus::match_t> chassisDiscoveryRetryMatch;
+
+// One-shot timer used to defer the fw-status re-check after a chassis power
+// state change. Restarted on every power transition so a burst of changes
+// collapses into a single refresh once the chassis has settled.
+std::unique_ptr<sdbusplus::Timer> powerStateRefreshTimer;
 
 std::vector<std::unique_ptr<nvidia::recovery::RecoveryModeManagerBase>>
     recoveryModeManagers;
@@ -95,6 +109,8 @@ std::shared_ptr<UdevMonitor> udevMonitor;
 void checkEntityManagerAvailability();
 bool startCentralizedPowerStateWatcher();
 void armCentralizedPowerStateWatcherRetry();
+void schedulePowerStateHealthRefresh();
+void refreshChassisPoweredResourcesHealth();
 
 auto& getBus()
 {
@@ -1420,6 +1436,11 @@ bool startCentralizedPowerStateWatcher()
                     "Chassis power state changed to {STATE}, updating cached power state for all resources",
                     "STATE", powerState);
 
+                // Update each resource's cached power state immediately so the
+                // deferred health probe sees the correct state. The actual
+                // fw-status check (updateHealth) is deferred so devices have
+                // time to settle after the power transition before they are
+                // probed over MCTP/I2C.
                 for (auto& resource : resources)
                 {
                     if (!resource->hasChassisPowerSource())
@@ -1432,17 +1453,9 @@ bool startCentralizedPowerStateWatcher()
                         "Updating cached chassis power state for resource {PATH} to {STATE}",
                         "PATH", objectPath, "STATE", powerState);
                     resource->setChassisPowerState(powerState);
-                    try
-                    {
-                        resource->updateHealth();
-                    }
-                    catch (const std::exception& e)
-                    {
-                        lg2::error(
-                            "Failed to update health for resource at {PATH} after a chassis power state change",
-                            "PATH", objectPath);
-                    }
                 }
+
+                schedulePowerStateHealthRefresh();
             }
             catch (const std::exception& e)
             {
@@ -1456,6 +1469,71 @@ bool startCentralizedPowerStateWatcher()
         "Started centralized chassis power state watcher at {CHASSIS_PATH}",
         "CHASSIS_PATH", chassisPath);
     return true;
+}
+
+/**
+ * @brief Re-evaluate health/state for every chassis-powered resource.
+ *
+ * This is the body invoked when the deferred power-state refresh timer expires.
+ * Only resources tied to chassis power are probed; updateHealth() exceptions
+ * are caught so one failing resource does not prevent the others from
+ * refreshing.
+ */
+void refreshChassisPoweredResourcesHealth()
+{
+    lg2::info(
+        "Power state settle delay elapsed; refreshing fw-status for all chassis-powered resources");
+    for (auto& resource : resources)
+    {
+        if (!resource->hasChassisPowerSource())
+        {
+            continue;
+        }
+        try
+        {
+            resource->updateHealth();
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error(
+                "Failed to update health for resource at {PATH} after power state settle delay: {ERR}",
+                "PATH", resource->getObjectPath(), "ERR", e.what());
+        }
+    }
+}
+
+/**
+ * @brief Defer the fw-status re-check after a chassis power state change.
+ *
+ * Starts (or restarts) a one-shot timer that, on expiry, re-evaluates the
+ * health/state of every chassis-powered resource. Deferring the probe by
+ * powerStateSettleDelaySeconds gives devices time to settle after a power
+ * transition (e.g. a power cycle) before they are queried over MCTP/I2C, which
+ * avoids false recovery/critical states from transient post-power-on reads.
+ *
+ * start() stops any in-flight timer first, so a burst of power-state changes
+ * collapses into a single refresh, fired once the chassis has been stable for
+ * the full settle delay.
+ */
+void schedulePowerStateHealthRefresh()
+{
+    if (!powerStateRefreshTimer)
+    {
+        powerStateRefreshTimer = std::make_unique<sdbusplus::Timer>(
+            getEvent().get(), []() { refreshChassisPoweredResourcesHealth(); });
+    }
+
+    try
+    {
+        powerStateRefreshTimer->start(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::seconds(powerStateSettleDelaySeconds)));
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to start power state health refresh timer: {ERR}",
+                   "ERR", e.what());
+    }
 }
 
 void armCentralizedPowerStateWatcherRetry()
