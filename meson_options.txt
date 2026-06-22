@@ -3,6 +3,12 @@ option('FWSTATUS_SUPPORT',
        value: 'disabled',
        description: 'Enables firmware status support')
 
+option('FWSTATUS_POWER_STATE_SETTLE_DELAY_SEC',
+       type: 'integer',
+       value: 5,
+       min: 0,
+       description: 'Seconds fw-status waits after a chassis power state change (e.g. a power cycle) before re-checking device firmware status, allowing devices to settle before being probed over MCTP/I2C')
+
 option('PSU_SUPPORT',
        type: 'feature',
        value: 'disabled',
