@@ -74,7 +74,7 @@ static std::optional<std::string>
             entityManagerService, objectPath.c_str(), mcuRecoveryObjInterface,
             property.c_str());
     }
-    catch (const sdbusplus::exception::SdBusError& e)
+    catch (const std::exception& e)
     {
         lg2::debug("Failed to read string property {PROP} for {PATH}: {ERR}",
                    "PROP", property, "PATH", objectPath, "ERR", e.what());
@@ -92,7 +92,7 @@ static std::optional<uint64_t> getPropertyUint64(const std::string& objectPath,
             entityManagerService, objectPath.c_str(), mcuRecoveryObjInterface,
             property.c_str());
     }
-    catch (const sdbusplus::exception::SdBusError& e)
+    catch (const std::exception& e)
     {
         lg2::debug("Failed to read uint64_t property {PROP} for {PATH}: {ERR}",
                    "PROP", property, "PATH", objectPath, "ERR", e.what());
