@@ -82,7 +82,15 @@ auto Version::requestedActivation(RequestedActivations value)
         if ((activation() == Status::Ready) ||
             (activation() == Status::Failed) || activation() == Status::Active)
         {
-            activation(Status::Activating);
+            if (activation(Status::Activating) == Status::Failed)
+            {
+                // A terminal failure during activation (e.g. signature
+                // verification or no device inventory) must not latch the
+                // request as Active; otherwise the guard above would treat a
+                // later Active request as a duplicate and silently ignore the
+                // retry.
+                value = SoftwareActivation::RequestedActivations::None;
+            }
         }
     }
     return SoftwareActivation::requestedActivation(value);
@@ -232,6 +240,7 @@ Version::Status Version::startActivation()
             addData["namespace"] = "FWUpdate";
             Level level = Level::Critical;
             createLog(verificationFailed, addData, level);
+            itemUpdaterUtils->cleanupImageUploadDir(path(), this);
             return Status::Failed;
         }
     }
@@ -240,6 +249,7 @@ Version::Status Version::startActivation()
     if (devicePaths.empty())
     {
         log<level::WARNING>("No device inventory found");
+        itemUpdaterUtils->cleanupImageUploadDir(path(), this);
         return Status::Failed;
     }
     // apply target filtering
