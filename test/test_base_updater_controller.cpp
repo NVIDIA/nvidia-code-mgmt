@@ -851,15 +851,18 @@ TEST_F(BaseUpdaterControllerTest,
     auto dirPath = tempDir.path() / "image";
     auto nestedDir = dirPath / "nested";
     writeFile(dirPath / "payload.bin", "data");
-    writeFile(nestedDir / "keep.txt", "nested");
+    writeFile(nestedDir / "nested.bin", "nested");
 
     auto version = updater.createVersion(
         "/xyz/openbmc_project/software/Version123", "Version123", "Version123",
         "uuid-1", dirPath.string(), Version::Status::Ready);
 
     updater.cleanupImageUploadDir(dirPath, version.get());
+    // The directory tree is preserved so inotify watches (bound to directory
+    // inodes) survive, but every staged image file is removed recursively,
+    // including files nested inside component subdirectories.
     EXPECT_TRUE(std::filesystem::exists(nestedDir));
-    EXPECT_TRUE(std::filesystem::exists(nestedDir / "keep.txt"));
+    EXPECT_FALSE(std::filesystem::exists(nestedDir / "nested.bin"));
     EXPECT_FALSE(std::filesystem::exists(dirPath / "payload.bin"));
 }
 

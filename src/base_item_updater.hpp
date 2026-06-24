@@ -27,6 +27,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace nvidia
 {
@@ -151,20 +152,44 @@ class BaseItemUpdater :
     void cleanupImageUploadDir(const std::filesystem::path& path,
                                Version* version) const
     {
-        if (std::filesystem::is_directory(path))
+        std::error_code ec;
+        if (std::filesystem::is_directory(path, ec))
         {
-            for (const auto& file : std::filesystem::directory_iterator(path))
+            // Recursively remove every staged image file so that components
+            // left behind by a previous, failed, or incomplete update are not
+            // mistaken for part of the current one. Only regular files are
+            // deleted; the directory tree is kept intact so the inotify watches
+            // (bound to directory inodes) registered at startup keep working.
+            std::filesystem::recursive_directory_iterator it(
+                path,
+                std::filesystem::directory_options::skip_permission_denied, ec);
+            const std::filesystem::recursive_directory_iterator end;
+            for (; !ec && it != end; it.increment(ec))
             {
-                if (!std::filesystem::is_directory(file.path()))
+                std::error_code fileEc;
+                if (std::filesystem::is_regular_file(it->path(), fileEc) &&
+                    !fileEc)
                 {
-                    std::filesystem::remove(file.path());
+                    std::error_code rmEc;
+                    std::filesystem::remove(it->path(), rmEc);
+                    if (rmEc)
+                    {
+                        lg2::error(
+                            "Failed to remove staged image {FILE}: {ERR}",
+                            "FILE", it->path().string(), "ERR", rmEc.message());
+                    }
                 }
             }
             version->path(version->path() + "/na.img");
         }
         else
         {
-            std::filesystem::remove(path);
+            std::filesystem::remove(path, ec);
+            if (ec)
+            {
+                lg2::error("Failed to remove staged image {FILE}: {ERR}",
+                           "FILE", path.string(), "ERR", ec.message());
+            }
         }
     }
     /**

@@ -293,27 +293,38 @@ TEST_F(VersionTest, RequestedActivationFinishesImmediatelyForUpdateNone)
     EXPECT_EQ(itemUpdaterUtils.cleanupCalls, 1);
 }
 
-TEST_F(VersionTest, RequestedActivationDoesNotRestartWhenAlreadyRequestedActive)
+TEST_F(VersionTest, RequestedActivationRetriesAfterTerminalFailure)
 {
+    // With no device inventory, startActivation() bails to Failed. A terminal
+    // failure must not latch RequestedActivation at Active, otherwise the
+    // guard in requestedActivation() would treat the next Active request as a
+    // duplicate and silently drop the retry. The first attempt should clean up
+    // once, and a second Active request should be allowed to run again.
     auto version = makeVersion("/tmp/test-image.bin");
 
-    EXPECT_EQ(version->requestedActivation(
-                  softwareServer::Activation::RequestedActivations::Active),
-              softwareServer::Activation::RequestedActivations::Active);
+    version->requestedActivation(
+        softwareServer::Activation::RequestedActivations::Active);
+    EXPECT_EQ(version->activation(), Version::Status::Failed);
     auto cleanupCalls = itemUpdaterUtils.cleanupCalls;
-    auto readExistingCalls = itemUpdaterUtils.readExistingFirmWareCalls;
 
-    EXPECT_EQ(version->requestedActivation(
-                  softwareServer::Activation::RequestedActivations::Active),
-              softwareServer::Activation::RequestedActivations::Active);
-    EXPECT_EQ(itemUpdaterUtils.cleanupCalls, cleanupCalls);
-    EXPECT_EQ(itemUpdaterUtils.readExistingFirmWareCalls, readExistingCalls);
+    version->requestedActivation(
+        softwareServer::Activation::RequestedActivations::Active);
+    EXPECT_GT(itemUpdaterUtils.cleanupCalls, cleanupCalls);
 }
 
 TEST_F(VersionTest, RequestedActivationFromActivatingStateDoesNotRestart)
 {
-    auto version =
-        makeVersion("/tmp/test-image.bin", Version::Status::Activating);
+    // A device must be present so the transition into Activating succeeds
+    // instead of bailing on the empty-inventory cleanup path. The version is
+    // driven into Activating AFTER construction, since startActivation()
+    // dereferences updatePolicy, which is only built once the constructor
+    // finishes.
+    itemUpdaterUtils.inventoryPaths = {"/xyz/openbmc_project/inventory/gpu0"};
+    itemUpdaterUtils.inventorySupportedValue = false;
+
+    auto version = makeVersion("/tmp/test-image.bin");
+    EXPECT_EQ(version->activation(Version::Status::Activating),
+              Version::Status::Activating);
 
     EXPECT_EQ(version->requestedActivation(
                   softwareServer::Activation::RequestedActivations::Active),
@@ -387,8 +398,10 @@ TEST_F(VersionTest, ActivationProcessesMultipleDevicesAndCompletes)
 
 TEST_F(VersionTest, OnUpdateFailedClearsQueueAndCleansUp)
 {
-    auto version =
-        makeVersion("/tmp/test-image.bin", Version::Status::Activating);
+    // Construct in Ready so the constructor does not run startActivation();
+    // the queue and progress are set up by hand to isolate the single cleanup
+    // performed by onUpdateFailed().
+    auto version = makeVersion("/tmp/test-image.bin", Version::Status::Ready);
     version->activationProgress =
         std::make_unique<ActivationProgress>(bus, version->getObjectPath());
     version->deviceQueue.push("/xyz/openbmc_project/inventory/gpu0");
