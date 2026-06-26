@@ -1,4 +1,4 @@
-unit_files = ['igx-orin-version.service']
+unit_files = ['igx-version.service']
 
 foreach unit : unit_files
     configure_file(

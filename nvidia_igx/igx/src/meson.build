@@ -1,8 +1,8 @@
-configure_file(output: 'config.h', configuration: cdata_igx_orin)
+configure_file(output: 'config.h', configuration: cdata_igx)
 executable(
-    'igx-orin-version',
+    'igx-version',
     'main.cpp',
-    'orin_manager.cpp',
+    'igx_manager.cpp',
     dependencies: [
         sdbusplus,
         sdeventplus,
@@ -13,5 +13,5 @@ executable(
     install: true,
     install_dir: get_option('bindir'),
 )
-install_headers('orin_util.hpp')
+install_headers('igx_util.hpp')
 

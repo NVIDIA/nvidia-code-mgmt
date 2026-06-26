@@ -15,14 +15,14 @@
  * limitations under the License.
  */
 
-#include "orin_manager.hpp"
+#include "igx_manager.hpp"
 
-using namespace nvidia::orin::common;
+using namespace nvidia::igx::common;
 
-namespace nvidia::orin::manager
+namespace nvidia::igx::manager
 {
 
-ORINManager::ORINManager(sdbusplus::bus_t& bus, std::string basePath) : bus(bus)
+IgxManager::IgxManager(sdbusplus::bus_t& bus, std::string basePath) : bus(bus)
 {
     try
     {
@@ -46,7 +46,7 @@ ORINManager::ORINManager(sdbusplus::bus_t& bus, std::string basePath) : bus(bus)
 
         const auto baseinvInvPath = basePath + "/" + inventoryName;
 
-        orinInvs = std::make_unique<Orin>(bus, baseinvInvPath);
+        orinInvs = std::make_unique<Igx>(bus, baseinvInvPath);
     }
     catch (const std::exception& e)
     {
@@ -55,4 +55,4 @@ ORINManager::ORINManager(sdbusplus::bus_t& bus, std::string basePath) : bus(bus)
     }
 }
 
-} // namespace nvidia::orin::manager
+} // namespace nvidia::igx::manager

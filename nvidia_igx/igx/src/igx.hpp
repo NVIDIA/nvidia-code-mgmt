@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "orin_util.hpp"
+#include "igx_util.hpp"
 
 #include <sdbusplus/bus/match.hpp>
 #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
@@ -30,12 +30,12 @@
 #include <iostream>
 #include <stdexcept>
 
-using namespace nvidia::orin::common;
+using namespace nvidia::igx::common;
 
-namespace nvidia::orin::device
+namespace nvidia::igx::device
 {
 
-using OrinInherit = sdbusplus::server::object::object<
+using IgxInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::State::Decorator::server::
         OperationalStatus,
     sdbusplus::xyz::openbmc_project::Inventory::server::Item,
@@ -68,20 +68,20 @@ class VersionInterface : public VersionObject
 };
 
 /**
- * @class Orin
+ * @class Igx
  */
-class Orin : public OrinInherit, public Util
+class Igx : public IgxInherit, public Util
 {
   public:
-    Orin() = delete;
-    Orin(const Orin&) = delete;
-    Orin(Orin&&) = delete;
-    Orin& operator=(const Orin&) = delete;
-    Orin& operator=(Orin&&) = delete;
-    ~Orin() = default;
+    Igx() = delete;
+    Igx(const Igx&) = delete;
+    Igx(Igx&&) = delete;
+    Igx& operator=(const Igx&) = delete;
+    Igx& operator=(Igx&&) = delete;
+    ~Igx() = default;
 
-    Orin(sdbusplus::bus_t& bus, const std::string& objPath) :
-        OrinInherit(bus, (objPath).c_str()), bus(bus), inventoryPath(objPath)
+    Igx(sdbusplus::bus_t& bus, const std::string& objPath) :
+        IgxInherit(bus, (objPath).c_str()), bus(bus), inventoryPath(objPath)
     {
         sdbusplus::xyz::openbmc_project::Inventory::server::Item::prettyName(
             "ORIN");
@@ -127,4 +127,4 @@ class Orin : public OrinInherit, public Util
     std::unique_ptr<VersionInterface> VersionObj;
 };
 
-} // namespace nvidia::orin::device
+} // namespace nvidia::igx::device

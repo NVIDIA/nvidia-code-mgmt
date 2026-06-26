@@ -24,7 +24,7 @@
 #include <memory>
 #include <string>
 
-namespace nvidia::orin::common
+namespace nvidia::igx::common
 {
 
 inline std::string readVersionFile(const std::string& cmd)
@@ -88,4 +88,4 @@ class Util
     }
 };
 
-} // namespace nvidia::orin::common
+} // namespace nvidia::igx::common

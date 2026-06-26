@@ -1,0 +1,14 @@
+[Unit]
+Description=NVIDIA IGX QSPI version
+After=nvidia-emmc-partition.service
+
+[Service]
+Restart=always
+Type=dbus
+ExecStart=/usr/bin/env igx-version
+SyslogIdentifier=igx-version
+BusName=com.Nvidia.IGX
+
+[Install]
+WantedBy=multi-user.target
+

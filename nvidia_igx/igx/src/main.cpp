@@ -15,36 +15,37 @@
  * limitations under the License.
  */
 
-#pragma once
+#include "igx_manager.hpp"
 
-#include "config.h"
-
-#include "orin.hpp"
-
-#include <sdbusplus/bus/match.hpp>
+#include <phosphor-logging/log.hpp>
+#include <sdbusplus/bus.hpp>
 #include <sdeventplus/event.hpp>
 
-using namespace nvidia::orin::device;
+using namespace phosphor::logging;
+using namespace nvidia::igx;
 
-namespace nvidia::orin::manager
+int main(void)
 {
+    try
+    {
+        using namespace phosphor::logging;
 
-class ORINManager
-{
-  public:
-    ORINManager() = delete;
-    ~ORINManager() = default;
-    ORINManager(const ORINManager&) = delete;
-    ORINManager& operator=(const ORINManager&) = delete;
-    ORINManager(ORINManager&&) = delete;
-    ORINManager& operator=(ORINManager&&) = delete;
+        auto bus = sdbusplus::bus::new_default();
+        auto event = sdeventplus::Event::get_default();
 
-    ORINManager(sdbusplus::bus_t& bus, std::string basePath);
+        sdbusplus::server::manager::manager objManager(bus, BASE_INV_PATH);
 
-  private:
-    sdbusplus::bus_t& bus;
+        bus.request_name(BUSNAME);
 
-    std::unique_ptr<Orin> orinInvs;
-};
+        bus.attach_event(event.get(), SD_EVENT_PRIORITY_NORMAL);
 
-} // namespace nvidia::orin::manager
+        manager::IgxManager manager(bus, BASE_INV_PATH);
+
+        return event.loop();
+    }
+    catch (const std::exception& e)
+    {
+        log<level::ERR>(e.what());
+        return -1;
+    }
+}

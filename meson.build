@@ -671,7 +671,7 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
 endif
 
 if get_option('ORIN_FLASH_SUPPORT').enabled()
-    subdir('nvidia_igx/orin')
+    subdir('nvidia_igx/igx')
 endif
 
 if get_option('SMCU_FLASH_SUPPORT').enabled()
