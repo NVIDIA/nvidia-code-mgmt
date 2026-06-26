@@ -39,8 +39,8 @@
 #ifdef PEX_SUPPORT
 #include "pex_updater.hpp"
 #endif
-#ifdef ORIN_FLASH_SUPPORT
-#include "orin_updater.hpp"
+#ifdef IGX_FLASH_SUPPORT
+#include "igx_updater.hpp"
 #endif
 #ifdef VHMC_FLASH_SUPPORT
 #include "vhmc_updater.hpp"
@@ -211,10 +211,10 @@ try
         itemUpdater = std::make_unique<PEXItemUpdater>(bus);
     }
 #endif
-#if ORIN_FLASH_SUPPORT
-    if (updater == "ORIN")
+#if IGX_FLASH_SUPPORT
+    if (updater == "IGX")
     {
-        itemUpdater = std::make_unique<ORINItemUpdater>(bus);
+        itemUpdater = std::make_unique<IGXItemUpdater>(bus);
     }
 #endif
 #if VHMC_FLASH_SUPPORT

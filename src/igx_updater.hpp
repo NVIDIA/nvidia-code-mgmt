@@ -32,18 +32,18 @@ namespace updater
  * @author
  * @since Dec 20 2023
  */
-class ORINItemUpdater : public BaseItemUpdater
+class IGXItemUpdater : public BaseItemUpdater
 {
   public:
     /**
-     * @brief Construct a new ORINItemUpdater object
+     * @brief Construct a new IGXItemUpdater object
      *
      * @param bus
      */
-    ORINItemUpdater(sdbusplus::bus_t& bus) :
-        BaseItemUpdater(bus, ORIN_SUPPORTED_MODEL, ORIN_INVENTORY_IFACE, "ORIN",
-                        ORIN_BUSNAME_UPDATER, ORIN_UPDATE_SERVICE, false,
-                        ORIN_BUSNAME_INVENTORY)
+    IGXItemUpdater(sdbusplus::bus_t& bus) :
+        BaseItemUpdater(bus, IGX_SUPPORTED_MODEL, IGX_INVENTORY_IFACE, "IGX",
+                        IGX_BUSNAME_UPDATER, IGX_UPDATE_SERVICE, false,
+                        IGX_BUSNAME_INVENTORY)
     {}
     /**
      * @brief Get the Version object
@@ -103,7 +103,7 @@ class ORINItemUpdater : public BaseItemUpdater
     std::vector<std::string> getItemUpdaterInventoryPaths() override
     {
         std::vector<std::string> ret;
-        std::string invPath = std::string(SOFTWARE_OBJPATH) + "/ORIN";
+        std::string invPath = std::string(SOFTWARE_OBJPATH) + "/IGX";
         ret.emplace_back(invPath);
         return ret;
     }

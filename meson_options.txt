@@ -74,10 +74,10 @@ option('RT_BUSNAME_INVENTORY',
        value: '',
        description: 'Service name for RT Inventory Objects')
 
-option('ORIN_FLASH_SUPPORT',
+option('IGX_FLASH_SUPPORT',
        type: 'feature',
        value: 'disabled',
-       description: 'Enables ORIN flash support')
+       description: 'Enables IGX flash support')
 
 option('VHMC_FLASH_SUPPORT',
        type: 'feature',
@@ -134,10 +134,10 @@ option('FLASHROM_WRITE_REF_FILE',
        value: '',
        description: 'Reference file path for SPI Programmer write operations')
 
-option('ORIN_SUPPORTED_MODEL',
+option('IGX_SUPPORTED_MODEL',
        type: 'string',
        value: '',
-       description: 'ORIN supported models')
+       description: 'IGX supported models')
 
 option('SMCU_FLASH_SUPPORT',
        type: 'feature',

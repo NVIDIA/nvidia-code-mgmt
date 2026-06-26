@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include "orin_updater.hpp"
+#include "igx_updater.hpp"
 
 namespace nvidia
 {
@@ -23,19 +23,19 @@ namespace software
 {
 namespace updater
 {
-std::string ORINItemUpdater::getVersion(
+std::string IGXItemUpdater::getVersion(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }
 
-std::string ORINItemUpdater::getManufacturer(
+std::string IGXItemUpdater::getManufacturer(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";
 }
 
-std::string ORINItemUpdater::getModel(
+std::string IGXItemUpdater::getModel(
     [[maybe_unused]] const std::string& inventoryPath) const
 {
     return "";

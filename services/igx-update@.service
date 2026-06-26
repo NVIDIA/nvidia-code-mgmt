@@ -1,9 +1,9 @@
 
 [Unit]
-Description=Update Orin
+Description=Update IGX
 
 [Service]
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=/usr/bin/orin-flash.sh $ARGS
+ExecStart=/usr/bin/igx-flash.sh $ARGS

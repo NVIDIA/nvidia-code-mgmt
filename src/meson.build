@@ -44,8 +44,8 @@ if get_option('PEX_SUPPORT').enabled()
     source_files += 'pex_updater.cpp'
 endif
 
-if get_option('ORIN_FLASH_SUPPORT').enabled()
-    source_files += 'orin_updater.cpp'
+if get_option('IGX_FLASH_SUPPORT').enabled()
+    source_files += 'igx_updater.cpp'
 endif
 
 if get_option('VHMC_FLASH_SUPPORT').enabled()

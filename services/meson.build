@@ -76,10 +76,10 @@ if get_option('PEX_SUPPORT').enabled()
     ]
 endif
 
-if get_option('ORIN_FLASH_SUPPORT').enabled()
+if get_option('IGX_FLASH_SUPPORT').enabled()
     unit_files = unit_files + [
-        'com.Nvidia.ORIN.Updater.service',
-        'orin-update@.service',
+        'com.Nvidia.IGX.Updater.service',
+        'igx-update@.service',
     ]
 endif
 

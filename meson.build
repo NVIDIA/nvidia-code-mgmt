@@ -114,16 +114,16 @@ if get_option('RT_SUPPORT').enabled()
     cdata.set('RT_UPDATE_TIMEOUT', get_option('RT_UPDATE_TIMEOUT'))
 endif
 
-if get_option('ORIN_FLASH_SUPPORT').enabled()
-    add_project_arguments('-DORIN_FLASH_SUPPORT', language: ['c', 'cpp'])
-    cdata.set_quoted('ORIN_SUPPORTED_MODEL', get_option('ORIN_SUPPORTED_MODEL'))
+if get_option('IGX_FLASH_SUPPORT').enabled()
+    add_project_arguments('-DIGX_FLASH_SUPPORT', language: ['c', 'cpp'])
+    cdata.set_quoted('IGX_SUPPORTED_MODEL', get_option('IGX_SUPPORTED_MODEL'))
     cdata.set_quoted(
-        'ORIN_INVENTORY_IFACE',
+        'IGX_INVENTORY_IFACE',
         'xyz.openbmc_project.Inventory.Item.Chassis',
     )
-    cdata.set_quoted('ORIN_BUSNAME_UPDATER', 'com.Nvidia.Software.ORIN.Updater')
-    cdata.set_quoted('ORIN_BUSNAME_INVENTORY', 'com.Nvidia.ORIN')
-    cdata.set_quoted('ORIN_UPDATE_SERVICE', 'orin-update@.service')
+    cdata.set_quoted('IGX_BUSNAME_UPDATER', 'com.Nvidia.Software.IGX.Updater')
+    cdata.set_quoted('IGX_BUSNAME_INVENTORY', 'com.Nvidia.IGX')
+    cdata.set_quoted('IGX_UPDATE_SERVICE', 'igx-update@.service')
 endif
 
 if get_option('VHMC_FLASH_SUPPORT').enabled()
@@ -670,7 +670,7 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     subdir('debug_token')
 endif
 
-if get_option('ORIN_FLASH_SUPPORT').enabled()
+if get_option('IGX_FLASH_SUPPORT').enabled()
     subdir('nvidia_igx/igx')
 endif
 

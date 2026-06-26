@@ -1,15 +1,15 @@
 [Unit]
-Description=OpenBMC Orin Flash Code Manager
+Description=OpenBMC IGX Flash Code Manager
 Wants=pldmd.service
 After=pldmd.service
 Wants=obmc-mapper.target
 After=obmc-mapper.target
 
 [Service]
-ExecStart=/usr/bin/code-manager -u ORIN
+ExecStart=/usr/bin/code-manager -u IGX
 Restart=always
 Type=dbus
-BusName=com.Nvidia.Software.ORIN.Updater
+BusName=com.Nvidia.Software.IGX.Updater
 
 [Install]
 WantedBy=multi-user.target
