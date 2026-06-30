@@ -120,6 +120,10 @@ class Spi : public SpiIntf
      * (currently unused)
      * @param targets List of target object paths for the update (currently
      * unused)
+     * @param preUpdateValidation Flag requesting an all-or-nothing update
+     * (currently unused by this item-updater; the pre-update validation
+     * readiness gate lives in the PLDM Update Agent). Present to match the
+     * xyz.openbmc_project.Software.Update contract.
      * @return sdbusplus::message::object_path The object path of the progress
      * tracking object
      */
@@ -127,7 +131,8 @@ class Spi : public SpiIntf
         sdbusplus::message::unix_fd image,
         ApplyTimeIntf::RequestedApplyTimes applyTime [[maybe_unused]],
         bool forceUpdate [[maybe_unused]],
-        std::vector<sdbusplus::message::object_path> targets [[maybe_unused]]);
+        std::vector<sdbusplus::message::object_path> targets [[maybe_unused]],
+        bool preUpdateValidation [[maybe_unused]]);
 
     /**
      * @brief function to prepare command line arguments for flashrom operation
