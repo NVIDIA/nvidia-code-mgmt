@@ -323,7 +323,8 @@ sdbusplus::object_path Spi::startUpdate(
     sdbusplus::message::unix_fd image,
     ApplyTimeIntf::RequestedApplyTimes applyTime [[maybe_unused]],
     bool forceUpdate [[maybe_unused]],
-    std::vector<sdbusplus::object_path> targets [[maybe_unused]])
+    std::vector<sdbusplus::object_path> targets [[maybe_unused]],
+    bool preUpdateValidation [[maybe_unused]])
 {
     // Extract file descriptor from unix_fd
     int imageFd = image;
