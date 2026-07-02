@@ -249,8 +249,9 @@ TEST_F(FullCoverageTest, EraseDebugTokenManualPolicy)
     addPropertyResponse("Manual");
 
     int result = udt.eraseDebugToken();
-    // With Manual policy, eraseDebugToken returns 0 without doing anything
-    EXPECT_EQ(result, 0);
+    // With Manual policy, eraseDebugToken skips the operation and returns the
+    // distinct "skipped" code (not success) so the caller won't log success.
+    EXPECT_EQ(result, eraseTokenSkipped);
 }
 
 // ========================== nsmTokenErase with endpoints ===================

@@ -74,6 +74,13 @@ using Level = sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level;
 
 static constexpr uint8_t mctpTypeSPDM = 0x5;
 static constexpr uint8_t mctpTypeVDMIANA = 0x7f;
+
+// eraseDebugToken() return codes. Skip is distinct from success so the caller
+// does not log "Erase Success" when the manual policy meant nothing was erased.
+static constexpr int eraseTokenSuccess = 0;
+static constexpr int eraseTokenFailed = -1;
+static constexpr int eraseTokenSkipped = 1;
+
 constexpr auto erasePolicyIntfName = "com.nvidia.DebugToken.ErasePolicy";
 constexpr auto erasePolicyPath = "/com/nvidia/debug_token/";
 constexpr auto mctpPCIeService = "xyz.openbmc_project.MCTP.Control.PCIe";
@@ -117,6 +124,8 @@ const std::string resourceErrorsDetected{
     "ResourceEvent.1.0.ResourceErrorsDetected"};
 const std::string debugTokenEraseFailed{
     "NvidiaUpdate.1.0.DebugTokenEraseFailed"};
+const std::string debugTokenEraseSkipped{
+    "NvidiaUpdate.1.1.DebugTokenEraseSkipped"};
 static constexpr size_t mctpCompletionCodeByte =
     8; // 8'th byte from beginning is the MCTP Completion code for debug token
        // query

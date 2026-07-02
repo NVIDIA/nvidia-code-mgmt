@@ -51,13 +51,21 @@ int main(int argc, char** argv)
             auto bus = sdbusplus::bus::new_default();
             std::unique_ptr<UpdateDebugToken> updateDebugToken =
                 std::make_unique<UpdateDebugToken>(bus);
-            if (updateDebugToken->eraseDebugToken() != 0)
+            int eraseRc = updateDebugToken->eraseDebugToken();
+            if (eraseRc == eraseTokenFailed)
             {
                 log<level::ERR>("Debug Token: Erase Failed");
                 updateDebugToken->createMessageRegistryResourceErrors(
                     debugTokenEraseFailed, DEBUG_TOKEN_ERASE_NAME,
                     OperationType::TokenErase,
                     static_cast<int>(EraseErrorCodes::EraseFailed));
+            }
+            else if (eraseRc == eraseTokenSkipped)
+            {
+                // Manual erase policy: the operation was intentionally skipped.
+                // The skip is already reported (INFO log + ResourceEvent
+                // registry message) inside eraseDebugToken(); do NOT log
+                // "Erase Success" here because nothing was erased.
             }
             else
             {

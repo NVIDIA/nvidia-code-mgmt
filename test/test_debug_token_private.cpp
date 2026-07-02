@@ -1747,7 +1747,7 @@ TEST_F(DebugTokenDBusMockedTest, EraseDebugTokenManualPolicy)
         .WillRepeatedly(testing::Return(1));
 
     int result = udt.eraseDebugToken();
-    EXPECT_EQ(result, 0); // Skipped due to Manual policy
+    EXPECT_EQ(result, eraseTokenSkipped); // Skipped due to Manual policy
 }
 
 // eraseDebugToken: getErasePolicy returns "Automatic", nsmTokenEraseV2 fails
