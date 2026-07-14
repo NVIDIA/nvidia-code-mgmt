@@ -146,6 +146,13 @@ struct TokenUtility
 
         // Read tokenSize bytes from offset to fetch the entire token
         tokenSize = header->structSize;
+        if (tokenSize < sizeof(TokenHeader))
+        {
+            log<level::ERR>(
+                "Token structSize is too small to be valid");
+            tokenData.clear();
+            return nullptr;
+        }
         tokenData.resize(tokenSize);
         debugTokenPackage.seekg(tokenOffset);
         debugTokenPackage.read(reinterpret_cast<char*>(tokenData.data()),
