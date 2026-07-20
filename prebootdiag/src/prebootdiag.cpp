@@ -773,6 +773,32 @@ boost::asio::awaitable<void>
             "ResultReceived payload missing Tid or Result field");
     }
 
+    // Persist only the fields NvidiaComputerSystem.v1_10_0 exposes in a
+    // ProcessorDiagResultEntry: Tid, Result, ResultMask. The nsmd event
+    // payload additionally carries Eid (transport detail) and
+    // ResultMaskSize (redundant once the mask is stored exact-length);
+    // honor ResultMaskSize as a truncation bound so a padded mask from a
+    // legacy producer never persists padding bytes.
+    nlohmann::json entry;
+    entry["Tid"] = newResult["Tid"];
+    entry["Result"] = newResult["Result"];
+    nlohmann::json mask = nlohmann::json::array();
+    if (newResult.contains("ResultMask") && newResult["ResultMask"].is_array())
+    {
+        mask = newResult["ResultMask"];
+        if (newResult.contains("ResultMaskSize") &&
+            newResult["ResultMaskSize"].is_number_unsigned())
+        {
+            auto maskSize = newResult["ResultMaskSize"].get<size_t>();
+            if (maskSize < mask.size())
+            {
+                mask.erase(mask.begin() + static_cast<std::ptrdiff_t>(maskSize),
+                           mask.end());
+            }
+        }
+    }
+    entry["ResultMask"] = std::move(mask);
+
     nlohmann::json resultsArray = nlohmann::json::array();
     try
     {
@@ -794,7 +820,7 @@ boost::asio::awaitable<void>
             "ERR", e.what());
     }
 
-    resultsArray.push_back(newResult);
+    resultsArray.push_back(std::move(entry));
     co_await dbus->setSettingsStringProperty("DiagResult", resultsArray.dump());
     lg2::info("PreBootDiag: Result appended for TID=0x{TID}, total={N}", "TID",
               lg2::hex, newResult.value("Tid", static_cast<uint8_t>(0)), "N",

@@ -634,4 +634,36 @@ TEST_F(PreBootDiagTest, ResultAccumulationMultipleTids)
     io.run();
 }
 
+// Result payloads are sanitized before persisting: only the
+// NvidiaComputerSystem.v1_10_0 ProcessorDiagResultEntry fields (Tid, Result,
+// ResultMask) are stored; Eid and ResultMaskSize are dropped, and a padded
+// mask is truncated to ResultMaskSize.
+TEST_F(PreBootDiagTest, ResultSanitizedToSchemaFields)
+{
+    EXPECT_CALL(*mockDbus, mockGetDiagStatus())
+        .WillOnce(Return(DiagStatus::NotStarted));
+    EXPECT_CALL(*mockDbus, mockHasDiagConfig()).WillOnce(Return(true));
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::InProgress)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagMode(true)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty("DiagResult", "[]"))
+        .Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagStatus(DiagStatus::Completed)).Times(1);
+    EXPECT_CALL(*mockDbus, mockSetDiagMode(false)).Times(1);
+
+    EXPECT_CALL(*mockDbus, mockGetSettingsStringProperty("DiagResult"))
+        .WillOnce(Return("[]"));
+    // nlohmann::json dumps object keys in alphabetical order.
+    EXPECT_CALL(*mockDbus, mockSetSettingsStringProperty(
+                               "DiagResult",
+                               R"([{"Result":5,"ResultMask":[1,2],"Tid":1}])"))
+        .Times(1);
+
+    auto diag = createAndStart();
+    sendStateUpdate(stateResultReceived,
+                    R"({"Tid":1,"Eid":14,"Result":5,)"
+                    R"("ResultMaskSize":2,"ResultMask":[1,2,0,0]})");
+    sendStateUpdate(stateSessionEnded);
+    io.run();
+}
+
 } // namespace nvidia::prebootdiag
