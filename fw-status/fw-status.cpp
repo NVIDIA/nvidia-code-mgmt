@@ -214,14 +214,61 @@ std::optional<uint8_t> getUint8(const InterfaceMap& interfaces,
     }
 }
 
+std::vector<std::string> getStringVec(const InterfaceMap& interfaces,
+                                      const Interface& interface,
+                                      const Property& property)
+{
+    try
+    {
+        return std::get<std::vector<std::string>>(
+            interfaces.at(interface).at(property));
+    }
+    catch (std::exception& e)
+    {
+        lg2::error("Failed to get string array property {NAME}. {ERR}", "NAME",
+                   property, "ERR", e.what());
+        return {};
+    }
+}
+
+std::vector<int> getIntVec(const InterfaceMap& interfaces,
+                           const Interface& interface, const Property& property)
+{
+    try
+    {
+        const auto& val = interfaces.at(interface).at(property);
+        std::vector<int> result;
+        // Newer entity-manager uses vector<double> (ad), older uses
+        // vector<uint64_t> (at) for integer JSON arrays.
+        if (auto* v = std::get_if<std::vector<double>>(&val))
+        {
+            result.reserve(v->size());
+            for (double x : *v)
+                result.push_back(static_cast<int>(x));
+        }
+        else if (auto* v = std::get_if<std::vector<uint64_t>>(&val))
+        {
+            result.reserve(v->size());
+            for (uint64_t x : *v)
+                result.push_back(static_cast<int>(x));
+        }
+        else
+        {
+            lg2::error("Unexpected type for int array property {NAME}", "NAME",
+                       property);
+        }
+        return result;
+    }
+    catch (std::exception& e)
+    {
+        lg2::error("Failed to get int array property {NAME}. {ERR}", "NAME",
+                   property, "ERR", e.what());
+        return {};
+    }
+}
+
 /**
  * @brief Check if a property exists in a D-Bus interface
- *
- * @param[in] interfaces - Map of D-Bus interfaces and their properties
- * @param[in] interface - The interface to check
- * @param[in] property - The property to check for
- *
- * @return bool - True if the property exists, false otherwise
  */
 bool hasProperty(const InterfaceMap& interfaces, const Interface& interface,
                  const Property& property)
@@ -1243,23 +1290,79 @@ void publishDBusRecoveryObject()
         }
         else if (interfaces.contains(usbRcmForceRecoveryObjInterface))
         {
-            if (!hasProperty(interfaces, usbRcmForceRecoveryObjInterface,
-                             "ForceRecoveryChassisObject") ||
-                !hasProperty(interfaces, usbRcmForceRecoveryObjInterface,
-                             "ConfigType"))
+            const auto& iface = usbRcmForceRecoveryObjInterface;
+
+            bool hasResetPins = hasProperty(interfaces, iface, "ResetPins");
+            bool hasResetDbus =
+                hasProperty(interfaces, iface, "ResetDbusService") &&
+                hasProperty(interfaces, iface, "ResetDbusObject") &&
+                hasProperty(interfaces, iface, "ResetDbusInterface") &&
+                hasProperty(interfaces, iface, "ResetDbusMethod");
+
+            if (!hasProperty(interfaces, iface, "ForceRecoveryChassisObject") ||
+                !hasProperty(interfaces, iface, "StrapPins") ||
+                !hasProperty(interfaces, iface, "StrapActiveValues") ||
+                !hasProperty(interfaces, iface, "StrapDefaultValues") ||
+                (!hasResetPins && !hasResetDbus))
             {
                 lg2::error(
-                    "USBRCMForceRecovery config missing ForceRecoveryChassisObject or ConfigType: {PATH}",
+                    "USBRCMForceRecovery config missing required properties "
+                    "(needs StrapPins/Active/Default + ResetPins or "
+                    "ResetDbus*) at {PATH}",
                     "PATH", emObjectPath);
                 continue;
             }
 
-            auto forceRecoveryChassisName =
-                getString(interfaces, usbRcmForceRecoveryObjInterface,
-                          "ForceRecoveryChassisObject");
-            auto configType = getString(
-                interfaces, usbRcmForceRecoveryObjInterface, "ConfigType");
-            auto chassisObjPath = getChassisObjPath(forceRecoveryChassisName);
+            auto chassisName =
+                getString(interfaces, iface, "ForceRecoveryChassisObject");
+            auto chassisObjPath = getChassisObjPath(chassisName);
+
+            RecoveryPinConfig cfg;
+            cfg.strapPins = getStringVec(interfaces, iface, "StrapPins");
+            cfg.strapActiveValues =
+                getIntVec(interfaces, iface, "StrapActiveValues");
+            cfg.strapDefaultValues =
+                getIntVec(interfaces, iface, "StrapDefaultValues");
+
+            // Reject configs where the three strap arrays are inconsistent —
+            // forceRecoveryMode and setGPIODefaultPinStates both index
+            // strapActiveValues[i] and strapDefaultValues[i] inside a loop
+            // over strapPins, so mismatched lengths would be UB.
+            if (cfg.strapPins.empty() ||
+                cfg.strapActiveValues.size() != cfg.strapPins.size() ||
+                cfg.strapDefaultValues.size() != cfg.strapPins.size())
+            {
+                lg2::error("USBRCMForceRecovery strap arrays missing or length "
+                           "mismatch at {PATH} (pins={NPINS} active={NACT} "
+                           "default={NDEF})",
+                           "PATH", emObjectPath, "NPINS", cfg.strapPins.size(),
+                           "NACT", cfg.strapActiveValues.size(), "NDEF",
+                           cfg.strapDefaultValues.size());
+                continue;
+            }
+
+            if (hasResetPins)
+            {
+                cfg.resetPins = getStringVec(interfaces, iface, "ResetPins");
+                if (cfg.resetPins.empty())
+                {
+                    lg2::error(
+                        "USBRCMForceRecovery ResetPins is empty at {PATH}",
+                        "PATH", emObjectPath);
+                    continue;
+                }
+            }
+            else
+            {
+                cfg.dbusService =
+                    getString(interfaces, iface, "ResetDbusService");
+                cfg.dbusObject =
+                    getString(interfaces, iface, "ResetDbusObject");
+                cfg.dbusInterface =
+                    getString(interfaces, iface, "ResetDbusInterface");
+                cfg.dbusMethod =
+                    getString(interfaces, iface, "ResetDbusMethod");
+            }
 
             if (!recoveryManagerExists(chassisObjPath))
             {
@@ -1268,8 +1371,8 @@ void publishDBusRecoveryObject()
                     recoveryModeManagers.push_back(
                         std::make_unique<
                             nvidia::recovery::USBRCMRecoveryManager>(
-                            getBus(), forceRecoveryChassisName, chassisObjPath,
-                            configType));
+                            getBus(), chassisName, chassisObjPath,
+                            std::move(cfg)));
                     recoveryModeManagers.back()->setRecoveryCompleteCallback(
                         refreshAllResourceHealth);
                 }

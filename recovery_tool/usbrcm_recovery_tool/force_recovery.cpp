@@ -1,372 +1,163 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION &
+ * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
+ */
+
 #include "force_recovery.hpp"
 
-#include <sys/wait.h>
+#include <gpiod.hpp>
+#include <phosphor-logging/lg2.hpp>
+#include <sdbusplus/bus.hpp>
 
-#include <nlohmann/json.hpp>
-
-#include <algorithm>
-#include <cstdlib>
-#include <optional>
-#include <string>
+#include <stdexcept>
 #include <vector>
 
-namespace GpioConfig
+// Claim a GPIO output line and hold it open, returning the line handle.
+static std::optional<gpiod::line> claimGpio(const std::string& name, int value)
 {
-struct GpioCommand
-{
-    std::string pinName;
-    int value;
-    std::string description;
-};
-
-// Config type definitions
-enum class ConfigType
-{
-    C2,   // Board with B0_M1_CPU_* prefix
-    C1G2, // Single CPU with BRD0_CPU_* prefix
-    C2G4  // Dual CPU with BRD0_CPU_* and BRD1_CPU_* prefixes
-};
-
-// Parse config type from string
-std::optional<ConfigType> parseConfigType(const std::string& configStr) noexcept
-{
-    // Make a copy to convert to lowercase (leave original unchanged)
-    std::string lower = configStr;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-
-    if (lower == "c2")
+    auto line = gpiod::find_line(name);
+    if (!line)
     {
-        return ConfigType::C2;
+        lg2::error("GPIO line not found: {NAME}", "NAME", name);
+        return std::nullopt;
     }
-    else if (lower == "c1g2")
+    try
     {
-        return ConfigType::C1G2;
+        line.request({"usbrcm", gpiod::line_request::DIRECTION_OUTPUT, 0},
+                     value);
+        return line;
     }
-    else if (lower == "c2g4")
+    catch (const std::exception& e)
     {
-        return ConfigType::C2G4;
+        lg2::error("Failed to set GPIO {NAME}={VAL}: {ERR}", "NAME", name,
+                   "VAL", value, "ERR", e.what());
+        return std::nullopt;
     }
-    return std::nullopt;
 }
 
-// Get GPIO prefix for a specific config type and board instance
-std::string getGpioPrefix(ConfigType type, int boardInstance) noexcept
+// Drive reset via D-Bus (assert=true) or release (assert=false).
+static void dbusReset(bool assert, const RecoveryPinConfig& cfg)
 {
-    switch (type)
+    auto bus = sdbusplus::bus::new_default();
+    auto m =
+        bus.new_method_call(cfg.dbusService.c_str(), cfg.dbusObject.c_str(),
+                            cfg.dbusInterface.c_str(), cfg.dbusMethod.c_str());
+    m.append(assert);
+    bus.call(m);
+}
+
+// Assert all reset lines.  For GPIO mode, returns held-open line handles so
+// the reset stays asserted across the strap-write window.
+static std::vector<gpiod::line> assertReset(const RecoveryPinConfig& cfg)
+{
+    if (!cfg.resetPins.empty())
     {
-        case ConfigType::C2:
-            return "B0_M1_CPU";
-        case ConfigType::C1G2:
-        case ConfigType::C2G4:
-            // Both use BRD<N>_CPU pattern
-            return "BRD" + std::to_string(boardInstance) + "_CPU";
+        std::vector<gpiod::line> lines;
+        for (const auto& name : cfg.resetPins)
+        {
+            auto line = gpiod::find_line(name);
+            if (!line)
+                throw std::runtime_error("Reset GPIO not found: " + name);
+            line.request({"usbrcm", gpiod::line_request::DIRECTION_OUTPUT, 0},
+                         0); // active-low: 0 = reset asserted
+            lines.push_back(std::move(line));
+        }
+        return lines;
     }
-    return "";
+    dbusReset(true, cfg);
+    return {};
 }
 
-// Get reset GPIO prefix for a specific config type and board instance
-std::string getResetPrefix(ConfigType type, int boardInstance) noexcept
+// Release all resets. Reset lines are active-low so driving to 1 de-asserts
+// them. For D-Bus mode the owning service performs the de-assertion.
+static void releaseReset(const RecoveryPinConfig& cfg,
+                         std::vector<gpiod::line>& lines)
 {
-    switch (type)
+    if (!lines.empty())
     {
-        case ConfigType::C2:
-            return "B0_M1";
-        case ConfigType::C1G2:
-        case ConfigType::C2G4:
-            // Both use BRD<N> pattern
-            return "BRD" + std::to_string(boardInstance);
+        for (auto& line : lines)
+        {
+            line.set_value(1); // active-low: 1 = reset de-asserted
+        }
     }
-    return "";
-}
-
-// Get number of boards for a config type
-int getBoardCount(ConfigType type) noexcept
-{
-    switch (type)
+    else
     {
-        case ConfigType::C2:
-            return 1;
-        case ConfigType::C1G2:
-            return 1;
-        case ConfigType::C2G4:
-            return 2;
+        dbusReset(false, cfg);
     }
-    return 0;
 }
 
-// Get GPIO configuration commands for a specific board
-std::vector<GpioCommand> getGpioConfigSequence(ConfigType type,
-                                               int boardInstance)
+void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
 {
-    std::string prefix = getGpioPrefix(type, boardInstance);
-
-    return {
-        // Assert forced recovery (active low)
-        {prefix + "_FORCED_RECOVERY_L-O", 0, "Assert CPU forced recovery"},
-
-        // Configure boot device selection (all 0)
-        {prefix + "_BOOT_DEV_SEL0-O", 0, "Boot device select bit 0"},
-        {prefix + "_BOOT_DEV_SEL1-O", 0, "Boot device select bit 1"},
-        {prefix + "_BOOT_DEV_SEL2-O", 0, "Boot device select bit 2"},
-
-        // Configure recovery type (TYPE0=0, TYPE1=1 for USB RCM)
-        {prefix + "_RECOVERY_TYPE0-O", 0, "Recovery type bit 0"},
-        {prefix + "_RECOVERY_TYPE1-O", 1, "Recovery type bit 1 (USB RCM)"},
-    };
-}
-
-std::vector<GpioCommand> getDefaultPinStatesConfigSequence(ConfigType type,
-                                                           int boardInstance)
-{
-    std::string prefix = getGpioPrefix(type, boardInstance);
-
-    return {
-        {prefix + "_FORCED_RECOVERY_L-O", 1, "Deassert CPU forced recovery"},
-        {prefix + "_BOOT_DEV_SEL0-O", 0, "Boot device select bit 0"},
-        {prefix + "_BOOT_DEV_SEL1-O", 0, "Boot device select bit 1"},
-        {prefix + "_BOOT_DEV_SEL2-O", 0, "Boot device select bit 2"},
-        {prefix + "_RECOVERY_TYPE0-O", 0, "Recovery type bit 0"},
-        {prefix + "_RECOVERY_TYPE1-O", 1, "Recovery type bit 1"},
-    };
-}
-
-// Common reset commands (same for all configs)
-GpioCommand getResetAssert(ConfigType type, int boardInstance) noexcept
-{
-    std::string prefix = getResetPrefix(type, boardInstance);
-    return {prefix + "_IST_SYS_RST_L-O", 0, "Assert system reset"};
-}
-
-GpioCommand getResetRelease(ConfigType type, int boardInstance) noexcept
-{
-    std::string prefix = getResetPrefix(type, boardInstance);
-    return {prefix + "_IST_SYS_RST_L-O", 1, "Release system reset"};
-}
-} // namespace GpioConfig
-
-/**
- * @brief Validate GPIO pin name to prevent shell injection
- * @param pinName The pin name to validate
- * @return true if pin name is safe, false otherwise
- */
-static bool isValidPinName(const std::string& pinName) noexcept
-{
-    if (pinName.empty())
+    // Phase 1: assert all resets; hold GPIO lines open across strap writes.
+    std::vector<gpiod::line> resetLines;
+    try
     {
-        return false;
+        resetLines = assertReset(cfg);
     }
-
-    // Only allow alphanumeric, underscore, and hyphen characters
-    return std::all_of(pinName.begin(), pinName.end(), [](char c) {
-        return std::isalnum(static_cast<unsigned char>(c)) || c == '_' ||
-               c == '-';
-    });
-}
-
-/**
- * @brief Execute a shell command with timeout and check exit status
- * @param command The command to execute
- * @return true if command succeeded (exit code 0), false otherwise
- *
- * @note Commands are wrapped with 'timeout 5s' to prevent indefinite hangs
- *       from kernel driver issues, hardware faults, or bus contention
- */
-static bool executeCommand(const std::string& command) noexcept
-{
-    // Wrap command with timeout to prevent indefinite hangs (e.g., kernel
-    // driver issues) Redirect both stdout and stderr to /dev/null to avoid
-    // corrupting JSON output
-    std::string fullCommand = "timeout 5s " + command + " >/dev/null 2>&1";
-    int exitCode = system(fullCommand.c_str());
-
-    if (WIFEXITED(exitCode))
+    catch (const std::exception& e)
     {
-        return WEXITSTATUS(exitCode) == 0;
-    }
-
-    return false;
-}
-
-static bool setGpio(const std::string& pinName, int value)
-{
-    // Validate pin name to prevent shell injection
-    if (!isValidPinName(pinName))
-    {
-        return false;
-    }
-
-    std::string command =
-        "gpioset `gpiofind " + pinName + "`=" + std::to_string(value);
-    return executeCommand(command);
-}
-
-void forceRecoveryMode(const std::string& configTypeStr,
-                       nlohmann::json& jsonOutput)
-{
-    jsonOutput.clear();
-
-    // Parse config type
-    auto configType = GpioConfig::parseConfigType(configTypeStr);
-    if (!configType)
-    {
-        jsonOutput["Status"] = "Failed";
-        jsonOutput["Error"] = "Invalid config type. Supported: c2, c1g2, c2g4";
+        out = {{"Status", "Failed"}, {"Error", e.what()}};
         return;
     }
 
-    const int boardCount = GpioConfig::getBoardCount(*configType);
-
-    // Drive the recovery sequence in three phases (assert all resets ->
-    // program all straps -> release all resets) so every CPU is held in
-    // reset for the entire strap-write window.
-    //
-    // This is required on HW revisions where BRD0_IST_SYS_RST_L-O also
-    // resets BRD1 (BRD1's own reset line is no-connect). With the previous
-    // per-board sequence, releasing BRD0's reset would let BRD1 boot
-    // before its straps were programmed, and BRD1 would sample stale
-    // strap state and miss forced recovery. Phased reset is also correct
-    // on older HW where each board has an independent reset line — both
-    // boards being held simultaneously is just a strict superset of the
-    // per-board behaviour.
-
-    auto recordBoardFailure = [&](int board, const std::string& err) {
-        std::string key = "Board" + std::to_string(board);
-        jsonOutput[key]["Status"] = "Failed";
-        jsonOutput[key]["Error"] = err;
-    };
-
-    bool allSuccess = true;
-
-    // Phase 1: assert reset on every board.
-    for (int i = 0; i < boardCount; ++i)
+    // Phase 2: claim and hold all strap lines at their active values.
+    // Holding them open (not releasing immediately) guarantees the values
+    // are stable until reset is released in Phase 3, regardless of whether
+    // the underlying GPIO driver or expander retains output state on release.
+    std::vector<gpiod::line> strapLines;
+    for (size_t i = 0; i < cfg.strapPins.size(); ++i)
     {
-        jsonOutput["Board" + std::to_string(i)]["Status"] = "Successful";
-        auto reset = GpioConfig::getResetAssert(*configType, i);
-        if (!setGpio(reset.pinName, reset.value))
+        auto line = claimGpio(cfg.strapPins[i], cfg.strapActiveValues[i]);
+        if (!line)
         {
-            recordBoardFailure(i, "Failed to assert reset (pin " +
-                                      reset.pinName + ")");
-            allSuccess = false;
+            lg2::error("Leaving CPUs in reset after strap failure on {PIN}",
+                       "PIN", cfg.strapPins[i]);
+            out = {{"Status", "Failed"},
+                   {"Error", "Strap GPIO failed: " + cfg.strapPins[i]}};
+            return;
         }
+        strapLines.push_back(std::move(*line));
     }
 
-    // If any reset-assert failed, do not proceed. CPUs are in a mixed
-    // state; programming straps or releasing resets from here would only
-    // compound the problem.
-    if (!allSuccess)
+    // Phase 3: release all resets; CPUs now sample the held strap values.
+    try
     {
-        jsonOutput["Status"] = "Failed";
+        releaseReset(cfg, resetLines);
+    }
+    catch (const std::exception& e)
+    {
+        out = {{"Status", "Failed"},
+               {"Error", std::string("Reset release failed: ") + e.what()}};
         return;
     }
 
-    // Phase 2: program strap GPIOs for every board. With every CPU held in
-    // reset, the BootROMs cannot observe intermediate strap states.
-    for (int i = 0; i < boardCount; ++i)
-    {
-        auto configSeq = GpioConfig::getGpioConfigSequence(*configType, i);
-        for (const auto& cmd : configSeq)
-        {
-            if (!setGpio(cmd.pinName, cmd.value))
-            {
-                recordBoardFailure(i, cmd.description);
-                allSuccess = false;
-                break;
-            }
-        }
-    }
+    // Phase 4: release strap lines — values no longer need to be stable.
+    // strapLines destructor handles this automatically on return.
 
-    // If any strap write failed, leave every CPU in held-reset and bail.
-    // Releasing reset now would let a CPU boot with partial strap state,
-    // which we explicitly want to prevent.
-    if (!allSuccess)
-    {
-        jsonOutput["Status"] = "Failed";
-        return;
-    }
-
-    // Phase 3: release reset on every board. With every strap programmed
-    // and every reset still asserted, releasing in any order causes every
-    // BootROM to sample the recovery straps cleanly. On new HW the BRD1
-    // release is a no-op (line not connected); releasing BRD0 frees both
-    // boards simultaneously.
-    for (int i = 0; i < boardCount; ++i)
-    {
-        auto release = GpioConfig::getResetRelease(*configType, i);
-        if (!setGpio(release.pinName, release.value))
-        {
-            recordBoardFailure(i, "Failed to release reset (pin " +
-                                      release.pinName + ")");
-            allSuccess = false;
-        }
-    }
-
-    jsonOutput["Status"] = allSuccess ? "Successful" : "Failed";
+    out = {{"Status", "Successful"}};
 }
 
-/**
- * @brief Set GPIO default pin states for a single board instance
- * @param configType Config type (C2, C1G2, or C2G4)
- * @param boardInstance Board instance number (0 or 1)
- * @param jsonOutput Output JSON object with board operation status
- */
-static void
-    setGPIODefaultPinStatesBoardInstance(GpioConfig::ConfigType configType,
-                                         int boardInstance,
-                                         nlohmann::json& jsonOutput)
+void setGPIODefaultPinStates(const RecoveryPinConfig& cfg, nlohmann::json& out)
 {
-    jsonOutput.clear();
-
-    bool boardSuccess = true;
-    std::string boardError;
-    auto configSeq = GpioConfig::getDefaultPinStatesConfigSequence(
-        configType, boardInstance);
-    for (const auto& cmd : configSeq)
+    // Attempt all restores regardless of individual failures: a single
+    // missing GPIO (e.g. BRD1 not present) must not prevent the remaining
+    // straps from being restored to safe defaults.
+    std::vector<std::string> failures;
+    for (size_t i = 0; i < cfg.strapPins.size(); ++i)
     {
-        if (!setGpio(cmd.pinName, cmd.value))
-        {
-            boardSuccess = false;
-            boardError = cmd.description;
-            break;
-        }
+        auto line = claimGpio(cfg.strapPins[i], cfg.strapDefaultValues[i]);
+        if (!line)
+            failures.push_back(cfg.strapPins[i]);
+        // line destructor releases claim; output value is retained by hardware
+        // but we do not depend on that — restore is a best-effort cleanup.
     }
-
-    // Output JSON
-    jsonOutput["Status"] = boardSuccess ? "Successful" : "Failed";
-    if (!boardSuccess && !boardError.empty())
+    if (!failures.empty())
     {
-        jsonOutput["Error"] = boardError;
-    }
-}
-
-void setGPIODefaultPinStates(const std::string& configTypeStr,
-                             nlohmann::json& jsonOutput)
-{
-    jsonOutput.clear();
-
-    auto configType = GpioConfig::parseConfigType(configTypeStr);
-    if (!configType)
-    {
-        jsonOutput["Status"] = "Failed";
-        jsonOutput["Error"] = "Invalid config type. Supported: c2, c1g2, c2g4";
+        std::string pins;
+        for (const auto& p : failures)
+            pins += (pins.empty() ? "" : ", ") + p;
+        out = {{"Status", "Failed"}, {"Error", "GPIO restore failed: " + pins}};
         return;
     }
-
-    const int boardCount = GpioConfig::getBoardCount(*configType);
-
-    bool allSuccess = true;
-    for (int i = 0; i < boardCount; ++i)
-    {
-        nlohmann::json boardResult;
-        setGPIODefaultPinStatesBoardInstance(*configType, i, boardResult);
-
-        std::string boardKey = "Board" + std::to_string(i);
-        jsonOutput[boardKey] = boardResult;
-
-        if (boardResult.contains("Status") && boardResult["Status"] == "Failed")
-        {
-            allSuccess = false;
-        }
-    }
-
-    jsonOutput["Status"] = allSuccess ? "Successful" : "Failed";
+    out = {{"Status", "Successful"}};
 }

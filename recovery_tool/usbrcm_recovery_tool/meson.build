@@ -27,7 +27,8 @@ executable(
     'usbrcm-recovery-tool',
     sources: standalone_source_files,
     include_directories: inc_dirs,
-    dependencies: [libusb_dep, nlohmann_json, CLI11_dep, phosphor_logging],
+    dependencies: [libusb_dep, nlohmann_json, CLI11_dep, phosphor_logging,
+                   libgpiocxx, sdbusplus],
     install: true,
     install_dir: get_option('bindir'),
 )
@@ -50,6 +51,7 @@ executable(
         phosphor_logging,
         sdbusplus,
         phosphor_dbus_interfaces,
+        libgpiocxx,
     ],
     install: true,
     install_dir: get_option('bindir'),
