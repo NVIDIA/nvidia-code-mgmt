@@ -23,12 +23,12 @@ static constexpr int delayBetweenRetriesSec = 1;
 USBRCMRecoveryManager::USBRCMRecoveryManager(sdbusplus::bus_t& bus,
                                              std::string chassisName,
                                              std::string objPath,
-                                             std::string configType) :
+                                             RecoveryPinConfig pinConfig) :
     RecoveryModeManagerBase(bus, std::move(chassisName), std::move(objPath)),
-    configType(std::move(configType))
+    pinConfig(std::move(pinConfig))
 {
-    lg2::info("USBRCMRecoveryManager created for {CHASSIS}, config: {CFG}",
-              "CHASSIS", this->chassisName, "CFG", this->configType);
+    lg2::info("USBRCMRecoveryManager created for {CHASSIS}", "CHASSIS",
+              this->chassisName);
 }
 
 bool USBRCMRecoveryManager::areDevicesInRecovery() const
@@ -80,30 +80,21 @@ bool USBRCMRecoveryManager::areDevicesInRecovery() const
 
 void USBRCMRecoveryManager::performForceRecovery()
 {
-    if (configType.empty())
+    lg2::info("Executing USB RCM force recovery for {CHASSIS}", "CHASSIS",
+              chassisName);
+
+    nlohmann::json result;
+    forceRecoveryMode(pinConfig, result);
+
+    if (!result.contains("Status") || result["Status"] != "Successful")
     {
-        lg2::error("ConfigType not specified for USB RCM recovery");
+        lg2::error("Force recovery straps failed for {CHASSIS}: {ERR}",
+                   "CHASSIS", chassisName, "ERR",
+                   result.value("Error", "Unknown error"));
         throw sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure();
     }
 
-    lg2::info("Executing USB RCM force recovery, config: {CFG}", "CFG",
-              configType);
-
-    nlohmann::json result;
-    forceRecoveryMode(configType, result);
-
-    // Log GPIO failures but don't fail the API - some boards may not be present
-    if (!result.contains("Status") || result["Status"] != "Successful")
-    {
-        lg2::warning(
-            "Some GPIO straps failed for {CHASSIS}: {ERR}. "
-            "This may be due to platform misconfiguration or missing boards.",
-            "CHASSIS", chassisName, "ERR",
-            result.value("Error", "Unknown error"));
-    }
-
-    lg2::info("Force recovery straps set, waiting for device to enter recovery "
-              "mode for {CHASSIS}",
+    lg2::info("Straps set, waiting for {CHASSIS} to enter recovery mode",
               "CHASSIS", chassisName);
 
     bool deviceInRecovery = false;
@@ -118,42 +109,30 @@ void USBRCMRecoveryManager::performForceRecovery()
         if (areDevicesInRecovery())
         {
             deviceInRecovery = true;
-            lg2::info("All devices confirmed in recovery mode for {CHASSIS}",
-                      "CHASSIS", chassisName);
+            lg2::info("All devices in recovery mode for {CHASSIS}", "CHASSIS",
+                      chassisName);
             break;
         }
     }
 
-    lg2::info("Setting GPIO pins to default state for {CHASSIS}", "CHASSIS",
-              chassisName);
+    nlohmann::json restoreResult;
+    setGPIODefaultPinStates(pinConfig, restoreResult);
 
-    nlohmann::json coldBootResult;
-    setGPIODefaultPinStates(configType, coldBootResult);
-
-    // Log GPIO failures but don't fail the API - some boards may not be present
-    if (!coldBootResult.contains("Status") ||
-        coldBootResult["Status"] != "Successful")
+    if (!restoreResult.contains("Status") ||
+        restoreResult["Status"] != "Successful")
     {
-        lg2::warning(
-            "Some GPIO default pin states failed for {CHASSIS}: {ERR}. "
-            "This may be due to platform misconfiguration or missing boards.",
-            "CHASSIS", chassisName, "ERR",
-            coldBootResult.value("Error", "Unknown error"));
+        lg2::error("GPIO restore failed for {CHASSIS}: {ERR}", "CHASSIS",
+                   chassisName, "ERR",
+                   restoreResult.value("Error", "Unknown error"));
     }
 
     if (!deviceInRecovery)
     {
         lg2::error(
-            "Not all devices confirmed recovery mode after {MAX} attempts for "
-            "{CHASSIS}. GPIO default states set, but recovery status unconfirmed.",
+            "No devices confirmed recovery mode after {MAX} attempts for "
+            "{CHASSIS}",
             "MAX", maxRetries, "CHASSIS", chassisName);
         throw sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure();
-    }
-    else
-    {
-        lg2::info(
-            "USB RCM recovery successful for {CHASSIS}, GPIO default states set",
-            "CHASSIS", chassisName);
     }
 }
 

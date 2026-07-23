@@ -5,9 +5,8 @@
 
 #pragma once
 
+#include "force_recovery.hpp"
 #include "recovery_mode_manager_base.hpp"
-
-#include <string>
 
 namespace nvidia::recovery
 {
@@ -16,22 +15,15 @@ class USBRCMRecoveryManager : public RecoveryModeManagerBase
 {
   public:
     USBRCMRecoveryManager(sdbusplus::bus_t& bus, std::string chassisName,
-                          std::string objPath, std::string configType);
+                          std::string objPath, RecoveryPinConfig pinConfig);
 
   protected:
     void performForceRecovery() override;
 
   private:
-    /**
-     * @brief Check if all devices are in recovery mode
-     * @details Uses getRecoveryStatus() to enumerate USB devices and verify
-     *          that ALL discovered devices report "In Recovery" status.
-     *          This is important for C2G4 systems with multiple CPUs.
-     * @return true if all devices report "In Recovery", false otherwise
-     */
     bool areDevicesInRecovery() const;
 
-    std::string configType;
+    RecoveryPinConfig pinConfig;
 };
 
 } // namespace nvidia::recovery

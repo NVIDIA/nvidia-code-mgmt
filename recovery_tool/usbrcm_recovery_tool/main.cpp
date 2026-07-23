@@ -6,7 +6,48 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+
+static RecoveryPinConfig loadPinConfig(const std::string& path)
+{
+    std::ifstream f(path);
+    if (!f)
+        throw std::runtime_error("Cannot open config file: " + path);
+    auto j = nlohmann::json::parse(f);
+
+    RecoveryPinConfig cfg;
+    if (j.contains("ResetPins"))
+    {
+        cfg.resetPins = j.at("ResetPins").get<std::vector<std::string>>();
+    }
+    else
+    {
+        cfg.dbusService = j.at("ResetDbusService").get<std::string>();
+        cfg.dbusObject = j.at("ResetDbusObject").get<std::string>();
+        cfg.dbusInterface = j.at("ResetDbusInterface").get<std::string>();
+        cfg.dbusMethod = j.at("ResetDbusMethod").get<std::string>();
+    }
+    cfg.strapPins = j.at("StrapPins").get<std::vector<std::string>>();
+    cfg.strapActiveValues = j.at("StrapActiveValues").get<std::vector<int>>();
+    cfg.strapDefaultValues = j.at("StrapDefaultValues").get<std::vector<int>>();
+
+    if (cfg.strapPins.empty() ||
+        cfg.strapActiveValues.size() != cfg.strapPins.size() ||
+        cfg.strapDefaultValues.size() != cfg.strapPins.size())
+        throw std::runtime_error(
+            "StrapPins, StrapActiveValues and StrapDefaultValues must be "
+            "non-empty and have the same length");
+
+    if (cfg.resetPins.empty() &&
+        (cfg.dbusService.empty() || cfg.dbusObject.empty() ||
+         cfg.dbusInterface.empty() || cfg.dbusMethod.empty()))
+        throw std::runtime_error(
+            "Config must have non-empty ResetPins or all four "
+            "ResetDbus* fields");
+
+    return cfg;
+}
 
 int main(int argc, char* argv[])
 {
@@ -44,15 +85,14 @@ int main(int argc, char* argv[])
         performRecoveryCmd->add_flag("-v,--verbose", verbose,
                                      "Enable verbose diagnostic output");
 
-        std::string configType;
+        std::string configFile;
         auto forceRecoveryCmd = app.add_subcommand(
             "SetForceRecovery", "Force device(s) into USB RCM recovery mode");
         forceRecoveryCmd
-            ->add_option("-c,--config", configType,
-                         "Config type:\n"
-                         "  c2   - E5010, E5020, Vera C2 MGX aka P5035\n"
-                         "  c1g2 - PG558 aka Strata single board config\n"
-                         "  c2g4 - PG558 aka Strata dual board config")
+            ->add_option(
+                "-c,--config-file", configFile,
+                "Path to JSON pin config file (ResetPins/ResetDbus* + StrapPins"
+                " + StrapActiveValues + StrapDefaultValues)")
             ->required();
 
         CLI11_PARSE(app, argc, argv);
@@ -88,7 +128,7 @@ int main(int argc, char* argv[])
         else if (forceRecoveryCmd->parsed())
         {
             nlohmann::json jsonOutput;
-            forceRecoveryMode(configType, jsonOutput);
+            forceRecoveryMode(loadPinConfig(configFile), jsonOutput);
 
             // Output the result JSON (formatted)
             std::cout << jsonOutput.dump(2) << '\n';
