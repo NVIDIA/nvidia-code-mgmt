@@ -137,6 +137,10 @@ if get_option('VHMC_FLASH_SUPPORT').enabled()
     cdata.set_quoted('VHMC_BUSNAME_INVENTORY', 'com.Nvidia.VHMC')
     cdata.set_quoted('VHMC_UPDATE_SERVICE', 'vhmc-update@.service')
     cdata.set_quoted('VHMC_CONFIG_SCRIPT', get_option('VHMC_CONFIG_SCRIPT'))
+    cdata.set_quoted(
+        'VHMC_FIRMWARE_INVENTORY_ID',
+        get_option('VHMC_FIRMWARE_INVENTORY_ID'),
+    )
 endif
 
 if get_option('SMCU_FLASH_SUPPORT').enabled()

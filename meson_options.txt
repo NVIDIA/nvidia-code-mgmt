@@ -99,6 +99,11 @@ option('VHMC_STAGE_SCRIPT',
        value: '',
        description: 'Path to the vHMC stage script')
 
+option('VHMC_FIRMWARE_INVENTORY_ID',
+       type: 'string',
+       value: 'HGX_FW_BMC_0',
+       description: 'Firmware inventory Id that identifies vHMC in UpdatePolicy Targets')
+
 option('SPI_WRITE_PROTECT_APP_SUPPORT',
        type: 'feature',
        value: 'disabled',
