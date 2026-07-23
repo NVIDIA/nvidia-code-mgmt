@@ -74,6 +74,13 @@ std::string VHMCItemUpdater::getImageUploadDir() const
     return fallback;
 }
 
+std::string VHMCItemUpdater::validateTarget(
+    const sdbusplus::message::object_path& target)
+{
+    const std::string name = target.filename();
+    return name == VHMC_FIRMWARE_INVENTORY_ID ? name : "";
+}
+
 std::string VHMCItemUpdater::getVersion(
     [[maybe_unused]] const std::string& inventoryPath) const
 {

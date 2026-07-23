@@ -31,6 +31,15 @@ class VHMCItemUpdater : public BaseItemUpdater
         getManufacturer(const std::string& inventoryPath) const override;
     std::string getModel(const std::string& inventoryPath) const override;
 
+    /**
+     * @brief Validate that the update target is the vHMC BMC inventory.
+     *
+     * @param target D-Bus software object path from UpdatePolicy.Targets
+     * @return Target basename if accepted, otherwise empty
+     */
+    std::string
+        validateTarget(const sdbusplus::message::object_path& target) override;
+
     virtual std::string getServiceArgs(
         [[maybe_unused]] const std::string& inventoryPath,
         const std::string& imagePath, const std::string& version,
