@@ -73,16 +73,26 @@ ERoTResource::ERoTResource(sdbusplus::bus::bus& bus, const std::string& objPath,
 
 bool ERoTResource::isApBootFinished(const std::vector<uint8_t>& status)
 {
-    bool isApBootCompleted = getBit(status, AP0_BOOT_COMPLETE_BIT);
+    bool isApBootCompleted =
+        nvidia::fw_status::boot_status::isAPBootComplete(status);
     bool isApBootCompleteTimeout =
-        getBit(status, AP0_BOOT_COMPLETE_TIMEOUT_BIT);
+        nvidia::fw_status::boot_status::isAPBootCompleteTimeout(status);
+    auto fatalErrorCode =
+        nvidia::fw_status::boot_status::getAPFatalErrorCode(status);
 
     if (isApBootCompleteTimeout)
     {
         lg2::error("AP boot complete timeout");
     }
 
-    return isApBootCompleted || isApBootCompleteTimeout;
+    if (fatalErrorCode.has_value() && fatalErrorCode.value() != 0)
+    {
+        lg2::error("AP fatal error code {CODE}", "CODE",
+                   static_cast<uint16_t>(fatalErrorCode.value()));
+    }
+
+    return isApBootCompleted || isApBootCompleteTimeout ||
+           (fatalErrorCode.has_value() && fatalErrorCode.value() != 0);
 }
 
 void ERoTResource::updateERoTHealth()
