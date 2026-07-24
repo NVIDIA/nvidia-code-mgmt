@@ -158,8 +158,10 @@ TEST_F(FWStatusGlacierGpioTest, ERoTAndAPResourcesCoverRecoveryAndBootStatus)
     EXPECT_EQ(nonRecoverable.state(),
               OperationalStatusServer::StateType::Enabled);
     EXPECT_EQ(nonRecoverable.getBootStatus(), (std::vector<uint8_t>{0}));
-    EXPECT_TRUE(getBit({0x00, 0x00, 0x00, 0x08}, 3));
-    EXPECT_FALSE(getBit({0x00, 0x00, 0x00, 0x00}, 3));
+    EXPECT_TRUE(
+        nvidia::fw_status::boot_status::getBit({0x00, 0x00, 0x00, 0x08}, 3));
+    EXPECT_FALSE(
+        nvidia::fw_status::boot_status::getBit({0x00, 0x00, 0x00, 0x00}, 3));
     EXPECT_TRUE(nonRecoverable.isApBootFinished({0x00, 0x00, 0x00, 0x20}));
     EXPECT_FALSE(nonRecoverable.isApBootFinished({0x00, 0x00, 0x00, 0x00}));
     nonRecoverable.apBootStatusTimer->start(std::chrono::microseconds(1),

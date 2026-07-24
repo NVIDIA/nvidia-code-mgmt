@@ -18,6 +18,7 @@
 #pragma once
 
 #include "ap_resource.hpp"
+#include "boot_status_utils.hpp"
 #include "glacier_recovery_commands.hpp"
 #include "mctp_discovery_resource.hpp"
 #include "mctp_vdm_helper.hpp"
@@ -27,23 +28,10 @@
 
 /*
  * This interval is used to keep polling boot status from ERoT until
- * either AP0_BOOT_COMPLETE or AP0_BOOT_COMPLETE_TIMEOUT is set
+ * AP0_BOOT_COMPLETE, AP0_BOOT_COMPLETE_TIMEOUT, or FATAL_ERROR_CODE is set
  * TODO: Set it via MESON option
  */
 constexpr static int apBootCompleteRetryInterval = 10;
-constexpr static size_t AP0_BOOT_COMPLETE_BIT = 5;
-constexpr static size_t AP0_BOOT_COMPLETE_TIMEOUT_BIT = 27;
-
-inline bool getBit(const std::vector<uint8_t>& status, size_t bit)
-{
-    if (status.empty() || bit / 8 >= status.size())
-    {
-        return false;
-    }
-
-    size_t maxIdx = status.size() - 1;
-    return (status[maxIdx - bit / 8] >> (bit % 8)) & 1;
-}
 
 /**@class ERoTResource
  *

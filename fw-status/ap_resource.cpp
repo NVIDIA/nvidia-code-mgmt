@@ -19,6 +19,7 @@
 
 #include "ap_resource.hpp"
 
+#include "boot_status_utils.hpp"
 #include "erot_resource.hpp"
 #include "handler.hpp"
 
@@ -159,7 +160,9 @@ bool APResource::isAPInRecovery() const noexcept
     if (isERoTHealthy())
     {
         auto status = erotResource->getBootStatus();
-        return getBit(status, AP0_BOOT_COMPLETE_TIMEOUT_BIT);
+
+        return nvidia::fw_status::boot_status::isAPFatalErrorCodeSet(status) ||
+               nvidia::fw_status::boot_status::isAPBootCompleteTimeout(status);
     }
     return !isApHealthy();
 }
