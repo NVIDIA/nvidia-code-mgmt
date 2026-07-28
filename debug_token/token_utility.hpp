@@ -148,8 +148,7 @@ struct TokenUtility
         tokenSize = header->structSize;
         if (tokenSize < sizeof(TokenHeader))
         {
-            log<level::ERR>(
-                "Token structSize is too small to be valid");
+            log<level::ERR>("Token structSize is too small to be valid");
             tokenData.clear();
             return nullptr;
         }
