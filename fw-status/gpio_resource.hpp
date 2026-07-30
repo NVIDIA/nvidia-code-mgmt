@@ -30,9 +30,11 @@
 #include <sdeventplus/source/io.hpp>
 
 #include <chrono>
+#include <coroutine>
+#include <cstddef>
 #include <memory>
 #include <optional>
-#include <unordered_set>
+#include <vector>
 
 /** @class GPIOResource
  *  Represents a BaseResource whose healthy status is updated by monitoring GPIO
@@ -47,10 +49,11 @@ class GPIOResource : public BaseResource
     };
 
   private:
-    enum : uint8_t
+    enum class HealthUpdateReason : uint8_t
     {
-        LEVEL_TRIGGER = 0,
-        EDGE_TRIGGER
+        Refresh,
+        FatalErrorAssert,
+        FatalErrorDeassert
     };
 
   public:
@@ -69,6 +72,9 @@ class GPIOResource : public BaseResource
      * @param monitorMode - GPIO monitor mode
      * @param pollingIntervalMs - GPIO polling interval in milliseconds
      * @param gpioPolarity - GPIO polarity
+     * @param apName - Optional AP software object name associated with this
+     * ERoT
+     * @param mctpVdmHelper - MCTP VDM helper object
      *
      */
     GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
@@ -77,32 +83,7 @@ class GPIOResource : public BaseResource
                  const std::string& gpio, const std::string& target,
                  const std::string& monitorMode,
                  std::optional<uint64_t> pollingIntervalMs,
-                 const std::string& gpioPolarity);
-
-    /** @brief Constructor for the GPIOResource Class - Monitoring GPIO
-     * Interrupt for Non-ERoT devices Updates Health and Status of the D-Bus
-     * object by monitoring specified GPIO ready pin
-     *
-     * @param bus - SystemD bus to publish the object
-     * @param objPath - Path of D-Bus object to publish
-     * @param event - sdevent
-     * @param eid - MCTP Endpoint ID of the Resource
-     * @param gpio - GPIO line name
-     * @param risingTarget - systemd unit to be executed when rising event
-     * triggered
-     * @param fallingTarget - systemd unit to be executed when risifallingng
-     * event triggered
-     * @param gpioPolarity - GPIO polarity
-     * @param chassisObjPath - Path of the Chassis D-Bus object to publish
-     * BootStatus
-     * @param mctpVdmHelper - MCTP VDM helper object
-     */
-    GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
-                 sdeventplus::Event& event, uint8_t eid,
-                 const std::string& gpio, const std::string& risingTarget,
-                 const std::string& fallingTarget,
-                 const std::string& gpioPolarity,
-                 const std::string chassisObjPath,
+                 const std::string& gpioPolarity, const std::string& apName,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
 
     ~GPIOResource() override;
@@ -112,26 +93,27 @@ class GPIOResource : public BaseResource
     uint8_t eid;
     std::string gpioLineName;
     std::string systemTarget;
-    std::string risingTarget;
-    std::string fallingTarget;
     bool isFirmwareInRecovery = false;
-    bool isEROT = false;
     int polarity;
     MonitorMode monitorMode = MonitorMode::Interrupt;
     std::chrono::milliseconds pollingInterval{0};
     std::optional<int> lastGpioValue;
     gpiod::line gpioLine;
-    gpiod::line_event lineEvent;
     std::unique_ptr<sdeventplus::source::IO> gpioEvent;
     std::unique_ptr<sdbusplus::Timer> gpioRetryTimer;
     std::unique_ptr<sdbusplus::Timer> gpioPollingTimer;
+    std::unique_ptr<sdbusplus::Timer> apBootStatusRetryTimer;
     std::unique_ptr<glacier_recovery_tool::glacier_recovery_commands::
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
-    std::mutex mtx;
     std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
-    std::unique_ptr<BootStatus> bootStatus;
-    std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type> co;
+    std::unique_ptr<BaseResource> apResource;
+    bool apBootStatusCheckActive = false;
+    size_t apBootStatusQueryRetryCount = 0;
+    std::shared_ptr<bool> apBootStatusLifetimeToken =
+        std::make_shared<bool>(true);
+    std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type>
+        apBootStatusCo;
 
     /** @brief callback function to handle GPIO event
      *
@@ -193,44 +175,59 @@ class GPIOResource : public BaseResource
     /** @brief function to update Health and State of ERoT D-Bus object
      *         Uses Glacier Crisis Recovery Protocol to fetch device status
      */
-    void updateERoTHealth();
+    void updateERoTHealth(
+        HealthUpdateReason reason = HealthUpdateReason::Refresh);
 
-    /** @brief function to update Health and State of AP D-Bus object.
-     *         Uses GPIO event or GPIO value to determine the status of AP
+    /** @brief Whether this ERoT GPIO resource should also update AP health.
      */
-    void updateAPHealth(uint8_t type);
+    bool hasAP() const noexcept;
 
-    /** @brief function to read GPIO value and call updateAPHealth() to
-     * initialize its status
+    /** @brief Start the AP boot-status retry loop after a short endpoint
+     * settle delay.
      */
-    void initAPHealth();
+    void startAPBootStatusCheck();
 
-    /** @brief Updates the BootStatus of the AP on chassis D-Bus object
-     *
-     * @return coroutine
-     *
+    /** @brief Run one AP QueryBootStatus request if no request is in flight.
      */
-    mctp_vdm::requester::Coroutine updateBootStatusAsync();
+    void runAPBootStatusQuery();
 
-    /** @brief Updates the BootStatus D-Bus object
-     *
-     * @return coroutine
-     *
+    /** @brief Schedule an AP QueryBootStatus request.
      */
-    void updateBootStatus()
-    {
-        if (co)
-        {
-            co = nullptr;
-        }
-        auto rc = updateBootStatusAsync();
-        co = rc.handle;
+    void scheduleAPBootStatusQuery(std::chrono::seconds delay);
 
-        if (co.done())
-        {
-            co = nullptr;
-        }
-    }
+    /** @brief Schedule the next AP QueryBootStatus retry.
+     */
+    void scheduleAPBootStatusRetry();
+
+    /** @brief Stop the AP boot-status retry loop.
+     */
+    void stopAPBootStatusCheck();
+
+    /** @brief Query and decode AP boot status via the shared ERoT/AP EID.
+     */
+    mctp_vdm::requester::Coroutine queryAPBootStatusAsync();
+
+    /** @brief Apply a decoded AP boot status result.
+     */
+    void handleAPBootStatus(const std::vector<uint8_t>& status);
+
+    /** @brief Handle missing/failed AP boot status response.
+     */
+    void handleAPBootStatusUnavailable();
+
+    /** @brief Update AP health/state.
+     */
+    void updateAPHealth(HealthServer::HealthType healthValue,
+                                 OperationalStatusServer::StateType stateValue);
+
+    /** @brief Delete the AP recovery object when the AP is healthy.
+     */
+    void deleteAPObject();
+
+    /** @brief Commit a recovery error and mark the AP unhealthy,
+     *  then stop the boot-status check.
+     */
+    void markAPUnhealthy();
 
     /** @brief Fetches EID for the resource
      *
@@ -243,25 +240,13 @@ class GPIOResource : public BaseResource
      */
     void updateHealth() override
     {
-        if (isEROT)
+        if (monitorMode == MonitorMode::Polling)
         {
-            if (monitorMode == MonitorMode::Polling)
-            {
-                pollGpio();
-            }
-            else
-            {
-                updateERoTHealth();
-            }
-        }
-        else if (isChassisPoweredOff())
-        {
-            health(HealthServer::HealthType::Warning);
-            state(OperationalStatusServer::StateType::UnavailableOffline);
+            pollGpio();
         }
         else
         {
-            updateAPHealth(LEVEL_TRIGGER);
+            updateERoTHealth();
         }
     }
 };

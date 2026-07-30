@@ -18,8 +18,8 @@ constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
 constexpr auto glacierCrisisObjInterface =
     "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
-constexpr auto gpioObjInterface =
-    "xyz.openbmc_project.Configuration.GPIORecovery";
+constexpr auto gpioErotObjInterface =
+    "xyz.openbmc_project.Configuration.GPIOERoTRecovery";
 
 static constexpr uint8_t delay1sec = 1;
 
@@ -58,10 +58,9 @@ static bool isGlacierDevice(nvidia::software::updater::InterfaceMap interfaces,
         }
         return isRecoverable;
     }
-    else if (interfaces.contains(gpioObjInterface) &&
-             std::get<bool>(interfaces.at(gpioObjInterface).at("IsERoT")))
+    else if (interfaces.contains(gpioErotObjInterface))
     {
-        interface = gpioObjInterface;
+        interface = gpioErotObjInterface;
         return true;
     }
     return false;
