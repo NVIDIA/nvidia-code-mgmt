@@ -47,6 +47,7 @@
 #include <chrono>
 #include <filesystem>
 #include <optional>
+#include <variant>
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto entityManagerObjManager = "/xyz/openbmc_project/inventory";
@@ -54,8 +55,8 @@ constexpr auto ocpObjInterface =
     "xyz.openbmc_project.Configuration.OCPRecovery";
 constexpr auto glacierCrisisObjInterface =
     "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
-constexpr auto gpioObjInterface =
-    "xyz.openbmc_project.Configuration.GPIORecovery";
+constexpr auto gpioErotObjInterface =
+    "xyz.openbmc_project.Configuration.GPIOERoTRecovery";
 constexpr auto mcuObjInterface =
     "xyz.openbmc_project.Configuration.MCURecovery";
 constexpr auto connectxObjInterface =
@@ -233,6 +234,34 @@ bool hasProperty(const InterfaceMap& interfaces, const Interface& interface,
                    "ERR", e.what());
         return false;
     }
+}
+
+std::optional<uint64_t> getOptionalUint64(const InterfaceMap& interfaces,
+                                          const Interface& interface,
+                                          const Property& property)
+{
+    if (!hasProperty(interfaces, interface, property))
+    {
+        return std::nullopt;
+    }
+
+    try
+    {
+        const auto& value = interfaces.at(interface).at(property);
+        if (const auto* parsed = std::get_if<uint64_t>(&value))
+        {
+            return *parsed;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        lg2::warning("Failed to get optional property {NAME}. {ERR}", "NAME",
+                     property, "ERR", e.what());
+        return std::nullopt;
+    }
+
+    lg2::warning("Invalid type for optional property {NAME}", "NAME", property);
+    return std::nullopt;
 }
 
 void applyChassisConnectionAndRefresh(const InterfaceMap& interfaces,
@@ -501,8 +530,6 @@ void publishDBusRecoveryObject()
                              return resource->getObjectPath() == objPath;
                          }) != resources.end())
         {
-            lg2::info("Object path already registered: {PATH}", "PATH",
-                      objPath);
             continue; // Skip registration
         }
 
@@ -1053,103 +1080,70 @@ void publishDBusRecoveryObject()
                     initialChassisPowerState);
             }
         }
-        else if (interfaces.contains(gpioObjInterface))
+        else if (interfaces.contains(gpioErotObjInterface))
         {
             const auto eidOpt =
-                getUint8(interfaces, gpioObjInterface, "MctpEID");
+                getUint8(interfaces, gpioErotObjInterface, "MctpEID");
             if (!eidOpt.has_value())
             {
                 lg2::error(
-                    "No MctpEID found in GPIO recovery config Object: {PATH}",
+                    "No MctpEID found in GPIO ERoT recovery config Object: {PATH}",
                     "PATH", emObjectPath);
                 continue;
             }
 
             const auto eid = eidOpt.value();
-            const auto gpio = getString(interfaces, gpioObjInterface, "GPIO");
-            const auto isErot = getBool(interfaces, gpioObjInterface, "IsERoT");
+            const auto gpio =
+                getString(interfaces, gpioErotObjInterface, "GPIO");
             bool hideWhenHealthy = false;
-            if (hasProperty(interfaces, gpioObjInterface, "HideWhenHealthy"))
+            if (hasProperty(interfaces, gpioErotObjInterface,
+                            "HideWhenHealthy"))
             {
-                hideWhenHealthy =
-                    getBool(interfaces, gpioObjInterface, "HideWhenHealthy");
+                hideWhenHealthy = getBool(interfaces, gpioErotObjInterface,
+                                          "HideWhenHealthy");
             }
 
-            if (isErot)
+            lg2::info("Found GPIO ERoT recovery Object: {PATH}", "PATH",
+                      emObjectPath);
+            const auto i2cBus =
+                getUint64(interfaces, gpioErotObjInterface, "I2CBus");
+            const auto i2cAddress =
+                getUint64(interfaces, gpioErotObjInterface, "I2CAddress");
+            std::string target;
+            if (hasProperty(interfaces, gpioErotObjInterface, "Target"))
             {
-                lg2::info("Found GPIO recovery Object (ERoT): {PATH}", "PATH",
-                          emObjectPath);
-                const auto i2cBus =
-                    getUint64(interfaces, gpioObjInterface, "I2CBus");
-                const auto i2cAddress =
-                    getUint64(interfaces, gpioObjInterface, "I2CAddress");
-                const auto target =
-                    getString(interfaces, gpioObjInterface, "Target");
-                std::string monitorMode;
-                if (hasProperty(interfaces, gpioObjInterface, "MonitorMode"))
-                {
-                    monitorMode =
-                        getString(interfaces, gpioObjInterface, "MonitorMode");
-                }
-
-                std::optional<uint64_t> pollingIntervalMs;
-                if (hasProperty(interfaces, gpioObjInterface,
-                                "PollingIntervalMs"))
-                {
-                    const auto& value =
-                        interfaces.at(gpioObjInterface).at("PollingIntervalMs");
-                    if (const auto* interval = std::get_if<uint64_t>(&value))
-                    {
-                        pollingIntervalMs = *interval;
-                    }
-                    else
-                    {
-                        lg2::warning(
-                            "Invalid PollingIntervalMs type for {PATH}; using default polling interval",
-                            "PATH", emObjectPath);
-                    }
-                }
-
-                std::string polarity;
-                if (hasProperty(interfaces, gpioObjInterface, "Polarity"))
-                {
-                    polarity =
-                        getString(interfaces, gpioObjInterface, "Polarity");
-                }
-
-                resources.push_back(std::make_unique<GPIOResource>(
-                    getBus(), objPath, event, i2cBus, i2cAddress, eid, gpio,
-                    target, monitorMode, pollingIntervalMs, polarity,
-                    hideWhenHealthy));
+                target = getString(interfaces, gpioErotObjInterface, "Target");
             }
-            else
+            std::string monitorMode;
+            if (hasProperty(interfaces, gpioErotObjInterface, "MonitorMode"))
             {
-                lg2::info("Found GPIO recovery Object (AP): {PATH}", "PATH",
-                          emObjectPath);
-                std::string chassisObjPath;
-
-                const auto risingTarget =
-                    getString(interfaces, gpioObjInterface, "RisingTarget");
-                const auto fallingTarget =
-                    getString(interfaces, gpioObjInterface, "FallingTarget");
-                const auto polarity =
-                    getString(interfaces, gpioObjInterface, "Polarity");
-
-                const auto apBootStatusType =
-                    getString(interfaces, gpioObjInterface, "APBootStatusType");
-                if (!apBootStatusType.empty())
-                {
-                    const auto chassisName =
-                        getString(interfaces, gpioObjInterface, "ChassisName");
-                    chassisObjPath = getChassisObjPath(chassisName);
-                }
-                resources.push_back(std::make_unique<GPIOResource>(
-                    getBus(), objPath, event, eid, gpio, risingTarget,
-                    fallingTarget, polarity, chassisObjPath, mctpVdmHelper,
-                    hideWhenHealthy));
+                monitorMode =
+                    getString(interfaces, gpioErotObjInterface, "MonitorMode");
             }
 
-            applyChassisConnectionAndRefresh(interfaces, gpioObjInterface,
+            std::optional<uint64_t> pollingIntervalMs;
+            pollingIntervalMs = getOptionalUint64(
+                interfaces, gpioErotObjInterface, "PollingIntervalMs");
+
+            std::string polarity;
+            if (hasProperty(interfaces, gpioErotObjInterface, "Polarity"))
+            {
+                polarity =
+                    getString(interfaces, gpioErotObjInterface, "Polarity");
+            }
+
+            std::string apName;
+            if (hasProperty(interfaces, gpioErotObjInterface, "APName"))
+            {
+                apName = getString(interfaces, gpioErotObjInterface, "APName");
+            }
+
+            resources.push_back(std::make_unique<GPIOResource>(
+                getBus(), objPath, event, i2cBus, i2cAddress, eid, gpio, target,
+                monitorMode, pollingIntervalMs, polarity, apName, mctpVdmHelper,
+                hideWhenHealthy));
+
+            applyChassisConnectionAndRefresh(interfaces, gpioErotObjInterface,
                                              *resources.back(),
                                              initialChassisPowerState);
         }

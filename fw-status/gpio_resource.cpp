@@ -18,8 +18,12 @@
 
 #include "gpio_resource.hpp"
 
+#include "boot_status_utils.hpp"
+
 #include <cerrno>
 #include <chrono>
+#include <iomanip>
+#include <sstream>
 #include <system_error>
 
 namespace
@@ -27,6 +31,9 @@ namespace
 constexpr auto gpioEventRetryInterval = std::chrono::seconds(5);
 constexpr auto defaultPollingInterval = std::chrono::milliseconds(1000);
 constexpr auto minPollingInterval = std::chrono::milliseconds(100);
+constexpr auto apBootStatusEndpointReadyDelay = std::chrono::seconds(1);
+constexpr auto apBootStatusQueryRetryInterval = std::chrono::seconds(1);
+constexpr size_t maxAPBootStatusQueryRetries = 10;
 
 GPIOResource::MonitorMode parseMonitorMode(const std::string& monitorMode)
 {
@@ -90,6 +97,41 @@ std::chrono::milliseconds
 
     return interval;
 }
+
+std::string formatBootStatus(const std::vector<uint8_t>& status)
+{
+    if (status.empty())
+    {
+        return "<empty>";
+    }
+
+    std::ostringstream stream;
+    stream << std::uppercase << std::hex << std::setfill('0');
+    for (size_t i = 0; i < status.size(); ++i)
+    {
+        if (i != 0)
+        {
+            stream << ' ';
+        }
+        stream << std::setw(2) << static_cast<unsigned>(status[i]);
+    }
+
+    return stream.str();
+}
+
+std::string formatFatalErrorCode(uint8_t code)
+{
+    std::ostringstream stream;
+    stream << "0x" << std::uppercase << std::hex
+           << static_cast<unsigned>(code & 0x0F);
+    return stream.str();
+}
+
+const char* fatalErrorStateString(bool asserted)
+{
+    return asserted ? "asserted" : "deasserted";
+}
+
 } // namespace
 
 GPIOResource::GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
@@ -99,17 +141,26 @@ GPIOResource::GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
                            const std::string& monitorModeConfig,
                            std::optional<uint64_t> pollingIntervalMs,
                            const std::string& gpioPolarity,
+                           const std::string& apName,
+                           std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
                            bool hideWhenHealthy) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
-    systemTarget(target), isEROT(true), hideWhenHealthy(hideWhenHealthy),
+    systemTarget(target), hideWhenHealthy(hideWhenHealthy),
     polarity(parseGPIOPolarity(gpioPolarity)),
     monitorMode(parseMonitorMode(monitorModeConfig)),
-    pollingInterval(getPollingInterval(pollingIntervalMs))
+    pollingInterval(getPollingInterval(pollingIntervalMs)),
+    mctpVdmHelper(mctpVdmHelper)
 {
     glacierRecoveryObj =
         std::make_unique<glacier_recovery_tool::glacier_recovery_commands::
                              GlacierRecoveryCommands>(i2cBus, i2cAddress,
                                                       false);
+
+    if (!apName.empty())
+    {
+        apResource = std::make_unique<BaseResource>(
+            bus, "/xyz/openbmc_project/software/" + apName);
+    }
 
     lg2::info("GPIO {GPIO} monitor mode: {MODE}", "GPIO", gpioLineName, "MODE",
               monitorMode == MonitorMode::Polling ? "Polling" : "Interrupt");
@@ -124,47 +175,34 @@ GPIOResource::GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
     }
 }
 
-GPIOResource::GPIOResource(
-    sdbusplus::bus_t& bus, const std::string& objPath,
-    sdeventplus::Event& event, uint8_t eid, const std::string& gpio,
-    const std::string& risingTarget, const std::string& fallingTarget,
-    const std::string& gpioPolarity, const std::string chassisObjPath,
-    std::shared_ptr<MCTPVdmHelper> mctpVdmHelper, bool hideWhenHealthy) :
-    BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
-    risingTarget(risingTarget), fallingTarget(fallingTarget),
-    hideWhenHealthy(hideWhenHealthy), polarity(parseGPIOPolarity(gpioPolarity)),
-    mctpVdmHelper(mctpVdmHelper)
-{
-    if (!chassisObjPath.empty())
-    {
-        bootStatus = std::make_unique<BootStatus>(bus, chassisObjPath);
-        bootStatus->bootStatus({0});
-        bootStatus->bootStatusType(
-            BootStatusServer::BootStatusTypes::ERoTBootStatus);
-    }
-
-    initAPHealth();
-
-    if (!registerGPIOEvent())
-    {
-        startGPIOEventRetry();
-    }
-}
-
 GPIOResource::~GPIOResource()
 {
     stopGPIOPolling();
     stopGPIOEventRetry();
+    stopAPBootStatusCheck();
+    apBootStatusLifetimeToken.reset();
     clearGPIOEvent();
 
-    if (co && co.done())
+    if (apBootStatusCo && apBootStatusCo.done())
     {
-        co.destroy();
+        apBootStatusCo.destroy();
     }
+    else if (apBootStatusCo)
+    {
+        /*
+         * SendRecvMctpVdmMsg does not expose a request cancellation API and its
+         * response callback points into the suspended coroutine frame. Keep the
+         * frame alive until the request completes, then let final_suspend destroy
+         * it after queryAPBootStatusAsync observes the expired lifetime token.
+         */
+        apBootStatusCo.promise().detached = true;
+    }
+    apBootStatusCo = nullptr;
 }
 
 void GPIOResource::waitForGPIOEvent()
 {
+    gpiod::line_event lineEvent;
     try
     {
         lineEvent = gpioLine.event_read();
@@ -184,18 +222,19 @@ void GPIOResource::waitForGPIOEvent()
         throw;
     }
 
-    if (lineEvent.event_type == gpiod::line_event::RISING_EDGE)
-        lg2::info("{GPIO} is rising", "GPIO", gpioLineName);
-    else
-        lg2::info("{GPIO} is falling", "GPIO", gpioLineName);
-    if (isEROT)
-    {
-        updateERoTHealth();
-    }
-    else
-    {
-        updateAPHealth(EDGE_TRIGGER);
-    }
+    const bool fatalErrorAsserted =
+        (lineEvent.event_type == gpiod::line_event::RISING_EDGE &&
+         polarity == gpiod::line::ACTIVE_HIGH) ||
+        (lineEvent.event_type == gpiod::line_event::FALLING_EDGE &&
+         polarity == gpiod::line::ACTIVE_LOW);
+    lg2::info("GPIO {GPIO} FATAL_ERROR {STATE} on {EDGE} edge", "GPIO",
+              gpioLineName, "STATE", fatalErrorStateString(fatalErrorAsserted),
+              "EDGE",
+              lineEvent.event_type == gpiod::line_event::RISING_EDGE ? "rising"
+                                                                     : "falling");
+    updateERoTHealth(fatalErrorAsserted
+                         ? HealthUpdateReason::FatalErrorAssert
+                         : HealthUpdateReason::FatalErrorDeassert);
 }
 
 void GPIOResource::clearGPIOEvent()
@@ -257,6 +296,23 @@ bool GPIOResource::registerGPIOEvent()
         gpioLine = gpiod::line{};
         clearGPIOEvent();
         return false;
+    }
+
+    try
+    {
+        const auto value = gpioLine.get_value();
+        if (isGPIOActive(value))
+        {
+            lg2::info(
+                "GPIO {GPIO} FATAL_ERROR asserted during initial interrupt read, value={VALUE}",
+                "GPIO", gpioLineName, "VALUE", value);
+            updateERoTHealth(HealthUpdateReason::FatalErrorAssert);
+        }
+    }
+    catch (const std::exception& e)
+    {
+        lg2::warning("Failed to read initial value for {GPIO}: {ERROR}", "GPIO",
+                     gpioLineName, "ERROR", e.what());
     }
 
     auto gpioLineFd = gpioLine.event_get_fd();
@@ -327,7 +383,6 @@ void GPIOResource::retryGPIOEventRegistration()
     }
 
     stopGPIOEventRetry();
-    updateHealth();
 }
 
 void GPIOResource::startGPIOPolling()
@@ -453,13 +508,27 @@ void GPIOResource::pollGpio()
 
     if (!previousValue.has_value())
     {
-        updateERoTHealth();
+        if (isGPIOActive(value))
+        {
+            lg2::info(
+                "GPIO {GPIO} FATAL_ERROR asserted during initial polling read, value={VALUE}",
+                "GPIO", gpioLineName, "VALUE", value);
+            updateERoTHealth(HealthUpdateReason::FatalErrorAssert);
+        }
         return;
     }
 
     if (changed)
     {
-        updateERoTHealth();
+        const bool fatalErrorAsserted = isGPIOActive(value);
+        lg2::info(
+            "GPIO {GPIO} FATAL_ERROR {STATE} by polling, previous={PREVIOUS}, current={CURRENT}",
+            "GPIO", gpioLineName, "STATE",
+            fatalErrorStateString(fatalErrorAsserted), "PREVIOUS",
+            previousValue.value(), "CURRENT", value);
+        updateERoTHealth(fatalErrorAsserted
+                             ? HealthUpdateReason::FatalErrorAssert
+                             : HealthUpdateReason::FatalErrorDeassert);
     }
 }
 
@@ -481,7 +550,7 @@ void GPIOResource::updateHealthyState()
     state(OperationalStatusServer::StateType::Enabled);
 }
 
-void GPIOResource::updateERoTHealth()
+void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
 {
     if (isChassisPoweredOff())
     {
@@ -499,7 +568,14 @@ void GPIOResource::updateERoTHealth()
     {
         lg2::info("Device associated with {PATH} is in recovery", "PATH",
                   path.c_str());
-        commitRecoveryModeError(fetchEid());
+
+        // Only commit the recovery error on the transition into recovery.
+        // Health refreshes can re-enter this path while still in recovery, and
+        // re-committing would duplicate the error.
+        if (!isFirmwareInRecovery)
+        {
+            commitRecoveryModeError(fetchEid());
+        }
 
         isFirmwareInRecovery = true;
         health(HealthServer::HealthType::Critical);
@@ -510,193 +586,347 @@ void GPIOResource::updateERoTHealth()
     lg2::info("Device associated with {PATH} is not in recovery", "PATH",
               path.c_str());
 
+    bool systemTargetRestarted = false;
+
+    if (reason == HealthUpdateReason::FatalErrorDeassert)
+    {
+        stopAPBootStatusCheck();
+        deleteAPObject();
+    }
+
     if (isFirmwareInRecovery)
     {
         lg2::info("{OBJ} exits the recovery mode", "OBJ", path);
-        auto newBus = sdbusplus::bus::new_default();
-        auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
-        lg2::info("Restarting {TARGET}...", "TARGET", systemTarget);
-        /*
-         *  Some ERoTs on the same bus which share the same target
-         *  Restart the target to ensure the later one can trigger
-         *  the MCTP re-discovery
-         */
-        dbusUtil.restartSystemUnit(systemTarget);
+        if (systemTarget.empty())
+        {
+            lg2::warning(
+                "No MCTP init target configured for recovered ERoT {OBJ}",
+                "OBJ", path);
+        }
+        else
+        {
+            auto newBus = sdbusplus::bus::new_default();
+            auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
+            lg2::info("Restarting {TARGET}...", "TARGET", systemTarget);
+            /*
+             *  Some ERoTs on the same bus which share the same target
+             *  Restart the target to ensure the later one can trigger
+             *  the MCTP re-discovery
+             */
+            dbusUtil.restartSystemUnit(systemTarget);
+            systemTargetRestarted = true;
+        }
         isFirmwareInRecovery = false;
     }
     updateHealthyState();
+
+    if (reason == HealthUpdateReason::FatalErrorAssert && hasAP())
+    {
+        if (systemTarget.empty())
+        {
+            lg2::warning(
+                "No MCTP init target configured for AP of {OBJ}; HMC ERoT endpoint may be missing before AP boot-status query",
+                "OBJ", path);
+        }
+        else if (!systemTargetRestarted)
+        {
+            auto newBus = sdbusplus::bus::new_default();
+            auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
+            lg2::info(
+                "Restarting {TARGET} to initialize HMC ERoT endpoint before AP boot-status query",
+                "TARGET", systemTarget);
+            dbusUtil.restartSystemUnit(systemTarget);
+        }
+        else
+        {
+            lg2::info(
+                "Skipping restart of {TARGET} before AP boot-status query because it was already restarted after ERoT recovery",
+                "TARGET", systemTarget);
+        }
+        startAPBootStatusCheck();
+    }
+
     return;
 }
 
-void GPIOResource::updateAPHealth(uint8_t type)
+bool GPIOResource::hasAP() const noexcept
 {
-    bool healthy = false;
-    int val;
-    auto newBus = sdbusplus::bus::new_default();
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
-
-    if (bootStatus)
-    {
-        updateBootStatus();
-    }
-
-    // Use event type to check AP health
-    switch (type)
-    {
-        case EDGE_TRIGGER:
-            if ((lineEvent.event_type == gpiod::line_event::RISING_EDGE &&
-                 polarity == gpiod::line::ACTIVE_HIGH) ||
-                (lineEvent.event_type == gpiod::line_event::FALLING_EDGE &&
-                 polarity == gpiod::line::ACTIVE_LOW))
-            {
-                healthy = true;
-            }
-            else
-            {
-                healthy = false;
-            }
-
-            if (!risingTarget.empty() &&
-                (lineEvent.event_type == gpiod::line_event::RISING_EDGE))
-            {
-                lg2::info("Starting... {TARGET}", "TARGET", risingTarget);
-                dbusUtil.startSystemUnit(risingTarget);
-            }
-            else if (!fallingTarget.empty() &&
-                     (lineEvent.event_type == gpiod::line_event::FALLING_EDGE))
-            {
-                lg2::info("Starting... {TARGET}", "TARGET", fallingTarget);
-                dbusUtil.startSystemUnit(fallingTarget);
-            }
-            break;
-        case LEVEL_TRIGGER:
-            try
-            {
-                val = gpioLine.get_value();
-            }
-            catch (const std::system_error& e)
-            {
-                if (e.code().value() == ENODEV)
-                {
-                    lg2::warning(
-                        "GPIO line {GPIO} is no longer available while reading level: {ERROR}",
-                        "GPIO", gpioLineName, "ERROR", e.what());
-                }
-                else
-                {
-                    lg2::error("Failed to read GPIO {GPIO} level: {ERROR}",
-                               "GPIO", gpioLineName, "ERROR", e.what());
-                }
-
-                clearGPIOEvent();
-                return;
-            }
-            catch (const std::exception& e)
-            {
-                lg2::error("Failed to read GPIO {GPIO} level: {ERROR}", "GPIO",
-                           gpioLineName, "ERROR", e.what());
-                clearGPIOEvent();
-                return;
-            }
-
-            if (isGPIOActive(val))
-            {
-                healthy = true;
-
-                if (polarity == gpiod::line::ACTIVE_HIGH &&
-                    !risingTarget.empty())
-                {
-                    lg2::info("Starting... {TARGET}", "TARGET", risingTarget);
-                    dbusUtil.startSystemUnit(risingTarget);
-                }
-                else if (polarity == gpiod::line::ACTIVE_LOW &&
-                         !fallingTarget.empty())
-                {
-                    lg2::info("Starting... {TARGET}", "TARGET", fallingTarget);
-                    dbusUtil.startSystemUnit(fallingTarget);
-                }
-            }
-            else
-            {
-                healthy = false;
-
-                // Trigger the falling target when its polarity is ACTIVE_HIGH
-                // (i.e., high is healthy)
-                if (polarity == gpiod::line::ACTIVE_HIGH &&
-                    !fallingTarget.empty())
-                {
-                    lg2::info("Starting... {TARGET}", "TARGET", fallingTarget);
-                    dbusUtil.startSystemUnit(fallingTarget);
-                }
-                else if (polarity == gpiod::line::ACTIVE_LOW &&
-                         !risingTarget.empty())
-                {
-                    lg2::info("Starting... {TARGET}", "TARGET", risingTarget);
-                    dbusUtil.startSystemUnit(risingTarget);
-                }
-            }
-            break;
-        default:
-            lg2::error("Invalid type {TYPE}", "TYPE", type);
-    }
-
-    if (healthy)
-    {
-        updateHealthyState();
-        lg2::info("Device associated with {OBJ} is healthy", "OBJ",
-                  path.c_str());
-    }
-    else
-    {
-        commitRecoveryModeError(fetchEid());
-        health(HealthServer::HealthType::Critical);
-        state(OperationalStatusServer::StateType::StandbyOffline);
-        lg2::info("Device associated with {OBJ} needs recovery", "OBJ",
-                  path.c_str());
-    }
+    return apResource != nullptr;
 }
 
-void GPIOResource::initAPHealth()
+void GPIOResource::startAPBootStatusCheck()
 {
-    lg2::info("Initializing... {OBJ} status", "OBJ", path.c_str());
-    if (!requestGPIOInputLine())
+    if (!hasAP())
     {
         return;
     }
 
-    updateAPHealth(LEVEL_TRIGGER);
-
-    if (gpioLine)
+    if (!mctpVdmHelper)
     {
-        gpioLine.release();
-        gpioLine = gpiod::line{};
+        lg2::warning(
+            "AP configured for {OBJ}, but MCTP VDM helper is unavailable",
+            "OBJ", path);
+        return;
+    }
+
+    stopAPBootStatusCheck();
+    apBootStatusQueryRetryCount = 0;
+    apBootStatusCheckActive = true;
+    /*
+     * FATAL_ERROR can be observed before the HMC ERoT endpoint is ready,
+     * especially right after restarting the target that initializes it. Always
+     * give discovery a short settle window before the first QueryBootStatus; any
+     * later failures use the normal retry loop.
+     */
+    lg2::info(
+        "Waiting {DELAY_MS} ms for HMC ERoT endpoint before AP boot-status query for {OBJ}",
+        "DELAY_MS",
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            apBootStatusEndpointReadyDelay)
+            .count(),
+        "OBJ", apResource->getObjectPath());
+    scheduleAPBootStatusQuery(apBootStatusEndpointReadyDelay);
+}
+
+void GPIOResource::runAPBootStatusQuery()
+{
+    if (!apBootStatusCheckActive || !hasAP() || !mctpVdmHelper)
+    {
+        return;
+    }
+
+    if (apBootStatusCo && !apBootStatusCo.done())
+    {
+        lg2::info("AP boot-status query already in progress for {OBJ}", "OBJ",
+                  apResource->getObjectPath());
+        return;
+    }
+
+    if (apBootStatusCo)
+    {
+        apBootStatusCo.destroy();
+        apBootStatusCo = nullptr;
+    }
+
+    auto rc = queryAPBootStatusAsync();
+    apBootStatusCo = rc.handle;
+
+    if (apBootStatusCo.done())
+    {
+        apBootStatusCo = nullptr;
     }
 }
 
-mctp_vdm::requester::Coroutine GPIOResource::updateBootStatusAsync()
+void GPIOResource::scheduleAPBootStatusQuery(std::chrono::seconds delay)
+{
+    if (!apBootStatusCheckActive || !hasAP())
+    {
+        return;
+    }
+
+    if (!apBootStatusRetryTimer)
+    {
+        apBootStatusRetryTimer = std::make_unique<sdbusplus::Timer>(
+            sdEvent.get(),
+            std::bind(&GPIOResource::runAPBootStatusQuery, this));
+    }
+
+    try
+    {
+        /*
+         * Start as periodic rather than one-shot. Retries are scheduled from
+         * within this timer's own expiry callback, and sdbusplus::Timer stops a
+         * one-shot timer after the callback returns, which would silently kill
+         * the retry that was just armed. A periodic timer is left enabled, and
+         * the loop is terminated explicitly by stopAPBootStatusCheck().
+         */
+        apBootStatusRetryTimer->start(delay, true);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "Failed to start AP boot-status query timer for {OBJ}: {ERR}",
+            "OBJ", apResource->getObjectPath(), "ERR", e.what());
+    }
+}
+
+void GPIOResource::scheduleAPBootStatusRetry()
+{
+    scheduleAPBootStatusQuery(apBootStatusQueryRetryInterval);
+}
+
+void GPIOResource::stopAPBootStatusCheck()
+{
+    apBootStatusCheckActive = false;
+    apBootStatusQueryRetryCount = 0;
+
+    if (!apBootStatusRetryTimer || !apBootStatusRetryTimer->isRunning())
+    {
+        return;
+    }
+
+    auto rc = apBootStatusRetryTimer->stop();
+    if (rc)
+    {
+        lg2::error(
+            "Failed to stop AP boot-status retry timer for {OBJ}. RC={RC}",
+            "OBJ",
+            apResource ? apResource->getObjectPath()
+                                : std::string{},
+            "RC", rc);
+    }
+}
+
+mctp_vdm::requester::Coroutine GPIOResource::queryAPBootStatusAsync()
 {
     auto eid = fetchEid();
-
-    std::unique_lock<std::mutex> lock(mtx, std::try_to_lock);
-    if (!lock.owns_lock())
+    auto mctpVdmHelperRef = mctpVdmHelper;
+    std::weak_ptr<bool> lifetimeToken(apBootStatusLifetimeToken);
+    if (!mctpVdmHelperRef)
     {
-        lg2::error("BootStatus refresh already in progress for EID={EID}",
-                   "EID", eid);
         co_return 0;
     }
 
     const mctp_vdm::Message* responseMsg = nullptr;
     size_t responseLen = 0;
-    co_await mctpVdmHelper->queryBootStatus(eid, responseMsg, responseLen);
+    auto rc = co_await mctpVdmHelperRef->queryBootStatus(eid, responseMsg,
+                                                         responseLen);
 
-    if (responseMsg != nullptr && responseLen > 1)
+    if (lifetimeToken.expired())
     {
-        std::vector<uint8_t> status(responseMsg->payload + 1,
-                                    responseMsg->payload + responseLen);
-        bootStatus->bootStatus(status);
+        co_return rc;
     }
 
+    if (!apBootStatusCheckActive || !hasAP())
+    {
+        co_return 0;
+    }
+
+    if (rc != 0 || responseMsg == nullptr || responseLen <= 1)
+    {
+        lg2::warning(
+            "Failed to query AP boot status for {OBJ}, EID={EID}, RC={RC}",
+            "OBJ", apResource->getObjectPath(), "EID", eid, "RC", rc);
+        handleAPBootStatusUnavailable();
+        co_return rc;
+    }
+
+    std::vector<uint8_t> status(responseMsg->payload + 1,
+                                responseMsg->payload + responseLen);
+    handleAPBootStatus(status);
+
     co_return 0;
+}
+
+void GPIOResource::handleAPBootStatus(const std::vector<uint8_t>& status)
+{
+    const auto bootStatus = formatBootStatus(status);
+    const auto fatalErrorCode =
+        nvidia::fw_status::boot_status::getAPFatalErrorCode(status);
+
+    if (!fatalErrorCode.has_value())
+    {
+        lg2::warning(
+            "AP boot status for {OBJ}: {STATUS}; FATAL_ERROR_CODE unavailable, missing bits 28-31",
+            "OBJ", apResource->getObjectPath(), "STATUS",
+            bootStatus);
+        handleAPBootStatusUnavailable();
+        return;
+    }
+
+    lg2::info("AP boot status for {OBJ}: {STATUS}; FATAL_ERROR_CODE={CODE}",
+              "OBJ", apResource->getObjectPath(), "STATUS",
+              bootStatus, "CODE", formatFatalErrorCode(fatalErrorCode.value()));
+
+    if (fatalErrorCode.value() != 0)
+    {
+        lg2::info("AP associated with {OBJ} has fatal error code {CODE}", "OBJ",
+                  apResource->getObjectPath(), "CODE",
+                  formatFatalErrorCode(fatalErrorCode.value()));
+        markAPUnhealthy();
+        return;
+    }
+
+    // No fatal error code. A boot-complete timeout still means the AP failed to
+    // finish booting, so treat it as unhealthy.
+    if (nvidia::fw_status::boot_status::isAPBootCompleteTimeout(status))
+    {
+        lg2::info("AP associated with {OBJ} hit boot-complete timeout", "OBJ",
+                  apResource->getObjectPath());
+        markAPUnhealthy();
+        return;
+    }
+
+    // No fatal error and boot completed => AP is healthy.
+    if (nvidia::fw_status::boot_status::isAPBootComplete(status))
+    {
+        lg2::info("AP associated with {OBJ} completed boot with no fatal error",
+                  "OBJ", apResource->getObjectPath());
+        deleteAPObject();
+        stopAPBootStatusCheck();
+        return;
+    }
+
+    // No fatal error yet and boot has not completed. Retry briefly because the
+    // FATAL_ERROR-triggered MCTP path may not be ready immediately.
+    lg2::info("AP associated with {OBJ} is still booting", "OBJ",
+              apResource->getObjectPath());
+    handleAPBootStatusUnavailable();
+}
+
+void GPIOResource::markAPUnhealthy()
+{
+    apResource->commitRecoveryModeError(fetchEid());
+    updateAPHealth(HealthServer::HealthType::Critical,
+                            OperationalStatusServer::StateType::StandbyOffline);
+    stopAPBootStatusCheck();
+}
+
+void GPIOResource::handleAPBootStatusUnavailable()
+{
+    if (!apBootStatusCheckActive || !hasAP())
+    {
+        return;
+    }
+
+    if (apBootStatusQueryRetryCount >= maxAPBootStatusQueryRetries)
+    {
+        lg2::warning(
+            "AP boot status did not reach a terminal state after {COUNT} retries for {OBJ}",
+            "COUNT", maxAPBootStatusQueryRetries, "OBJ",
+            apResource->getObjectPath());
+        updateAPHealth(HealthServer::HealthType::Critical,
+                                OperationalStatusServer::StateType::Degraded);
+        stopAPBootStatusCheck();
+        return;
+    }
+
+    ++apBootStatusQueryRetryCount;
+    lg2::info("Retrying AP boot status query for {OBJ}. Retry {RETRY}/{MAX}",
+              "OBJ", apResource->getObjectPath(), "RETRY",
+              apBootStatusQueryRetryCount, "MAX", maxAPBootStatusQueryRetries);
+    scheduleAPBootStatusRetry();
+}
+
+void GPIOResource::updateAPHealth(
+    HealthServer::HealthType healthValue,
+    OperationalStatusServer::StateType stateValue)
+{
+    if (!apResource)
+    {
+        return;
+    }
+
+    apResource->health(healthValue);
+    apResource->state(stateValue);
+}
+
+void GPIOResource::deleteAPObject()
+{
+    if (apResource)
+    {
+        apResource->deleteDbusObject();
+    }
 }
 
 uint8_t GPIOResource::fetchEid() const noexcept

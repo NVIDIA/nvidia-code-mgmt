@@ -1319,35 +1319,20 @@ TEST_F(FWStatusMainTest, RecoveryConfigDiscoveryAndPublishingCoverMainFlow)
     setProperty("/xyz/openbmc_project/inventory/mcu1", mcuObjInterface,
                 "MctpEID", static_cast<uint64_t>(36));
 
-    setProperty("/xyz/openbmc_project/inventory/gpio_erot0", gpioObjInterface,
-                "MctpEID", static_cast<uint64_t>(30));
-    setProperty("/xyz/openbmc_project/inventory/gpio_erot0", gpioObjInterface,
-                "GPIO", std::string("GPIO_EROT"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_erot0", gpioObjInterface,
-                "IsERoT", true);
-    setProperty("/xyz/openbmc_project/inventory/gpio_erot0", gpioObjInterface,
-                "I2CBus", static_cast<uint64_t>(9));
-    setProperty("/xyz/openbmc_project/inventory/gpio_erot0", gpioObjInterface,
-                "I2CAddress", static_cast<uint64_t>(0x65));
-    setProperty("/xyz/openbmc_project/inventory/gpio_erot0", gpioObjInterface,
-                "Target", std::string("gpio-erot.target"));
-
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap0", gpioObjInterface,
-                "MctpEID", static_cast<uint64_t>(32));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap0", gpioObjInterface,
-                "GPIO", std::string("GPIO_AP"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap0", gpioObjInterface,
-                "IsERoT", false);
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap0", gpioObjInterface,
-                "RisingTarget", std::string("rise.target"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap0", gpioObjInterface,
-                "FallingTarget", std::string("fall.target"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap0", gpioObjInterface,
-                "Polarity", std::string("ActiveHigh"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap0", gpioObjInterface,
-                "APBootStatusType", std::string("ERoTBootStatus"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap0", gpioObjInterface,
-                "ChassisName", std::string("apchassis0"));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "MctpEID", static_cast<uint64_t>(30));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "GPIO", std::string("GPIO_EROT"));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "I2CBus", static_cast<uint64_t>(9));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "I2CAddress",
+                static_cast<uint64_t>(0x65));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "Target",
+                std::string("gpio-erot.target"));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "APName", std::string("gpio-ap0"));
 
     setProperty("/xyz/openbmc_project/inventory/cpld0", cpldMonitorObjInterface,
                 "SMAEID", static_cast<uint64_t>(33));
@@ -1412,7 +1397,6 @@ TEST_F(FWStatusMainTest, RecoveryConfigDiscoveryAndPublishingCoverMainFlow)
     test::fw_status_fake_gpio::lines["SW_RST"] = {};
     test::fw_status_fake_gpio::lines["SW_FNP"] = {};
     test::fw_status_fake_gpio::lines["GPIO_EROT"] = {};
-    test::fw_status_fake_gpio::lines["GPIO_AP"] = {};
     test::fw_status_fake_gpio::lines["CX_RST"].eventFd = makeEventFd();
     test::fw_status_fake_gpio::lines["CX_FNP"].eventFd = makeEventFd();
     test::fw_status_fake_gpio::lines["NIC_RST"].eventFd = makeEventFd();
@@ -1420,7 +1404,6 @@ TEST_F(FWStatusMainTest, RecoveryConfigDiscoveryAndPublishingCoverMainFlow)
     test::fw_status_fake_gpio::lines["SW_RST"].eventFd = makeEventFd();
     test::fw_status_fake_gpio::lines["SW_FNP"].eventFd = makeEventFd();
     test::fw_status_fake_gpio::lines["GPIO_EROT"].eventFd = makeEventFd();
-    test::fw_status_fake_gpio::lines["GPIO_AP"].eventFd = makeEventFd();
     test::fw_status_fake_usb_recovery::fallbackPayload = nlohmann::json::array(
         {{{"USB Port Path", "1-9"}, {"Recovery Status", "Not in Recovery"}}});
     mctpVdmHelper = std::make_shared<MCTPVdmHelper>();
@@ -1514,8 +1497,6 @@ TEST_F(FWStatusMainTest, PublishRecoveryObjectCoversOptionalPropertyFalsePaths)
     expectSubTreePathsReply({"/xyz/openbmc_project/state/chassis/chassis0"});
     mctpVdmHelper = std::make_shared<MCTPVdmHelper>();
     test::fw_status_fake_usb_i2c::mappedBus = 15;
-    test::fw_status_fake_gpio::lines["GPIO_AP_EMPTY"] = {};
-    test::fw_status_fake_gpio::lines["GPIO_AP_EMPTY"].eventFd = makeEventFd();
 
     setProperty("/xyz/openbmc_project/inventory/ocp_usb_min", ocpObjInterface,
                 "USBPort", std::string("1-4"));
@@ -1587,19 +1568,6 @@ TEST_F(FWStatusMainTest, PublishRecoveryObjectCoversOptionalPropertyFalsePaths)
                 glacierCrisisObjInterface, "ChassisName",
                 std::string("glacier-empty-off"));
 
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap_empty",
-                gpioObjInterface, "MctpEID", static_cast<uint64_t>(49));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap_empty",
-                gpioObjInterface, "GPIO", std::string("GPIO_AP_EMPTY"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap_empty",
-                gpioObjInterface, "IsERoT", false);
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap_empty",
-                gpioObjInterface, "RisingTarget", std::string("rise.empty"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap_empty",
-                gpioObjInterface, "FallingTarget", std::string("fall.empty"));
-    setProperty("/xyz/openbmc_project/inventory/gpio_ap_empty",
-                gpioObjInterface, "Polarity", std::string("ActiveLow"));
-
     setProperty("/xyz/openbmc_project/inventory/mcu_valid_no_force",
                 mcuObjInterface, "Name", std::string("mcu-valid"));
     setProperty("/xyz/openbmc_project/inventory/mcu_valid_no_force",
@@ -1636,7 +1604,7 @@ TEST_F(FWStatusMainTest, PublishRecoveryObjectCoversOptionalPropertyFalsePaths)
                 usbRcmObjInterface, "FWSComponentName", std::string("fws-min"));
 
     EXPECT_NO_THROW(publishDBusRecoveryObject());
-    EXPECT_EQ(resources.size(), 8u);
+    EXPECT_EQ(resources.size(), 7u);
     EXPECT_EQ(test::fw_status_fake_mcu::initializedCount, "1");
     EXPECT_TRUE(test::fw_status_fake_mcu_mode::createdPaths.empty());
     EXPECT_TRUE(test::fw_status_fake_usbrcm_mode::createdPaths.empty());
@@ -1744,7 +1712,7 @@ TEST_F(FWStatusMainTest, PublishRecoveryObjectCoversValidationFailures)
                 std::string("ERoTBootStatus"));
 
     setProperty("/xyz/openbmc_project/inventory/gpio_missing_eid",
-                gpioObjInterface, "GPIO", std::string("GPIO_MISSING"));
+                gpioErotObjInterface, "GPIO", std::string("GPIO_MISSING"));
 
     setProperty("/xyz/openbmc_project/inventory/cpld_missing_sma",
                 cpldMonitorObjInterface, "DeviceId", std::string("CPLD_A"));

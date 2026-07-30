@@ -16,7 +16,7 @@ from gi.repository import GLib
 ENTITY_MANAGER = "xyz.openbmc_project.EntityManager"
 ROOT_PATH = "/xyz/openbmc_project/inventory"
 GLACIER_IFACE = "xyz.openbmc_project.Configuration.GlacierCrisisRecovery"
-GPIO_IFACE = "xyz.openbmc_project.Configuration.GPIORecovery"
+GPIO_IFACE = "xyz.openbmc_project.Configuration.GPIOERoTRecovery"
 
 
 def build_image(path: Path) -> None:
@@ -52,7 +52,6 @@ def scenario_objects(name: str):
         },
         f"{ROOT_PATH}/dev2": {
             GPIO_IFACE: {
-                "IsERoT": dbus.Boolean(True),
                 "HiddenByFPGA": dbus.Boolean(False),
                 "I2CBus": dbus.UInt64(2),
                 "I2CAddress": dbus.UInt64(0x22),

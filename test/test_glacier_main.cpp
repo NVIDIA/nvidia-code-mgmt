@@ -127,8 +127,10 @@ using nvidia::software::updater::PropertyMap;
 
 constexpr auto glacierCrisisObjInterfaceName =
     "xyz.openbmc_project.Configuration.GlacierCrisisRecovery";
-constexpr auto gpioObjInterfaceName =
-    "xyz.openbmc_project.Configuration.GPIORecovery";
+constexpr auto gpioErotObjInterfaceName =
+    "xyz.openbmc_project.Configuration.GPIOERoTRecovery";
+constexpr auto unrelatedObjInterfaceName =
+    "xyz.openbmc_project.Configuration.SomeOtherRecovery";
 
 InterfaceMap makeGlacierInterfaces(bool recoverable, bool hidden,
                                    uint64_t bus = 6, uint64_t address = 0x42)
@@ -140,13 +142,19 @@ InterfaceMap makeGlacierInterfaces(bool recoverable, bool hidden,
                          {"I2CAddress", address}}}};
 }
 
-InterfaceMap makeGpioInterfaces(bool isErot, bool hidden, uint64_t bus = 4,
+InterfaceMap makeGpioInterfaces(bool hidden, uint64_t bus = 4,
                                 uint64_t address = 0x2A)
 {
-    return {{gpioObjInterfaceName, PropertyMap{{"IsERoT", isErot},
-                                               {"HiddenByFPGA", hidden},
-                                               {"I2CBus", bus},
-                                               {"I2CAddress", address}}}};
+    return {{gpioErotObjInterfaceName, PropertyMap{{"HiddenByFPGA", hidden},
+                                                   {"I2CBus", bus},
+                                                   {"I2CAddress", address}}}};
+}
+
+InterfaceMap makeUnrelatedInterfaces(uint64_t bus = 4, uint64_t address = 0x2A)
+{
+    return {{unrelatedObjInterfaceName, PropertyMap{{"HiddenByFPGA", false},
+                                                    {"I2CBus", bus},
+                                                    {"I2CAddress", address}}}};
 }
 
 void addManagedObject(const std::string& path, const InterfaceMap& interfaces)
@@ -213,7 +221,7 @@ TEST_F(GlacierMainTest, MainHandlesUnlockFailureAndInitBranches)
     addManagedObject("/xyz/openbmc_project/inventory/dev0",
                      makeGlacierInterfaces(true, true));
     addManagedObject("/xyz/openbmc_project/inventory/dev1",
-                     makeGpioInterfaces(true, false));
+                     makeGpioInterfaces(false));
     addManagedObject("/xyz/openbmc_project/inventory/dev2",
                      makeGlacierInterfaces(false, false));
 
@@ -343,7 +351,7 @@ TEST_F(GlacierMainTest, MainCoversRetryTransitionsAndHiddenPropertyCatch)
                       {"I2CBus", static_cast<uint64_t>(6)},
                       {"I2CAddress", static_cast<uint64_t>(0x31)}}}});
     addManagedObject("/xyz/openbmc_project/inventory/dev1",
-                     makeGpioInterfaces(true, false, 7, 0x32));
+                     makeGpioInterfaces(false, 7, 0x32));
     addManagedObject("/xyz/openbmc_project/inventory/dev2",
                      makeGlacierInterfaces(true, false, 8, 0x33));
 
@@ -375,16 +383,16 @@ TEST_F(GlacierMainTest, MainCoversRetryTransitionsAndHiddenPropertyCatch)
     EXPECT_EQ(fakeMessageRegistryCalls[4].deviceName, "dev2");
 }
 
-TEST_F(GlacierMainTest, MainSkipsNonErotGpioAndRecoversHiddenDevice)
+TEST_F(GlacierMainTest, MainSkipsNonGlacierDeviceAndRecoversHiddenDevice)
 {
     char arg0[] = "glacier";
     char image[] = "image.bin";
     char* argv[] = {arg0, image};
 
     addManagedObject("/xyz/openbmc_project/inventory/dev0",
-                     makeGpioInterfaces(false, false, 4, 0x20));
+                     makeUnrelatedInterfaces(4, 0x20));
     addManagedObject("/xyz/openbmc_project/inventory/dev1",
-                     makeGpioInterfaces(true, true, 5, 0x21));
+                     makeGpioInterfaces(true, 5, 0x21));
 
     fake_glacier_service::queuedBehaviors.push_back(
         {.unlockResult = true,
