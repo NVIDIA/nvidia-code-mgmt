@@ -34,6 +34,7 @@ constexpr auto minPollingInterval = std::chrono::milliseconds(100);
 constexpr auto apBootStatusEndpointReadyDelay = std::chrono::seconds(1);
 constexpr auto apBootStatusQueryRetryInterval = std::chrono::seconds(1);
 constexpr size_t maxAPBootStatusQueryRetries = 10;
+constexpr auto erotRecoveryMonitorInterval = std::chrono::seconds(60);
 
 GPIOResource::MonitorMode parseMonitorMode(const std::string& monitorMode)
 {
@@ -178,6 +179,7 @@ GPIOResource::~GPIOResource()
     stopGPIOPolling();
     stopGPIOEventRetry();
     stopAPBootStatusCheck();
+    stopERoTRecoveryMonitor();
     apBootStatusLifetimeToken.reset();
     clearGPIOEvent();
 
@@ -554,9 +556,9 @@ void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
         lg2::info("Device associated with {PATH} is in recovery", "PATH",
                   path.c_str());
 
-        // Only commit the recovery error on the transition into recovery.
-        // Health refreshes can re-enter this path while still in recovery, and
-        // re-committing would duplicate the error.
+        // Only commit the recovery error on the transition into recovery. The
+        // ERoT recovery monitor and health refreshes can re-enter this path
+        // while still in recovery, and re-committing would duplicate the error.
         if (!isFirmwareInRecovery)
         {
             commitRecoveryModeError(fetchEid());
@@ -565,6 +567,12 @@ void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
         isFirmwareInRecovery = true;
         health(HealthServer::HealthType::Critical);
         state(OperationalStatusServer::StateType::StandbyOffline);
+
+        // In polling mode the brief FATAL_ERROR deassert when the ERoT exits
+        // recovery cannot be observed (it re-asserts immediately if the AP is
+        // also unhealthy). Poll the MCTP endpoint instead to detect the ERoT
+        // coming back. Interrupt mode sees both edges, so it does not need this.
+        startERoTRecoveryMonitor();
         return;
     }
 
@@ -581,6 +589,7 @@ void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
 
     if (isFirmwareInRecovery)
     {
+        stopERoTRecoveryMonitor();
         lg2::info("{OBJ} exits the recovery mode", "OBJ", path);
         if (systemTarget.empty())
         {
@@ -905,6 +914,244 @@ void GPIOResource::deleteAPObject()
     {
         apResource->deleteDbusObject();
     }
+}
+
+void GPIOResource::startERoTRecoveryMonitor()
+{
+    // Only polling mode needs this. Interrupt mode observes both the deassert
+    // and re-assert edges via the kernel event FIFO.
+    if (monitorMode != MonitorMode::Polling)
+    {
+        return;
+    }
+
+    erotRecoveryMonitorActive = true;
+
+    // React the moment the ERoT MCTP endpoint appears instead of waiting for the
+    // next timer tick. The match is kept alive and gated by
+    // erotRecoveryMonitorActive so it is never destroyed from within its own
+    // callback.
+    if (!erotEndpointAddedMatch)
+    {
+        erotEndpointAddedMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            MatchRules::interfacesAdded(mctpObjMgrPath.data()) +
+                MatchRules::sender(mctpService),
+            [this](sdbusplus::message::message& msg) {
+                onERoTEndpointAdded(msg);
+            });
+    }
+
+    if (!erotRecoveryMonitorTimer)
+    {
+        erotRecoveryMonitorTimer = std::make_unique<sdbusplus::Timer>(
+            sdEvent.get(),
+            std::bind(&GPIOResource::runERoTRecoveryMonitor, this));
+    }
+
+    if (!erotRecoveryMonitorTimer->isRunning())
+    {
+        lg2::info(
+            "Starting ERoT recovery monitor for {OBJ} every {INTERVAL_S} s",
+            "OBJ", path, "INTERVAL_S", erotRecoveryMonitorInterval.count());
+        try
+        {
+            erotRecoveryMonitorTimer->start(erotRecoveryMonitorInterval, true);
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error(
+                "Failed to start ERoT recovery monitor timer for {OBJ}: {ERR}",
+                "OBJ", path, "ERR", e.what());
+        }
+    }
+
+    // Kick MCTP discovery now rather than waiting for the first timer tick. The
+    // endpoint will be picked up by the interfacesAdded match above. Do not
+    // re-evaluate health here: this runs inside updateERoTHealth().
+    triggerMctpDiscovery();
+}
+
+void GPIOResource::triggerMctpDiscovery()
+{
+    // A directly-attached ERoT needs a target restart to (re)trigger MCTP
+    // discovery. An ERoT behind an MCTP bridge has no target configured and its
+    // endpoint appears on its own. Restarting the target does not disturb the
+    // separate glacier recovery I2C.
+    if (systemTarget.empty())
+    {
+        return;
+    }
+
+    try
+    {
+        auto newBus = sdbusplus::bus::new_default();
+        auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
+        lg2::info(
+            "Restarting {TARGET} to trigger MCTP discovery for recovering ERoT {OBJ}",
+            "TARGET", systemTarget, "OBJ", path);
+        dbusUtil.restartSystemUnit(systemTarget);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to restart {TARGET} for recovering ERoT {OBJ}: {ERR}",
+                   "TARGET", systemTarget, "OBJ", path, "ERR", e.what());
+    }
+}
+
+void GPIOResource::onERoTEndpointAdded(sdbusplus::message::message& msg)
+{
+    if (!erotRecoveryMonitorActive)
+    {
+        return;
+    }
+
+    try
+    {
+        sdbusplus::message::object_path addedPath;
+        nvidia::software::updater::InterfaceMap interfaces;
+        msg.read(addedPath, interfaces);
+
+        if (!interfaces.contains(mctpEndpointIntfName))
+        {
+            return;
+        }
+
+        const auto* mctpEID = std::get_if<uint8_t>(
+            &interfaces.at(mctpEndpointIntfName).at("EID"));
+        if (!mctpEID || (*mctpEID != eid))
+        {
+            return;
+        }
+
+        // The ERoT MCTP endpoint is back, so glacier recovery has completed and
+        // the glacier I2C is free again. Re-evaluate health, which clears the
+        // ERoT object and hands off to the AP boot-status check.
+        lg2::info(
+            "MCTP endpoint for ERoT {OBJ} (EID={EID}) added; re-evaluating health",
+            "OBJ", path, "EID", eid);
+        reevaluateERoTHealthAfterRecovery();
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "Failed to process ERoT MCTP interfacesAdded signal for {OBJ}: {ERROR}",
+            "OBJ", path, "ERROR", e.what());
+    }
+}
+
+void GPIOResource::stopERoTRecoveryMonitor()
+{
+    erotRecoveryMonitorActive = false;
+
+    if (!erotRecoveryMonitorTimer || !erotRecoveryMonitorTimer->isRunning())
+    {
+        return;
+    }
+
+    auto rc = erotRecoveryMonitorTimer->stop();
+    if (rc)
+    {
+        lg2::error(
+            "Failed to stop ERoT recovery monitor timer for {OBJ}. RC={RC}",
+            "OBJ", path, "RC", rc);
+    }
+}
+
+void GPIOResource::reevaluateERoTHealthAfterRecovery()
+{
+    // The ERoT is back on MCTP, but the FATAL_ERROR line may already have
+    // deasserted (e.g. the AP is healthy). Read the current level so we do not
+    // force an assert flow and an unnecessary AP boot-status diagnosis when the
+    // pin is inactive. Fall back to asserted if the level cannot be read.
+    HealthUpdateReason reason = HealthUpdateReason::FatalErrorAssert;
+    try
+    {
+        std::optional<int> value;
+        if (gpioLine)
+        {
+            value = gpioLine.get_value();
+        }
+        else if (lastGpioValue.has_value())
+        {
+            value = lastGpioValue;
+        }
+
+        if (value.has_value())
+        {
+            reason = isGPIOActive(value.value())
+                         ? HealthUpdateReason::FatalErrorAssert
+                         : HealthUpdateReason::FatalErrorDeassert;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        lg2::warning(
+            "Failed to read GPIO {GPIO} level after ERoT recovery; assuming asserted: {ERR}",
+            "GPIO", gpioLineName, "ERR", e.what());
+    }
+
+    updateERoTHealth(reason);
+}
+
+void GPIOResource::runERoTRecoveryMonitor()
+{
+    if (!erotRecoveryMonitorActive)
+    {
+        return;
+    }
+
+    // Fallback path: the interfacesAdded match normally detects the endpoint
+    // first. If the endpoint is already present here (e.g. the add signal was
+    // missed), re-evaluate health directly. It is safe to read glacier now
+    // because the endpoint being up means recovery has completed.
+    if (isMctpEndpointPresent())
+    {
+        lg2::info(
+            "MCTP endpoint for ERoT {OBJ} (EID={EID}) is present; re-evaluating health",
+            "OBJ", path, "EID", eid);
+        reevaluateERoTHealthAfterRecovery();
+        return;
+    }
+
+    // Endpoint not up yet; re-trigger MCTP discovery and wait for the endpoint
+    // to appear (handled by the interfacesAdded match or the next tick).
+    lg2::info("MCTP endpoint for ERoT {OBJ} (EID={EID}) not present yet; "
+              "re-triggering discovery",
+              "OBJ", path, "EID", eid);
+    triggerMctpDiscovery();
+}
+
+bool GPIOResource::isMctpEndpointPresent()
+{
+    try
+    {
+        auto dbusUtil = nvidia::software::updater::DBUSUtils(bus);
+        const auto objects =
+            dbusUtil.getManagedObjects(mctpService, mctpObjMgrPath.data());
+
+        for (const auto& [objectPath, interfaces] : objects)
+        {
+            if (!interfaces.contains(mctpEndpointIntfName))
+            {
+                continue;
+            }
+
+            const auto* mctpEID = std::get_if<uint8_t>(
+                &interfaces.at(mctpEndpointIntfName).at("EID"));
+            if (mctpEID && (*mctpEID == eid))
+            {
+                return true;
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        lg2::warning("Failed to query MCTP endpoints for {OBJ}: {ERR}", "OBJ",
+                     path, "ERR", e.what());
+    }
+
+    return false;
 }
 
 uint8_t GPIOResource::fetchEid() const noexcept
