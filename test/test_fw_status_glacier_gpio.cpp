@@ -462,4 +462,362 @@ TEST_F(FWStatusGlacierGpioTest,
               OperationalStatusServer::StateType::UnavailableOffline);
 }
 
+TEST(BootStatusUtils, BootStatusUtilsCoversAllHelpers)
+{
+    using namespace nvidia::fw_status::boot_status;
+
+    // getAPFatalErrorCode: too short → nullopt; zero code; non-zero code
+    EXPECT_EQ(getAPFatalErrorCode({0x00, 0x00, 0x00}), std::nullopt);
+    EXPECT_EQ(getAPFatalErrorCode({0x00, 0x00, 0x00, 0x00}),
+              std::optional<uint8_t>(0));
+    // bits 28-31 = upper nibble of byte[0]: 0x10 >> 4 = 1
+    EXPECT_EQ(getAPFatalErrorCode({0x10, 0x00, 0x00, 0x00}),
+              std::optional<uint8_t>(1));
+
+    // isAPFatalErrorCodeNormal: zero code → true; too short → false; non-zero →
+    // false
+    EXPECT_TRUE(isAPFatalErrorCodeNormal({0x00, 0x00, 0x00, 0x00}));
+    EXPECT_FALSE(isAPFatalErrorCodeNormal({0x01, 0x02}));
+    EXPECT_FALSE(isAPFatalErrorCodeNormal({0x10, 0x00, 0x00, 0x00}));
+
+    // isAPFatalErrorCodeSet: non-zero → true; zero → false; too short → false
+    EXPECT_TRUE(isAPFatalErrorCodeSet({0x10, 0x00, 0x00, 0x00}));
+    EXPECT_FALSE(isAPFatalErrorCodeSet({0x00, 0x00, 0x00, 0x00}));
+    EXPECT_FALSE(isAPFatalErrorCodeSet({0x01, 0x02, 0x03}));
+
+    // isAPBootComplete: bit 5 of last byte (0x20 = bit 5 set)
+    EXPECT_TRUE(isAPBootComplete({0x00, 0x00, 0x00, 0x20}));
+    EXPECT_FALSE(isAPBootComplete({0x00, 0x00, 0x00, 0x00}));
+    EXPECT_FALSE(isAPBootComplete({}));
+
+    // isAPBootCompleteTimeout: bit 27 = byte[0] bit 3 in a 4-byte vector
+    EXPECT_TRUE(isAPBootCompleteTimeout({0x08, 0x00, 0x00, 0x00}));
+    EXPECT_FALSE(isAPBootCompleteTimeout({0x00, 0x00, 0x00, 0x00}));
+}
+
+TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversAPBootStatusPaths)
+{
+    auto event = sdeventplus::Event::get_default();
+    auto helper = std::make_shared<MCTPVdmHelper>();
+
+    GPIOResource erot(bus, "/xyz/openbmc_project/software/erot-ap-gpio", event,
+                      5, 0x54, 35, "EROT_GPIO", "erot-ap.target", "Interrupt",
+                      std::nullopt, "ActiveHigh", "gpio-ap", helper);
+    EXPECT_TRUE(erot.hasAP());
+    ASSERT_NE(erot.apResource, nullptr);
+
+    // FatalErrorAssert with ERoT not in recovery → startAPBootStatusCheck
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+    erot.updateERoTHealth(GPIOResource::HealthUpdateReason::FatalErrorAssert);
+    EXPECT_TRUE(erot.apBootStatusCheckActive);
+    ASSERT_NE(erot.apBootStatusRetryTimer, nullptr);
+
+    // Case 1: fatal error code set → AP unhealthy (Critical/StandbyOffline)
+    // bootStatusPayload[0] is stripped; status = payload[1..end]
+    // {0x00, 0x10, 0x00, 0x00, 0x00} → status = {0x10, 0x00, 0x00, 0x00},
+    // code=1
+    test::fw_status_fake_vdm::bootStatusPayload = {0x00, 0x10, 0x00, 0x00,
+                                                   0x00};
+    erot.runAPBootStatusQuery();
+    EXPECT_FALSE(erot.apBootStatusCheckActive);
+    EXPECT_EQ(erot.apResource->health(), HealthServer::HealthType::Critical);
+    EXPECT_EQ(erot.apResource->state(),
+              OperationalStatusServer::StateType::StandbyOffline);
+
+    // Case 2: boot-complete timeout → AP unhealthy
+    // status = {0x08, 0x00, 0x00, 0x00}: code=0, bit27=1 (timeout)
+    erot.startAPBootStatusCheck();
+    test::fw_status_fake_vdm::bootStatusPayload = {0x00, 0x08, 0x00, 0x00,
+                                                   0x00};
+    erot.runAPBootStatusQuery();
+    EXPECT_FALSE(erot.apBootStatusCheckActive);
+    EXPECT_EQ(erot.apResource->state(),
+              OperationalStatusServer::StateType::StandbyOffline);
+
+    // Case 3: boot complete, no fatal error → stop check
+    // status = {0x00, 0x00, 0x00, 0x20}: code=0, no timeout, bit5=1 (complete)
+    erot.startAPBootStatusCheck();
+    test::fw_status_fake_vdm::bootStatusPayload = {0x00, 0x00, 0x00, 0x00,
+                                                   0x20};
+    erot.runAPBootStatusQuery();
+    EXPECT_FALSE(erot.apBootStatusCheckActive);
+
+    // Case 4: no response → retry
+    erot.startAPBootStatusCheck();
+    test::fw_status_fake_vdm::bootStatusPayload.clear();
+    erot.runAPBootStatusQuery();
+    EXPECT_TRUE(erot.apBootStatusCheckActive);
+    EXPECT_EQ(erot.apBootStatusQueryRetryCount, 1u);
+
+    // Case 5: status too short for fatal error code → retry
+    // {0x00, 0x00} → status = {0x00} (1 byte), getAPFatalErrorCode → nullopt
+    erot.startAPBootStatusCheck();
+    test::fw_status_fake_vdm::bootStatusPayload = {0x00, 0x00};
+    erot.runAPBootStatusQuery();
+    EXPECT_GT(erot.apBootStatusQueryRetryCount, 0u);
+
+    // Case 6: still booting (code=0, no timeout, not complete) → retry
+    // status = {0x00, 0x00, 0x00, 0x00}
+    erot.startAPBootStatusCheck();
+    test::fw_status_fake_vdm::bootStatusPayload = {0x00, 0x00, 0x00, 0x00,
+                                                   0x00};
+    erot.runAPBootStatusQuery();
+    EXPECT_GT(erot.apBootStatusQueryRetryCount, 0u);
+
+    // Case 7: max retries exhausted → Degraded
+    erot.apBootStatusQueryRetryCount = 10; // maxAPBootStatusQueryRetries
+    erot.handleAPBootStatusUnavailable();
+    EXPECT_FALSE(erot.apBootStatusCheckActive);
+    EXPECT_EQ(erot.apResource->health(), HealthServer::HealthType::Critical);
+    EXPECT_EQ(erot.apResource->state(),
+              OperationalStatusServer::StateType::Degraded);
+
+    // Case 8: FatalErrorDeassert → stopAPBootStatusCheck + deleteAPObject
+    erot.startAPBootStatusCheck();
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+    erot.updateERoTHealth(GPIOResource::HealthUpdateReason::FatalErrorDeassert);
+    EXPECT_FALSE(erot.apBootStatusCheckActive);
+}
+
+TEST_F(FWStatusGlacierGpioTest,
+       GPIOResourceCoversPollingModeAndERoTRecoveryMonitor)
+{
+    auto event = sdeventplus::Event::get_default();
+    auto helper = std::make_shared<MCTPVdmHelper>();
+
+    test::fw_status_fake_gpio::lines["POLL_GPIO"] = {};
+    test::fw_status_fake_gpio::lines["POLL_GPIO"].getValue = 0; // deasserted
+
+    GPIOResource erot(bus, "/xyz/openbmc_project/software/erot-polling", event,
+                      6, 0x55, 36, "POLL_GPIO",
+                      "", // empty target: triggerMctpDiscovery is a no-op
+                      "Polling", std::optional<uint64_t>(100), "ActiveHigh", "",
+                      helper);
+
+    // ERoT in recovery → startERoTRecoveryMonitor (only in Polling mode)
+    test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(
+        glacier_recovery_tool::glacier_recovery_commands::RecoveryResult::Ok));
+    erot.updateERoTHealth(GPIOResource::HealthUpdateReason::FatalErrorAssert);
+    EXPECT_TRUE(erot.isFirmwareInRecovery);
+    EXPECT_TRUE(erot.erotRecoveryMonitorActive);
+    ASSERT_NE(erot.erotRecoveryMonitorTimer, nullptr);
+
+    // isMctpEndpointPresent: no endpoint in fake_dbus → false
+    EXPECT_FALSE(erot.isMctpEndpointPresent());
+
+    // runERoTRecoveryMonitor without endpoint → triggerMctpDiscovery (no-op)
+    erot.runERoTRecoveryMonitor();
+    EXPECT_TRUE(erot.erotRecoveryMonitorActive);
+
+    // stopERoTRecoveryMonitor
+    erot.stopERoTRecoveryMonitor();
+    EXPECT_FALSE(erot.erotRecoveryMonitorActive);
+
+    // runERoTRecoveryMonitor when inactive → early return
+    erot.runERoTRecoveryMonitor();
+    EXPECT_FALSE(erot.erotRecoveryMonitorActive);
+
+    // Re-arm for the "endpoint present" path
+    erot.erotRecoveryMonitorActive = true;
+
+    // isMctpEndpointPresent: endpoint for EID=36 → true
+    test::fw_status_fake_dbus::setProperty(
+        "/au/com/codeconstruct/mctp1/networks/1/endpoints/36",
+        "xyz.openbmc_project.MCTP.Endpoint", "EID", static_cast<uint8_t>(36));
+    EXPECT_TRUE(erot.isMctpEndpointPresent());
+
+    // runERoTRecoveryMonitor with endpoint → reevaluateERoTHealthAfterRecovery
+    // GPIO deasserted (getValue=0, ActiveHigh) → FatalErrorDeassert → healthy
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+    erot.runERoTRecoveryMonitor();
+    EXPECT_FALSE(erot.isFirmwareInRecovery);
+    EXPECT_EQ(erot.health(), HealthServer::HealthType::OK);
+}
+
+TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversRemainingBranchPaths)
+{
+    auto event = sdeventplus::Event::get_default();
+    auto helper = std::make_shared<MCTPVdmHelper>();
+
+    // ── AP boot-status: coroutine-in-progress early return ────────────────
+    GPIOResource erotAP(bus, "/xyz/openbmc_project/software/erot-branches",
+                        event, 7, 0x56, 37, "EROT_GPIO", "erot-br.target",
+                        "Interrupt", std::nullopt, "ActiveHigh", "gpio-ap-br",
+                        helper);
+
+    // Inject a synthetic suspended handle to simulate an in-progress query
+    auto suspended = suspendedBootStatusCoroutine(0);
+    auto pendingHandle = suspended.handle;
+    suspended.handle = nullptr; // prevent auto-clean in Coroutine destructor
+    erotAP.apBootStatusCo = pendingHandle;
+    erotAP.apBootStatusCheckActive = true;
+
+    // runAPBootStatusQuery returns early: query already in progress
+    EXPECT_TRUE(erotAP.apBootStatusCo && !erotAP.apBootStatusCo.done());
+    erotAP.runAPBootStatusQuery();
+    EXPECT_FALSE(erotAP.apBootStatusCo.done()); // still suspended
+
+    // Clean up using the same pattern as existing tests
+    erotAP.apBootStatusCo = nullptr;
+    pendingHandle.destroy();
+
+    // ── handleAPBootStatusUnavailable: inactive path ──────────────────────
+    erotAP.apBootStatusCheckActive = false;
+    erotAP.handleAPBootStatusUnavailable(); // early return: inactive
+
+    // ── isMctpEndpointPresent: exception, mismatch, missing-intf paths ────
+    test::fw_status_fake_gpio::lines["POLL_BR_GPIO"] = {};
+    test::fw_status_fake_gpio::lines["POLL_BR_GPIO"].getValue = 0;
+    GPIOResource erotPoll(bus, "/xyz/openbmc_project/software/erot-poll-br",
+                          event, 8, 0x57, 38, "POLL_BR_GPIO", "", "Polling",
+                          std::optional<uint64_t>(100), "ActiveHigh", "",
+                          helper);
+
+    // Exception → false
+    test::fw_status_fake_dbus::throwOnGetManagedObjects = true;
+    EXPECT_FALSE(erotPoll.isMctpEndpointPresent());
+    test::fw_status_fake_dbus::throwOnGetManagedObjects = false;
+
+    // Object missing MCTP endpoint interface → skip
+    test::fw_status_fake_dbus::setProperty(
+        "/au/com/codeconstruct/mctp1/networks/1/endpoints/other",
+        "some.other.interface", "Prop", std::string("value"));
+    EXPECT_FALSE(erotPoll.isMctpEndpointPresent());
+
+    // Endpoint present but EID mismatch (99 ≠ 38) → false
+    test::fw_status_fake_dbus::setProperty(
+        "/au/com/codeconstruct/mctp1/networks/1/endpoints/99",
+        "xyz.openbmc_project.MCTP.Endpoint", "EID", static_cast<uint8_t>(99));
+    EXPECT_FALSE(erotPoll.isMctpEndpointPresent());
+
+    // ── reevaluateERoTHealthAfterRecovery: asserted GPIO path ────────────
+    test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(
+        glacier_recovery_tool::glacier_recovery_commands::RecoveryResult::Ok));
+    erotPoll.updateERoTHealth(
+        GPIOResource::HealthUpdateReason::FatalErrorAssert);
+    EXPECT_TRUE(erotPoll.isFirmwareInRecovery);
+
+    // GPIO asserted (getValue=1) → FatalErrorAssert → stays in recovery
+    test::fw_status_fake_gpio::lines["POLL_BR_GPIO"].getValue = 1;
+    test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(
+        glacier_recovery_tool::glacier_recovery_commands::RecoveryResult::Ok));
+    erotPoll.reevaluateERoTHealthAfterRecovery();
+    EXPECT_TRUE(erotPoll.isFirmwareInRecovery);
+
+    // ── reevaluateERoTHealthAfterRecovery: lastGpioValue path ────────────
+    // Invalidate gpioLine so the lastGpioValue branch is taken
+    test::fw_status_fake_gpio::lines["POLL_BR_GPIO"].present = false;
+    erotPoll.gpioLine = gpiod::line{};
+    erotPoll.lastGpioValue = 0; // deasserted
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+    erotPoll.reevaluateERoTHealthAfterRecovery();
+    EXPECT_FALSE(erotPoll.isFirmwareInRecovery);
+
+    // ── startERoTRecoveryMonitor: re-enter while timer already running ────
+    test::fw_status_fake_gpio::lines["POLL_BR_GPIO"].present = true;
+    test::fw_status_fake_gpio::lines["POLL_BR_GPIO"].getValue = 1;
+    test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(
+        glacier_recovery_tool::glacier_recovery_commands::RecoveryResult::Ok));
+    erotPoll.gpioLine = gpiod::find_line("POLL_BR_GPIO");
+    erotPoll.updateERoTHealth(
+        GPIOResource::HealthUpdateReason::FatalErrorAssert);
+    EXPECT_TRUE(erotPoll.erotRecoveryMonitorActive);
+    // Second call: timer already running, match already exists → no-op
+    erotPoll.startERoTRecoveryMonitor();
+    EXPECT_TRUE(erotPoll.erotRecoveryMonitorActive);
+}
+
+TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversGuardAndDiscoveryBranches)
+{
+    auto event = sdeventplus::Event::get_default();
+    auto helper = std::make_shared<MCTPVdmHelper>();
+
+    // ── Polling ERoT WITH a target: triggerMctpDiscovery restart branch ───
+    test::fw_status_fake_gpio::lines["POLL_TGT_GPIO"] = {};
+    test::fw_status_fake_gpio::lines["POLL_TGT_GPIO"].getValue = 1;
+    GPIOResource erotTgt(
+        bus, "/xyz/openbmc_project/software/erot-poll-tgt", event, 9, 0x58, 39,
+        "POLL_TGT_GPIO", "erot-poll-tgt.target", "Polling",
+        std::optional<uint64_t>(100), "ActiveHigh", "", helper);
+
+    // Enter recovery → startERoTRecoveryMonitor → triggerMctpDiscovery restarts
+    test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(
+        glacier_recovery_tool::glacier_recovery_commands::RecoveryResult::Ok));
+    erotTgt.updateERoTHealth(
+        GPIOResource::HealthUpdateReason::FatalErrorAssert);
+    EXPECT_TRUE(erotTgt.erotRecoveryMonitorActive);
+    EXPECT_FALSE(test::fw_status_fake_dbus::restartedUnits.empty());
+
+    // Timer tick with no endpoint present → triggerMctpDiscovery again
+    test::fw_status_fake_dbus::restartedUnits.clear();
+    erotTgt.runERoTRecoveryMonitor();
+    EXPECT_EQ(test::fw_status_fake_dbus::restartedUnits,
+              std::vector<std::string>{"erot-poll-tgt.target"});
+
+    // ── Interrupt mode: startERoTRecoveryMonitor early return ────────────
+    // Each interrupt-mode resource needs its own event fd: sd_event rejects a
+    // second IO source registered on an fd it already watches.
+    const int intrFd = dup(erotPipe[0]);
+    ASSERT_GE(intrFd, 0);
+    test::fw_status_fake_gpio::lines["EROT_INTR_MON_GPIO"] = {};
+    test::fw_status_fake_gpio::lines["EROT_INTR_MON_GPIO"].eventFd = intrFd;
+    GPIOResource erotIntr(bus, "/xyz/openbmc_project/software/erot-intr-mon",
+                          event, 10, 0x59, 40, "EROT_INTR_MON_GPIO",
+                          "erot-intr.target", "Interrupt", std::nullopt,
+                          "ActiveHigh", "", helper);
+    erotIntr.startERoTRecoveryMonitor(); // no-op: not Polling
+    EXPECT_FALSE(erotIntr.erotRecoveryMonitorActive);
+    EXPECT_EQ(erotIntr.erotRecoveryMonitorTimer, nullptr);
+
+    // stopERoTRecoveryMonitor with no timer → early return
+    erotIntr.stopERoTRecoveryMonitor();
+    EXPECT_FALSE(erotIntr.erotRecoveryMonitorActive);
+
+    // triggerMctpDiscovery is a no-op only when the target is empty
+    erotIntr.systemTarget.clear();
+    test::fw_status_fake_dbus::restartedUnits.clear();
+    erotIntr.triggerMctpDiscovery();
+    EXPECT_TRUE(test::fw_status_fake_dbus::restartedUnits.empty());
+
+    // ── AP helpers with no AP configured: all guard branches ─────────────
+    EXPECT_FALSE(erotIntr.hasAP());
+    erotIntr.startAPBootStatusCheck(); // !hasAP()
+    erotIntr.runAPBootStatusQuery();   // !apBootStatusCheckActive
+    erotIntr.scheduleAPBootStatusQuery(std::chrono::seconds(1)); // !hasAP()
+    erotIntr.stopAPBootStatusCheck();                            // no timer
+    erotIntr.handleAPBootStatusUnavailable();                    // !hasAP()
+    erotIntr.updateAPHealth(HealthServer::HealthType::Critical,
+                            OperationalStatusServer::StateType::Degraded);
+    erotIntr.deleteAPObject(); // apResource == nullptr
+    EXPECT_EQ(erotIntr.apResource, nullptr);
+    EXPECT_EQ(erotIntr.apBootStatusRetryTimer, nullptr);
+
+    // ── AP configured but no MCTP VDM helper: startAPBootStatusCheck warns ─
+    const int noHelperFd = dup(erotPipe[0]);
+    ASSERT_GE(noHelperFd, 0);
+    test::fw_status_fake_gpio::lines["EROT_NOHELPER_GPIO"] = {};
+    test::fw_status_fake_gpio::lines["EROT_NOHELPER_GPIO"].eventFd = noHelperFd;
+    GPIOResource erotNoHelper(
+        bus, "/xyz/openbmc_project/software/erot-nohelper", event, 11, 0x5A, 41,
+        "EROT_NOHELPER_GPIO", "erot-nohelper.target", "Interrupt", std::nullopt,
+        "ActiveHigh", "gpio-ap-nohelper", nullptr);
+    EXPECT_TRUE(erotNoHelper.hasAP());
+    erotNoHelper.startAPBootStatusCheck(); // !mctpVdmHelper → early return
+    EXPECT_FALSE(erotNoHelper.apBootStatusCheckActive);
+
+    // runAPBootStatusQuery with active check but no helper → early return
+    erotNoHelper.apBootStatusCheckActive = true;
+    erotNoHelper.runAPBootStatusQuery();
+    EXPECT_EQ(erotNoHelper.apBootStatusCo, nullptr);
+    erotNoHelper.apBootStatusCheckActive = false;
+}
+
 } // namespace

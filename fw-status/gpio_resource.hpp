@@ -106,12 +106,15 @@ class GPIOResource : public BaseResource
     std::unique_ptr<sdbusplus::Timer> gpioRetryTimer;
     std::unique_ptr<sdbusplus::Timer> gpioPollingTimer;
     std::unique_ptr<sdbusplus::Timer> apBootStatusRetryTimer;
+    std::unique_ptr<sdbusplus::Timer> erotRecoveryMonitorTimer;
+    std::unique_ptr<sdbusplus::bus::match_t> erotEndpointAddedMatch;
     std::unique_ptr<glacier_recovery_tool::glacier_recovery_commands::
                         GlacierRecoveryCommands>
         glacierRecoveryObj;
     std::shared_ptr<MCTPVdmHelper> mctpVdmHelper;
     std::unique_ptr<BaseResource> apResource;
     bool apBootStatusCheckActive = false;
+    bool erotRecoveryMonitorActive = false;
     size_t apBootStatusQueryRetryCount = 0;
     std::shared_ptr<bool> apBootStatusLifetimeToken =
         std::make_shared<bool>(true);
@@ -236,6 +239,44 @@ class GPIOResource : public BaseResource
      *  then stop the boot-status check.
      */
     void markAPUnhealthy();
+
+    /** @brief Start the polling-mode ERoT recovery monitor.
+     *
+     * The brief FATAL_ERROR deassert emitted when the ERoT exits recovery is
+     * not observable by polling. Instead, watch for the ERoT MCTP endpoint to
+     * appear (interfacesAdded) to detect the ERoT coming back, and use a
+     * periodic timer to re-trigger MCTP discovery. No-op in interrupt mode.
+     */
+    void startERoTRecoveryMonitor();
+
+    /** @brief Stop the ERoT recovery monitor.
+     */
+    void stopERoTRecoveryMonitor();
+
+    /** @brief Monitor tick: fallback that (re)triggers MCTP discovery and, if
+     * the ERoT MCTP endpoint is already present, re-evaluates health.
+     */
+    void runERoTRecoveryMonitor();
+
+    /** @brief Restart the MCTP init target to (re)trigger discovery of a
+     * directly-attached ERoT. No-op when no target is configured.
+     */
+    void triggerMctpDiscovery();
+
+    /** @brief Re-evaluate health after the ERoT MCTP endpoint reappears, using
+     * the current FATAL_ERROR level to pick the assert/deassert flow.
+     */
+    void reevaluateERoTHealthAfterRecovery();
+
+    /** @brief interfacesAdded handler: re-evaluate health when this resource's
+     * ERoT MCTP endpoint appears.
+     */
+    void onERoTEndpointAdded(sdbusplus::message::message& msg);
+
+    /** @brief Whether an MCTP endpoint with this resource's EID exists on
+     * D-Bus.
+     */
+    bool isMctpEndpointPresent();
 
     /** @brief Fetches EID for the resource
      *
