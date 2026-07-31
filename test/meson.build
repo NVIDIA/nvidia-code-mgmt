@@ -46,3 +46,40 @@ foreach t : tests
         workdir: meson.current_source_dir(),
     )
 endforeach
+
+test(
+    'test_cpu_recovery_convergence',
+    executable(
+        'test_cpu_recovery_convergence',
+        'test_cpu_recovery_convergence.cpp',
+        implicit_include_directories: false,
+        link_args: [
+            '-Wl,--wrap=udev_new',
+            '-Wl,--wrap=udev_unref',
+            '-Wl,--wrap=udev_monitor_new_from_netlink',
+            '-Wl,--wrap=udev_monitor_unref',
+            '-Wl,--wrap=udev_monitor_filter_add_match_subsystem_devtype',
+            '-Wl,--wrap=udev_monitor_enable_receiving',
+            '-Wl,--wrap=udev_monitor_get_fd',
+            '-Wl,--wrap=udev_monitor_receive_device',
+            '-Wl,--wrap=udev_device_get_action',
+            '-Wl,--wrap=udev_device_get_devpath',
+            '-Wl,--wrap=udev_device_unref',
+        ],
+        dependencies: [
+            test_dep,
+            systemd,
+            sdeventplus,
+            sdbusplus,
+            phosphor_dbus_interfaces,
+            phosphor_logging,
+            fmt,
+            nlohmann_json,
+        ],
+        include_directories: include_directories(
+            'cpu_recovery_fakes',
+            '../fw-status',
+        ),
+    ),
+    workdir: meson.current_source_dir(),
+)
