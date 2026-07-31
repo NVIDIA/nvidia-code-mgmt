@@ -97,12 +97,13 @@ void UdevMonitor::handleUdevEvent()
         return;
     }
 
-    const char* action = udev_device_get_action(dev);
-    if (!action)
+    const char* rawAction = udev_device_get_action(dev);
+    if (!rawAction)
     {
         udev_device_unref(dev);
         return;
     }
+    const std::string action(rawAction);
 
     std::string portPath = extractPortPath(dev);
     udev_device_unref(dev);
@@ -112,7 +113,7 @@ void UdevMonitor::handleUdevEvent()
         return;
     }
 
-    if (std::string(action) == "add" && callbacks.contains(portPath))
+    if (action == "add" && callbacks.contains(portPath))
     {
         lg2::info("USB device added at port {PORT}", "PORT", portPath);
         callbacks[portPath]();
