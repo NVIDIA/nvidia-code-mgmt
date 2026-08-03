@@ -704,8 +704,20 @@ int UpdateDebugToken::disableBackgroundCopy(const EID& eid)
     auto rxBytes = parseCommandOutput(commandOut);
     try
     {
-        // last byte is status code
-        status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
+        if (rxBytes.size() > 0)
+        {
+            // last byte is status code
+            status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
+        }
+        else
+        {
+            status = static_cast<int>(
+                BackgroundCopyErrorCodes::BackgroundDisableFail);
+            log<level::ERR>(("Error while parsing MCTP response for EID=" +
+                             std::to_string(eid))
+                                .c_str());
+            return status;
+        }
     }
     catch (const std::exception& e)
     {
@@ -747,8 +759,20 @@ int UpdateDebugToken::enableBackgroundCopy(const EID& eid)
     auto rxBytes = parseCommandOutput(commandOut);
     try
     {
-        // last byte is status code
-        status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
+        if (rxBytes.size() > 0)
+        {
+            // last byte is status code
+            status = std::stoi(rxBytes[rxBytes.size() - 1], nullptr, 16);
+        }
+        else
+        {
+            status = static_cast<int>(
+                BackgroundCopyErrorCodes::BackgroundEnableFail);
+            log<level::ERR>(("Error while parsing MCTP response for EID=" +
+                             std::to_string(eid))
+                                .c_str());
+            return status;
+        }
     }
     catch (const std::exception& e)
     {
