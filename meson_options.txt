@@ -5,7 +5,7 @@ option('FWSTATUS_SUPPORT',
 
 option('FWSTATUS_POWER_STATE_SETTLE_DELAY_SEC',
        type: 'integer',
-       value: 5,
+       value: 15,
        min: 0,
        description: 'Seconds fw-status waits after a chassis power state change (e.g. a power cycle) before re-checking device firmware status, allowing devices to settle before being probed over MCTP/I2C')
 
