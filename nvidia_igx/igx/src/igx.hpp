@@ -90,25 +90,16 @@ class Igx : public IgxInherit, public Util
     }
 
     void registerSoftwareVersion(sdbusplus::bus_t& bus,
-                                 const std::string& /* ifPath */)
+                                 const std::string& ifPath)
     {
+        // Use the inventory-path suffix resolved by IgxManager (the single
+        // source of truth) for the software-version path, so the two never
+        // diverge under a readiness race (e.g. software/IGX_Host while the
+        // inventory is IGX_Thor). IgxManager re-creates this object with the
+        // correct path once identity is Ready (ARCHITECTURE §10a).
         std::string swpath = SW_INV_PATH;
-
-        // Get platform name dynamically from IGX host
-        std::string platformName = getPlatformName();
-
-        if (platformName == "Thor")
-        {
-            swpath += "/IGX_Thor";
-        }
-        else if (platformName == "Orin")
-        {
-            swpath += "/IGX_Orin";
-        }
-        else
-        {
-            swpath += "/IGX_Host";
-        }
+        std::string fName = std::filesystem::path(ifPath).filename().string();
+        swpath += "/" + fName;
 
         std::string orinVersion = getVersion();
         VersionObj =

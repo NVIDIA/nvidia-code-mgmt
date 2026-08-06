@@ -19,6 +19,7 @@
 
 #include "smcu_util.hpp"
 
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus/match.hpp>
 #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
 #include <xyz/openbmc_project/Inventory/Item/Chassis/server.hpp>
@@ -86,7 +87,9 @@ class Smcu : public SmcuInherit, public Util
         sdbusplus::xyz::openbmc_project::Inventory::server::Item::prettyName(
             "SMCU");
 
+        armPlatformWatches();
         registerSoftwareVersion(bus, objPath);
+        refreshSoftwareVersion();
     }
 
     void registerSoftwareVersion(sdbusplus::bus_t& bus,
@@ -106,10 +109,60 @@ class Smcu : public SmcuInherit, public Util
     }
 
   private:
+    void refreshSoftwareVersion()
+    {
+        try
+        {
+            const std::string value = getVersion();
+            if (VersionObj && VersionObj->version() != value)
+            {
+                VersionObj->version(value);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            lg2::warning("Failed to refresh SMCU version: {ERR}", "ERR",
+                         e.what());
+        }
+    }
+
+    void armPlatformWatches()
+    {
+        namespace rules = sdbusplus::bus::match::rules;
+        platformPropsMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            rules::propertiesChanged(nvidia::platform::objPath,
+                                     nvidia::platform::smcuIface),
+            [this](sdbusplus::message::message&) { refreshSoftwareVersion(); });
+        platformOwnerMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            rules::nameOwnerChanged() +
+                rules::argN(0, nvidia::platform::service),
+            [this](sdbusplus::message::message& msg) {
+                std::string name;
+                std::string oldOwner;
+                std::string newOwner;
+                try
+                {
+                    msg.read(name, oldOwner, newOwner);
+                }
+                catch (const std::exception&)
+                {
+                    return;
+                }
+                if (!newOwner.empty())
+                {
+                    refreshSoftwareVersion();
+                }
+            });
+    }
+
     /** @brief systemd bus member */
     sdbusplus::bus_t& bus;
     std::string inventoryPath;
     std::unique_ptr<VersionInterface> VersionObj;
+    std::unique_ptr<sdbusplus::bus::match_t> platformPropsMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> platformOwnerMatch;
 };
 
 } // namespace nvidia::smcu::device

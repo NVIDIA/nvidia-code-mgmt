@@ -3,6 +3,7 @@ executable(
     'igx-smcu-version',
     'main.cpp',
     'smcu_manager.cpp',
+    include_directories: include_directories('../../igx/src'),
     dependencies: [
         sdbusplus,
         sdeventplus,
@@ -14,4 +15,3 @@ executable(
     install_dir: get_option('bindir'),
 )
 install_headers('smcu_util.hpp')
-

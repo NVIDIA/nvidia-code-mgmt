@@ -17,11 +17,9 @@
 
 #include "smcu_updater.hpp"
 
-#include <phosphor-logging/lg2.hpp>
+#include "../nvidia_igx/igx/src/platform_client.hpp"
 
-#include <array>
-#include <cstdio>
-#include <memory>
+#include <phosphor-logging/lg2.hpp>
 
 namespace nvidia
 {
@@ -29,34 +27,6 @@ namespace software
 {
 namespace updater
 {
-
-// Helper function to execute command and read output
-static std::string executeCommand(const std::string& cmd)
-{
-    std::string output;
-    std::array<char, 128> buffer;
-
-    std::unique_ptr<FILE, int (*)(FILE*)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe)
-    {
-        lg2::error("Failed to execute command: {CMD}", "CMD", cmd);
-        return "";
-    }
-
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
-    {
-        output += buffer.data();
-    }
-
-    // Remove trailing newline/whitespace
-    while (!output.empty() && (output.back() == '\n' || output.back() == '\r' ||
-                               output.back() == ' '))
-    {
-        output.pop_back();
-    }
-
-    return output;
-}
 
 std::string SMCUItemUpdater::getVersion(
     [[maybe_unused]] const std::string& inventoryPath) const
@@ -78,17 +48,15 @@ std::string SMCUItemUpdater::getVersion(
         return "";
     }
 
-    // Get actual firmware version from smcu-version.py
+    // Get actual firmware version from the platform-state daemon (D-Bus).
     try
     {
-        std::string cmd = "/usr/bin/smcu-version.py";
-        std::string fwVersion = executeCommand(cmd);
+        std::string fwVersion = nvidia::platform::smcuVersionString(bus);
 
         if (fwVersion.empty() || fwVersion == "--")
         {
             // Fallback to device type only if version not available
-            lg2::warning(
-                "SMCU firmware version not available, using device type only");
+            lg2::warning("SMCU firmware version not available, using device type only");
             return deviceType;
         }
 
@@ -99,8 +67,7 @@ std::string SMCUItemUpdater::getVersion(
     }
     catch (const std::exception& e)
     {
-        lg2::error("Failed to get SMCU firmware version: {ERROR}", "ERROR",
-                   e.what());
+        lg2::error("Failed to get SMCU firmware version: {ERROR}", "ERROR", e.what());
         // Fallback to device type only
         return deviceType;
     }

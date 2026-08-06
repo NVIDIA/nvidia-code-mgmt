@@ -89,6 +89,23 @@ test(
     workdir: meson.current_source_dir(),
 )
 
+test(
+    'test_platform_client',
+    executable(
+        'test_platform_client',
+        'test_platform_client.cpp',
+        implicit_include_directories: false,
+        dependencies: [
+            test_dep,
+            sdbusplus,
+            phosphor_dbus_interfaces,
+            phosphor_logging,
+            fmt,
+        ],
+    ),
+    workdir: meson.current_source_dir(),
+)
+
 # Expanded update debug token tests
 if get_option('DEBUG_TOKEN_SUPPORT').enabled()
     debug_token_binary_preload = shared_library(

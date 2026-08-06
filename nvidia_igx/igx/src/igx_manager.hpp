@@ -42,9 +42,21 @@ class IgxManager
     IgxManager(sdbusplus::bus_t& bus, std::string basePath);
 
   private:
+    // Resolve the platform identity from com.Nvidia.Platform and (re)register
+    // the inventory object. Registers the path-specific object only when
+    // IdentityReady is true; re-registers only on an actual path change to avoid
+    // ObjectMapper churn (ARCHITECTURE §10a).
+    void resolveAndRegister();
+
     sdbusplus::bus_t& bus;
+    std::string basePath;
+    std::string currentName;
 
     std::unique_ptr<Igx> orinInvs;
+    // Re-resolve when the daemon publishes a (real) identity, and re-subscribe
+    // when it restarts -- D-Bus signals do not replay (§10a/NG-7).
+    std::unique_ptr<sdbusplus::bus::match_t> platformPropsMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> platformOwnerMatch;
 };
 
 } // namespace nvidia::igx::manager

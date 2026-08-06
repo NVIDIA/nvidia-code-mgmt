@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+#include "platform_client.hpp"
+
 #include <unistd.h>
 
 #include <phosphor-logging/lg2.hpp>
@@ -42,8 +44,8 @@ inline std::string readVersionFile(const std::string& cmd)
         output += buffer.data();
     }
 
-    // Remove trailing newline if present
-    if (!output.empty() && output.back() == '\n')
+    while (!output.empty() &&
+           (output.back() == '\n' || output.back() == '\r'))
     {
         output.pop_back();
     }
@@ -76,8 +78,9 @@ class Util
     {
         try
         {
-            std::string cmd = "/usr/bin/igx-platform-detection.py";
-            std::string platform = readVersionFile(cmd);
+            // Single source of truth: read identity from the platform-state
+            // daemon over D-Bus instead of spawning igx-platform-detection.py.
+            std::string platform = nvidia::platform::platformShort();
             return platform.empty() ? "Host" : platform;
         }
         catch (const std::exception& e)

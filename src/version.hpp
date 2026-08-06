@@ -336,6 +336,12 @@ class Version : public VersionInherit, public DBUSUtils
         return verstionStr;
     }
 
+    void updateVersionString(const std::string& value)
+    {
+        verstionStr = value;
+        extendedVersion(value);
+    }
+
     /** @brief Activation */
     using VersionInherit::activation;
 

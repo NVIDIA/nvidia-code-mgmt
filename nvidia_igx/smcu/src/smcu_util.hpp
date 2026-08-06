@@ -15,35 +15,12 @@
  * limitations under the License.
  */
 
-#include <unistd.h>
+#include "platform_client.hpp"
 
-#include <phosphor-logging/lg2.hpp>
-
-#include <array>
-#include <iostream>
-#include <memory>
 #include <string>
 
 namespace nvidia::smcu::common
 {
-
-inline std::string readVersionFile(const std::string& cmd)
-{
-    std::string output = "";
-    std::array<char, 128> buffer;
-
-    std::unique_ptr<FILE, int (*)(FILE*)> pipe(popen(cmd.c_str(), "r"), pclose);
-    if (!pipe)
-    {
-        throw std::runtime_error("popen() failed!");
-    }
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
-    {
-        output += buffer.data();
-    }
-
-    return output;
-}
 
 class Util
 {
@@ -52,18 +29,7 @@ class Util
 
     virtual std::string getVersion() const
     {
-        std::string version = "";
-        try
-        {
-            std::string cmd = "/usr/bin/smcu-version.py";
-            version = readVersionFile(cmd);
-        }
-        catch (const std::exception& e)
-        {
-            lg2::error("Failed to fetch version: ", "ERROR", e.what());
-        }
-
-        return version;
+        return nvidia::platform::smcuVersionOneShot();
     }
 };
 

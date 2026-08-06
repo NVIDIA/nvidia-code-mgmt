@@ -17,40 +17,101 @@
 
 #include "igx_manager.hpp"
 
+#include "platform_client.hpp"
+
+#include <utility>
+
 using namespace nvidia::igx::common;
 
 namespace nvidia::igx::manager
 {
 
-IgxManager::IgxManager(sdbusplus::bus_t& bus, std::string basePath) : bus(bus)
+IgxManager::IgxManager(sdbusplus::bus_t& bus, std::string basePath) :
+    bus(bus), basePath(std::move(basePath))
+{
+    namespace rules = sdbusplus::bus::match::rules;
+
+    // Re-resolve identity whenever the daemon's Info properties change (e.g. a
+    // slow/cold boot transitions Degraded -> Ready after construction).
+    platformPropsMatch = std::make_unique<sdbusplus::bus::match_t>(
+        bus,
+        rules::sender(nvidia::platform::service) +
+            rules::propertiesChanged(nvidia::platform::objPath,
+                                     nvidia::platform::infoIface),
+        [this](sdbusplus::message::message&) { resolveAndRegister(); });
+
+    // Re-resolve + re-subscribe when the daemon (re)acquires its name; D-Bus
+    // signals do not replay across a restart (ARCHITECTURE §10a/NG-7).
+    platformOwnerMatch = std::make_unique<sdbusplus::bus::match_t>(
+        bus,
+        rules::nameOwnerChanged() + rules::argN(0, nvidia::platform::service),
+        [this](sdbusplus::message::message& msg) {
+            std::string name;
+            std::string oldOwner;
+            std::string newOwner;
+            try
+            {
+                msg.read(name, oldOwner, newOwner);
+            }
+            catch (const std::exception&)
+            {
+                return;
+            }
+            if (name == nvidia::platform::service && !newOwner.empty())
+            {
+                resolveAndRegister();
+            }
+        });
+
+    resolveAndRegister();
+}
+
+void IgxManager::resolveAndRegister()
 {
     try
     {
-        // Get platform name dynamically to set inventory path
-        Util util;
-        std::string platformName = util.getPlatformName();
+        // platformShort() uses IdentityReady; empty means unknown/transient —
+        // keep any existing inventory (do not churn through IGX_Host).
+        std::string platformName = nvidia::platform::platformShort(bus);
+        if (platformName.empty())
+        {
+            return;
+        }
 
         std::string inventoryName;
+        std::string inventoryPrettyName;
         if (platformName == "Thor")
         {
             inventoryName = "IGX_Thor";
+            inventoryPrettyName = "IGX Thor";
         }
         else if (platformName == "Orin")
         {
             inventoryName = "IGX_Orin";
+            inventoryPrettyName = "IGX Orin";
         }
         else
         {
-            inventoryName = "IGX_Host"; // Fallback for unknown platforms
+            inventoryName = "IGX_Host";
+            inventoryPrettyName = "IGX Host";
         }
 
-        const auto baseinvInvPath = basePath + "/" + inventoryName;
-
-        orinInvs = std::make_unique<Igx>(bus, baseinvInvPath);
+        // Register once per distinct path; skip if unchanged so unrelated
+        // property changes never tear down a live inventory object (§10a).
+        if (orinInvs && currentName == inventoryName)
+        {
+            return;
+        }
+        auto replacement =
+            std::make_unique<Igx>(bus, basePath + "/" + inventoryName);
+        replacement->prettyName(inventoryPrettyName);
+        orinInvs = std::move(replacement);
+        currentName = inventoryName;
+        lg2::info("IGX inventory registered at {NAME}", "NAME", inventoryName);
     }
     catch (const std::exception& e)
     {
-        lg2::error("Failed to create d-bus object for ORIN inventory", "ERROR",
+        lg2::error("Failed to create d-bus object for IGX inventory", "ERROR",
                    e.what());
     }
 }

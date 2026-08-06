@@ -17,15 +17,17 @@
 #pragma once
 #include "config.h"
 
-#include "../nvidia_igx/orin/src/orin_util.hpp"
+#include "../nvidia_igx/igx/src/igx_util.hpp"
+#include "../nvidia_igx/igx/src/platform_client.hpp"
 #include "base_item_updater.hpp"
 
 #include <phosphor-logging/lg2.hpp>
-#include <sdbusplus/bus.hpp>
+#include <sdbusplus/bus/match.hpp>
 
-#include <algorithm>
 #include <filesystem>
+#include <memory>
 #include <tuple>
+#include <vector>
 
 namespace nvidia
 {
@@ -49,6 +51,19 @@ class SMCUItemUpdater : public BaseItemUpdater
     /** @brief Tracks the SMCU type detected from the platform at startup */
     std::string detectedPlatformSmcu;
 
+    /** @brief Self-heal subscriptions: re-resolve + register the correct single
+     *         SMCU object once the platform-state daemon publishes a real
+     *         identity (Degraded->Ready) or restarts. Never registers both
+     *         (bug 6397179 / ARCHITECTURE Sec 10a.1). */
+    std::unique_ptr<sdbusplus::bus::match_t> platformPropsMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> smcuPropsMatch;
+    std::unique_ptr<sdbusplus::bus::match_t> platformOwnerMatch;
+    /** @brief Retries deferred onPlatformChanged once Activation→Active. */
+    std::unique_ptr<sdbusplus::bus::match_t> activationMatch;
+    /** @brief Retries deferred convergence when a Failed/Ready object is erased. */
+    std::unique_ptr<sdbusplus::bus::match_t> softwareRemovedMatch;
+    bool pendingPlatformConvergence = false;
+
   private:
     /**
      * @brief Detect SMCU type from platform detection
@@ -58,28 +73,27 @@ class SMCUItemUpdater : public BaseItemUpdater
     {
         try
         {
-            // Direct SMCU type detection
-            std::string cmd =
-                "/usr/bin/igx-platform-detection.py --type smcu --no-wait";
-            std::string smcuType = nvidia::orin::common::readVersionFile(cmd);
+            // Read the SMCU model from the platform-state daemon (D-Bus)
+            // instead of spawning igx-platform-detection.py.
+            std::string smcuType = nvidia::platform::smcuModel(bus);
 
             if (smcuType == "RSMCU")
             {
-                lg2::info("Detected SMCU type: Renesas (from SMCU_SOC field)");
+                lg2::info(
+                    "Detected SMCU type: Renesas (from D-Bus Smcu.Model)");
                 return "RSMCU";
             }
             else if (smcuType == "ASMCU")
             {
-                lg2::info("Detected SMCU type: Aurix (from SMCU_SOC field)");
+                lg2::info("Detected SMCU type: Aurix (from D-Bus Smcu.Model)");
                 return "ASMCU";
             }
 
             // Priority 2: Fallback to platform name detection
-            lg2::info("SMCU_SOC field unavailable, falling back to platform "
-                      "name detection");
+            lg2::info(
+                "SMCU_SOC field unavailable, falling back to platform name detection");
 
-            nvidia::orin::common::Util util;
-            std::string platformName = util.getPlatformName();
+            std::string platformName = nvidia::platform::platformShort(bus);
 
             if (platformName == "Thor")
             {
@@ -109,6 +123,96 @@ class SMCUItemUpdater : public BaseItemUpdater
         }
     }
 
+    bool hasNonActiveVersion() const
+    {
+        // Only Ready/Activating own the lifecycle. Failed is terminal — do not
+        // block convergence (deleting a Failed object must recreate inventory).
+        for (const auto& entry : versions)
+        {
+            const auto st = entry.second->activation();
+            if (st == Version::Status::Ready ||
+                st == Version::Status::Activating)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @brief Converge identity and refresh the live firmware version.
+     *
+     * Creates at most one deferred object; later signals update it in place.
+     */
+    void onPlatformChanged()
+    {
+        try
+        {
+            std::string t = detectPlatformSmcu();
+            if (t != "ASMCU" && t != "RSMCU")
+            {
+                // Retain existing Version object across transient unready
+                // (daemon restart). Replace only on positively ready change.
+                return;
+            }
+            if (t != detectedPlatformSmcu)
+            {
+                // Do not replace inventory while an upload owns lifecycle
+                // state (Ready or Activating). Failed is terminal.
+                if (hasNonActiveVersion())
+                {
+                    lg2::warning(
+                        "Deferring SMCU model change while update object is active");
+                    pendingPlatformConvergence = true;
+                    return;
+                }
+                if (!detectedPlatformSmcu.empty())
+                {
+                    erase(detectedPlatformSmcu);
+                }
+                detectedPlatformSmcu = t;
+                std::string path = std::string(SOFTWARE_OBJPATH) + "/" + t;
+                lg2::info("SMCU identity now known ({M}); registering deferred "
+                          "inventory object",
+                          "M", t);
+                readDeviceDetails(path);
+            }
+            else if (versions.find(t) == versions.end())
+            {
+                // Same type cached but object missing (Ready at construction
+                // with empty cache, or prior erase without recreate).
+                std::string path = std::string(SOFTWARE_OBJPATH) + "/" + t;
+                readDeviceDetails(path);
+            }
+
+            // processImage reuses the ASMCU/RSMCU id, so during flash the
+            // object is Activating with the image filename as Version.
+            // RedetectSmcu often lands in that window; refresh only when
+            // Active, otherwise retry on Activation→Active (activationMatch).
+            auto version = versions.find(detectedPlatformSmcu);
+            if (version == versions.end())
+            {
+                return;
+            }
+            if (version->second->activation() != Version::Status::Active)
+            {
+                pendingPlatformConvergence = true;
+                lg2::info(
+                    "Deferring SMCU version refresh until inventory is Active");
+                return;
+            }
+            const std::string path =
+                std::string(SOFTWARE_OBJPATH) + "/" + detectedPlatformSmcu;
+            version->second->updateVersionString(getVersion(path));
+            pendingPlatformConvergence = false;
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("SMCU platform-change handler failed: {ERROR}", "ERROR",
+                       e.what());
+        }
+    }
+
   public:
     /**
      * @brief Construct a new SMCUItemUpdater object
@@ -120,7 +224,97 @@ class SMCUItemUpdater : public BaseItemUpdater
                         SMCU_BUSNAME_UPDATER, SMCU_UPDATE_SERVICE, false,
                         SMCU_BUSNAME_INVENTORY)
     {
-        detectedPlatformSmcu = detectPlatformSmcu();
+        // Leave detectedPlatformSmcu empty; onPlatformChanged registers when
+        // identity is known. Pre-seeding then calling onPlatformChanged skips
+        // registration when the daemon is already Ready (t == cache).
+
+        // Self-heal: if identity is unknown at construction we register nothing
+        // (below); converge once the daemon publishes a real identity or
+        // restarts. D-Bus signals do not replay, so also watch
+        // NameOwnerChanged.
+        namespace rules = sdbusplus::bus::match::rules;
+        platformPropsMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            rules::propertiesChanged(nvidia::platform::objPath,
+                                     nvidia::platform::infoIface),
+            [this](sdbusplus::message::message&) { onPlatformChanged(); });
+        smcuPropsMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            rules::propertiesChanged(nvidia::platform::objPath,
+                                     nvidia::platform::smcuIface),
+            [this](sdbusplus::message::message&) { onPlatformChanged(); });
+        platformOwnerMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            rules::nameOwnerChanged() +
+                rules::argN(0, nvidia::platform::service),
+            [this](sdbusplus::message::message& msg) {
+                std::string name;
+                std::string oldOwner;
+                std::string newOwner;
+                try
+                {
+                    msg.read(name, oldOwner, newOwner);
+                }
+                catch (const std::exception&)
+                {
+                    return;
+                }
+                if (name == nvidia::platform::service && !newOwner.empty())
+                {
+                    onPlatformChanged();
+                }
+            });
+        // Retry deferred convergence when flash Activation becomes Active
+        // (no further platform PropertiesChanged after finishActivation).
+        activationMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            "type='signal',interface='org.freedesktop.DBus.Properties',"
+            "member='PropertiesChanged',path_namespace='" +
+                std::string(SOFTWARE_OBJPATH) + "',arg0namespace='" +
+                std::string(ACTIVATE_INTERFACE) + "'",
+            [this](sdbusplus::message::message&) {
+                if (pendingPlatformConvergence)
+                {
+                    onPlatformChanged();
+                }
+            });
+        // Deleting the current Ready/Failed software object emits
+        // InterfacesRemoved (not PropertiesChanged); always converge so the
+        // sole inventory entry is recreated even when pending is unset.
+        softwareRemovedMatch = std::make_unique<sdbusplus::bus::match_t>(
+            bus,
+            "type='signal',interface='org.freedesktop.DBus.ObjectManager',"
+            "member='InterfacesRemoved',arg0path='" +
+                std::string(SOFTWARE_OBJPATH) + "/'",
+            [this](sdbusplus::message::message& msg) {
+                sdbusplus::object_path path;
+                std::vector<std::string> ifaces;
+                try
+                {
+                    msg.read(path, ifaces);
+                }
+                catch (const std::exception&)
+                {
+                    return;
+                }
+                if (detectedPlatformSmcu.empty())
+                {
+                    return;
+                }
+                const std::string expected =
+                    std::string(SOFTWARE_OBJPATH) + "/" +
+                    detectedPlatformSmcu;
+                if (std::string(path) == expected)
+                {
+                    onPlatformChanged();
+                }
+            });
+
+        // M3: drive one initial convergence so the SMCU object registers on a
+        // clean boot even when the daemon is already Ready (signals do not
+        // replay, and the base ctor may query inventory paths before
+        // detectedPlatformSmcu is set). Idempotent; guarded by onPlatformChanged.
+        onPlatformChanged();
     }
     /**
      * @brief Get the Version object
@@ -230,11 +424,13 @@ class SMCUItemUpdater : public BaseItemUpdater
             }
         }
 
-        // Fallback: Return both if platform detection failed
-        // Fallback: Return both if platform detection failed
-        ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/ASMCU");
-        ret.emplace_back(std::string(SOFTWARE_OBJPATH) + "/RSMCU");
-        return ret;
+        // Unknown means register NOTHING; BOTH makes PLDM match both package
+        // components and launch jobs that collide on ttyS2 / the mux
+        // (bug 6397179 / ARCHITECTURE Sec 10a.1). Self-heal registers the
+        // correct single object after the daemon publishes a real identity.
+        lg2::error("SMCU type unknown at registration; registering no SMCU "
+                   "inventory object (avoids double-flash)");
+        return ret; // empty
     }
 
     bool inventorySupported() override
@@ -243,12 +439,8 @@ class SMCUItemUpdater : public BaseItemUpdater
     }
 
     /**
-     * @brief Generate stable IDs per model.
-     *        Resolution order:
-     *          1. Model from deviceIds map keyed by the given UUID
-     *          2. SMCU type cached from startup platform detection
-     *          3. Live platform detection via detectPlatformSmcu()
-     *          4. getName() fallback when SMCU type cannot be determined
+     * @brief Generate stable IDs: ASMCU -> Aurix_SMCU,
+     * RSMCU -> Renesas_SMCU; other models fall back to UUID.
      */
     std::string getIdProperty(const std::string& uniqueIdentifier) override
     {
@@ -277,15 +469,16 @@ class SMCUItemUpdater : public BaseItemUpdater
             return detectedPlatformSmcu;
         }
 
-        // Priority 3: Detect now (called during base constructor)
+        // Priority 3: Detect from the current platform state.
         std::string smcuType = detectPlatformSmcu();
         if (smcuType == "ASMCU" || smcuType == "RSMCU")
         {
             return smcuType;
         }
 
-        // Fallback: Use generic SMCU
-        return getName();
+        // Fallback: preserve the caller's UUID when we cannot derive a stable
+        // model-specific ID.
+        return uniqueIdentifier.empty() ? getName() : uniqueIdentifier;
     }
 
     int processImage(std::filesystem::path& filePath) override

@@ -13,5 +13,4 @@ executable(
     install: true,
     install_dir: get_option('bindir'),
 )
-install_headers('igx_util.hpp')
-
+install_headers('igx_util.hpp', 'platform_client.hpp')
