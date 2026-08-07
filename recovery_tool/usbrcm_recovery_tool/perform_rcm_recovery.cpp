@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <iostream>
@@ -681,8 +682,10 @@ bool performUsbRecovery(const std::string& portPath,
                     return reportEmptyDotSoftSuccess();
                 }
                 jsonOutput["Status"] = "Failed";
-                jsonOutput["Error"] =
-                    std::format("Failed to send image: {}", imagePath);
+                jsonOutput["Error"] = std::format(
+                    "Failed to send image {} of {}: {}", i + 1,
+                    finalImagePaths.size(),
+                    std::filesystem::path(imagePath).filename().string());
                 jsonOutput["ErrorCode"] = static_cast<uint8_t>(
                     USBRCMRecoveryErrorCode::ImageTransferFailed);
                 return false;
