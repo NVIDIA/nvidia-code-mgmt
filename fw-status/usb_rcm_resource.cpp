@@ -129,6 +129,13 @@ void USBRcmResource::updateHealth()
         }
     }
 
+    if (isPowerOnSettling() && !mctpEnumerated)
+    {
+        lg2::info("Deferring health update for USB port {PORT} to settle timer",
+                  "PORT", usbPort);
+        return;
+    }
+
     const auto recoveryStatus = queryUSBRecoveryStatus();
 
     lg2::info(
