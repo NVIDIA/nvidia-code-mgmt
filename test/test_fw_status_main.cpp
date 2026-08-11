@@ -2216,18 +2216,18 @@ TEST_F(FWStatusMainTest, StartCentralizedPowerStateWatcherHandlesSignals)
         signalBus, "/xyz/openbmc_project/state/chassis/chassis0",
         {{"CurrentPowerState",
           std::string("xyz.openbmc_project.State.Chassis.PowerState.Off")}});
-    // A power-state change updates the cached state synchronously, but the
-    // fw-status re-check is deferred to a settle timer, so updateHealth() has
-    // not run yet.
+    // Powering off updates the cached state and refreshes health immediately,
+    // so resources reach Warning/UnavailableOffline without waiting out the
+    // settle delay, which only applies to power-on.
     EXPECT_GT(dispatchMatchCallback(chassisPowerStateMatch, signal), 0);
     EXPECT_EQ(watchedPtr->getChassisPowerState(),
               "xyz.openbmc_project.State.Chassis.PowerState.Off");
-    EXPECT_EQ(watchedPtr->updateCalls, 0);
+    EXPECT_EQ(watchedPtr->updateCalls, 1);
     EXPECT_EQ(ignoredPtr->updateCalls, 0);
 
     // Firing the deferred refresh probes only chassis-powered resources.
     refreshChassisPoweredResourcesHealth();
-    EXPECT_EQ(watchedPtr->updateCalls, 1);
+    EXPECT_EQ(watchedPtr->updateCalls, 2);
     EXPECT_EQ(ignoredPtr->updateCalls, 0);
 
     // An unrelated property change is ignored: the cached power state is left
@@ -2251,6 +2251,10 @@ TEST_F(FWStatusMainTest, StartCentralizedPowerStateWatcherHandlesSignals)
         {{"CurrentPowerState",
           std::string("xyz.openbmc_project.State.Chassis.PowerState.On")}});
     EXPECT_GT(dispatchMatchCallback(chassisPowerStateMatch, secondSignal), 0);
+
+    // Powering on defers the re-check to the settle timer rather than probing
+    // immediately, so the count is unchanged.
+    EXPECT_EQ(watchedPtr->updateCalls, 2);
 
     // The deferred refresh swallows updateHealth() exceptions so a single
     // throwing resource does not abort the refresh of the others.

@@ -80,10 +80,10 @@ constexpr auto recoveryConfigIntfName =
 constexpr auto chassisInterface = "xyz.openbmc_project.State.Chassis";
 constexpr auto stateBasePath = "/xyz/openbmc_project/state";
 
-// Delay between observing a chassis power state change (e.g. a power cycle) and
-// re-checking the fw-status of devices. This gives the devices time to settle
-// after the power transition before they are probed over MCTP/I2C. Configurable
-// via the FWSTATUS_POWER_STATE_SETTLE_DELAY_SEC meson option (config.h).
+// Delay after chassis power-on before re-checking fw-status of devices. Gives
+// devices time to enumerate over MCTP/I2C before the fallback health evaluation
+// runs. Not applied on power-off, which triggers an immediate health update.
+// Configurable via the FWSTATUS_POWER_STATE_SETTLE_DELAY_SEC meson option.
 constexpr auto powerStateSettleDelaySeconds =
     FWSTATUS_POWER_STATE_SETTLE_DELAY_SEC;
 
@@ -1483,11 +1483,10 @@ bool startCentralizedPowerStateWatcher()
                     "Chassis power state changed to {STATE}, updating cached power state for all resources",
                     "STATE", powerState);
 
-                // Update each resource's cached power state immediately so the
-                // deferred health probe sees the correct state. The actual
-                // fw-status check (updateHealth) is deferred so devices have
-                // time to settle after the power transition before they are
-                // probed over MCTP/I2C.
+                const bool poweringOff =
+                    powerState ==
+                    "xyz.openbmc_project.State.Chassis.PowerState.Off";
+
                 for (auto& resource : resources)
                 {
                     if (!resource->hasChassisPowerSource())
@@ -1500,9 +1499,30 @@ bool startCentralizedPowerStateWatcher()
                         "Updating cached chassis power state for resource {PATH} to {STATE}",
                         "PATH", objectPath, "STATE", powerState);
                     resource->setChassisPowerState(powerState);
+
+                    // On power-off, update health immediately so devices are
+                    // marked offline without waiting for the settle timer.
+                    if (poweringOff)
+                    {
+                        try
+                        {
+                            resource->updateHealth();
+                        }
+                        catch (const std::exception& e)
+                        {
+                            lg2::error(
+                                "Failed to update health for resource {PATH} on power-off: {ERR}",
+                                "PATH", objectPath, "ERR", e.what());
+                        }
+                    }
                 }
 
-                schedulePowerStateHealthRefresh();
+                // On power-on, defer the health probe so devices have time to
+                // settle before being queried over MCTP/I2C.
+                if (!poweringOff)
+                {
+                    schedulePowerStateHealthRefresh();
+                }
             }
             catch (const std::exception& e)
             {
@@ -1550,15 +1570,15 @@ void refreshChassisPoweredResourcesHealth()
 }
 
 /**
- * @brief Defer the fw-status re-check after a chassis power state change.
+ * @brief Defer the fw-status re-check after chassis power-on.
  *
  * Starts (or restarts) a one-shot timer that, on expiry, re-evaluates the
  * health/state of every chassis-powered resource. Deferring the probe by
- * powerStateSettleDelaySeconds gives devices time to settle after a power
- * transition (e.g. a power cycle) before they are queried over MCTP/I2C, which
- * avoids false recovery/critical states from transient post-power-on reads.
+ * powerStateSettleDelaySeconds gives devices time to enumerate over MCTP/I2C
+ * before the fallback health evaluation runs. Only called on power-on;
+ * power-off triggers an immediate updateHealth() instead.
  *
- * start() stops any in-flight timer first, so a burst of power-state changes
+ * start() stops any in-flight timer first, so a burst of power-on events
  * collapses into a single refresh, fired once the chassis has been stable for
  * the full settle delay.
  */
