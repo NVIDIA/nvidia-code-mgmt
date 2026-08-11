@@ -279,6 +279,16 @@ class BaseResource
         return chassisPowerState == chassisPowerOffState;
     }
 
+    inline void setPowerOnSettling(bool settling) noexcept
+    {
+        powerOnSettling = settling;
+    }
+
+    inline bool isPowerOnSettling() const noexcept
+    {
+        return powerOnSettling;
+    }
+
     /** @brief Commit a recovery-mode error to DeviceStatus via
      *  phosphor-logging.
      *
@@ -292,6 +302,7 @@ class BaseResource
   private:
     std::unique_ptr<ResourceInterfaces> resourceDbusObj;
     bool connectedToChassisPower = false;
+    bool powerOnSettling = false;
     std::string chassisPowerState;
     static constexpr const char* chassisPowerOffState =
         "xyz.openbmc_project.State.Chassis.PowerState.Off";

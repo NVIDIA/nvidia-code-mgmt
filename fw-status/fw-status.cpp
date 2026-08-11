@@ -1584,10 +1584,9 @@ bool startCentralizedPowerStateWatcher()
                         "PATH", objectPath, "STATE", powerState);
                     resource->setChassisPowerState(powerState);
 
-                    // On power-off, update health immediately so devices are
-                    // marked offline without waiting for the settle timer.
                     if (poweringOff)
                     {
+                        resource->setPowerOnSettling(false);
                         try
                         {
                             resource->updateHealth();
@@ -1599,11 +1598,20 @@ bool startCentralizedPowerStateWatcher()
                                 "PATH", objectPath, "ERR", e.what());
                         }
                     }
+                    else
+                    {
+                        resource->setPowerOnSettling(true);
+                    }
                 }
 
-                // On power-on, defer the health probe so devices have time to
-                // settle before being queried over MCTP/I2C.
-                if (!poweringOff)
+                if (poweringOff)
+                {
+                    if (powerStateRefreshTimer)
+                    {
+                        powerStateRefreshTimer->stop();
+                    }
+                }
+                else
                 {
                     schedulePowerStateHealthRefresh();
                 }
@@ -1640,6 +1648,7 @@ void refreshChassisPoweredResourcesHealth()
         {
             continue;
         }
+        resource->setPowerOnSettling(false);
         try
         {
             resource->updateHealth();
