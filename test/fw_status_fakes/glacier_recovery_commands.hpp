@@ -30,6 +30,7 @@ enum class RecoveryResult : uint8_t
 {
     Ok = 0x0,
     FirmwareNotInRecovery = 0x8,
+    FailedToReadData = 0xD,
 };
 
 class GlacierRecoveryCommands

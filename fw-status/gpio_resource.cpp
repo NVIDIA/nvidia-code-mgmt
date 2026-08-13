@@ -562,7 +562,17 @@ void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
         return;
     }
 
-    const auto& status = glacierRecoveryObj->performInitialization();
+    auto status = glacier_recovery_tool::glacier_recovery_commands::
+        RecoveryResult::FailedToReadData;
+    try
+    {
+        status = glacierRecoveryObj->performInitialization();
+    }
+    catch (const std::runtime_error& e)
+    {
+        lg2::error("Crisis I2C probe failed for {PATH}: {ERROR}", "PATH",
+                   path.c_str(), "ERROR", e);
+    }
     bool inRecovery =
         (status != glacier_recovery_tool::glacier_recovery_commands::
                        RecoveryResult::FirmwareNotInRecovery);
