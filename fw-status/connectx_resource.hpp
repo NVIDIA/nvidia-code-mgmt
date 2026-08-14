@@ -161,6 +161,13 @@ class ConnectXResource : public MCTPDiscoveryResource
             }
         }
 
+        if (isPowerOnSettling() && !mctpEnumerated)
+        {
+            lg2::info("Deferring health update for {PATH} to settle timer",
+                      "PATH", path.c_str());
+            return;
+        }
+
         const auto& [ret, output, errorMsg] = getDeviceStatus();
         if (!ret)
         {
