@@ -209,6 +209,17 @@ class GpuResource : public MCTPDiscoveryResource
             return;
         }
 
+        // The MCTP EID is not enumerated yet. During the power-on settle
+        // window the device may still be booting and report a transitional
+        // OCP DeviceStatus, so defer the fallback evaluation to the settle
+        // timer rather than treating that value as a recovery condition.
+        if (isPowerOnSettling())
+        {
+            lg2::info("Deferring health update for {PATH} to settle timer",
+                      "PATH", path.c_str());
+            return;
+        }
+
         const auto& [ret, output, errorMsg] =
             ocpRecoveryCommands->getDeviceStatusCommand();
 
