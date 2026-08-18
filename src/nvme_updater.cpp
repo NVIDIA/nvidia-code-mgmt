@@ -19,11 +19,15 @@
 
 #include "nvme_updater.hpp"
 
+#include <unistd.h>
+
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/log.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -37,6 +41,56 @@ namespace software
 {
 namespace updater
 {
+
+namespace
+{
+std::string quoteEnvValue(const std::string& value)
+{
+    std::string quoted = "\"";
+    for (const char c : value)
+    {
+        // Keep each EnvironmentFile assignment on a single physical line.
+        if (c == '\n')
+        {
+            quoted += "\\n";
+            continue;
+        }
+        if (c == '\r')
+        {
+            quoted += "\\r";
+            continue;
+        }
+        if (c == '\0')
+        {
+            quoted += "\\0";
+            continue;
+        }
+        if (c == '\\' || c == '"' || c == '$' || c == '`')
+        {
+            quoted += '\\';
+        }
+        quoted += c;
+    }
+    quoted += '"';
+    return quoted;
+}
+
+std::string makeNvmeUpdateRequestId()
+{
+    static std::atomic_uint64_t counter{0};
+    const auto now =
+        std::chrono::steady_clock::now().time_since_epoch().count();
+    return "nvme-" + std::to_string(getpid()) + "-" + std::to_string(now) +
+           "-" + std::to_string(counter.fetch_add(1));
+}
+
+std::filesystem::path nvmeRequestFilePath(const std::string& requestId)
+{
+    return std::filesystem::path(NVME_UPDATE_REQUEST_DIR) /
+           (requestId + ".env");
+}
+
+} // namespace
 
 std::string NVMeItemUpdater::getVersion(const std::string& inventoryPath) const
 {
@@ -246,7 +300,7 @@ std::string
                             // Check if model matches
                             if (isModelMatch(driveModel, modelName))
                             {
-                                driveList += driveName + "\\x20";
+                                driveList += driveName + " ";
                             }
                         }
                         catch (const std::exception& e)
@@ -299,7 +353,7 @@ std::string
                     // Check if model matches
                     if (isModelMatch(driveModel, modelName))
                     {
-                        driveList += driveName + "\\x20";
+                        driveList += driveName + " ";
                     }
                 }
                 catch (const std::exception& e)
@@ -350,17 +404,40 @@ std::string NVMeItemUpdater::getServiceArgs(
     lg2::info("NVMe update drive name list: {DRIVE_LIST}", "DRIVE_LIST",
               deviceList);
 
-    std::string args = "";
-    args += imagePath; // image path
-    args += "\\x20";
-    args += version; // version string for message registry
-    args += "\\x20";
-    args += NVME_INVENTORY_PATH; // inventory path prefix
-    args += "\\x20";
-    args += deviceList; // drive name list
+    const std::string requestId = makeNvmeUpdateRequestId();
+    const auto requestPath = nvmeRequestFilePath(requestId);
+    const auto tmpPath = requestPath.string() + ".tmp";
 
-    std::replace(args.begin(), args.end(), '/', '-');
-    return args;
+    try
+    {
+        std::filesystem::create_directories(requestPath.parent_path());
+        {
+            std::ofstream envFile(tmpPath, std::ios::trunc);
+            if (!envFile)
+            {
+                lg2::error("Failed to create NVMe update request file {PATH}",
+                           "PATH", tmpPath);
+                return "";
+            }
+
+            envFile << "FW_IMAGE=" << quoteEnvValue(imagePath) << "\n";
+            envFile << "FW_VERSION=" << quoteEnvValue(version) << "\n";
+            envFile << "FW_PREFIX=" << quoteEnvValue(NVME_INVENTORY_PATH)
+                    << "\n";
+            envFile << "FW_TARGETS=" << quoteEnvValue(deviceList) << "\n";
+        }
+        std::filesystem::rename(tmpPath, requestPath);
+    }
+    catch (const std::exception& e)
+    {
+        std::error_code ec;
+        std::filesystem::remove(tmpPath, ec);
+        lg2::error("Failed to write NVMe update request file {PATH}: {ERROR}",
+                   "PATH", requestPath.string(), "ERROR", e.what());
+        return "";
+    }
+
+    return requestId;
 }
 
 } // namespace updater

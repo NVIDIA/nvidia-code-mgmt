@@ -236,6 +236,7 @@ if get_option('NVME_SUPPORT').enabled()
     cdata.set_quoted('NVME_BUSNAME_UPDATER', 'com.Nvidia.Software.NVMe.Updater')
     cdata.set_quoted('NVME_BUSNAME_INVENTORY', 'xyz.openbmc_project.NVMeDevice')
     cdata.set_quoted('NVME_UPDATE_SERVICE', 'nvme-update@.service')
+    cdata.set_quoted('NVME_UPDATE_REQUEST_DIR', '/run/nvidia-nvme-update')
     cdata.set_quoted(
         'NVME_INVENTORY_PATH',
         '/xyz/openbmc_project/inventory/system/nvme/',
