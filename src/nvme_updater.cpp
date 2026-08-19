@@ -133,10 +133,11 @@ std::string NVMeItemUpdater::getModel(
     std::string ret = "";
     try
     {
-        ret = getProperty<std::string>(
-            NVME_BUSNAME_INVENTORY, inventoryPath.c_str(), ASSET_IFACE, MODEL);
+        ret = getProperty<std::string>(NVME_BUSNAME_INVENTORY,
+                                       inventoryPath.c_str(), ASSET_IFACE,
+                                       PART_NUMBER);
 
-        // Get the second word from the model string (space-separated)
+        // Get the second word from the part number (space-separated)
         // e.g. "SAMSUNG MZTL23T8HCLS-00A07" -> "MZTL23T8HCLS-00A07"
         if (!ret.empty())
         {
