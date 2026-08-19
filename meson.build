@@ -580,6 +580,7 @@ cdata.set_quoted('VERSION', 'Version')
 cdata.set_quoted('PRESENT', 'Present')
 cdata.set_quoted('MANUFACTURER', 'Manufacturer')
 cdata.set_quoted('MODEL', 'Model')
+cdata.set_quoted('PART_NUMBER', 'PartNumber')
 
 
 
