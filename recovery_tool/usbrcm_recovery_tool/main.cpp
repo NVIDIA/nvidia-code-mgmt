@@ -5,6 +5,7 @@
 #include <CLI/CLI.hpp>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -38,6 +39,20 @@ static RecoveryPinConfig loadPinConfig(const std::string& path)
         throw std::runtime_error(
             "StrapPins, StrapActiveValues and StrapDefaultValues must be "
             "non-empty and have the same length");
+
+    // Strap values are driven straight onto GPIO output lines, where only 0
+    // and 1 are meaningful. Reject anything else here rather than letting
+    // libgpiod coerce an out-of-domain value into a level the board was never
+    // meant to be strapped to. Mirrors the same check on the
+    // entity-manager-driven config path in fw-status.
+    auto hasNonBinary = [](const std::vector<int>& values) {
+        return std::any_of(values.begin(), values.end(),
+                           [](int x) { return x != 0 && x != 1; });
+    };
+    if (hasNonBinary(cfg.strapActiveValues) ||
+        hasNonBinary(cfg.strapDefaultValues))
+        throw std::runtime_error(
+            "StrapActiveValues and StrapDefaultValues must be 0 or 1");
 
     if (cfg.resetPins.empty() &&
         (cfg.dbusService.empty() || cfg.dbusObject.empty() ||

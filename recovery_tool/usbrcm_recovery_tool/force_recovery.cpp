@@ -110,7 +110,39 @@ void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
         auto line = claimGpio(cfg.strapPins[i], cfg.strapActiveValues[i]);
         if (!line)
         {
-            lg2::error("Leaving CPUs in reset after strap failure on {PIN}",
+            // Straps 0..i-1 are already driven to their recovery values.
+            // Releasing the line handles does not undo that, so roll them
+            // back to defaults here — while reset is still asserted — rather
+            // than leaving a half-strapped board for the next boot attempt.
+            for (size_t j = 0; j < strapLines.size(); ++j)
+            {
+                try
+                {
+                    strapLines[j].set_value(cfg.strapDefaultValues[j]);
+                }
+                catch (const std::exception& e)
+                {
+                    lg2::error("Failed to roll back strap {PIN}: {ERR}", "PIN",
+                               cfg.strapPins[j], "ERR", e.what());
+                }
+            }
+
+            // Reset is not retained past this return: the line handles are
+            // released when this function exits. De-assert it explicitly so
+            // the board resumes from a defined state instead of whatever the
+            // GPIO driver leaves behind on release.
+            try
+            {
+                releaseReset(cfg, resetLines);
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error("Failed to release reset after strap failure: {ERR}",
+                           "ERR", e.what());
+            }
+
+            lg2::error("Strap failure on {PIN}; straps rolled back to defaults "
+                       "and reset released",
                        "PIN", cfg.strapPins[i]);
             out = {{"Status", "Failed"},
                    {"Error", "Strap GPIO failed: " + cfg.strapPins[i]}};

@@ -45,9 +45,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <variant>
 
@@ -149,8 +151,9 @@ std::string getChassisObjPath(const std::string& chassisName)
     return "/xyz/openbmc_project/inventory/system/chassis/" + chassisName;
 }
 
-std::string getString(const InterfaceMap& interfaces,
-                      const Interface& interface, const Property& property)
+static std::string getString(const InterfaceMap& interfaces,
+                             const Interface& interface,
+                             const Property& property)
 {
     try
     {
@@ -164,8 +167,8 @@ std::string getString(const InterfaceMap& interfaces,
     }
 }
 
-uint64_t getUint64(const InterfaceMap& interfaces, const Interface& interface,
-                   const Property& property)
+static uint64_t getUint64(const InterfaceMap& interfaces,
+                          const Interface& interface, const Property& property)
 {
     try
     {
@@ -179,8 +182,8 @@ uint64_t getUint64(const InterfaceMap& interfaces, const Interface& interface,
     }
 }
 
-bool getBool(const InterfaceMap& interfaces, const Interface& interface,
-             const Property& property)
+static bool getBool(const InterfaceMap& interfaces, const Interface& interface,
+                    const Property& property)
 {
     try
     {
@@ -194,9 +197,9 @@ bool getBool(const InterfaceMap& interfaces, const Interface& interface,
     }
 }
 
-std::optional<uint8_t> getUint8(const InterfaceMap& interfaces,
-                                const Interface& interface,
-                                const Property& property)
+static std::optional<uint8_t> getUint8(const InterfaceMap& interfaces,
+                                       const Interface& interface,
+                                       const Property& property)
 {
     try
     {
@@ -218,9 +221,9 @@ std::optional<uint8_t> getUint8(const InterfaceMap& interfaces,
     }
 }
 
-std::vector<std::string> getStringVec(const InterfaceMap& interfaces,
-                                      const Interface& interface,
-                                      const Property& property)
+static std::vector<std::string> getStringVec(const InterfaceMap& interfaces,
+                                             const Interface& interface,
+                                             const Property& property)
 {
     try
     {
@@ -235,8 +238,46 @@ std::vector<std::string> getStringVec(const InterfaceMap& interfaces,
     }
 }
 
-std::vector<int> getIntVec(const InterfaceMap& interfaces,
-                           const Interface& interface, const Property& property)
+/**
+ * @brief Narrow an entity-manager numeric array element to int.
+ *
+ * Entity Manager values come from board-vendor JSON, so an element may be
+ * non-integral, out of int range, or (for double) NaN/infinite. A bare
+ * static_cast would be undefined behavior for the out-of-range double case
+ * and would silently truncate the rest. Return nullopt instead so the caller
+ * can discard the whole array rather than substitute a wrong value.
+ */
+static std::optional<int> narrowToInt(double x, const Property& property)
+{
+    // INT_MIN and INT_MAX are both exactly representable as double, so these
+    // comparisons are exact rather than approximate.
+    if (!std::isfinite(x) || x != std::trunc(x) ||
+        x < static_cast<double>(std::numeric_limits<int>::min()) ||
+        x > static_cast<double>(std::numeric_limits<int>::max()))
+    {
+        lg2::error("Element {VALUE} of int array property {NAME} is not a "
+                   "representable integer",
+                   "VALUE", x, "NAME", property);
+        return std::nullopt;
+    }
+    return static_cast<int>(x);
+}
+
+static std::optional<int> narrowToInt(uint64_t x, const Property& property)
+{
+    if (x > static_cast<uint64_t>(std::numeric_limits<int>::max()))
+    {
+        lg2::error("Element {VALUE} of int array property {NAME} exceeds "
+                   "int range",
+                   "VALUE", x, "NAME", property);
+        return std::nullopt;
+    }
+    return static_cast<int>(x);
+}
+
+static std::vector<int> getIntVec(const InterfaceMap& interfaces,
+                                  const Interface& interface,
+                                  const Property& property)
 {
     try
     {
@@ -244,17 +285,35 @@ std::vector<int> getIntVec(const InterfaceMap& interfaces,
         std::vector<int> result;
         // Newer entity-manager uses vector<double> (ad), older uses
         // vector<uint64_t> (at) for integer JSON arrays.
+        //
+        // A single bad element discards the whole array: callers validate
+        // array length against StrapPins, so returning {} makes the config
+        // fail that check and be rejected as a unit.
         if (auto* v = std::get_if<std::vector<double>>(&val))
         {
             result.reserve(v->size());
             for (double x : *v)
-                result.push_back(static_cast<int>(x));
+            {
+                auto narrowed = narrowToInt(x, property);
+                if (!narrowed)
+                {
+                    return {};
+                }
+                result.push_back(*narrowed);
+            }
         }
         else if (auto* v = std::get_if<std::vector<uint64_t>>(&val))
         {
             result.reserve(v->size());
             for (uint64_t x : *v)
-                result.push_back(static_cast<int>(x));
+            {
+                auto narrowed = narrowToInt(x, property);
+                if (!narrowed)
+                {
+                    return {};
+                }
+                result.push_back(*narrowed);
+            }
         }
         else
         {
@@ -274,8 +333,8 @@ std::vector<int> getIntVec(const InterfaceMap& interfaces,
 /**
  * @brief Check if a property exists in a D-Bus interface
  */
-bool hasProperty(const InterfaceMap& interfaces, const Interface& interface,
-                 const Property& property)
+static bool hasProperty(const InterfaceMap& interfaces,
+                        const Interface& interface, const Property& property)
 {
     try
     {
@@ -289,9 +348,9 @@ bool hasProperty(const InterfaceMap& interfaces, const Interface& interface,
     }
 }
 
-std::optional<uint64_t> getOptionalUint64(const InterfaceMap& interfaces,
-                                          const Interface& interface,
-                                          const Property& property)
+static std::optional<uint64_t> getOptionalUint64(const InterfaceMap& interfaces,
+                                                 const Interface& interface,
+                                                 const Property& property)
 {
     if (!hasProperty(interfaces, interface, property))
     {
@@ -1457,6 +1516,23 @@ void publishDBusRecoveryObject()
                 continue;
             }
 
+            // Strap values are driven straight onto GPIO output lines, where
+            // only 0 and 1 are meaningful. Reject anything else here rather
+            // than letting libgpiod coerce an out-of-domain value into a
+            // level the board was never meant to be strapped to.
+            auto hasNonBinary = [](const std::vector<int>& values) {
+                return std::any_of(values.begin(), values.end(),
+                                   [](int x) { return x != 0 && x != 1; });
+            };
+            if (hasNonBinary(cfg.strapActiveValues) ||
+                hasNonBinary(cfg.strapDefaultValues))
+            {
+                lg2::error("USBRCMForceRecovery strap values must be 0 or 1 "
+                           "at {PATH}",
+                           "PATH", emObjectPath);
+                continue;
+            }
+
             if (hasResetPins)
             {
                 cfg.resetPins = getStringVec(interfaces, iface, "ResetPins");
@@ -1478,6 +1554,18 @@ void publishDBusRecoveryObject()
                     getString(interfaces, iface, "ResetDbusInterface");
                 cfg.dbusMethod =
                     getString(interfaces, iface, "ResetDbusMethod");
+
+                // Presence alone is not enough: an empty destination would
+                // only surface as a failed method call at reset time, long
+                // after the manager was published. Reject it here instead.
+                if (cfg.dbusService.empty() || cfg.dbusObject.empty() ||
+                    cfg.dbusInterface.empty() || cfg.dbusMethod.empty())
+                {
+                    lg2::error("USBRCMForceRecovery ResetDbus* properties must "
+                               "be non-empty at {PATH}",
+                               "PATH", emObjectPath);
+                    continue;
+                }
             }
 
             if (!recoveryManagerExists(chassisObjPath))
