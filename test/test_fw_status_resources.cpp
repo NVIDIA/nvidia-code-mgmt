@@ -1,5 +1,5 @@
 #include "dbusutils.hpp"
-#include "gpiod.hpp"
+#include "fw_status_fakes/gpiod.hpp"
 #include "i2c_utils.hpp"
 #include "recovery_commands.hpp"
 

@@ -792,8 +792,11 @@ test(
             '-Wl,--wrap=libusb_error_name',
             '-Wl,--wrap=libusb_strerror',
         ],
-        dependencies: [test_dep, nlohmann_json],
-        include_directories: recovery_parsers_inc,
+        dependencies: [test_dep, nlohmann_json, phosphor_logging],
+        include_directories: [
+            recovery_parsers_inc,
+            include_directories('usbrcm_lowlevel_fakes'),
+        ],
     ),
     workdir: meson.current_source_dir(),
 )
@@ -1387,6 +1390,33 @@ test(
             '../recovery_tool/mcu_recovery_tool',
             '../recovery_tool/ocp_recovery_tool',
             '../recovery_tool/usbrcm_recovery_tool',
+        ),
+    ),
+    workdir: meson.current_source_dir(),
+)
+
+test(
+    'test_usbrcm_recovery_manager',
+    executable(
+        'test_usbrcm_recovery_manager',
+        'test_usbrcm_recovery_manager.cpp',
+        '../fw-status/force_recovery/usbrcm_recovery_manager.cpp',
+        implicit_include_directories: false,
+        link_args: [
+            '-Wl,--wrap=nanosleep',
+            '-Wl,--wrap=clock_nanosleep',
+        ],
+        dependencies: [
+            test_dep,
+            sdbusplus,
+            phosphor_dbus_interfaces,
+            phosphor_logging,
+            fmt,
+            nlohmann_json,
+        ],
+        include_directories: include_directories(
+            'fw_status_fakes',
+            '../fw-status/force_recovery',
         ),
     ),
     workdir: meson.current_source_dir(),

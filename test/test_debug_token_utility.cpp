@@ -688,3 +688,25 @@ TEST_F(TestDebugTokenUtility, GetNextDebugTokenMcuTruncatedBody)
     EXPECT_EQ(serialNumber.size(), 16u);
     std::filesystem::remove(tmpPath);
 }
+
+TEST_F(TestDebugTokenUtility, GetNextDebugTokenRejectsTooSmallStructSize)
+{
+    // A token whose structSize < sizeof(TokenHeader) must be rejected
+    // immediately (exercises the structSize guard added in commit 50efa75).
+    std::string tmpPath = "/tmp/test_token_small_structsize.bin";
+    {
+        std::ofstream f(tmpPath, std::ios::binary);
+        TokenHeader hdr{};
+        std::memcpy(hdr.identifier, "EDTI", 4);
+        hdr.structSize = 1; // far smaller than sizeof(TokenHeader)
+        f.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+    }
+
+    std::ifstream pkg(tmpPath, std::ios::binary);
+    std::vector<uint8_t> tokenData;
+    std::vector<uint8_t> serialNumber;
+    auto* result = getNextDebugToken(pkg, 0, tokenData, serialNumber);
+    EXPECT_EQ(result, nullptr);
+    EXPECT_TRUE(tokenData.empty());
+    std::filesystem::remove(tmpPath);
+}

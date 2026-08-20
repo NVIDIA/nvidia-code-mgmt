@@ -1,6 +1,9 @@
 #include <libusb-1.0/libusb.h>
 #include <sys/wait.h>
 
+#include <gpiod.hpp>
+#include <sdbusplus/bus.hpp>
+
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -61,11 +64,6 @@ void setTransferResult(uint32_t address, int ret,
     controlTransferResults[address] = {.ret = ret, .data = std::move(data)};
 }
 
-void pushSystemStatus(std::string_view needle, int status)
-{
-    systemExpectations.push_back({std::string(needle), status});
-}
-
 class UsbRcmLowLevelTest : public ::testing::Test
 {
   protected:
@@ -74,6 +72,8 @@ class UsbRcmLowLevelTest : public ::testing::Test
         systemExpectations.clear();
         systemCommands.clear();
         controlTransferResults.clear();
+        gpiod::gpioFakes().clear();
+        test::usbrcm_fake_bus::reset();
         fakeDevice = reinterpret_cast<libusb_device*>(0x1234);
         deviceDescriptorResult = LIBUSB_SUCCESS;
         deviceDescriptor = {};
@@ -179,160 +179,238 @@ extern "C" const char* __wrap_libusb_strerror(enum libusb_error)
 #include "../recovery_tool/usbrcm_recovery_tool/progress_code_queue.cpp"
 #include "../recovery_tool/usbrcm_recovery_tool/usb_io.cpp"
 
-TEST_F(UsbRcmLowLevelTest, ForceRecoveryHelpersCoverSupportedConfigs)
+// --- GPIO fake helpers ---
+
+static void gpioFindFail(const std::string& name)
 {
-    using GpioConfig::ConfigType;
-
-    EXPECT_EQ(GpioConfig::parseConfigType("C2"), ConfigType::C2);
-    EXPECT_EQ(GpioConfig::parseConfigType("c1G2"), ConfigType::C1G2);
-    EXPECT_EQ(GpioConfig::parseConfigType("C2g4"), ConfigType::C2G4);
-    EXPECT_EQ(GpioConfig::parseConfigType("bad"), std::nullopt);
-
-    EXPECT_EQ(GpioConfig::getGpioPrefix(ConfigType::C2, 0), "B0_M1_CPU");
-    EXPECT_EQ(GpioConfig::getGpioPrefix(ConfigType::C2G4, 1), "BRD1_CPU");
-    EXPECT_EQ(GpioConfig::getResetPrefix(ConfigType::C2, 0), "B0_M1");
-    EXPECT_EQ(GpioConfig::getResetPrefix(ConfigType::C1G2, 0), "BRD0");
-    EXPECT_EQ(GpioConfig::getBoardCount(ConfigType::C2), 1);
-    EXPECT_EQ(GpioConfig::getBoardCount(ConfigType::C2G4), 2);
-
-    const auto gpioSequence =
-        GpioConfig::getGpioConfigSequence(ConfigType::C2, 0);
-    ASSERT_EQ(gpioSequence.size(), 6u);
-    EXPECT_EQ(gpioSequence.front().pinName, "B0_M1_CPU_FORCED_RECOVERY_L-O");
-    EXPECT_EQ(gpioSequence.back().value, 1);
-
-    const auto defaultSequence =
-        GpioConfig::getDefaultPinStatesConfigSequence(ConfigType::C1G2, 0);
-    ASSERT_EQ(defaultSequence.size(), 6u);
-    EXPECT_EQ(defaultSequence.front().value, 1);
-    EXPECT_EQ(GpioConfig::getResetAssert(ConfigType::C2G4, 1).pinName,
-              "BRD1_IST_SYS_RST_L-O");
-    EXPECT_EQ(GpioConfig::getResetRelease(ConfigType::C2, 0).value, 1);
+    gpiod::gpioFakes()[name].findSucceeds = false;
 }
 
-TEST_F(UsbRcmLowLevelTest, ForceRecoveryHelperDefaultsCoverInvalidEnumBranches)
+static void gpioRequestThrow(const std::string& name,
+                             const std::string& msg = "mock gpio error")
 {
-    const auto invalidType = static_cast<GpioConfig::ConfigType>(0x7F);
-
-    EXPECT_EQ(GpioConfig::getGpioPrefix(invalidType, 0), "");
-    EXPECT_EQ(GpioConfig::getResetPrefix(invalidType, 1), "");
-    EXPECT_EQ(GpioConfig::getBoardCount(invalidType), 0);
-
-    const auto invalidConfig =
-        GpioConfig::getGpioConfigSequence(invalidType, 0);
-    ASSERT_EQ(invalidConfig.size(), 6u);
-    EXPECT_EQ(invalidConfig.front().pinName, "_FORCED_RECOVERY_L-O");
-
-    const auto invalidDefaults =
-        GpioConfig::getDefaultPinStatesConfigSequence(invalidType, 1);
-    ASSERT_EQ(invalidDefaults.size(), 6u);
-    EXPECT_EQ(invalidDefaults.front().pinName, "_FORCED_RECOVERY_L-O");
+    auto& s = gpiod::gpioFakes()[name];
+    s.findSucceeds = true;
+    s.requestThrows = true;
+    s.throwMsg = msg;
 }
 
-TEST_F(UsbRcmLowLevelTest, ExecuteCommandAndSetGpioHandleSuccessAndFailure)
+static void gpioSetValueThrow(const std::string& name,
+                              const std::string& msg = "mock set_value error")
 {
-    EXPECT_FALSE(isValidPinName(""));
-    EXPECT_FALSE(isValidPinName("CPU;reboot"));
-    EXPECT_TRUE(isValidPinName("BRD0_CPU_RECOVERY_TYPE1-O"));
+    auto& s = gpiod::gpioFakes()[name];
+    s.findSucceeds = true;
+    s.setValueThrows = true;
+    s.throwMsg = msg;
+}
 
-    pushSystemStatus("timeout 5s echo test", 0 << 8);
-    EXPECT_TRUE(executeCommand("echo test"));
+static RecoveryPinConfig makeC2Config()
+{
+    RecoveryPinConfig cfg;
+    cfg.resetPins = {"B0_M1_IST_SYS_RST_L-O"};
+    cfg.strapPins = {
+        "B0_M1_CPU_FORCED_RECOVERY_L-O", "B0_M1_CPU_BOOT_DEV_SEL0-O",
+        "B0_M1_CPU_BOOT_DEV_SEL1-O",     "B0_M1_CPU_BOOT_DEV_SEL2-O",
+        "B0_M1_CPU_RECOVERY_TYPE0-O",    "B0_M1_CPU_RECOVERY_TYPE1-O",
+    };
+    cfg.strapActiveValues = {0, 0, 0, 0, 0, 1};
+    cfg.strapDefaultValues = {1, 0, 0, 0, 0, 1};
+    return cfg;
+}
 
-    pushSystemStatus("timeout 5s echo fail", SIGTERM);
-    EXPECT_FALSE(executeCommand("echo fail"));
+// --- forceRecoveryMode tests ---
 
-    pushSystemStatus("gpiofind BRD0_CPU_BOOT_DEV_SEL0-O", 0 << 8);
-    EXPECT_TRUE(setGpio("BRD0_CPU_BOOT_DEV_SEL0-O", 1));
-    ASSERT_FALSE(systemCommands.empty());
-    EXPECT_NE(systemCommands.back().find(
-                  "gpioset `gpiofind BRD0_CPU_BOOT_DEV_SEL0-O`=1"),
-              std::string::npos);
+TEST_F(UsbRcmLowLevelTest, ForceRecoveryHandlesResetGpioNotFound)
+{
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioFindFail("B0_M1_IST_SYS_RST_L-O");
+    forceRecoveryMode(cfg, out);
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_EQ(out["Error"], "Reset GPIO not found: B0_M1_IST_SYS_RST_L-O");
+}
 
-    EXPECT_FALSE(setGpio("bad pin", 0));
+TEST_F(UsbRcmLowLevelTest, ForceRecoveryHandlesResetGpioClaimFailure)
+{
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioRequestThrow("B0_M1_IST_SYS_RST_L-O", "gpio busy");
+    forceRecoveryMode(cfg, out);
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_EQ(out["Error"], "gpio busy");
+}
+
+TEST_F(UsbRcmLowLevelTest, ForceRecoveryHandlesStrapGpioFailure)
+{
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioFindFail("B0_M1_CPU_FORCED_RECOVERY_L-O");
+    forceRecoveryMode(cfg, out);
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_EQ(out["Error"], "Strap GPIO failed: B0_M1_CPU_FORCED_RECOVERY_L-O");
+}
+
+TEST_F(UsbRcmLowLevelTest, ForceRecoveryHandlesResetReleaseFailure)
+{
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioSetValueThrow("B0_M1_IST_SYS_RST_L-O", "set_value failed");
+    forceRecoveryMode(cfg, out);
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_EQ(out["Error"], "Reset release failed: set_value failed");
+}
+
+TEST_F(UsbRcmLowLevelTest, ForceRecoverySuccessfulPath)
+{
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    forceRecoveryMode(cfg, out);
+    EXPECT_EQ(out["Status"], "Successful");
+    EXPECT_EQ(gpiod::gpioFakes()["B0_M1_IST_SYS_RST_L-O"].lastSetValue, 1);
+}
+
+TEST_F(UsbRcmLowLevelTest, ForceRecoveryDbusResetFailsGracefully)
+{
+    // Empty resetPins → D-Bus mode: assertReset() calls dbusReset(true, cfg).
+    // Inject a fake D-Bus error so forceRecoveryMode catches the exception
+    // and returns a Failed status, exercising the assertReset D-Bus branch.
+    test::usbrcm_fake_bus::setCallThrows(true, "mock D-Bus error");
+    RecoveryPinConfig cfg;
+    cfg.dbusService = "com.example.Service";
+    cfg.dbusObject = "/com/example/obj";
+    cfg.dbusInterface = "com.example.Iface";
+    cfg.dbusMethod = "Reset";
+    cfg.strapPins = {"STRAP_A"};
+    cfg.strapActiveValues = {0};
+    cfg.strapDefaultValues = {1};
+
+    nlohmann::json out;
+    EXPECT_NO_THROW(forceRecoveryMode(cfg, out));
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_TRUE(out.contains("Error"));
+}
+
+TEST_F(UsbRcmLowLevelTest, ForceRecoveryDbusResetSuccessPath)
+{
+    // Empty resetPins → D-Bus mode: assertReset calls dbusReset(true, cfg)
+    // via the fake bus (no exception). Phase 1 returns an empty resetLines
+    // vector, so Phase 3 releaseReset takes the D-Bus else-branch and calls
+    // dbusReset(false, cfg) — covering both D-Bus branches in force_recovery.
+    RecoveryPinConfig cfg;
+    cfg.dbusService = "com.example.Service";
+    cfg.dbusObject = "/com/example/obj";
+    cfg.dbusInterface = "com.example.Iface";
+    cfg.dbusMethod = "Reset";
+
+    nlohmann::json out;
+    EXPECT_NO_THROW(forceRecoveryMode(cfg, out));
+    EXPECT_EQ(out["Status"], "Successful");
+}
+
+TEST_F(UsbRcmLowLevelTest, ForceRecoveryHandlesStrapGpioClaimThrow)
+{
+    // gpioRequestThrow covers claimGpio's catch block (request throws) rather
+    // than the find-fail path, exercising the false-branch of if(!line) and
+    // the catch body inside claimGpio.
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioRequestThrow("B0_M1_CPU_FORCED_RECOVERY_L-O", "gpio busy");
+    forceRecoveryMode(cfg, out);
+    EXPECT_EQ(out["Status"], "Failed");
+}
+
+TEST_F(UsbRcmLowLevelTest, StrapFailureRollsBackAlreadyDrivenStraps)
+{
+    // Fail on the *second* strap so strapLines is non-empty when the failure
+    // path runs. Strap 0 was driven to its active value (0) and must be rolled
+    // back to its default (1) rather than left in a half-strapped state, and
+    // the reset must be de-asserted since nothing retains it past return.
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioFindFail("B0_M1_CPU_BOOT_DEV_SEL0-O");
+    forceRecoveryMode(cfg, out);
+
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_EQ(out["Error"], "Strap GPIO failed: B0_M1_CPU_BOOT_DEV_SEL0-O");
+    EXPECT_EQ(gpiod::gpioFakes()["B0_M1_CPU_FORCED_RECOVERY_L-O"].lastSetValue,
+              cfg.strapDefaultValues[0]);
+    EXPECT_EQ(gpiod::gpioFakes()["B0_M1_IST_SYS_RST_L-O"].lastSetValue, 1);
+}
+
+TEST_F(UsbRcmLowLevelTest, StrapFailureRollbackToleratesSetValueThrow)
+{
+    // A strap that cannot be rolled back must not prevent the remaining
+    // rollback work or the reset release — covers the catch inside the
+    // rollback loop.
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioSetValueThrow("B0_M1_CPU_FORCED_RECOVERY_L-O", "rollback failed");
+    gpioFindFail("B0_M1_CPU_BOOT_DEV_SEL0-O");
+    EXPECT_NO_THROW(forceRecoveryMode(cfg, out));
+
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_EQ(out["Error"], "Strap GPIO failed: B0_M1_CPU_BOOT_DEV_SEL0-O");
+    EXPECT_EQ(gpiod::gpioFakes()["B0_M1_IST_SYS_RST_L-O"].lastSetValue, 1);
+}
+
+TEST_F(UsbRcmLowLevelTest, StrapFailureToleratesResetReleaseThrow)
+{
+    // Reset release failing during the strap-failure path must be logged and
+    // swallowed so the original strap error is what gets reported — covers the
+    // catch around releaseReset in the failure path.
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioFindFail("B0_M1_CPU_BOOT_DEV_SEL0-O");
+    gpioSetValueThrow("B0_M1_IST_SYS_RST_L-O", "reset release failed");
+    EXPECT_NO_THROW(forceRecoveryMode(cfg, out));
+
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_EQ(out["Error"], "Strap GPIO failed: B0_M1_CPU_BOOT_DEV_SEL0-O");
+}
+
+TEST_F(UsbRcmLowLevelTest, ForceRecoveryTwoResetPinsCoversLoopBackEdge)
+{
+    // Two reset pins make assertReset and releaseReset iterate twice,
+    // covering the for-loop back-edge branches in both functions.
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    cfg.resetPins.push_back("B0_M2_IST_SYS_RST_L-O");
+    forceRecoveryMode(cfg, out);
+    EXPECT_EQ(out["Status"], "Successful");
+}
+
+// --- setGPIODefaultPinStates tests ---
+
+TEST_F(UsbRcmLowLevelTest, SetGPIODefaultPinStatesHandlesPartialAndFullSuccess)
+{
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+
+    gpioFindFail("B0_M1_CPU_FORCED_RECOVERY_L-O");
+    setGPIODefaultPinStates(cfg, out);
+    EXPECT_EQ(out["Status"], "Failed");
+    EXPECT_EQ(out["Error"],
+              "GPIO restore failed: B0_M1_CPU_FORCED_RECOVERY_L-O");
+
+    out.clear();
+    gpiod::gpioFakes().clear();
+    setGPIODefaultPinStates(cfg, out);
+    EXPECT_EQ(out["Status"], "Successful");
 }
 
 TEST_F(UsbRcmLowLevelTest,
-       ForceRecoveryBoardInstanceHandlesResetAndReleaseFailures)
+       SetGPIODefaultPinStatesMultipleFailuresCoversSeparator)
 {
-    nlohmann::json jsonOutput;
-
-    pushSystemStatus("B0_M1_IST_SYS_RST_L-O", 1 << 8);
-    forceRecoveryMode("c2", jsonOutput);
-    EXPECT_EQ(jsonOutput["Status"], "Failed");
-    EXPECT_EQ(jsonOutput["Board0"]["Status"], "Failed");
-    EXPECT_EQ(jsonOutput["Board0"]["Error"],
-              "Failed to assert reset (pin B0_M1_IST_SYS_RST_L-O)");
-
-    jsonOutput.clear();
-    pushSystemStatus("B0_M1_IST_SYS_RST_L-O", 0 << 8);
-    pushSystemStatus("B0_M1_CPU_FORCED_RECOVERY_L-O", 0 << 8);
-    pushSystemStatus("B0_M1_CPU_BOOT_DEV_SEL0-O", 0 << 8);
-    pushSystemStatus("B0_M1_CPU_BOOT_DEV_SEL1-O", 0 << 8);
-    pushSystemStatus("B0_M1_CPU_BOOT_DEV_SEL2-O", 0 << 8);
-    pushSystemStatus("B0_M1_CPU_RECOVERY_TYPE0-O", 0 << 8);
-    pushSystemStatus("B0_M1_CPU_RECOVERY_TYPE1-O", 0 << 8);
-    pushSystemStatus("B0_M1_IST_SYS_RST_L-O", 1 << 8);
-    forceRecoveryMode("c2", jsonOutput);
-    EXPECT_EQ(jsonOutput["Status"], "Failed");
-    EXPECT_EQ(jsonOutput["Board0"]["Status"], "Failed");
-    EXPECT_EQ(jsonOutput["Board0"]["Error"],
-              "Failed to release reset (pin B0_M1_IST_SYS_RST_L-O)");
-}
-
-TEST_F(UsbRcmLowLevelTest, ForceRecoveryAndDefaultPinsHandleTopLevelStatuses)
-{
-    nlohmann::json jsonOutput;
-
-    forceRecoveryMode("unsupported", jsonOutput);
-    EXPECT_EQ(jsonOutput["Status"], "Failed");
-    EXPECT_EQ(jsonOutput["Error"],
-              "Invalid config type. Supported: c2, c1g2, c2g4");
-
-    for (int i = 0; i < 16; ++i)
-    {
-        pushSystemStatus("", 0 << 8);
-    }
-    forceRecoveryMode("c2g4", jsonOutput);
-    EXPECT_EQ(jsonOutput["Status"], "Successful");
-    EXPECT_EQ(jsonOutput["Board0"]["Status"], "Successful");
-    EXPECT_EQ(jsonOutput["Board1"]["Status"], "Successful");
-    EXPECT_EQ(systemCommands.size(), 16u);
-
-    jsonOutput.clear();
-    pushSystemStatus("B0_M1_CPU_FORCED_RECOVERY_L-O", 1 << 8);
-    setGPIODefaultPinStates("c2", jsonOutput);
-    EXPECT_EQ(jsonOutput["Status"], "Failed");
-    EXPECT_EQ(jsonOutput["Board0"]["Error"], "Deassert CPU forced recovery");
-}
-
-TEST_F(UsbRcmLowLevelTest,
-       ForceRecoveryCoversPartialBoardFailureAndDefaultStateSuccess)
-{
-    nlohmann::json jsonOutput;
-
-    pushSystemStatus("BRD0_IST_SYS_RST_L-O", 0 << 8);
-    pushSystemStatus("BRD1_IST_SYS_RST_L-O", 0 << 8);
-    pushSystemStatus("BRD0_CPU_FORCED_RECOVERY_L-O", 1 << 8);
-    for (int i = 0; i < 6; ++i)
-    {
-        pushSystemStatus("", 0 << 8);
-    }
-
-    forceRecoveryMode("c2g4", jsonOutput);
-    EXPECT_EQ(jsonOutput["Status"], "Failed");
-    EXPECT_EQ(jsonOutput["Board0"]["Status"], "Failed");
-    EXPECT_EQ(jsonOutput["Board0"]["Error"], "Assert CPU forced recovery");
-    EXPECT_EQ(jsonOutput["Board1"]["Status"], "Successful");
-
-    jsonOutput.clear();
-    for (int i = 0; i < 12; ++i)
-    {
-        pushSystemStatus("", 0 << 8);
-    }
-    setGPIODefaultPinStates("c2g4", jsonOutput);
-    EXPECT_EQ(jsonOutput["Status"], "Successful");
-    EXPECT_EQ(jsonOutput["Board0"]["Status"], "Successful");
-    EXPECT_EQ(jsonOutput["Board1"]["Status"], "Successful");
+    // Two failing pins exercise the ", " separator branch in the failure
+    // string build loop (the first pin uses "" prefix, the second uses ", ").
+    nlohmann::json out;
+    auto cfg = makeC2Config();
+    gpioFindFail("B0_M1_CPU_FORCED_RECOVERY_L-O");
+    gpioFindFail("B0_M1_CPU_BOOT_DEV_SEL0-O");
+    setGPIODefaultPinStates(cfg, out);
+    EXPECT_EQ(out["Status"], "Failed");
+    auto err = out["Error"].get<std::string>();
+    EXPECT_NE(err.find(", "), std::string::npos);
 }
 
 TEST_F(UsbRcmLowLevelTest, UsbIoReadRegister32CoversSuccessAndFailure)

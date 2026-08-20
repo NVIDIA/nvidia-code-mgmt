@@ -1,8 +1,8 @@
 #include "dbusutils.hpp"
 #include "force_recovery.hpp"
+#include "fw_status_fakes/gpiod.hpp"
 #include "get_recovery_status.hpp"
 #include "glacier_recovery_commands.hpp"
-#include "gpiod.hpp"
 #include "i2c_utils.hpp"
 #include "mctp_vdm_helper.hpp"
 #include "mcu_recovery_manager.hpp"
@@ -249,20 +249,27 @@ extern "C" int __wrap_udev_monitor_get_fd(struct udev_monitor*)
     return fakeUdevFd;
 }
 
+// Configurable return values for udev fake functions.  Tests set these to
+// drive specific branches in UdevMonitor::handleUdevEvent() and
+// UdevMonitor::extractPortPath().
+static struct udev_device* udevFakeDevice = nullptr;
+static const char* udevFakeAction = nullptr;
+static const char* udevFakeDevpath = nullptr;
+
 extern "C" struct udev_device*
     __wrap_udev_monitor_receive_device(struct udev_monitor*)
 {
-    return nullptr;
+    return udevFakeDevice;
 }
 
 extern "C" const char* __wrap_udev_device_get_action(struct udev_device*)
 {
-    return nullptr;
+    return udevFakeAction;
 }
 
 extern "C" const char* __wrap_udev_device_get_devpath(struct udev_device*)
 {
-    return nullptr;
+    return udevFakeDevpath;
 }
 
 extern "C" struct udev* __wrap_udev_unref(struct udev* ctx)
@@ -352,6 +359,9 @@ class FWStatusMainTest : public ::testing::Test
         test::fw_status_fake_usb_recovery::reset();
         test::fw_status_fake_usbrcm_mode::reset();
         test::fw_status_fake_vdm::reset();
+        udevFakeDevice = nullptr;
+        udevFakeAction = nullptr;
+        udevFakeDevpath = nullptr;
 
         ON_CALL(sharedSdbusMock,
                 sd_bus_add_match(testing::_, testing::_, testing::_, testing::_,
@@ -729,6 +739,49 @@ TEST_F(FWStatusMainTest,
 
     EXPECT_EQ(resource.apBootStatusQueryRetryInterval,
               std::chrono::milliseconds(1000));
+}
+
+TEST_F(FWStatusMainTest, GetIntVecRejectsNonRepresentableElements)
+{
+    constexpr auto intMax = std::numeric_limits<int>::max();
+
+    // Both entity-manager encodings of a well-formed integer array convert.
+    InterfaceMap good{
+        {"iface",
+         {{"AsDouble", std::vector<double>{0.0, 1.0, -1.0}},
+          {"AsUint64",
+           std::vector<uint64_t>{0, 1, static_cast<uint64_t>(intMax)}}}}};
+    EXPECT_EQ(getIntVec(good, "iface", "AsDouble"),
+              (std::vector<int>{0, 1, -1}));
+    EXPECT_EQ(getIntVec(good, "iface", "AsUint64"),
+              (std::vector<int>{0, 1, intMax}));
+
+    // A single bad element discards the whole array rather than silently
+    // substituting a truncated or wrapped value. Without the guard the
+    // out-of-range double cases would be undefined behavior.
+    const double huge = static_cast<double>(intMax) * 4.0;
+    InterfaceMap bad{
+        {"iface",
+         {{"Fractional", std::vector<double>{0.0, 0.5}},
+          {"NotFinite",
+           std::vector<double>{std::numeric_limits<double>::quiet_NaN()}},
+          {"Infinite",
+           std::vector<double>{std::numeric_limits<double>::infinity()}},
+          {"TooLarge", std::vector<double>{huge}},
+          {"TooSmall", std::vector<double>{-huge}},
+          {"Uint64TooLarge",
+           std::vector<uint64_t>{0, static_cast<uint64_t>(intMax) + 1}},
+          {"WrongType", std::string("not-an-array")}}}};
+
+    EXPECT_TRUE(getIntVec(bad, "iface", "Fractional").empty());
+    EXPECT_TRUE(getIntVec(bad, "iface", "NotFinite").empty());
+    EXPECT_TRUE(getIntVec(bad, "iface", "Infinite").empty());
+    EXPECT_TRUE(getIntVec(bad, "iface", "TooLarge").empty());
+    EXPECT_TRUE(getIntVec(bad, "iface", "TooSmall").empty());
+    EXPECT_TRUE(getIntVec(bad, "iface", "Uint64TooLarge").empty());
+    EXPECT_TRUE(getIntVec(bad, "iface", "WrongType").empty());
+    EXPECT_TRUE(getIntVec(bad, "iface", "Missing").empty());
+    EXPECT_TRUE(getIntVec(bad, "missing-iface", "Fractional").empty());
 }
 
 TEST_F(FWStatusMainTest, GetMCUConfigCoversUsbI2cAndMissingProperties)
@@ -1401,8 +1454,17 @@ TEST_F(FWStatusMainTest, RecoveryConfigDiscoveryAndPublishingCoverMainFlow)
                 usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
                 std::string("usbfr0"));
     setProperty("/xyz/openbmc_project/inventory/usbrcm-force0",
-                usbRcmForceRecoveryObjInterface, "ConfigType",
-                std::string("vera"));
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A", "STRAP_B"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force0",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0, 1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force0",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0, 1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force0",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_PIN"});
 
     setProperty("/xyz/openbmc_project/inventory/usbrcm0", usbRcmObjInterface,
                 "USBPort", std::string("1-9"));
@@ -1970,8 +2032,17 @@ TEST_F(FWStatusMainTest,
                 usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
                 std::string("usb-force-valid"));
     setProperty("/xyz/openbmc_project/inventory/usbrcm-force-valid",
-                usbRcmForceRecoveryObjInterface, "ConfigType",
-                std::string("vera"));
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A", "STRAP_B"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-valid",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0, 1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-valid",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0, 1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-valid",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_PIN"});
     EXPECT_NO_THROW(publishDBusRecoveryObject());
     EXPECT_EQ(recoveryModeManagers.size(), 1u);
     EXPECT_EQ(
@@ -2009,8 +2080,14 @@ TEST_F(FWStatusMainTest,
         }
         if (mask & 0x2)
         {
-            setProperty(path, usbRcmForceRecoveryObjInterface, "ConfigType",
-                        std::string("vera"));
+            setProperty(path, usbRcmForceRecoveryObjInterface, "StrapPins",
+                        std::vector<std::string>{"STRAP_A", "STRAP_B"});
+            setProperty(path, usbRcmForceRecoveryObjInterface,
+                        "StrapActiveValues", std::vector<double>{0.0, 1.0});
+            setProperty(path, usbRcmForceRecoveryObjInterface,
+                        "StrapDefaultValues", std::vector<double>{1.0, 1.0});
+            setProperty(path, usbRcmForceRecoveryObjInterface, "ResetPins",
+                        std::vector<std::string>{"RST_PIN"});
         }
 
         EXPECT_NO_THROW(publishDBusRecoveryObject());
@@ -2049,29 +2126,422 @@ TEST_F(FWStatusMainTest,
                 mcuObjInterface, "ForceRecoveryChassisObject",
                 std::string("mcu-type-mismatch"));
 
+    // Wrong chassis type: getString() catches the exception and returns "".
+    // All strap/reset props are valid so validation passes; the manager is
+    // created with an empty chassis name → path ends with bare "/chassis/".
     setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-chassis",
                 usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
                 static_cast<uint64_t>(1));
     setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-chassis",
-                usbRcmForceRecoveryObjInterface, "ConfigType",
-                std::string("vera"));
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-chassis",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-chassis",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-chassis",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
 
+    // Wrong StrapActiveValues type: getIntVec() returns {} → size mismatch →
+    // validation rejects this config and no manager is created.
     setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-config",
                 usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
                 std::string("usb-type-mismatch"));
     setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-config",
-                usbRcmForceRecoveryObjInterface, "ConfigType",
-                static_cast<uint64_t>(2));
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-config",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::string("bad-type"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-config",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-config",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
 
     EXPECT_NO_THROW(publishDBusRecoveryObject());
     EXPECT_EQ(resources.size(), 1u);
-    ASSERT_EQ(recoveryModeManagers.size(), 3u);
-    EXPECT_EQ(test::fw_status_fake_usbrcm_mode::createdPaths.size(), 2u);
+    ASSERT_EQ(recoveryModeManagers.size(), 2u);
+    EXPECT_EQ(test::fw_status_fake_usbrcm_mode::createdPaths.size(), 1u);
     EXPECT_EQ(test::fw_status_fake_usbrcm_mode::createdPaths[0],
               "/xyz/openbmc_project/inventory/system/chassis/");
-    EXPECT_EQ(
-        test::fw_status_fake_usbrcm_mode::createdPaths[1],
-        "/xyz/openbmc_project/inventory/system/chassis/usb-type-mismatch");
+}
+
+TEST_F(FWStatusMainTest, PublishRecoveryObjectCoversUSBRCMForceConfigVariants)
+{
+    using test::fw_status_fake_dbus::setProperty;
+
+    auto resetPublishState = [&] {
+        test::fw_status_fake_dbus::reset();
+        test::fw_status_fake_usbrcm_mode::reset();
+        resources.clear();
+        recoveryModeManagers.clear();
+        mcuRecoveryManager.reset();
+    };
+
+    // D-Bus reset mode: ResetDbusService/Object/Interface/Method instead of
+    // ResetPins. Exercises the else-branch of `if (hasResetPins)`.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dbus-reset",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-dbus-reset"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dbus-reset",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dbus-reset",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dbus-reset",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dbus-reset",
+                usbRcmForceRecoveryObjInterface, "ResetDbusService",
+                std::string("com.example.Service"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dbus-reset",
+                usbRcmForceRecoveryObjInterface, "ResetDbusObject",
+                std::string("/com/example/obj"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dbus-reset",
+                usbRcmForceRecoveryObjInterface, "ResetDbusInterface",
+                std::string("com.example.Iface"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dbus-reset",
+                usbRcmForceRecoveryObjInterface, "ResetDbusMethod",
+                std::string("Reset"));
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_EQ(recoveryModeManagers.size(), 1u);
+
+    // Present-but-empty ResetDbus* values: hasProperty() is satisfied for all
+    // four, so the outer validation passes, but each blank destination must be
+    // rejected rather than deferred to a failing method call at reset time.
+    // One sub-case per field so every short-circuit term is exercised.
+    for (const auto* blankField : {"ResetDbusService", "ResetDbusObject",
+                                   "ResetDbusInterface", "ResetDbusMethod"})
+    {
+        resetPublishState();
+        const std::string path =
+            "/xyz/openbmc_project/inventory/usbrcm-force-blank-dbus";
+        setProperty(path, usbRcmForceRecoveryObjInterface,
+                    "ForceRecoveryChassisObject",
+                    std::string("usb-blank-dbus"));
+        setProperty(path, usbRcmForceRecoveryObjInterface, "StrapPins",
+                    std::vector<std::string>{"STRAP_A"});
+        setProperty(path, usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                    std::vector<double>{0.0});
+        setProperty(path, usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                    std::vector<double>{1.0});
+        setProperty(path, usbRcmForceRecoveryObjInterface, "ResetDbusService",
+                    std::string("com.example.Service"));
+        setProperty(path, usbRcmForceRecoveryObjInterface, "ResetDbusObject",
+                    std::string("/com/example/obj"));
+        setProperty(path, usbRcmForceRecoveryObjInterface, "ResetDbusInterface",
+                    std::string("com.example.Iface"));
+        setProperty(path, usbRcmForceRecoveryObjInterface, "ResetDbusMethod",
+                    std::string("Reset"));
+        // Blank out exactly one field, leaving the property present.
+        setProperty(path, usbRcmForceRecoveryObjInterface, blankField,
+                    std::string(""));
+
+        EXPECT_NO_THROW(publishDBusRecoveryObject());
+        EXPECT_EQ(recoveryModeManagers.size(), 0u)
+            << "empty " << blankField << " should be rejected";
+    }
+
+    // StrapActiveValues as vector<uint64_t>: exercises the uint64_t branch of
+    // getIntVec() (vs the vector<double> branch above).
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-uint64",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-uint64"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-uint64",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-uint64",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<uint64_t>{0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-uint64",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<uint64_t>{1});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-uint64",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_EQ(recoveryModeManagers.size(), 1u);
+
+    // Empty ResetPins: hasResetPins=true but getStringVec returns {} →
+    // cfg.resetPins.empty() → skip.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-empty-reset",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-empty-reset"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-empty-reset",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-empty-reset",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-empty-reset",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-empty-reset",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+
+    // StrapDefaultValues size mismatch (2 straps, 1 default) → skip.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-default-mismatch",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-default-mismatch"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-default-mismatch",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A", "STRAP_B"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-default-mismatch",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0, 1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-default-mismatch",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-default-mismatch",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+
+    // Wrong StrapPins type: getStringVec() catches bad_variant_access and
+    // returns {} → strapPins.empty() triggers the strap array validation guard.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-strap-type",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-bad-strap-type"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-strap-type",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                static_cast<uint64_t>(99));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-strap-type",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-strap-type",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-bad-strap-type",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+
+    // Out-of-domain strap value: arrays are the right length but 2 is not a
+    // valid GPIO level, so the config is rejected instead of being driven
+    // onto the strap lines.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-active",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-nonbinary-active"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-active",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-active",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{2.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-active",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-active",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+
+    // Same guard on StrapDefaultValues: covers the second half of the ||.
+    // A negative default would drive an undefined level on restore.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-default",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-nonbinary-default"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-default",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-default",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-default",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{-1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-nonbinary-default",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+
+    // Duplicate chassis: second config with the same chassis path is skipped
+    // by recoveryManagerExists(), covering the "already exists" branch.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-a",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-dup"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-a",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-a",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-a",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-a",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-b",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-dup"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-b",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-b",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-b",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-dup-b",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_EQ(recoveryModeManagers.size(), 1u);
+
+    // Missing StrapActiveValues: outer validation short-circuits at condition 3
+    // (!hasP(StrapActiveValues) = true) — chassis and StrapPins are present.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-active",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-no-active"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-active",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-active",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+
+    // Missing StrapDefaultValues: short-circuits at condition 4.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-default",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-no-default"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-default",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-default",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-default",
+                usbRcmForceRecoveryObjInterface, "ResetPins",
+                std::vector<std::string>{"RST_A"});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+
+    // All strap props present but no reset at all: reaches condition 5 where
+    // (!hasResetPins && !hasResetDbus) = true → outer validation fails.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-reset",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-no-reset"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-reset",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-reset",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-no-reset",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+
+    // Partial D-Bus reset (only ResetDbusService set): hasP(ResetDbusService)
+    // = true but hasP(ResetDbusObject) = false → hasResetDbus short-circuits.
+    // Combined with hasResetPins = false, condition 5 fires → skip.
+    resetPublishState();
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-partial-dbus",
+                usbRcmForceRecoveryObjInterface, "ForceRecoveryChassisObject",
+                std::string("usb-partial-dbus"));
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-partial-dbus",
+                usbRcmForceRecoveryObjInterface, "StrapPins",
+                std::vector<std::string>{"STRAP_A"});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-partial-dbus",
+                usbRcmForceRecoveryObjInterface, "StrapActiveValues",
+                std::vector<double>{0.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-partial-dbus",
+                usbRcmForceRecoveryObjInterface, "StrapDefaultValues",
+                std::vector<double>{1.0});
+    setProperty("/xyz/openbmc_project/inventory/usbrcm-force-partial-dbus",
+                usbRcmForceRecoveryObjInterface, "ResetDbusService",
+                std::string("com.example.Service"));
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_TRUE(recoveryModeManagers.empty());
+}
+
+TEST_F(FWStatusMainTest, PublishRecoveryObjectCoversGetOptionalUint64Branches)
+{
+    using test::fw_status_fake_dbus::setProperty;
+
+    auto resetState = [&] {
+        test::fw_status_fake_dbus::reset();
+        resources.clear();
+        recoveryModeManagers.clear();
+    };
+
+    // Sub-case 1: PollingIntervalMs set as uint64_t — exercises the
+    // !hasProperty→false branch and get_if<uint64_t>→true inside
+    // getOptionalUint64() (previously only the !hasProperty→true path
+    // was taken because no test set this optional property).
+    resetState();
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll",
+                gpioErotObjInterface, "MctpEID", static_cast<uint64_t>(31));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll",
+                gpioErotObjInterface, "GPIO", std::string("GPIO_EROT_POLL"));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll",
+                gpioErotObjInterface, "I2CBus", static_cast<uint64_t>(9));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll",
+                gpioErotObjInterface, "I2CAddress",
+                static_cast<uint64_t>(0x65));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll",
+                gpioErotObjInterface, "PollingIntervalMs",
+                static_cast<uint64_t>(500));
+    test::fw_status_fake_gpio::lines["GPIO_EROT_POLL"] = {};
+    test::fw_status_fake_gpio::lines["GPIO_EROT_POLL"].eventFd = makeEventFd();
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_GE(resources.size(), 1u);
+
+    // Sub-case 2: PollingIntervalMs set as wrong type (string) — exercises the
+    // get_if<uint64_t>→false branch (falls through to the warning + return
+    // nullopt path).
+    resetState();
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll2",
+                gpioErotObjInterface, "MctpEID", static_cast<uint64_t>(32));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll2",
+                gpioErotObjInterface, "GPIO", std::string("GPIO_EROT_POLL2"));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll2",
+                gpioErotObjInterface, "I2CBus", static_cast<uint64_t>(9));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll2",
+                gpioErotObjInterface, "I2CAddress",
+                static_cast<uint64_t>(0x65));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot_poll2",
+                gpioErotObjInterface, "PollingIntervalMs",
+                std::string("not-a-uint64"));
+    test::fw_status_fake_gpio::lines["GPIO_EROT_POLL2"] = {};
+    test::fw_status_fake_gpio::lines["GPIO_EROT_POLL2"].eventFd = makeEventFd();
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    EXPECT_GE(resources.size(), 1u);
 }
 
 TEST_F(FWStatusMainTest, CheckEntityManagerAvailabilityIgnoresUnrelatedSignal)
@@ -2562,6 +3032,96 @@ TEST_F(FWStatusMainTest, ReconcileOffRefreshesNowAndStopsSettleTimer)
     EXPECT_EQ(resourcePtr->health(), HealthServer::HealthType::OK);
     EXPECT_EQ(resourcePtr->state(),
               OperationalStatusServer::StateType::Enabled);
+}
+
+// Covers both branches of `if (name.empty())` in
+// BaseResource::commitRecoveryModeError(): true when path ends with '/'
+// (empty last segment), false when the path has a normal leaf.
+TEST_F(FWStatusMainTest, CommitRecoveryModeErrorCoversBothNameBranches)
+{
+    // true branch: path.substr(path.find_last_of('/') + 1) is empty
+    BaseResource r1(sharedMockBus, "/chassis/");
+    r1.commitRecoveryModeError(1);
+
+    // false branch: last segment is "usb0"
+    BaseResource r2(sharedMockBus, "/chassis/usb0");
+    r2.commitRecoveryModeError(2);
+}
+
+// Creates a USBRcmResource with a real UdevMonitor, covering the true branch
+// of `if (this->udevMonitor)` in the constructor and
+// `if (udevMonitor)` in the destructor.
+TEST_F(FWStatusMainTest, USBRcmResourceWithUdevMonitorCoversCallbackBranches)
+{
+    auto monitor = std::make_shared<UdevMonitor>(getEvent());
+    USBRcmResource resource(sharedMockBus, "/test/usb0", 34, "1-1",
+                            "/test/companion", monitor);
+}
+
+// Drives handleUdevEvent() and extractPortPath() through all their branches
+// by direct invocation (possible because #define private public is in effect).
+//
+// Branch map:
+//   handleUdevEvent:
+//     if(!dev) true  → 1st call (udevFakeDevice=null)
+//     if(!dev) false → 2nd+ calls
+//     if(!action) true  → 2nd call (udevFakeAction=null)
+//     if(!action) false → 3rd+ calls
+//     if(portPath.empty()) true  → 3rd call (devpath=null → extractPortPath "")
+//     if(portPath.empty()) false → 5th+ calls (devpath="/sys/.../1-1" → "1-1")
+//     &&: action!="add" (short-circuit false) → 5th call (action="remove")
+//     &&: action=="add" && !contains → 6th call (no callback registered)
+//     &&: action=="add" &&  contains → 7th call (callback registered)
+//   extractPortPath:
+//     if(!devpath) true  → 3rd call (devpath=null)
+//     if(!devpath) false → 4th+ calls
+//     if(!portPath.empty()) true  → 5th+ calls (filename="1-1")
+//     if(!portPath.empty()) false → 4th call (path="/sys/devices/" →
+//     filename="")
+TEST_F(FWStatusMainTest, UdevMonitorHandleEventCoversAllBranches)
+{
+    auto monitor = std::make_shared<UdevMonitor>(getEvent());
+
+    // 1st: if(!dev) true
+    monitor->handleUdevEvent();
+
+    // 2nd: if(!dev) false; if(!action) true
+    udevFakeDevice = reinterpret_cast<struct udev_device*>(0x1234);
+    monitor->handleUdevEvent();
+
+    // 3rd: if(!action) false; extractPortPath if(!devpath) true → "" →
+    // if(portPath.empty()) true
+    static const char addAction[] = "add";
+    udevFakeAction = addAction;
+    udevFakeDevpath = nullptr;
+    monitor->handleUdevEvent();
+
+    // 4th: extractPortPath if(!devpath) false; filename="" →
+    // if(!portPath.empty()) false → ""
+    //      → if(portPath.empty()) true
+    static const char trailingSlash[] = "/sys/devices/";
+    udevFakeDevpath = trailingSlash;
+    monitor->handleUdevEvent();
+
+    // 5th: if(!portPath.empty()) true → portPath="1-1"; action="remove" → &&
+    // short-circuit false → else
+    static const char removeAction[] = "remove";
+    udevFakeAction = removeAction;
+    static const char devpath[] = "/sys/devices/usb1/1-1";
+    udevFakeDevpath = devpath;
+    monitor->handleUdevEvent();
+
+    // 6th: action="add", portPath="1-1", no callback → && second operand false
+    // → else
+    udevFakeAction = addAction;
+    monitor->handleUdevEvent();
+
+    // 7th: action="add", portPath="1-1", callback registered → && true →
+    // if-body
+    bool fired = false;
+    monitor->registerCallback("1-1", [&fired]() { fired = true; });
+    monitor->handleUdevEvent();
+    EXPECT_TRUE(fired);
 }
 
 } // namespace

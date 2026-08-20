@@ -701,7 +701,7 @@ TEST_F(FWStatusMiscTest, USBRCMRecoveryManagerCoversStatusBranches)
 {
     nvidia::recovery::USBRCMRecoveryManager manager(
         bus, "vera0", "/xyz/openbmc_project/inventory/system/chassis/vera0",
-        "c2");
+        RecoveryPinConfig{});
 
     test::fw_status_fake_usb_recovery::pushReply(false, {{"Error", "boom"}});
     EXPECT_FALSE(manager.areDevicesInRecovery());
@@ -731,7 +731,8 @@ TEST_F(FWStatusMiscTest,
 {
     nvidia::recovery::USBRCMRecoveryManager manager(
         bus, "vera-missing",
-        "/xyz/openbmc_project/inventory/system/chassis/vera-missing", "c2");
+        "/xyz/openbmc_project/inventory/system/chassis/vera-missing",
+        RecoveryPinConfig{});
 
     test::fw_status_fake_usb_recovery::pushReply(
         true, nlohmann::json::array({{{"USB Port Path", "1-1"}},
@@ -745,38 +746,38 @@ TEST_F(FWStatusMiscTest,
     test::fw_status_fake_usb_recovery::pushReply(
         true, nlohmann::json::array({{{"USB Port Path", "1-3"},
                                       {"Recovery Status", "In Recovery"}}}));
-    EXPECT_NO_THROW(manager.setRecoveryMode());
-    EXPECT_EQ(test::fw_status_fake_force_recovery::forceCalls,
-              std::vector<std::string>{"c2"});
-    EXPECT_EQ(test::fw_status_fake_force_recovery::defaultCalls,
-              std::vector<std::string>{"c2"});
+    // forceResult has no "Status" key → forceRecoveryMode triggers an error
+    // path and setRecoveryMode throws; setGPIODefaultPinStates is not reached.
+    EXPECT_THROW(manager.setRecoveryMode(), sdbusplus::exception_t);
+    EXPECT_EQ(test::fw_status_fake_force_recovery::forceCallCount, 1);
+    EXPECT_EQ(test::fw_status_fake_force_recovery::defaultCallCount, 0);
 }
 
 TEST_F(FWStatusMiscTest, USBRCMRecoveryManagerSetRecoveryModeSuccessAndFailure)
 {
     nvidia::recovery::USBRCMRecoveryManager success(
         bus, "vera1", "/xyz/openbmc_project/inventory/system/chassis/vera1",
-        "c2");
+        RecoveryPinConfig{});
 
     test::fw_status_fake_usb_recovery::pushReply(
         true, nlohmann::json::array({{{"USB Port Path", "1-1"},
                                       {"Recovery Status", "In Recovery"}}}));
     success.setRecoveryMode();
-    EXPECT_EQ(test::fw_status_fake_force_recovery::forceCalls,
-              std::vector<std::string>{"c2"});
-    EXPECT_EQ(test::fw_status_fake_force_recovery::defaultCalls,
-              std::vector<std::string>{"c2"});
+    EXPECT_EQ(test::fw_status_fake_force_recovery::forceCallCount, 1);
+    EXPECT_EQ(test::fw_status_fake_force_recovery::defaultCallCount, 1);
 
     test::fw_status_fake_force_recovery::reset();
     nvidia::recovery::USBRCMRecoveryManager failure(
         bus, "vera2", "/xyz/openbmc_project/inventory/system/chassis/vera2",
-        "c1g2");
+        RecoveryPinConfig{});
     test::fw_status_fake_force_recovery::forceResult = {{"Status", "Failed"},
                                                         {"Error", "gpio"}};
     test::fw_status_fake_force_recovery::defaultResult = {
         {"Status", "Failed"},
         {"Error", "default gpio"},
     };
+    // These replies are never consumed: forceRecoveryMode returns "Failed" and
+    // performForceRecovery throws before entering the retry loop.
     test::fw_status_fake_usb_recovery::pushReply(
         true,
         nlohmann::json::array({{{"USB Port Path", "2-1"},
@@ -790,14 +791,14 @@ TEST_F(FWStatusMiscTest, USBRCMRecoveryManagerSetRecoveryModeSuccessAndFailure)
         nlohmann::json::array({{{"USB Port Path", "2-1"},
                                 {"Recovery Status", "Not in Recovery"}}}));
     EXPECT_THROW(failure.setRecoveryMode(), sdbusplus::exception_t);
-    EXPECT_EQ(test::fw_status_fake_force_recovery::forceCalls,
-              std::vector<std::string>{"c1g2"});
-    EXPECT_EQ(test::fw_status_fake_force_recovery::defaultCalls,
-              std::vector<std::string>{"c1g2"});
+    EXPECT_EQ(test::fw_status_fake_force_recovery::forceCallCount, 1);
+    // setGPIODefaultPinStates is not reached when forceRecoveryMode fails.
+    EXPECT_EQ(test::fw_status_fake_force_recovery::defaultCallCount, 0);
 
     nvidia::recovery::USBRCMRecoveryManager emptyCfg(
         bus, "vera3", "/xyz/openbmc_project/inventory/system/chassis/vera3",
-        "");
+        RecoveryPinConfig{});
+    // forceResult is still "Failed" from above; setRecoveryMode throws.
     EXPECT_THROW(emptyCfg.setRecoveryMode(), sdbusplus::exception_t);
 }
 

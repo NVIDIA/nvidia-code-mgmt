@@ -1,6 +1,5 @@
 #include "dbusutils.hpp"
 #include "glacier_recovery_commands.hpp"
-#include "gpiod.hpp"
 #include "mctp_vdm_helper.hpp"
 
 #include <unistd.h>

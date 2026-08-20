@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../fw-status/force_recovery/recovery_mode_manager_base.hpp"
+#include "force_recovery.hpp"
 
 #include <string>
 #include <vector>
@@ -26,7 +27,7 @@ class USBRCMRecoveryManager : public RecoveryModeManagerBase
 {
   public:
     USBRCMRecoveryManager(sdbusplus::bus_t& bus, std::string chassisName,
-                          std::string objPath, std::string) :
+                          std::string objPath, RecoveryPinConfig) :
         RecoveryModeManagerBase(bus, std::move(chassisName), std::move(objPath))
     {
         if (test::fw_status_fake_usbrcm_mode::throwOnCreate)

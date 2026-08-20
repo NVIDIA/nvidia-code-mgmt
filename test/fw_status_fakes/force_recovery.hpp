@@ -5,34 +5,46 @@
 #include <string>
 #include <vector>
 
+struct RecoveryPinConfig
+{
+    std::vector<std::string> resetPins;
+    std::string dbusService;
+    std::string dbusObject;
+    std::string dbusInterface;
+    std::string dbusMethod;
+    std::vector<std::string> strapPins;
+    std::vector<int> strapActiveValues;
+    std::vector<int> strapDefaultValues;
+};
+
 namespace test::fw_status_fake_force_recovery
 {
 
-inline std::vector<std::string> forceCalls{};
-inline std::vector<std::string> defaultCalls{};
+inline int forceCallCount{};
+inline int defaultCallCount{};
 inline nlohmann::json forceResult = {{"Status", "Successful"}};
 inline nlohmann::json defaultResult = {{"Status", "Successful"}};
 
 inline void reset()
 {
-    forceCalls.clear();
-    defaultCalls.clear();
+    forceCallCount = 0;
+    defaultCallCount = 0;
     forceResult = {{"Status", "Successful"}};
     defaultResult = {{"Status", "Successful"}};
 }
 
 } // namespace test::fw_status_fake_force_recovery
 
-inline void forceRecoveryMode(const std::string& configType,
+inline void forceRecoveryMode(const RecoveryPinConfig& /*cfg*/,
                               nlohmann::json& jsonOutput)
 {
-    test::fw_status_fake_force_recovery::forceCalls.push_back(configType);
+    ++test::fw_status_fake_force_recovery::forceCallCount;
     jsonOutput = test::fw_status_fake_force_recovery::forceResult;
 }
 
-inline void setGPIODefaultPinStates(const std::string& configType,
+inline void setGPIODefaultPinStates(const RecoveryPinConfig& /*cfg*/,
                                     nlohmann::json& jsonOutput)
 {
-    test::fw_status_fake_force_recovery::defaultCalls.push_back(configType);
+    ++test::fw_status_fake_force_recovery::defaultCallCount;
     jsonOutput = test::fw_status_fake_force_recovery::defaultResult;
 }

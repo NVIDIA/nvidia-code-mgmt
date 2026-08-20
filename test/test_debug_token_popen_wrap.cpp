@@ -560,6 +560,22 @@ TEST_F(DebugTokenPopenTest, EnableBackgroundCopyParseException)
     EXPECT_NE(result, 0);
 }
 
+TEST_F(DebugTokenPopenTest, DisableBackgroundCopyReturnsErrorOnEmptyParseOutput)
+{
+    // Command succeeds (retCode=0) but output has no "RX:" line →
+    // parseCommandOutput returns {} → rxBytes.size()==0 else-branch fires.
+    popen_mock::set("teid = 31\nACK\n");
+    int result = udt.disableBackgroundCopy(31);
+    EXPECT_NE(result, 0);
+}
+
+TEST_F(DebugTokenPopenTest, EnableBackgroundCopyReturnsErrorOnEmptyParseOutput)
+{
+    popen_mock::set("teid = 31\nACK\n");
+    int result = udt.enableBackgroundCopy(31);
+    EXPECT_NE(result, 0);
+}
+
 // ========================== queryDebugTokenV1 =============================
 // Response length: 19 bytes. Completion code at byte 8. Token status at byte 9.
 

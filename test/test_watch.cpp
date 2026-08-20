@@ -390,3 +390,40 @@ TEST(WatchTest, CallbackIgnoresDirectoryCloseEvents)
     sd_event_unref(loop);
     std::filesystem::remove_all(dir);
 }
+
+TEST(WatchTest, CallbackBreaksOnOversizedEventRecord)
+{
+    // Creates an inotify buffer whose event->len (=1) makes the claimed record
+    // size exceed the buffer length, exercising the `offset + recordSize >
+    // bytes` break path added in the Coverity fix.
+    WatchWrapGuard wrapGuard;
+    auto dir = uniqueWatchDir("oversized");
+    sd_event* loop = nullptr;
+    ASSERT_GE(sd_event_default(&loop), 0);
+
+    int callbackCount = 0;
+    {
+        Watch watch(loop, {dir}, [&](std::string&) {
+            callbackCount++;
+            return 0;
+        });
+        ASSERT_FALSE(watch.wds.empty());
+
+        // Header-only buffer with event->len=1 → recordSize = headerSize + 1
+        // which exceeds the buffer length of headerSize → the loop breaks.
+        const auto headerSize = offsetof(inotify_event, name);
+        std::vector<uint8_t> buf(headerSize);
+        auto* ev = reinterpret_cast<inotify_event*>(buf.data());
+        ev->wd = watch.wds.begin()->first;
+        ev->mask = IN_CLOSE_WRITE;
+        ev->cookie = 0;
+        ev->len = 1;
+        wrapState.syntheticRead = buf;
+
+        EXPECT_EQ(Watch::callback(nullptr, watch.fd, EPOLLIN, &watch), 0);
+        EXPECT_EQ(callbackCount, 0);
+    }
+
+    sd_event_unref(loop);
+    std::filesystem::remove_all(dir);
+}
