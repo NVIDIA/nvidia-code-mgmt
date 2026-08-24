@@ -711,6 +711,8 @@ void GPIOResource::startAPBootStatusCheck()
 
 void GPIOResource::runAPBootStatusQuery()
 {
+    disarmAPBootStatusTimer();
+
     if (!apBootStatusCheckActive || !hasAP() || !mctpVdmHelper)
     {
         return;
@@ -731,9 +733,11 @@ void GPIOResource::runAPBootStatusQuery()
 
     auto rc = queryAPBootStatusAsync();
     apBootStatusCo = rc.handle;
+    rc.handle = nullptr;
 
     if (apBootStatusCo.done())
     {
+        apBootStatusCo.destroy();
         apBootStatusCo = nullptr;
     }
 }
@@ -755,11 +759,12 @@ void GPIOResource::scheduleAPBootStatusQuery(std::chrono::seconds delay)
     try
     {
         /*
-         * Start as periodic rather than one-shot. Retries are scheduled from
-         * within this timer's own expiry callback, and sdbusplus::Timer stops a
-         * one-shot timer after the callback returns, which would silently kill
-         * the retry that was just armed. A periodic timer is left enabled, and
-         * the loop is terminated explicitly by stopAPBootStatusCheck().
+         * Armed as periodic even though a single shot is wanted: sdbusplus::Timer
+         * disables a SD_EVENT_ONESHOT source after its callback returns, which
+         * would silently cancel a retry armed from inside that callback. That
+         * happens whenever the MCTP send fails synchronously, so the coroutine
+         * never suspends. runAPBootStatusQuery() disarms the timer on entry to
+         * keep the single-shot behaviour.
          */
         apBootStatusRetryTimer->start(delay, true);
     }
@@ -776,11 +781,8 @@ void GPIOResource::scheduleAPBootStatusRetry()
     scheduleAPBootStatusQuery(apBootStatusQueryRetryInterval);
 }
 
-void GPIOResource::stopAPBootStatusCheck()
+void GPIOResource::disarmAPBootStatusTimer()
 {
-    apBootStatusCheckActive = false;
-    apBootStatusQueryRetryCount = 0;
-
     if (!apBootStatusRetryTimer || !apBootStatusRetryTimer->isRunning())
     {
         return;
@@ -794,6 +796,14 @@ void GPIOResource::stopAPBootStatusCheck()
             "OBJ", apResource ? apResource->getObjectPath() : std::string{},
             "RC", rc);
     }
+}
+
+void GPIOResource::stopAPBootStatusCheck()
+{
+    apBootStatusCheckActive = false;
+    apBootStatusQueryRetryCount = 0;
+
+    disarmAPBootStatusTimer();
 }
 
 mctp_vdm::requester::Coroutine GPIOResource::queryAPBootStatusAsync()
