@@ -23,6 +23,7 @@
 #include <cerrno>
 #include <chrono>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <system_error>
 
@@ -32,8 +33,9 @@ constexpr auto gpioEventRetryInterval = std::chrono::seconds(5);
 constexpr auto defaultPollingInterval = std::chrono::milliseconds(1000);
 constexpr auto minPollingInterval = std::chrono::milliseconds(100);
 constexpr auto apBootStatusEndpointReadyDelay = std::chrono::seconds(1);
-constexpr auto apBootStatusQueryRetryInterval = std::chrono::seconds(1);
-constexpr size_t maxAPBootStatusQueryRetries = 10;
+constexpr auto defaultAPBootStatusQueryRetryInterval =
+    std::chrono::milliseconds(1000);
+constexpr size_t defaultMaxAPBootStatusQueryRetries = 10;
 constexpr auto erotRecoveryMonitorInterval = std::chrono::seconds(60);
 
 GPIOResource::MonitorMode parseMonitorMode(const std::string& monitorMode)
@@ -99,6 +101,64 @@ std::chrono::milliseconds
     return interval;
 }
 
+static std::chrono::milliseconds
+    getAPBootStatusQueryRetryInterval(std::optional<uint64_t> retryIntervalMs)
+{
+    if (!retryIntervalMs.has_value())
+    {
+        return defaultAPBootStatusQueryRetryInterval;
+    }
+
+    if (retryIntervalMs.value() == 0)
+    {
+        lg2::warning(
+            "APBootStatusRetryIntervalMs is 0. Use {VALUE} ms as default",
+            "VALUE", defaultAPBootStatusQueryRetryInterval.count());
+        return defaultAPBootStatusQueryRetryInterval;
+    }
+
+    // Timer::start() takes microseconds and adds the duration to the current
+    // monotonic time, so values near microseconds::max() would overflow on
+    // conversion. Cap at a practical ceiling well within range.
+    constexpr uint64_t maxRetryIntervalMs = 3'600'000; // 1 hour
+    if (retryIntervalMs.value() > maxRetryIntervalMs)
+    {
+        lg2::warning(
+            "APBootStatusRetryIntervalMs {VALUE} ms exceeds supported range. Use {DEFAULT} ms as default",
+            "VALUE", retryIntervalMs.value(), "DEFAULT",
+            defaultAPBootStatusQueryRetryInterval.count());
+        return defaultAPBootStatusQueryRetryInterval;
+    }
+
+    return std::chrono::milliseconds(retryIntervalMs.value());
+}
+
+static size_t getMaxAPBootStatusQueryRetries(std::optional<uint64_t> maxRetries)
+{
+    if (!maxRetries.has_value())
+    {
+        return defaultMaxAPBootStatusQueryRetries;
+    }
+
+    if (maxRetries.value() > std::numeric_limits<size_t>::max())
+    {
+        lg2::warning(
+            "APBootStatusMaxRetries {VALUE} exceeds supported range. Use {DEFAULT} as default",
+            "VALUE", maxRetries.value(), "DEFAULT",
+            defaultMaxAPBootStatusQueryRetries);
+        return defaultMaxAPBootStatusQueryRetries;
+    }
+
+    if (maxRetries.value() == 0)
+    {
+        lg2::warning("APBootStatusMaxRetries is 0. Use {DEFAULT} as default",
+                     "DEFAULT", defaultMaxAPBootStatusQueryRetries);
+        return defaultMaxAPBootStatusQueryRetries;
+    }
+
+    return static_cast<size_t>(maxRetries.value());
+}
+
 std::string formatBootStatus(const std::vector<uint8_t>& status)
 {
     if (status.empty())
@@ -143,11 +203,17 @@ GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                            std::optional<uint64_t> pollingIntervalMs,
                            const std::string& gpioPolarity,
                            const std::string& apName,
+                           std::optional<uint64_t> apBootStatusRetryIntervalMs,
+                           std::optional<uint64_t> apBootStatusMaxRetries,
                            std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
     systemTarget(target), polarity(parseGPIOPolarity(gpioPolarity)),
     monitorMode(parseMonitorMode(monitorModeConfig)),
     pollingInterval(getPollingInterval(pollingIntervalMs)),
+    apBootStatusQueryRetryInterval(
+        getAPBootStatusQueryRetryInterval(apBootStatusRetryIntervalMs)),
+    maxAPBootStatusQueryRetries(
+        getMaxAPBootStatusQueryRetries(apBootStatusMaxRetries)),
     mctpVdmHelper(mctpVdmHelper)
 {
     glacierRecoveryObj =
@@ -716,7 +782,7 @@ void GPIOResource::runAPBootStatusQuery()
     }
 }
 
-void GPIOResource::scheduleAPBootStatusQuery(std::chrono::seconds delay)
+void GPIOResource::scheduleAPBootStatusQuery(std::chrono::milliseconds delay)
 {
     if (!apBootStatusCheckActive || !hasAP())
     {
