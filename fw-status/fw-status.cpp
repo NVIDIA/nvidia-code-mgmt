@@ -1140,10 +1140,17 @@ void publishDBusRecoveryObject()
                 apName = getString(interfaces, gpioErotObjInterface, "APName");
             }
 
+            const auto apBootStatusRetryIntervalMs =
+                getOptionalUint64(interfaces, gpioErotObjInterface,
+                                  "APBootStatusRetryIntervalMs");
+            const auto apBootStatusMaxRetries = getOptionalUint64(
+                interfaces, gpioErotObjInterface, "APBootStatusMaxRetries");
+
             resources.push_back(std::make_unique<GPIOResource>(
                 getBus(), objPath, event, i2cBus, i2cAddress, eid, gpio, target,
-                monitorMode, pollingIntervalMs, polarity, apName, mctpVdmHelper,
-                hideWhenHealthy));
+                monitorMode, pollingIntervalMs, polarity, apName,
+                apBootStatusRetryIntervalMs, apBootStatusMaxRetries,
+                mctpVdmHelper, hideWhenHealthy));
 
             applyChassisConnectionAndRefresh(interfaces, gpioErotObjInterface,
                                              *resources.back(),

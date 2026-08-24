@@ -25,6 +25,7 @@
 #include <deque>
 #include <format>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -619,6 +620,8 @@ TEST_F(FWStatusMainTest, HelperFunctionsCoverParsingAndRefresh)
     ASSERT_TRUE(getUint8(interfaces, "iface", "Small").has_value());
     EXPECT_EQ(*getUint8(interfaces, "iface", "Small"), 7);
     EXPECT_FALSE(getUint8(interfaces, "iface", "Large").has_value());
+    ASSERT_TRUE(getOptionalUint64(interfaces, "iface", "Count").has_value());
+    EXPECT_EQ(*getOptionalUint64(interfaces, "iface", "Count"), 42u);
     EXPECT_TRUE(hasProperty(interfaces, "iface", "Name"));
     EXPECT_FALSE(hasProperty(interfaces, "iface", "Missing"));
 
@@ -626,6 +629,7 @@ TEST_F(FWStatusMainTest, HelperFunctionsCoverParsingAndRefresh)
     EXPECT_EQ(getUint64(interfaces, "iface", "Missing"), 0u);
     EXPECT_FALSE(getBool(interfaces, "iface", "Missing"));
     EXPECT_FALSE(getUint8(interfaces, "iface", "Missing").has_value());
+    EXPECT_FALSE(getOptionalUint64(interfaces, "iface", "Missing").has_value());
     EXPECT_FALSE(hasProperty(interfaces, "missing", "Name"));
 
     ThrowingResource healthy(getBus(), "/xyz/openbmc_project/software/test0");
@@ -676,7 +680,55 @@ TEST_F(FWStatusMainTest, HelperFunctionsCoverTypeMismatchCatchPaths)
     EXPECT_EQ(getUint64(mismatched, "iface", "Count"), 0u);
     EXPECT_FALSE(getBool(mismatched, "iface", "Enabled"));
     EXPECT_FALSE(getUint8(mismatched, "iface", "Small").has_value());
+    EXPECT_FALSE(getOptionalUint64(mismatched, "iface", "Count").has_value());
     EXPECT_FALSE(hasProperty(mismatched, "missing-iface", "Anything"));
+}
+
+TEST_F(FWStatusMainTest, GPIOResourceDefaultsAPBootStatusRetryConfigWhenMissing)
+{
+    test::fw_status_fake_gpio::lines["GPIO_DEFAULT"] = {};
+    test::fw_status_fake_gpio::lines["GPIO_DEFAULT"].eventFd = makeEventFd();
+
+    GPIOResource resource(
+        getBus(), "/xyz/openbmc_project/software/gpio-default", getEvent(), 1,
+        0x20, 44, "GPIO_DEFAULT", "", "", std::nullopt, "", "ap-default",
+        std::nullopt, std::nullopt, nullptr);
+
+    EXPECT_EQ(resource.apBootStatusQueryRetryInterval,
+              std::chrono::milliseconds(1000));
+    EXPECT_EQ(resource.maxAPBootStatusQueryRetries, 10u);
+}
+
+TEST_F(FWStatusMainTest, GPIOResourceDefaultsAPBootStatusRetryConfigWhenZero)
+{
+    test::fw_status_fake_gpio::lines["GPIO_ZERO_RETRIES"] = {};
+    test::fw_status_fake_gpio::lines["GPIO_ZERO_RETRIES"].eventFd =
+        makeEventFd();
+
+    GPIOResource resource(
+        getBus(), "/xyz/openbmc_project/software/gpio-zero-retries", getEvent(),
+        1, 0x20, 44, "GPIO_ZERO_RETRIES", "", "", std::nullopt, "",
+        "ap-zero-retries", std::nullopt, std::optional<uint64_t>{0}, nullptr);
+
+    EXPECT_EQ(resource.maxAPBootStatusQueryRetries, 10u);
+}
+
+TEST_F(FWStatusMainTest,
+       GPIOResourceDefaultsAPBootStatusRetryIntervalWhenOutOfRange)
+{
+    test::fw_status_fake_gpio::lines["GPIO_INTERVAL_OUT_OF_RANGE"] = {};
+    test::fw_status_fake_gpio::lines["GPIO_INTERVAL_OUT_OF_RANGE"].eventFd =
+        makeEventFd();
+
+    GPIOResource resource(
+        getBus(), "/xyz/openbmc_project/software/gpio-interval-out-of-range",
+        getEvent(), 1, 0x20, 44, "GPIO_INTERVAL_OUT_OF_RANGE", "", "",
+        std::nullopt, "", "ap-interval-out-of-range",
+        std::optional<uint64_t>{std::numeric_limits<uint64_t>::max()},
+        std::nullopt, nullptr);
+
+    EXPECT_EQ(resource.apBootStatusQueryRetryInterval,
+              std::chrono::milliseconds(1000));
 }
 
 TEST_F(FWStatusMainTest, GetMCUConfigCoversUsbI2cAndMissingProperties)
@@ -1333,6 +1385,12 @@ TEST_F(FWStatusMainTest, RecoveryConfigDiscoveryAndPublishingCoverMainFlow)
                 std::string("gpio-erot.target"));
     setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
                 gpioErotObjInterface, "APName", std::string("gpio-ap0"));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "APBootStatusRetryIntervalMs",
+                static_cast<uint64_t>(2500));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "APBootStatusMaxRetries",
+                static_cast<uint64_t>(3));
 
     setProperty("/xyz/openbmc_project/inventory/cpld0", cpldMonitorObjInterface,
                 "SMAEID", static_cast<uint64_t>(33));
@@ -1414,6 +1472,19 @@ TEST_F(FWStatusMainTest, RecoveryConfigDiscoveryAndPublishingCoverMainFlow)
     EXPECT_FALSE(test::fw_status_fake_mcu_mode::createdPaths.empty());
     EXPECT_FALSE(test::fw_status_fake_usbrcm_mode::createdPaths.empty());
     EXPECT_NE(chassisDiscoveryRetryMatch, nullptr);
+    GPIOResource* gpioResource = nullptr;
+    for (const auto& resource : resources)
+    {
+        gpioResource = dynamic_cast<GPIOResource*>(resource.get());
+        if (gpioResource != nullptr)
+        {
+            break;
+        }
+    }
+    ASSERT_NE(gpioResource, nullptr);
+    EXPECT_EQ(gpioResource->apBootStatusQueryRetryInterval,
+              std::chrono::milliseconds(2500));
+    EXPECT_EQ(gpioResource->maxAPBootStatusQueryRetries, 3u);
 
     resources.clear();
     recoveryModeManagers.clear();

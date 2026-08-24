@@ -74,6 +74,9 @@ class GPIOResource : public BaseResource
      * @param gpioPolarity - GPIO polarity
      * @param apName - Optional AP software object name associated with this
      * ERoT
+     * @param apBootStatusRetryIntervalMs - Optional AP boot-status query retry
+     * interval in milliseconds
+     * @param apBootStatusMaxRetries - Optional AP boot-status query retry count
      * @param mctpVdmHelper - MCTP VDM helper object
      * @param hideWhenHealthy - Whether to hide the D-Bus object when healthy
      *
@@ -85,6 +88,8 @@ class GPIOResource : public BaseResource
                  const std::string& monitorMode,
                  std::optional<uint64_t> pollingIntervalMs,
                  const std::string& gpioPolarity, const std::string& apName,
+                 std::optional<uint64_t> apBootStatusRetryIntervalMs,
+                 std::optional<uint64_t> apBootStatusMaxRetries,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
                  bool hideWhenHealthy = false);
 
@@ -100,6 +105,8 @@ class GPIOResource : public BaseResource
     int polarity;
     MonitorMode monitorMode = MonitorMode::Interrupt;
     std::chrono::milliseconds pollingInterval{0};
+    std::chrono::milliseconds apBootStatusQueryRetryInterval{0};
+    size_t maxAPBootStatusQueryRetries = 0;
     std::optional<int> lastGpioValue;
     gpiod::line gpioLine;
     std::unique_ptr<sdeventplus::source::IO> gpioEvent;
@@ -204,7 +211,7 @@ class GPIOResource : public BaseResource
 
     /** @brief Schedule an AP QueryBootStatus request.
      */
-    void scheduleAPBootStatusQuery(std::chrono::seconds delay);
+    void scheduleAPBootStatusQuery(std::chrono::milliseconds delay);
 
     /** @brief Schedule the next AP QueryBootStatus retry.
      */

@@ -87,7 +87,8 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversERoTBranches)
 
     GPIOResource erot(bus, "/xyz/openbmc_project/software/erot-gpio", event, 1,
                       0x50, 30, "EROT_GPIO", "erot.target", "Interrupt",
-                      std::nullopt, "ActiveHigh", "", helper);
+                      std::nullopt, "ActiveHigh", "", std::nullopt,
+                      std::nullopt, helper);
     static_cast<BaseResource&>(erot).updateHealth();
     EXPECT_EQ(erot.state(), OperationalStatusServer::StateType::StandbyOffline);
     EXPECT_TRUE(erot.isFirmwareInRecovery);
@@ -366,10 +367,10 @@ TEST_F(FWStatusGlacierGpioTest,
     test::fw_status_fake_glacier::pushResult(
         static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
                                  RecoveryResult::FirmwareNotInRecovery));
-    GPIOResource erotEvent(bus, "/xyz/openbmc_project/software/erot-event",
-                           event, 2, 0x51, 32, "EROT_EVENT_GPIO",
-                           "erot-event.target", "Interrupt", std::nullopt,
-                           "ActiveHigh", "", helper);
+    GPIOResource erotEvent(
+        bus, "/xyz/openbmc_project/software/erot-event", event, 2, 0x51, 32,
+        "EROT_EVENT_GPIO", "erot-event.target", "Interrupt", std::nullopt,
+        "ActiveHigh", "", std::nullopt, std::nullopt, helper);
     test::fw_status_fake_glacier::pushResult(
         static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
                                  RecoveryResult::FirmwareNotInRecovery));
@@ -380,10 +381,10 @@ TEST_F(FWStatusGlacierGpioTest,
     test::fw_status_fake_glacier::pushResult(
         static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
                                  RecoveryResult::FirmwareNotInRecovery));
-    GPIOResource erotBadFd(bus, "/xyz/openbmc_project/software/erot-badfd",
-                           event, 3, 0x52, 33, "EROT_BADFD_GPIO",
-                           "erot-badfd.target", "Interrupt", std::nullopt,
-                           "ActiveHigh", "", helper);
+    GPIOResource erotBadFd(
+        bus, "/xyz/openbmc_project/software/erot-badfd", event, 3, 0x52, 33,
+        "EROT_BADFD_GPIO", "erot-badfd.target", "Interrupt", std::nullopt,
+        "ActiveHigh", "", std::nullopt, std::nullopt, helper);
     EXPECT_EQ(erotBadFd.gpioEvent, nullptr);
 
     test::fw_status_fake_gpio::lines["EROT_OFF_GPIO"] = {};
@@ -393,7 +394,8 @@ TEST_F(FWStatusGlacierGpioTest,
                                  RecoveryResult::FirmwareNotInRecovery));
     GPIOResource erotOff(bus, "/xyz/openbmc_project/software/erot-off", event,
                          4, 0x53, 34, "EROT_OFF_GPIO", "erot-off.target",
-                         "Interrupt", std::nullopt, "ActiveHigh", "", helper);
+                         "Interrupt", std::nullopt, "ActiveHigh", "",
+                         std::nullopt, std::nullopt, helper);
     erotOff.setConnectedToChassis(true);
     erotOff.setChassisPowerState(
         "xyz.openbmc_project.State.Chassis.PowerState.Off");
@@ -502,7 +504,8 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversAPBootStatusPaths)
 
     GPIOResource erot(bus, "/xyz/openbmc_project/software/erot-ap-gpio", event,
                       5, 0x54, 35, "EROT_GPIO", "erot-ap.target", "Interrupt",
-                      std::nullopt, "ActiveHigh", "gpio-ap", helper);
+                      std::nullopt, "ActiveHigh", "gpio-ap", std::nullopt,
+                      std::nullopt, helper);
     EXPECT_TRUE(erot.hasAP());
     ASSERT_NE(erot.apResource, nullptr);
 
@@ -596,7 +599,7 @@ TEST_F(FWStatusGlacierGpioTest,
                       6, 0x55, 36, "POLL_GPIO",
                       "", // empty target: triggerMctpDiscovery is a no-op
                       "Polling", std::optional<uint64_t>(100), "ActiveHigh", "",
-                      helper);
+                      std::nullopt, std::nullopt, helper);
 
     // ERoT in recovery → startERoTRecoveryMonitor (only in Polling mode)
     test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(
@@ -649,7 +652,7 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversRemainingBranchPaths)
     GPIOResource erotAP(bus, "/xyz/openbmc_project/software/erot-branches",
                         event, 7, 0x56, 37, "EROT_GPIO", "erot-br.target",
                         "Interrupt", std::nullopt, "ActiveHigh", "gpio-ap-br",
-                        helper);
+                        std::nullopt, std::nullopt, helper);
 
     // Inject a synthetic suspended handle to simulate an in-progress query
     auto suspended = suspendedBootStatusCoroutine(0);
@@ -677,7 +680,7 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversRemainingBranchPaths)
     GPIOResource erotPoll(bus, "/xyz/openbmc_project/software/erot-poll-br",
                           event, 8, 0x57, 38, "POLL_BR_GPIO", "", "Polling",
                           std::optional<uint64_t>(100), "ActiveHigh", "",
-                          helper);
+                          std::nullopt, std::nullopt, helper);
 
     // Exception → false
     test::fw_status_fake_dbus::throwOnGetManagedObjects = true;
@@ -743,10 +746,11 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversGuardAndDiscoveryBranches)
     // ── Polling ERoT WITH a target: triggerMctpDiscovery restart branch ───
     test::fw_status_fake_gpio::lines["POLL_TGT_GPIO"] = {};
     test::fw_status_fake_gpio::lines["POLL_TGT_GPIO"].getValue = 1;
-    GPIOResource erotTgt(
-        bus, "/xyz/openbmc_project/software/erot-poll-tgt", event, 9, 0x58, 39,
-        "POLL_TGT_GPIO", "erot-poll-tgt.target", "Polling",
-        std::optional<uint64_t>(100), "ActiveHigh", "", helper);
+    GPIOResource erotTgt(bus, "/xyz/openbmc_project/software/erot-poll-tgt",
+                         event, 9, 0x58, 39, "POLL_TGT_GPIO",
+                         "erot-poll-tgt.target", "Polling",
+                         std::optional<uint64_t>(100), "ActiveHigh", "",
+                         std::nullopt, std::nullopt, helper);
 
     // Enter recovery → startERoTRecoveryMonitor → triggerMctpDiscovery restarts
     test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(
@@ -772,7 +776,7 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversGuardAndDiscoveryBranches)
     GPIOResource erotIntr(bus, "/xyz/openbmc_project/software/erot-intr-mon",
                           event, 10, 0x59, 40, "EROT_INTR_MON_GPIO",
                           "erot-intr.target", "Interrupt", std::nullopt,
-                          "ActiveHigh", "", helper);
+                          "ActiveHigh", "", std::nullopt, std::nullopt, helper);
     erotIntr.startERoTRecoveryMonitor(); // no-op: not Polling
     EXPECT_FALSE(erotIntr.erotRecoveryMonitorActive);
     EXPECT_EQ(erotIntr.erotRecoveryMonitorTimer, nullptr);
@@ -808,7 +812,7 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversGuardAndDiscoveryBranches)
     GPIOResource erotNoHelper(
         bus, "/xyz/openbmc_project/software/erot-nohelper", event, 11, 0x5A, 41,
         "EROT_NOHELPER_GPIO", "erot-nohelper.target", "Interrupt", std::nullopt,
-        "ActiveHigh", "gpio-ap-nohelper", nullptr);
+        "ActiveHigh", "gpio-ap-nohelper", std::nullopt, std::nullopt, nullptr);
     EXPECT_TRUE(erotNoHelper.hasAP());
     erotNoHelper.startAPBootStatusCheck(); // !mctpVdmHelper → early return
     EXPECT_FALSE(erotNoHelper.apBootStatusCheckActive);
