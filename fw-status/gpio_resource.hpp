@@ -202,6 +202,10 @@ class GPIOResource : public BaseResource
      */
     void scheduleAPBootStatusRetry();
 
+    /** @brief Disable the AP boot-status query timer if it is armed.
+     */
+    void disarmAPBootStatusTimer();
+
     /** @brief Stop the AP boot-status retry loop.
      */
     void stopAPBootStatusCheck();

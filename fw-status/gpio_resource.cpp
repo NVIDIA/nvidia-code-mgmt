@@ -684,6 +684,8 @@ void GPIOResource::startAPBootStatusCheck()
 
 void GPIOResource::runAPBootStatusQuery()
 {
+    disarmAPBootStatusTimer();
+
     if (!apBootStatusCheckActive || !hasAP() || !mctpVdmHelper)
     {
         return;
@@ -704,10 +706,13 @@ void GPIOResource::runAPBootStatusQuery()
 
     auto rc = queryAPBootStatusAsync();
     apBootStatusCo = rc.handle;
-
     if (apBootStatusCo.done())
     {
         apBootStatusCo = nullptr;
+    }
+    else
+    {
+        rc.handle = nullptr;
     }
 }
 
@@ -727,7 +732,16 @@ void GPIOResource::scheduleAPBootStatusQuery(std::chrono::seconds delay)
 
     try
     {
-        apBootStatusRetryTimer->start(delay, false);
+        /*
+         * Armed as periodic even though a single shot is wanted:
+         * sdbusplus::Timer disables a SD_EVENT_ONESHOT source after its
+         * callback returns, which would silently cancel a retry armed from
+         * inside that callback. That happens whenever the MCTP send fails
+         * synchronously, so the coroutine never suspends.
+         * runAPBootStatusQuery() disarms the timer on entry to keep the
+         * single-shot behaviour.
+         */
+        apBootStatusRetryTimer->start(delay, true);
     }
     catch (const std::exception& e)
     {
@@ -742,11 +756,8 @@ void GPIOResource::scheduleAPBootStatusRetry()
     scheduleAPBootStatusQuery(apBootStatusQueryRetryInterval);
 }
 
-void GPIOResource::stopAPBootStatusCheck()
+void GPIOResource::disarmAPBootStatusTimer()
 {
-    apBootStatusCheckActive = false;
-    apBootStatusQueryRetryCount = 0;
-
     if (!apBootStatusRetryTimer || !apBootStatusRetryTimer->isRunning())
     {
         return;
@@ -757,11 +768,17 @@ void GPIOResource::stopAPBootStatusCheck()
     {
         lg2::error(
             "Failed to stop AP boot-status retry timer for {OBJ}. RC={RC}",
-            "OBJ",
-            apResource ? apResource->getObjectPath()
-                                : std::string{},
+            "OBJ", apResource ? apResource->getObjectPath() : std::string{},
             "RC", rc);
     }
+}
+
+void GPIOResource::stopAPBootStatusCheck()
+{
+    apBootStatusCheckActive = false;
+    apBootStatusQueryRetryCount = 0;
+
+    disarmAPBootStatusTimer();
 }
 
 mctp_vdm::requester::Coroutine GPIOResource::queryAPBootStatusAsync()
