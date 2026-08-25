@@ -205,9 +205,11 @@ GPIOResource::GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
                            const std::string& apName,
                            std::optional<uint64_t> apBootStatusRetryIntervalMs,
                            std::optional<uint64_t> apBootStatusMaxRetries,
-                           std::shared_ptr<MCTPVdmHelper> mctpVdmHelper) :
+                           std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
+                           bool hideWhenHealthy) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
-    systemTarget(target), polarity(parseGPIOPolarity(gpioPolarity)),
+    systemTarget(target), hideWhenHealthy(hideWhenHealthy),
+    polarity(parseGPIOPolarity(gpioPolarity)),
     monitorMode(parseMonitorMode(monitorModeConfig)),
     pollingInterval(getPollingInterval(pollingIntervalMs)),
     apBootStatusQueryRetryInterval(
@@ -580,6 +582,10 @@ void GPIOResource::pollGpio()
                 "GPIO", gpioLineName, "VALUE", value);
             updateERoTHealth(HealthUpdateReason::FatalErrorAssert);
         }
+        else
+        {
+            updateERoTHealth(HealthUpdateReason::FatalErrorDeassert);
+        }
         return;
     }
 
@@ -601,6 +607,18 @@ bool GPIOResource::isGPIOActive(int value) const
 {
     return (value && polarity == gpiod::line::ACTIVE_HIGH) ||
            (!value && polarity == gpiod::line::ACTIVE_LOW);
+}
+
+void GPIOResource::updateHealthyState()
+{
+    if (hideWhenHealthy)
+    {
+        deleteDbusObject();
+        return;
+    }
+
+    health(HealthServer::HealthType::OK);
+    state(OperationalStatusServer::StateType::Enabled);
 }
 
 void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
@@ -678,7 +696,7 @@ void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
         }
         isFirmwareInRecovery = false;
     }
-    deleteDbusObject();
+    updateHealthyState();
 
     if (reason == HealthUpdateReason::FatalErrorAssert && hasAP())
     {

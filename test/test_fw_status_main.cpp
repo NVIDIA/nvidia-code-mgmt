@@ -732,6 +732,51 @@ TEST_F(FWStatusMainTest,
               std::chrono::milliseconds(1000));
 }
 
+TEST_F(FWStatusMainTest, GPIOResourcePublishesHealthyStateByDefault)
+{
+    test::fw_status_fake_gpio::lines["GPIO_HEALTHY"] = {};
+    test::fw_status_fake_gpio::lines["GPIO_HEALTHY"].eventFd = makeEventFd();
+
+    GPIOResource resource(
+        getBus(), "/xyz/openbmc_project/software/gpio-healthy", getEvent(), 1,
+        0x20, 44, "GPIO_HEALTHY", "", "", std::nullopt, "", "",
+        std::nullopt, std::nullopt, nullptr);
+
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+
+    resource.updateERoTHealth();
+
+    ASSERT_NE(resource.resourceDbusObj, nullptr);
+    EXPECT_EQ(resource.health(), HealthServer::HealthType::OK);
+    EXPECT_EQ(resource.state(), OperationalStatusServer::StateType::Enabled);
+}
+
+TEST_F(FWStatusMainTest, GPIOResourceHidesHealthyStateWhenConfigured)
+{
+    test::fw_status_fake_gpio::lines["GPIO_HIDE_HEALTHY"] = {};
+    test::fw_status_fake_gpio::lines["GPIO_HIDE_HEALTHY"].eventFd =
+        makeEventFd();
+
+    GPIOResource resource(
+        getBus(), "/xyz/openbmc_project/software/gpio-hide-healthy", getEvent(),
+        1, 0x20, 44, "GPIO_HIDE_HEALTHY", "", "", std::nullopt, "", "",
+        std::nullopt, std::nullopt, nullptr, true);
+
+    resource.health(HealthServer::HealthType::Critical);
+    resource.state(OperationalStatusServer::StateType::StandbyOffline);
+    ASSERT_NE(resource.resourceDbusObj, nullptr);
+
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+
+    resource.updateERoTHealth();
+
+    EXPECT_EQ(resource.resourceDbusObj, nullptr);
+}
+
 TEST_F(FWStatusMainTest, GetMCUConfigCoversUsbI2cAndMissingProperties)
 {
     using test::fw_status_fake_dbus::setProperty;
@@ -1390,6 +1435,8 @@ TEST_F(FWStatusMainTest, RecoveryConfigDiscoveryAndPublishingCoverMainFlow)
     setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
                 gpioErotObjInterface, "APBootStatusMaxRetries",
                 static_cast<uint64_t>(3));
+    setProperty("/xyz/openbmc_project/inventory/gpio_erot0",
+                gpioErotObjInterface, "HideWhenHealthy", true);
 
     setProperty("/xyz/openbmc_project/inventory/cpld0", cpldMonitorObjInterface,
                 "SMAEID", static_cast<uint64_t>(33));
@@ -1484,6 +1531,7 @@ TEST_F(FWStatusMainTest, RecoveryConfigDiscoveryAndPublishingCoverMainFlow)
     EXPECT_EQ(gpioResource->apBootStatusQueryRetryInterval,
               std::chrono::milliseconds(2500));
     EXPECT_EQ(gpioResource->maxAPBootStatusQueryRetries, 3u);
+    EXPECT_TRUE(gpioResource->hideWhenHealthy);
 
     resources.clear();
     recoveryModeManagers.clear();

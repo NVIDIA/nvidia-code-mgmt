@@ -78,6 +78,7 @@ class GPIOResource : public BaseResource
      * interval in milliseconds
      * @param apBootStatusMaxRetries - Optional AP boot-status query retry count
      * @param mctpVdmHelper - MCTP VDM helper object
+     * @param hideWhenHealthy - Whether to hide the D-Bus object when healthy
      *
      */
     GPIOResource(sdbusplus::bus::bus& bus, const std::string& objPath,
@@ -89,7 +90,8 @@ class GPIOResource : public BaseResource
                  const std::string& gpioPolarity, const std::string& apName,
                  std::optional<uint64_t> apBootStatusRetryIntervalMs,
                  std::optional<uint64_t> apBootStatusMaxRetries,
-                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper);
+                 std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
+                 bool hideWhenHealthy = false);
 
     ~GPIOResource() override;
 
@@ -99,6 +101,7 @@ class GPIOResource : public BaseResource
     std::string gpioLineName;
     std::string systemTarget;
     bool isFirmwareInRecovery = false;
+    bool hideWhenHealthy = false;
     int polarity;
     MonitorMode monitorMode = MonitorMode::Interrupt;
     std::chrono::milliseconds pollingInterval{0};
@@ -181,6 +184,10 @@ class GPIOResource : public BaseResource
      *
      */
     bool isGPIOActive(int value) const;
+
+    /** @brief Publish healthy status or hide the object for legacy configs.
+     */
+    void updateHealthyState();
 
     /** @brief function to update Health and State of ERoT D-Bus object
      *         Uses Glacier Crisis Recovery Protocol to fetch device status
