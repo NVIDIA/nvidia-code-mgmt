@@ -26,6 +26,7 @@ struct SyscallState
 {
     int pipeFds[2] = {-1, -1};
     ssize_t sendtoResult = 0;
+    std::deque<ssize_t> sendtoResults{};
     int socketResult = -1;
     int getsockoptResult = 0;
     int bindResult = 0;
@@ -179,6 +180,18 @@ class RetryEnabledTimer : public mctp_vdm::requester::RequestRetryTimer
 extern "C" ssize_t __wrap_sendto(int, const void*, size_t len, int,
                                  const struct sockaddr*, socklen_t)
 {
+    if (!fakeSys.sendtoResults.empty())
+    {
+        auto result = fakeSys.sendtoResults.front();
+        fakeSys.sendtoResults.pop_front();
+        if (result < 0)
+        {
+            errno = EIO;
+            return -1;
+        }
+        return result ? result : static_cast<ssize_t>(len);
+    }
+
     if (fakeSys.sendtoResult < 0)
     {
         errno = EIO;
@@ -387,6 +400,85 @@ TEST_F(FWStatusMctpRuntimeTest, HandlerRegistersRunsAndExpiresRequests)
                   8, 1, 2, 3, std::move(noSocketRequest),
                   [](uint8_t, const mctp_vdm::Message*, size_t) {}),
               0);
+}
+
+TEST_F(FWStatusMctpRuntimeTest,
+       HandlerRejectsDuplicateRegistrationWithoutFreeingActiveInstanceId)
+{
+    auto event = sdeventplus::Event::get_default();
+    mctp_socket::Manager sockManager;
+    sockManager.registerEndpoint(9, 42);
+    mctp_vdm::InstanceIdMgr ids;
+    mctp_vdm::requester::Handler handler(event, ids, sockManager,
+                                         std::chrono::seconds(1), 0,
+                                         std::chrono::milliseconds(1));
+
+    auto instanceId = ids.getInstanceId(9);
+    auto request = makeRequest(9, instanceId, 2, 3);
+    ASSERT_EQ(handler.registerRequest(
+                  9, instanceId, 2, 3, std::move(request),
+                  [](uint8_t, const mctp_vdm::Message*, size_t) {}),
+              static_cast<int>(mctp_vdm::CompletionCodes::Success));
+
+    auto duplicateRequest = makeRequest(9, instanceId, 2, 3);
+    EXPECT_EQ(handler.registerRequest(
+                  9, instanceId, 2, 3, std::move(duplicateRequest),
+                  [](uint8_t, const mctp_vdm::Message*, size_t) {}),
+              static_cast<int>(mctp_vdm::CompletionCodes::ErrGeneral));
+    EXPECT_EQ(ids.getInstanceId(9), instanceId + 1);
+}
+
+TEST_F(FWStatusMctpRuntimeTest,
+       HandlerAdvancesQueueAfterQueuedRequestSendFailure)
+{
+    auto event = sdeventplus::Event::get_default();
+    mctp_socket::Manager sockManager;
+    sockManager.registerEndpoint(9, 42);
+    mctp_vdm::InstanceIdMgr ids;
+    mctp_vdm::requester::Handler handler(event, ids, sockManager,
+                                         std::chrono::seconds(1), 0,
+                                         std::chrono::milliseconds(1));
+
+    auto activeRequest = makeRequest(9, 1, 2, 3);
+    ASSERT_EQ(handler.registerRequest(
+                  9, 1, 2, 3, std::move(activeRequest),
+                  [](uint8_t, const mctp_vdm::Message*, size_t) {}),
+              static_cast<int>(mctp_vdm::CompletionCodes::Success));
+
+    size_t queuedFailures = 0;
+    auto queuedRequestA = makeRequest(9, 2, 2, 4);
+    ASSERT_EQ(handler.registerRequest(
+                  9, 2, 2, 4, std::move(queuedRequestA),
+                  [&](uint8_t, const mctp_vdm::Message* response, size_t len) {
+                      if (response == nullptr && len == 0)
+                      {
+                          ++queuedFailures;
+                      }
+                  }),
+              static_cast<int>(mctp_vdm::CompletionCodes::Success));
+
+    auto queuedRequestB = makeRequest(9, 3, 2, 5);
+    ASSERT_EQ(handler.registerRequest(
+                  9, 3, 2, 5, std::move(queuedRequestB),
+                  [&](uint8_t, const mctp_vdm::Message* response, size_t len) {
+                      if (response == nullptr && len == 0)
+                      {
+                          ++queuedFailures;
+                      }
+                  }),
+              static_cast<int>(mctp_vdm::CompletionCodes::Success));
+
+    fakeSys.sendtoResults = {-1, 0};
+
+    mctp_vdm::Message response{};
+    response.hdr = {};
+    response.hdr.request = 0;
+    handler.handleResponse(9, 1, 2, 3, &response, sizeof(response));
+
+    EXPECT_EQ(queuedFailures, 1u);
+    EXPECT_TRUE(fakeSys.sendtoResults.empty());
+    ASSERT_EQ(handler.handlers.size(), 1u);
+    EXPECT_TRUE(std::get<2>(handler.handlers.begin()->second)->isRunning());
 }
 
 TEST_F(FWStatusMctpRuntimeTest,

@@ -184,55 +184,69 @@ class Handler
         auto timer = std::make_unique<sdbusplus::Timer>(
             event.get(), instanceIdExpiryCallBack);
 
-        handlers.emplace(key, std::make_tuple(std::move(request),
-                                              std::move(responseHandler),
-                                              std::move(timer)));
-        return runRegisteredRequest(eid);
+        auto insertResult = handlers.emplace(
+            key, std::make_tuple(std::move(request), std::move(responseHandler),
+                                 std::move(timer)));
+        if (!insertResult.second)
+        {
+            lg2::error(
+                "Request already registered. EID={EID}, INSTANCE_ID={INSTANCE_ID}, TYPE={TYPE}, COMMAND={COMMAND}",
+                "EID", eid, "INSTANCE_ID", instanceId, "TYPE", type, "COMMAND",
+                command);
+            return static_cast<int>(mctp_vdm::CompletionCodes::ErrGeneral);
+        }
+
+        return runRegisteredRequest(eid, &key);
     }
 
-    int runRegisteredRequest(uint8_t eid)
+    int runRegisteredRequest(uint8_t eid,
+                             const RequestKey* synchronousKey = nullptr)
     {
-        RequestValue* toRun = nullptr;
-        RequestKey toRunKey{};
-        for (auto& handler : handlers)
+        while (true)
         {
-            auto& key = handler.first;
-            auto& [request, responseHandler, timerInstance] = handler.second;
-            if (key.eid != eid)
+            RequestValue* toRun = nullptr;
+            RequestKey keyToRun{};
+            for (auto& handler : handlers)
             {
-                continue;
-            }
+                auto& key = handler.first;
+                auto& [request, responseHandler, timerInstance] =
+                    handler.second;
+                if (key.eid != eid)
+                {
+                    continue;
+                }
 
-            if (timerInstance->isRunning())
-            {
-                // A MCTP VDM request for the EID is running
-                return static_cast<int>(mctp_vdm::CompletionCodes::Success);
+                if (timerInstance->isRunning())
+                {
+                    // A MCTP VDM request for the EID is running
+                    return static_cast<int>(mctp_vdm::CompletionCodes::Success);
+                }
+
+                if (toRun == nullptr)
+                {
+                    // First request of the EID
+                    toRun = &handler.second;
+                    keyToRun = key;
+                }
             }
 
             if (toRun == nullptr)
             {
-                // First request of the EID
-                toRun = &handler.second;
-                toRunKey = key;
+                return static_cast<int>(mctp_vdm::CompletionCodes::Success);
             }
-        }
 
-        if (toRun != nullptr)
-        {
             auto& [request, responseHandler, timerInstance] = *toRun;
             auto rc = request->start();
             if (rc)
             {
-                // The send failed. The awaiter that owns the bound
-                // ResponseHandler is destroyed when await_suspend returns
-                // false, so the entry must be erased here — otherwise a
-                // later request that reuses this RequestKey will be silently
-                // dropped by emplace and a future Rx will invoke the stale
-                // (dangling) handler.
-                instanceIdMgr.markFree(eid, toRunKey.instanceId);
+                instanceIdMgr.markFree(eid, keyToRun.instanceId);
                 lg2::error("Failure to send the MCTP VDM request message");
-                handlers.erase(toRunKey);
-                return rc;
+                failRegisteredRequest(keyToRun, synchronousKey);
+                if (synchronousKey != nullptr && keyToRun == *synchronousKey)
+                {
+                    return rc;
+                }
+                continue;
             }
 
             try
@@ -242,16 +256,20 @@ class Handler
             }
             catch (const std::runtime_error& e)
             {
-                // Timer never armed, so removeRequestEntry will never run;
-                // erase the entry to avoid the same dangling-handler bug.
-                instanceIdMgr.markFree(eid, toRunKey.instanceId);
+                instanceIdMgr.markFree(eid, keyToRun.instanceId);
+                failRegisteredRequest(keyToRun, synchronousKey);
                 lg2::error("Failed to start the instance ID expiry timer.",
                            "ERROR", e);
-                handlers.erase(toRunKey);
-                return static_cast<int>(mctp_vdm::CompletionCodes::ErrGeneral);
+                if (synchronousKey != nullptr && keyToRun == *synchronousKey)
+                {
+                    return static_cast<int>(
+                        mctp_vdm::CompletionCodes::ErrGeneral);
+                }
+                continue;
             }
+
+            return static_cast<int>(mctp_vdm::CompletionCodes::Success);
         }
-        return static_cast<int>(mctp_vdm::CompletionCodes::Success);
     }
 
     /** @brief Handle MCTP VDM response message
@@ -324,6 +342,32 @@ class Handler
     std::unordered_map<RequestKey, std::unique_ptr<sdeventplus::source::Defer>,
                        RequestKeyHasher>
         removeRequestContainer;
+
+    /** @brief Remove a request whose send path failed before it could be
+     *         tracked by the response timeout.
+     *
+     *  The request registered by the current await_suspend() has not completed
+     *  suspension yet, so it must not be resumed through its response handler.
+     */
+    void failRegisteredRequest(const RequestKey& key,
+                               const RequestKey* synchronousKey)
+    {
+        auto handler = handlers.find(key);
+        if (handler == handlers.end())
+        {
+            return;
+        }
+
+        auto uniqueHandler = std::move(std::get<1>(handler->second));
+        handlers.erase(handler);
+
+        if (synchronousKey != nullptr && key == *synchronousKey)
+        {
+            return;
+        }
+
+        uniqueHandler(key.eid, nullptr, 0);
+    }
 
     /** @brief Remove request entry for which the instance ID expired
      *
