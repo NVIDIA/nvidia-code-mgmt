@@ -184,48 +184,77 @@ class Handler
         auto timer = std::make_unique<sdbusplus::Timer>(
             event.get(), instanceIdExpiryCallBack);
 
-        handlers.emplace(key, std::make_tuple(std::move(request),
-                                              std::move(responseHandler),
-                                              std::move(timer)));
-        return runRegisteredRequest(eid);
+        auto insertResult = handlers.emplace(
+            key, std::make_tuple(std::move(request), std::move(responseHandler),
+                                 std::move(timer)));
+        if (!insertResult.second)
+        {
+            lg2::error(
+                "Request already registered. EID={EID}, INSTANCE_ID={INSTANCE_ID}, TYPE={TYPE}, COMMAND={COMMAND}",
+                "EID", eid, "INSTANCE_ID", instanceId, "TYPE", type, "COMMAND",
+                command);
+            return static_cast<int>(mctp_vdm::CompletionCodes::ErrGeneral);
+        }
+
+        return runRegisteredRequest(eid, &key);
     }
 
-    int runRegisteredRequest(uint8_t eid)
+    int runRegisteredRequest(uint8_t eid,
+                             const RequestKey* synchronousKey = nullptr)
     {
-        RequestValue* toRun = nullptr;
-        uint8_t instanceId = 0;
-        for (auto& handler : handlers)
+        while (true)
         {
-            auto& key = handler.first;
-            auto& [request, responseHandler, timerInstance] = handler.second;
-            if (key.eid != eid)
+            RequestValue* toRun = nullptr;
+            RequestKey keyToRun{};
+            for (auto& handler : handlers)
             {
-                continue;
-            }
+                auto& key = handler.first;
+                if (key.eid != eid)
+                {
+                    continue;
+                }
 
-            if (timerInstance->isRunning())
-            {
-                // A MCTP VDM request for the EID is running
-                return static_cast<int>(mctp_vdm::CompletionCodes::Success);
+                // The expiry callback stops the timer before deferring removal
+                // of the request. Do not select that request again while its
+                // removal is pending.
+                if (removeRequestContainer.contains(key))
+                {
+                    continue;
+                }
+
+                auto& [request, responseHandler, timerInstance] =
+                    handler.second;
+                if (timerInstance->isRunning())
+                {
+                    // A MCTP VDM request for the EID is running
+                    return static_cast<int>(mctp_vdm::CompletionCodes::Success);
+                }
+
+                if (toRun == nullptr)
+                {
+                    // First request of the EID
+                    toRun = &handler.second;
+                    keyToRun = key;
+                }
             }
 
             if (toRun == nullptr)
             {
-                // First request of the EID
-                toRun = &handler.second;
-                instanceId = key.instanceId;
+                return static_cast<int>(mctp_vdm::CompletionCodes::Success);
             }
-        }
 
-        if (toRun != nullptr)
-        {
             auto& [request, responseHandler, timerInstance] = *toRun;
             auto rc = request->start();
             if (rc)
             {
-                instanceIdMgr.markFree(eid, instanceId);
+                instanceIdMgr.markFree(eid, keyToRun.instanceId);
                 lg2::error("Failure to send the MCTP VDM request message");
-                return rc;
+                failRegisteredRequest(keyToRun, synchronousKey);
+                if (synchronousKey != nullptr && keyToRun == *synchronousKey)
+                {
+                    return rc;
+                }
+                continue;
             }
 
             try
@@ -235,13 +264,20 @@ class Handler
             }
             catch (const std::runtime_error& e)
             {
-                instanceIdMgr.markFree(eid, instanceId);
+                instanceIdMgr.markFree(eid, keyToRun.instanceId);
+                failRegisteredRequest(keyToRun, synchronousKey);
                 lg2::error("Failed to start the instance ID expiry timer.",
                            "ERROR", e);
-                return static_cast<int>(mctp_vdm::CompletionCodes::ErrGeneral);
+                if (synchronousKey != nullptr && keyToRun == *synchronousKey)
+                {
+                    return static_cast<int>(
+                        mctp_vdm::CompletionCodes::ErrGeneral);
+                }
+                continue;
             }
+
+            return static_cast<int>(mctp_vdm::CompletionCodes::Success);
         }
-        return static_cast<int>(mctp_vdm::CompletionCodes::Success);
     }
 
     /** @brief Handle MCTP VDM response message
@@ -258,9 +294,10 @@ class Handler
                         size_t respMsgLen)
     {
         RequestKey key{eid, instanceId, type, command};
-        if (handlers.contains(key))
+        auto handler = handlers.find(key);
+        if (handler != handlers.end())
         {
-            auto& [request, responseHandler, timerInstance] = handlers[key];
+            auto& [request, responseHandler, timerInstance] = handler->second;
             request->stop();
             auto rc = timerInstance->stop();
             if (rc)
@@ -272,7 +309,8 @@ class Handler
             // Call responseHandler after erase it from the handlers to avoid
             // starting it again in runRegisteredRequest()
             auto unique_handler = std::move(responseHandler);
-            handlers.erase(key);
+            handlers.erase(handler);
+            cancelPendingRemoval(key);
             unique_handler(eid, response, respMsgLen);
             instanceIdMgr.markFree(key.eid, key.instanceId);
         }
@@ -315,21 +353,67 @@ class Handler
                        RequestKeyHasher>
         removeRequestContainer;
 
+    /** @brief Cancel a deferred removal for the request, if one is pending. */
+    void cancelPendingRemoval(const RequestKey& key)
+    {
+        auto removal = removeRequestContainer.find(key);
+        if (removal == removeRequestContainer.end())
+        {
+            return;
+        }
+
+        removal->second.reset();
+        removeRequestContainer.erase(removal);
+    }
+
+    /** @brief Remove a request whose send path failed before it could be
+     *         tracked by the response timeout.
+     *
+     *  The request registered by the current await_suspend() has not completed
+     *  suspension yet, so it must not be resumed through its response handler.
+     */
+    void failRegisteredRequest(const RequestKey& key,
+                               const RequestKey* synchronousKey)
+    {
+        cancelPendingRemoval(key);
+
+        auto handler = handlers.find(key);
+        if (handler == handlers.end())
+        {
+            return;
+        }
+
+        auto uniqueHandler = std::move(std::get<1>(handler->second));
+        handlers.erase(handler);
+
+        if (synchronousKey != nullptr && key == *synchronousKey)
+        {
+            return;
+        }
+
+        uniqueHandler(key.eid, nullptr, 0);
+    }
+
     /** @brief Remove request entry for which the instance ID expired
      *
      *  @param[in] key - key for the Request
      */
     void removeRequestEntry(RequestKey key)
     {
-        if (removeRequestContainer.contains(key))
+        auto removal = removeRequestContainer.find(key);
+        if (removal != removeRequestContainer.end())
         {
-            removeRequestContainer[key].reset();
-            auto& [request, responseHandler, timerInstance] =
-                this->handlers[key];
-            responseHandler(key.eid, nullptr, 0);
-            instanceIdMgr.markFree(key.eid, key.instanceId);
-            handlers.erase(key);
-            removeRequestContainer.erase(key);
+            removal->second.reset();
+            removeRequestContainer.erase(removal);
+
+            auto handler = handlers.find(key);
+            if (handler != handlers.end())
+            {
+                auto responseHandler = std::move(std::get<1>(handler->second));
+                handlers.erase(handler);
+                responseHandler(key.eid, nullptr, 0);
+                instanceIdMgr.markFree(key.eid, key.instanceId);
+            }
         }
         runRegisteredRequest(key.eid);
     }
@@ -402,7 +486,6 @@ struct SendRecvMctpVdmMsg
             std::move(
                 std::bind_front(&SendRecvMctpVdmMsg::HandleResponse, this)));
 
-        lg2::info("Register Request successful");
         if (rc)
         {
             lg2::error("registerRequest failed, rc={RC}", "RC",
@@ -410,6 +493,7 @@ struct SendRecvMctpVdmMsg
             return false;
         }
 
+        lg2::info("Register Request successful");
         resumeHandle = handle;
         return true;
     }
