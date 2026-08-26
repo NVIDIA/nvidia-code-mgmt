@@ -17,6 +17,7 @@
 #include <mutex>
 #include <regex>
 #include <sstream>
+#include <unordered_set>
 
 using namespace phosphor::logging;
 using namespace nvidia::software::updater;
@@ -33,6 +34,7 @@ const std::vector<ChipTiming> Spi::chipTimingMap = {
 
 // vector of all spi devices
 std::vector<std::unique_ptr<Spi>> spiDevices;
+std::unordered_set<std::string> spiDevicePaths;
 std::unique_ptr<sdbusplus::bus::match_t> inventoryObjectMatch;
 
 // Map to track USB port usage (usbPort -> bool)
@@ -1103,68 +1105,44 @@ void populateSpiObjects()
 
             auto chassisName = emObjectPath.parent_path().filename();
             auto objPath = inventoryObjPath + "/" + chassisName + "/SPI";
+            if (spiDevicePaths.contains(objPath))
+            {
+                continue;
+            }
+
             lg2::info("[SPI: {NAME}] Creating SPI object: {OBJ_PATH}", "NAME",
                       chassisName, "OBJ_PATH", objPath);
             spiDevices.push_back(std::make_unique<Spi>(
                 getBus(), objPath, usbPort, chassisName, programmer, type,
                 chipSelect, activeGpios, deactiveGpios));
+            spiDevicePaths.insert(objPath);
         }
     }
 }
 
 /**
- * @brief function to check if SPI objects are present in Entity Manager
- *
- * @return bool True if SPI objects are found, false otherwise
- */
-bool isSpiObjectPresent()
-{
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    const auto managedObjects =
-        dbusUtil.getManagedObjects(entityManagerService, inventoryRootPath);
-    for (const auto& [emObjectPath, interfaces] : managedObjects)
-    {
-        if (interfaces.contains(spiObjectInterfaces))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief function to try populating SPI objects, with fallback to D-Bus match
- * rule if no SPI objects are present
+ * @brief Populate existing SPI objects and monitor for newly added objects
  *
  * @return void
  */
 void tryPopulateSpiObjects()
 {
-    // If no SPI objects are present, add a match rule to populate the objects
-    if (!isSpiObjectPresent())
-    {
-        inventoryObjectMatch = std::make_unique<sdbusplus::bus::match_t>(
-            getBus(), MatchRules::interfacesAdded(inventoryRootPath),
-            []([[maybe_unused]] sdbusplus::message::message& msg) {
-                sdbusplus::object_path objPath;
-                std::map<std::string, std::map<std::string, Value>> interfaces;
-                msg.read(objPath, interfaces);
+    // Install the match before enumerating existing objects to avoid missing an
+    // SPI configuration that Entity Manager adds during initial discovery.
+    inventoryObjectMatch = std::make_unique<sdbusplus::bus::match_t>(
+        getBus(), MatchRules::interfacesAdded(inventoryRootPath),
+        []([[maybe_unused]] sdbusplus::message::message& msg) {
+            sdbusplus::object_path objPath;
+            std::map<std::string, std::map<std::string, Value>> interfaces;
+            msg.read(objPath, interfaces);
 
-                for (const auto& [interfaceName, properties] : interfaces)
-                {
-                    if (interfaceName == spiObjectInterfaces)
-                    {
-                        populateSpiObjects();
-                        inventoryObjectMatch.reset();
-                        break;
-                    }
-                }
-            });
-    }
-    else
-    {
-        populateSpiObjects();
-    }
+            if (interfaces.contains(spiObjectInterfaces))
+            {
+                populateSpiObjects();
+            }
+        });
+
+    populateSpiObjects();
 }
 
 /**
