@@ -149,14 +149,13 @@ bool MCURecoveryManager::updateI2cDevInfo(const std::string& deviceId)
         return true;
     }
 
+    // Journal only. noDevicesFound reports that a recovery request had
+    // nothing to act on, and is raised once per invocation by the entry
+    // point; raising it again per device during enumeration mislabels an
+    // absent MCU as a failed recovery and, because these entries land in the
+    // shared FWUpdate namespace, fails unrelated update tasks.
     lg2::error("{DEV} not found on I2C bus {BUS}", "DEV", info.device, "BUS",
                info.i2cBus);
-    if (messageRegistry)
-    {
-        messageRegistry->createMessageRegistryResourceErrors(
-            resourceErrorsDetected, RecoveryProtocol::MCURecovery,
-            noDevicesFound, info.device);
-    }
     return false;
 }
 
@@ -456,14 +455,9 @@ bool MCURecoveryManager::updateUsbDevInfo(const std::string& deviceId)
         }
     }
 
+    // Journal only; see updateI2cDevInfo().
     lg2::error("{DEV} not found on {PORT} after {MAX} attempts", "DEV",
                mcuMap[deviceId].device, "PORT", usbPort, "MAX", maxRetries);
-    if (messageRegistry)
-    {
-        messageRegistry->createMessageRegistryResourceErrors(
-            resourceErrorsDetected, RecoveryProtocol::MCURecovery,
-            noDevicesFound, mcuMap[deviceId].device);
-    }
     return false;
 }
 

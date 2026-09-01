@@ -83,3 +83,34 @@ test(
     ),
     workdir: meson.current_source_dir(),
 )
+
+# Severity contract for the MCU recovery tool: enumeration must stay silent,
+# genuine recovery failures must report. See test_mcu_recovery_severity.cpp.
+test(
+    'test_mcu_recovery_severity',
+    executable(
+        'test_mcu_recovery_severity',
+        'test_mcu_recovery_severity.cpp',
+        '../recovery_tool/common/message_registry.cpp',
+        '../recovery_tool/mcu_recovery_tool/mcu_recovery_manager.cpp',
+        '../recovery_tool/mcu_recovery_tool/utils.cpp',
+        '../src/dbusutils.cpp',
+        implicit_include_directories: false,
+        dependencies: [
+            test_dep,
+            cpp.find_library('usb-1.0', required: true),
+            libgpiocxx,
+            nlohmann_json,
+            sdbusplus,
+            phosphor_dbus_interfaces,
+            phosphor_logging,
+            fmt,
+        ],
+        include_directories: include_directories(
+            '../recovery_tool/common',
+            '../recovery_tool/mcu_recovery_tool',
+            '../src',
+        ),
+    ),
+    workdir: meson.current_source_dir(),
+)

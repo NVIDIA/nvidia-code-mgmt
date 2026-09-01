@@ -116,8 +116,14 @@ struct MCUDevice
  * It interacts with libusb for USB device communication and maintains
  * the status of each MCU device.
  */
+// Grants tests access to the private failure-reporting helpers without
+// widening the public surface.
+struct MCURecoveryManagerTestAccess;
+
 class MCURecoveryManager
 {
+    friend struct MCURecoveryManagerTestAccess;
+
   public:
     MCURecoveryManager();
     ~MCURecoveryManager();

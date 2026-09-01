@@ -688,14 +688,19 @@ class MessageRegistry
   public:
     MessageRegistry(sdbusplus::bus::bus& bus) : bus(bus)
     {}
+
+    // Virtual so tests can substitute a double and assert which entries a
+    // caller emits. Recovery errors land in the shared FWUpdate namespace,
+    // so emitting one from the wrong place fails an unrelated update task.
+    virtual ~MessageRegistry() = default;
     /**
      * @brief log message registry entry
      *
      * @param[in] messageID - redfish message
      * @param[in] deviceName - device name
      */
-    void createMessageRegistry(const std::string& messageID,
-                               const std::string& deviceName) const;
+    virtual void createMessageRegistry(const std::string& messageID,
+                                       const std::string& deviceName) const;
 
     /**
      * @brief Get the Message for firmware recovery message registry
@@ -718,7 +723,7 @@ class MessageRegistry
      * @param[in] deviceName - device name
      * @param[in] severity - log severity (defaults to Critical)
      */
-    void createMessageRegistryResourceErrors(
+    virtual void createMessageRegistryResourceErrors(
         const std::string& messageID, const RecoveryProtocol& recoveryProtocol,
         const ErrorCode& errorCode, const std::string& deviceName,
         Level severity = Level::Critical) const;
