@@ -212,7 +212,7 @@ TEST_F(DebugTokenMainTest, InstallTokenPathWrongArgCount)
     EXPECT_EQ(debug_token_main_mock::installCallCount, 0);
 }
 
-TEST_F(DebugTokenMainTest, InstallFailureLogsTransferFailed)
+TEST_F(DebugTokenMainTest, InstallFailureExitsNonZero)
 {
     debug_token_main_mock::nextInstallStatus =
         DebugTokenInstallStatus::DebugTokenInstallFailed;
@@ -220,18 +220,18 @@ TEST_F(DebugTokenMainTest, InstallFailureLogsTransferFailed)
     char* argv[] = {const_cast<char*>("updateDebugToken"),
                     const_cast<char*>("1"), const_cast<char*>("1.0"),
                     const_cast<char*>("/tmp/debug-token.bin")};
-    EXPECT_EQ(debug_token_main(4, argv), 0);
+    // A non-zero exit fails the oneshot debug-token-update@.service job, which
+    // is what drives Activation::Failed and the Redfish TaskState Exception.
+    EXPECT_EQ(debug_token_main(4, argv), -1);
     EXPECT_EQ(debug_token_main_mock::installCallCount, 1);
     EXPECT_EQ(debug_token_main_mock::lastInstallPath, "/tmp/debug-token.bin");
-    ASSERT_TRUE(debug_token_main_mock::lastMessageRegistryCall.has_value());
-    EXPECT_EQ(debug_token_main_mock::lastMessageRegistryCall->messageId,
-              transferFailed);
-    EXPECT_EQ(debug_token_main_mock::lastMessageRegistryCall->componentName,
-              DEBUG_TOKEN_INSTALL_NAME);
-    EXPECT_EQ(debug_token_main_mock::lastMessageRegistryCall->version, "1.0");
+    // Version::onUpdateFailed() -> logTransferFailed() now emits the
+    // Update.1.0.TransferFailed entry, so updateDebugToken must not emit a
+    // second, identical one.
+    EXPECT_FALSE(debug_token_main_mock::lastMessageRegistryCall.has_value());
 }
 
-TEST_F(DebugTokenMainTest, InstallNoneLogsTransferFailed)
+TEST_F(DebugTokenMainTest, InstallNoneExitsNonZero)
 {
     debug_token_main_mock::nextInstallStatus =
         DebugTokenInstallStatus::DebugTokenInstallNone;
@@ -239,10 +239,10 @@ TEST_F(DebugTokenMainTest, InstallNoneLogsTransferFailed)
     char* argv[] = {const_cast<char*>("updateDebugToken"),
                     const_cast<char*>("1"), const_cast<char*>("1.0"),
                     const_cast<char*>("/tmp/debug-token.bin")};
-    EXPECT_EQ(debug_token_main(4, argv), 0);
-    ASSERT_TRUE(debug_token_main_mock::lastMessageRegistryCall.has_value());
-    EXPECT_EQ(debug_token_main_mock::lastMessageRegistryCall->messageId,
-              transferFailed);
+    // Regression guard: a token package that matches no device on this
+    // system must not report a successful update.
+    EXPECT_EQ(debug_token_main(4, argv), -1);
+    EXPECT_FALSE(debug_token_main_mock::lastMessageRegistryCall.has_value());
 }
 
 TEST_F(DebugTokenMainTest, InstallSuccessLogsUpdateSuccessful)
@@ -303,7 +303,10 @@ TEST_F(DebugTokenMainTest, InstallFailedRegistryExceptionReturnsFailure)
     char* argv[] = {const_cast<char*>("updateDebugToken"),
                     const_cast<char*>("1"), const_cast<char*>("1.0"),
                     const_cast<char*>("/tmp/debug-token.bin")};
+    // The failure branch no longer calls createMessageRegistry() at all, so
+    // the armed exception must not fire; the -1 comes from the branch itself.
     EXPECT_EQ(debug_token_main(4, argv), -1);
+    EXPECT_FALSE(debug_token_main_mock::lastMessageRegistryCall.has_value());
 }
 
 TEST_F(DebugTokenMainTest, InstallNoneRegistryExceptionReturnsFailure)
@@ -316,6 +319,7 @@ TEST_F(DebugTokenMainTest, InstallNoneRegistryExceptionReturnsFailure)
                     const_cast<char*>("1"), const_cast<char*>("1.0"),
                     const_cast<char*>("/tmp/debug-token.bin")};
     EXPECT_EQ(debug_token_main(4, argv), -1);
+    EXPECT_FALSE(debug_token_main_mock::lastMessageRegistryCall.has_value());
 }
 
 TEST_F(DebugTokenMainTest, InstallSuccessRegistryExceptionReturnsFailure)

@@ -49,17 +49,34 @@ DebugTokenInstallStatus
         return status;
     }
 
-    if (nsmTokenInstallV2(tokens) != 0)
+    size_t installedCount = 0;
+    if (nsmTokenInstallV2(tokens, &installedCount) != 0)
     {
         log<level::ERR>("NSM V2 token installation failed");
         status = DebugTokenInstallStatus::DebugTokenInstallFailed;
         return status;
     }
-    else
+
+    // A run in which no endpoint matched any token in the package is NOT a
+    // success: nothing was sent to any device and no token was applied.
+    // Reporting success here is what made the Redfish task complete green
+    // while the token was never installed.
+    if (installedCount == 0)
     {
-        log<level::INFO>("NSM V2 token installation succeeded");
-        status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
+        log<level::ERR>("No matching serial numbers for install token; "
+                        "nothing was installed");
+        createMessageRegistryResourceErrors(
+            resourceErrorsDetected, DEBUG_TOKEN_INSTALL_NAME,
+            OperationType::Common,
+            static_cast<int>(CommonErrorCodes::NoMatchingDevice));
+        status = DebugTokenInstallStatus::DebugTokenInstallNone;
+        return status;
     }
+
+    log<level::INFO>(("NSM V2 token installation succeeded for " +
+                      std::to_string(installedCount) + " device(s)")
+                         .c_str());
+    status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
     return status;
 }
 

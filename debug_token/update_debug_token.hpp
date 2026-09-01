@@ -27,6 +27,7 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <tuple>
 
 namespace dbus
@@ -334,6 +335,9 @@ enum class CommonErrorCodes
     NSMCommandEraseSuccess,
     NSMCommandEraseFailure,
     NSMCommandFailure,
+    // Appended at the end on purpose: the numeric values of this enum are
+    // surfaced in Redfish messages, so existing codes must not shift.
+    NoMatchingDevice,
 };
 
 /* debug token common error code mapping for message registry */
@@ -383,6 +387,11 @@ static const std::map<CommonErrorCodes, MessageMapping> debugTokenCommonErrorMap
       "No action required. If there are other component failures in task, retry"
       " the firmware update operation and if issue still persists reset the "
       "baseboard."}},
+    {CommonErrorCodes::NoMatchingDevice,
+     {"No device on this system matches any debug token in the package",
+      "Verify that the debug token package was generated from a token request"
+      " produced by this system and that the targeted device reports a device"
+      " ID, then retry the operation."}},
 };
 
 /* Debug Token Install Status Codes*/
@@ -699,9 +708,16 @@ class UpdateDebugToken : public TokenUtility
      * @brief debug token install for NSM endpoints V2 (TLV-based).
      *
      * @param[in] tokens - token map
-     * @return int
+     * @param[out] installedCount - optional; receives the number of tokens
+     *             that were actually accepted by a device. Zero means no
+     *             endpoint on this system matched any token in the package,
+     *             i.e. nothing was installed and the caller MUST NOT report
+     *             success. Pass nullptr when the count is not needed.
+     * @return int 0 when no device level failure was observed, -1 otherwise.
+     *             Note that 0 on its own does NOT mean a token was installed;
+     *             installedCount is what distinguishes the two.
      */
-    int nsmTokenInstallV2(TokenMap& tokens);
+    int nsmTokenInstallV2(TokenMap& tokens, size_t* installedCount = nullptr);
 
     /**
      * @brief debug token erase for NSM endpoints.

@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include <boost/container/flat_map.hpp>
+#include <sdbusplus/exception.hpp>
 
 #include <cerrno>
 #include <chrono>
@@ -706,12 +707,22 @@ std::string UpdateDebugToken::handleAsyncCallEraseV2(const std::string& path)
  * @brief Install debug tokens using NSM V2 async D-Bus interface with file
  * descriptors
  * @param tokens Map of serial numbers to token data
+ * @param installedCount [out] optional, receives the number of tokens that
+ *        were accepted by a device
  * @return 0 on success, -1 on failure
  */
-int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
+int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens,
+                                        size_t* installedCount)
 {
     int status = 0;
+    size_t installed = 0;
+    size_t endpointsWithDeviceId = 0;
     NSMEndpoints nsmEndpoints;
+
+    if (installedCount != nullptr)
+    {
+        *installedCount = 0;
+    }
 
     if (enumerateNsmDebugTokenEndpointsV2(nsmEndpoints) != 0)
     {
@@ -736,6 +747,19 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
             std::variant<std::string> property;
             reply.read(property);
             const std::string serialNumber = std::get<std::string>(property);
+
+            if (serialNumber.empty())
+            {
+                // TokenDeviceID is still at its D-Bus default. nsmd never got
+                // a device ID for this endpoint (NSM QueryDeviceIDs did not
+                // answer), so it can never match a token in the package.
+                log<level::WARNING>(
+                    (path + ": endpoint reports an empty TokenDeviceID; "
+                            "it cannot be matched against the token package")
+                        .c_str());
+                continue;
+            }
+            ++endpointsWithDeviceId;
 
             auto range = tokens.equal_range(serialNumber);
             if (range.first == range.second)
@@ -789,6 +813,7 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
                 }
                 else
                 {
+                    ++installed;
                     log<level::INFO>(
                         (path + ": Token install succeeded").c_str());
                 }
@@ -801,6 +826,18 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
                     .c_str());
             status = -1;
         }
+    }
+
+    log<level::INFO>(("NSM V2 token install summary: endpoints=" +
+                      std::to_string(nsmEndpoints.size()) +
+                      " withDeviceId=" + std::to_string(endpointsWithDeviceId) +
+                      " tokensInPackage=" + std::to_string(tokens.size()) +
+                      " installed=" + std::to_string(installed))
+                         .c_str());
+
+    if (installedCount != nullptr)
+    {
+        *installedCount = installed;
     }
 
     return status;

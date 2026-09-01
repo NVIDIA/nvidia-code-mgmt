@@ -444,6 +444,7 @@ struct DirectProbeApi
     using GetTokenStatusFn = std::string (*)(UpdateDebugToken*,
                                              const std::string&);
     using NsmTokenInstallFn = int (*)(UpdateDebugToken*, TokenMap&);
+    using NsmTokenInstallV2Fn = int (*)(UpdateDebugToken*, TokenMap&, size_t*);
     using HandleAsyncCallInstallV2Fn = std::string (*)(UpdateDebugToken*,
                                                        const std::string&, int);
     using HandleAsyncCallEraseV2Fn = std::string (*)(UpdateDebugToken*,
@@ -463,7 +464,7 @@ struct DirectProbeApi
     HandleAsyncCallInstallV2Fn handleAsyncCallInstallV2 = nullptr;
     HandleAsyncCallEraseV2Fn handleAsyncCallEraseV2 = nullptr;
     EraseDebugTokenFn nsmTokenEraseV2 = nullptr;
-    NsmTokenInstallFn nsmTokenInstallV2 = nullptr;
+    NsmTokenInstallV2Fn nsmTokenInstallV2 = nullptr;
 };
 
 std::optional<DirectProbeApi> resolveDirectProbeApi()
@@ -526,8 +527,8 @@ std::optional<DirectProbeApi> resolveDirectProbeApi()
             "_ZN16UpdateDebugToken15nsmTokenEraseV2Ev")
             .value_or(nullptr);
     api.nsmTokenInstallV2 =
-        resolveExecutableFunction<DirectProbeApi::NsmTokenInstallFn>(
-            "_ZN16UpdateDebugToken17nsmTokenInstallV2ERSt8multimapINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESt6vectorIhSaIhEESt4lessIS6_ESaISt4pairIKS6_S9_EEE")
+        resolveExecutableFunction<DirectProbeApi::NsmTokenInstallV2Fn>(
+            "_ZN16UpdateDebugToken17nsmTokenInstallV2ERSt8multimapINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESt6vectorIhSaIhEESt4lessIS6_ESaISt4pairIKS6_S9_EEEPm")
             .value_or(nullptr);
 
     if (api.updateTokenMap == nullptr || api.installDebugToken == nullptr ||
@@ -837,11 +838,13 @@ void runDirectProbePublicMethods()
         return updateDebugToken.nsmTokenEraseV2();
     };
     const auto callNsmTokenInstallV2 = [&](TokenMap& tokens) {
+        size_t installedCount = 0;
         if (api->nsmTokenInstallV2 != nullptr)
         {
-            return api->nsmTokenInstallV2(&updateDebugToken, tokens);
+            return api->nsmTokenInstallV2(&updateDebugToken, tokens,
+                                          &installedCount);
         }
-        return updateDebugToken.nsmTokenInstallV2(tokens);
+        return updateDebugToken.nsmTokenInstallV2(tokens, &installedCount);
     };
 
     swallowProbeExceptions([&] {
