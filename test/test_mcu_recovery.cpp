@@ -169,6 +169,7 @@ class MCURecoveryTest : public ::testing::Test
         fakeI2cOpenErrno = ENOENT;
         test::mcu_fake_dbus::reset();
         test::mcu_fake_gpio::reset();
+        test::mcu_fake_registry::reset();
     }
 };
 
@@ -1736,4 +1737,78 @@ TEST_F(MCURecoveryTest, RecoveryFlowCoversUpdateFailuresBeforeAndAfterReset)
     pushProbeFailureAtQuick();
     pushProbeFailureAtQuick();
     unhealthyManager.performRecoveryFlow(validSb3.string(), false);
+}
+
+// Severity contract. Recovery errors land in the shared FWUpdate logging
+// namespace, and a Redfish task's status is the roll-up of its most severe
+// message. An entry raised while merely enumerating MCUs therefore fails
+// whatever update happens to be running, even for an unrelated device.
+// fw-status links this manager and refreshes every device on each health
+// poll, so the contract is not limited to the standalone recovery tool.
+TEST_F(MCURecoveryTest, EnumeratingAbsentDevicesEmitsNoRedfishError)
+{
+    using mcu_recovery_manager::MCUInfo;
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    MCUInfo i2cInfo{};
+    i2cInfo.device = "FW_IO_Board_SMA_2";
+    i2cInfo.i2cBus = 9;
+    i2cInfo.normalI2cAddress = 0x50;
+    i2cInfo.recoveryI2cAddress = 0x51;
+    i2cInfo.interfaceType = MCUInfo::InterfaceType::I2C;
+
+    MCUInfo usbInfo{};
+    usbInfo.device = "FW_IO_Board_SMA_3";
+    usbInfo.usbPort = "2-9";
+    usbInfo.functionalPid = 0x7410;
+    usbInfo.interfaceType = MCUInfo::InterfaceType::USB;
+
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"i2c", i2cInfo}, {"usb", usbInfo}};
+    manager.messageRegistry = std::make_unique<MessageRegistry>();
+
+    // Neither I2C address answers, and no USB device is ever enumerated.
+    // updateUsbDevInfo() re-lists the bus maxRetries (5) times before giving
+    // up, and each attempt consumes one queued response.
+    constexpr size_t usbEnumerationRetries = 5;
+    pushProbeFailureAtQuick();
+    pushProbeFailureAtQuick();
+    for (size_t i = 0; i < usbEnumerationRetries; ++i)
+    {
+        pushDeviceListResponse(0, {});
+    }
+
+    EXPECT_FALSE(manager.updateI2cDevInfo("i2c"));
+    EXPECT_FALSE(manager.updateUsbDevInfo("usb"));
+
+    EXPECT_TRUE(test::mcu_fake_registry::resourceErrors.empty());
+}
+
+// The other half of the contract: a recovery that genuinely fails must still
+// report deviceRecoveryFailed at Critical so the task is failed.
+TEST_F(MCURecoveryTest, RecoveryFailureReportsDeviceRecoveryFailedAtCritical)
+{
+    using mcu_recovery_manager::MCUInfo;
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    MCUInfo i2cInfo{};
+    i2cInfo.device = "FW_IO_Board_SMA_2";
+    i2cInfo.i2cBus = 9;
+    i2cInfo.normalI2cAddress = 0x50;
+    i2cInfo.recoveryI2cAddress = 0x51;
+    i2cInfo.interfaceType = MCUInfo::InterfaceType::I2C;
+
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"i2c", i2cInfo}};
+    manager.messageRegistry = std::make_unique<MessageRegistry>();
+
+    manager.handleRecoveryError("i2c");
+
+    const auto& errors = test::mcu_fake_registry::resourceErrors;
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_EQ(errors[0].messageID, resourceErrorsDetected);
+    EXPECT_EQ(errors[0].protocol, RecoveryProtocol::MCURecovery);
+    EXPECT_EQ(errors[0].errorCode, deviceRecoveryFailed);
+    EXPECT_EQ(errors[0].deviceName, "FW_IO_Board_SMA_2");
+    EXPECT_EQ(errors[0].severity, Level::Critical);
 }

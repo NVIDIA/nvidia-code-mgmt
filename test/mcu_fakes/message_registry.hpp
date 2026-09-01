@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <vector>
 
 const std::string firmwareNotInRecovery{
     "NvidiaUpdate.1.0.FirmwareNotInRecovery"};
@@ -42,6 +43,28 @@ enum class MCURecoveryErrorCode : uint8_t
     InvalidSBFile = 0x26
 };
 
+namespace test::mcu_fake_registry
+{
+
+// One createMessageRegistryResourceErrors() call as the manager issued it.
+struct ResourceError
+{
+    std::string messageID;
+    RecoveryProtocol protocol;
+    ErrorCode errorCode;
+    std::string deviceName;
+    Level severity;
+};
+
+inline std::vector<ResourceError> resourceErrors;
+
+inline void reset()
+{
+    resourceErrors.clear();
+}
+
+} // namespace test::mcu_fake_registry
+
 class MessageRegistry
 {
   public:
@@ -54,10 +77,12 @@ class MessageRegistry
         return std::nullopt;
     }
 
-    void createMessageRegistryResourceErrors(const std::string&,
-                                             const RecoveryProtocol&,
-                                             const ErrorCode&,
-                                             const std::string&,
-                                             Level = Level::Critical) const
-    {}
+    void createMessageRegistryResourceErrors(
+        const std::string& messageID, const RecoveryProtocol& protocol,
+        const ErrorCode& errorCode, const std::string& deviceName,
+        Level severity = Level::Critical) const
+    {
+        test::mcu_fake_registry::resourceErrors.push_back(
+            {messageID, protocol, errorCode, deviceName, severity});
+    }
 };
