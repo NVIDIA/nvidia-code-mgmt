@@ -24,8 +24,10 @@
 
 #include <gpiod.hpp>
 
+#include <algorithm>
 #include <array>
 #include <format>
+#include <map>
 #include <memory>
 #include <thread>
 
@@ -119,17 +121,23 @@ class ConnectXResource : public MCTPDiscoveryResource
                 lg2::info("Performing ConnectX force recovery for {PATH}",
                           "PATH", forceRecoveryChassisObjPath);
 
+                const std::string deviceName =
+                    sdbusplus::object_path(forceRecoveryChassisObjPath)
+                        .filename();
+
                 auto [success, error] = setForceRecoveryMode();
                 if (!success)
                 {
                     lg2::error(
                         "ConnectX force recovery failed for {PATH}: {ERR}",
                         "PATH", forceRecoveryChassisObjPath, "ERR", error);
+                    logRecoveryModeEvent(false, deviceName, error);
                     throw std::runtime_error(error);
                 }
 
                 lg2::info("ConnectX force recovery successful for {PATH}",
                           "PATH", forceRecoveryChassisObjPath);
+                logRecoveryModeEvent(true, deviceName, {});
             });
     }
 
@@ -457,6 +465,64 @@ class ConnectXResource : public MCTPDiscoveryResource
         usleep(resetActiveUs);
         resetLine.set_value(1);
         sleep(resetDelaySec);
+    }
+
+    /** @brief Emit a Redfish event log entry for a SetRecoveryMode request
+     *
+     * Best effort: logging failures are reported to the journal only and
+     * never propagate to the caller.
+     *
+     * @param success - true if the NIC entered recovery mode
+     * @param deviceName - device name used in the event message args
+     * @param error - failure reason (used only when success is false)
+     */
+    void logRecoveryModeEvent(bool success, const std::string& deviceName,
+                              const std::string& error)
+    {
+        static constexpr auto logService = "xyz.openbmc_project.Logging";
+        static constexpr auto logObjPath = "/xyz/openbmc_project/logging";
+        static constexpr auto logInterface =
+            "xyz.openbmc_project.Logging.Create";
+
+        std::string messageID;
+        std::string severity;
+        std::map<std::string, std::string> addData;
+        addData["DEVICE"] = deviceName;
+        // use separate container for fwupdate message registry
+        addData["namespace"] = "FWUpdate";
+        if (success)
+        {
+            messageID = "ResourceEvent.1.0.ResourceStateChanged";
+            severity = "xyz.openbmc_project.Logging.Entry.Level.Informational";
+            addData["REDFISH_MESSAGE_ID"] = messageID;
+            addData["REDFISH_MESSAGE_ARGS"] = deviceName + ",recovery mode";
+        }
+        else
+        {
+            messageID = "ResourceEvent.1.0.ResourceErrorsDetected";
+            severity = "xyz.openbmc_project.Logging.Entry.Level.Critical";
+            addData["REDFISH_MESSAGE_ID"] = messageID;
+            // REDFISH_MESSAGE_ARGS is comma-separated; keep the reason a
+            // single argument.
+            std::string reason = error;
+            std::replace(reason.begin(), reason.end(), ',', ';');
+            std::replace(reason.begin(), reason.end(), '=', ':');
+            addData["REDFISH_MESSAGE_ARGS"] = deviceName + "," + reason;
+        }
+
+        try
+        {
+            auto method = bus.new_method_call(logService, logObjPath,
+                                              logInterface, "Create");
+            method.append(messageID, severity, addData);
+            bus.call_noreply(method);
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("Failed to create recovery mode event log entry for "
+                       "{DEVICE}: {ERR}",
+                       "DEVICE", deviceName, "ERR", e.what());
+        }
     }
 
     std::pair<bool, std::string> setForceRecoveryMode()
