@@ -91,29 +91,16 @@ int main(int argc, char** argv)
                 DebugTokenInstallStatus::DebugTokenInstallFailed)
             {
                 log<level::ERR>("Debug Token: Install failed");
-                // Exit non-zero so the oneshot debug-token-update@.service
-                // job result is "failed". Version::unitStateChange() then
-                // calls onUpdateFailed(), which sets Activation::Failed and
-                // emits Update.1.0.TransferFailed itself - hence no explicit
-                // createMessageRegistry() call here, it would be a duplicate.
-                return -1;
+                updateDebugToken->createMessageRegistry(
+                    transferFailed, DEBUG_TOKEN_INSTALL_NAME, version);
             }
             else if (tokenInstallStatus ==
                      DebugTokenInstallStatus::DebugTokenInstallNone)
             {
-                // This branch is reachable again as of this change:
-                // installDebugToken() now returns DebugTokenInstallNone when
-                // no endpoint on this system matched any token in the
-                // package. Previously every path in installDebugToken()
-                // reassigned status before returning, so this was dead code
-                // and such a run fell through to "Install success".
                 log<level::ERR>(
                     "Debug Token: No matching serial numbers for install token");
-                // installDebugToken() has already logged an actionable
-                // ResourceEvent.1.0.ResourceErrorsDetected entry. Exiting
-                // non-zero additionally fails the systemd job so the Redfish
-                // task reports Exception instead of Completed/OK.
-                return -1;
+                updateDebugToken->createMessageRegistry(
+                    transferFailed, DEBUG_TOKEN_INSTALL_NAME, version);
             }
             else
             {

@@ -259,13 +259,8 @@ TEST_F(NsmDeepTest, NsmTokenInstallV2EnumerationFails)
 {
     TokenMap tokens;
     tokens.emplace("serial", std::vector<uint8_t>(100, 0x42));
-    size_t installedCount = std::numeric_limits<size_t>::max();
-    int result = udt.nsmTokenInstallV2(tokens, &installedCount);
+    int result = udt.nsmTokenInstallV2(tokens);
     EXPECT_EQ(result, -1);
-    // Regression guard: the caller relies on installedCount to tell "nothing
-    // was installed" apart from "everything was installed", so it must always
-    // be written, including on the early-out paths.
-    EXPECT_EQ(installedCount, 0u);
 }
 
 // ========================== handleAsyncCallInstallV2 deep paths ===========
