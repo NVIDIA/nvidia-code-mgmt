@@ -35,6 +35,13 @@ int main(void)
 
         sdbusplus::server::manager::manager objManager(bus, BASE_INV_PATH);
 
+        // Also manage the software namespace so emit_interface_added() for the
+        // /software/<platform> version node (e.g. IGX_Thor) is actually emitted.
+        // sd_bus_emit_interfaces_added() only fires when an ObjectManager covers
+        // a parent path; without this phosphor-mapper never indexes the
+        // identity-resolved node and bmcweb FirmwareInventory / the WebUI never
+        // show the QSPI firmware version (nvbug 5951680).
+        sdbusplus::server::manager::manager swObjManager(bus, SW_INV_PATH);
         bus.request_name(BUSNAME);
 
         bus.attach_event(event.get(), SD_EVENT_PRIORITY_NORMAL);
