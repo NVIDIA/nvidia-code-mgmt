@@ -47,6 +47,32 @@ foreach t : tests
     )
 endforeach
 
+# Version tests (with SdBusMock + #define private public)
+src_inc = include_directories('../src')
+version_test_src = declare_dependency(
+    sources: ['../src/dbusutils.cpp', '../src/version.cpp'],
+)
+test(
+    'test_version',
+    executable(
+        'test_version',
+        'test_version.cpp',
+        implicit_include_directories: false,
+        cpp_args: compiler_args,
+        dependencies: [
+            test_dep,
+            sdbusplus,
+            phosphor_dbus_interfaces,
+            phosphor_logging,
+            fmt,
+            ssl,
+            version_test_src,
+        ],
+        include_directories: src_inc,
+    ),
+    workdir: meson.current_source_dir(),
+)
+
 test(
     'test_cpu_recovery_convergence',
     executable(
