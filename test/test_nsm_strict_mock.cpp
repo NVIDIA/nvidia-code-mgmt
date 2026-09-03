@@ -2307,7 +2307,7 @@ TEST_F(ChainedMockTest, NsmTokenInstallV2SerialNotFound)
     TokenMap tokens;
     tokens.emplace("DIFFERENT_SERIAL", std::vector<uint8_t>(100, 0x42));
     int result = udt.nsmTokenInstallV2(tokens);
-    EXPECT_EQ(result, 0);
+    EXPECT_EQ(result, installTokenNoMatch);
     EXPECT_EQ(syscall_state::memfdCreateCalls, 0);
     EXPECT_EQ(syscall_state::writeCalls, 0);
 }

@@ -138,6 +138,10 @@ void sweepMeasured(Callback&& callback)
 template <typename Callback>
 void safeMeasuredSweep(Callback&& callback)
 {
+    // With no injected failure the callback must not throw. Without this
+    // baseline the catch-all below would also hide a regression that throws
+    // on every iteration, not just the allocation failures under test.
+    EXPECT_NO_THROW(callback());
     try
     {
         alloc_fail::sweepMeasured(std::forward<Callback>(callback));
@@ -234,15 +238,11 @@ TEST_F(NsmDeepTest, NsmTokenEraseNoEndpointsEmpty)
 
 TEST_F(NsmDeepTest, NsmTokenEraseEndpointExceptionPath)
 {
-    // Directly call the endpoint-processing code by pre-populating
-    // For nsmTokenErase: getTokenStatus returns empty -> continue
-    // Since getTokenStatus calls handleAsyncCall which calls
-    // makeDebugTokenMethodCall which does D-Bus -> returns "" -> getTokenStatus
-    // returns ""
-    // -> the loop hits the "empty token status" continue at line 274-276
-
-    // We can't pre-populate endpoints without calling the function,
-    // but we CAN test the V2 variant which has a simpler structure
+    // The V1 endpoint-exception path needs pre-populated endpoints, which
+    // cannot be set up without calling the function under test. Skipped so
+    // the coverage gap is explicit instead of passing with no assertion.
+    GTEST_SKIP() << "Needs endpoint-exception setup; V2 path is covered by "
+                    "NsmTokenEraseV2EnumerationFails.";
 }
 
 // ========================== nsmTokenEraseV2 deep paths ====================
@@ -259,8 +259,9 @@ TEST_F(NsmDeepTest, NsmTokenInstallV2EnumerationFails)
 {
     TokenMap tokens;
     tokens.emplace("serial", std::vector<uint8_t>(100, 0x42));
-    int result = udt.nsmTokenInstallV2(tokens);
-    EXPECT_EQ(result, -1);
+    // Enumeration failure must report failure, not no-match: the caller
+    // treats the two differently.
+    EXPECT_EQ(udt.nsmTokenInstallV2(tokens), installTokenFailed);
 }
 
 // ========================== handleAsyncCallInstallV2 deep paths ===========
@@ -346,16 +347,28 @@ TEST_F(NsmDeepTest, MakeDebugTokenMethodCallDisableTokens)
 
 TEST_F(NsmDeepTest, GetAsyncValueDBusReturnsDefault)
 {
-    // With NiceMock, bus.call() returns a message with default data
-    // getAsyncValue may throw or return default depending on read behavior
+    // NiceMock replies carry no data, so getAsyncValue() either reads a
+    // default-constructed variant or throws. Both are acceptable, but
+    // exactly one must happen and a value that is returned must be the
+    // first alternative; without that this test passes unconditionally.
+    bool returned = false;
+    bool threw = false;
+    NSMAsyncValue result;
+
     try
     {
-        auto result = udt.getAsyncValue("/test/async/path");
-        (void)result; // May succeed with default variant
+        result = udt.getAsyncValue("/test/async/path");
+        returned = true;
     }
     catch (const std::exception&)
     {
-        // Also acceptable if read fails
+        threw = true;
+    }
+
+    EXPECT_NE(returned, threw);
+    if (returned)
+    {
+        EXPECT_EQ(result.index(), 0U);
     }
 }
 

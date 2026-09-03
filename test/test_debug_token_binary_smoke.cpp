@@ -211,9 +211,13 @@ TEST(DebugTokenBinarySmokeTest, RejectsNonNumericOperation)
     EXPECT_EQ(runBinary({"abc", "1.0"}), 255);
 }
 
-TEST(DebugTokenBinarySmokeTest, AcceptsUnknownOperation)
+TEST(DebugTokenBinarySmokeTest, RejectsUnknownOperation)
 {
-    EXPECT_EQ(runBinary({"99", "1.0"}), 0);
+    constexpr const char* unsupportedOperation = "99";
+    constexpr const char* version = "1.0";
+    constexpr int unsupportedOperationExit = 255;
+    EXPECT_EQ(runBinary({unsupportedOperation, version}),
+              unsupportedOperationExit);
 }
 
 TEST(DebugTokenBinarySmokeTest, ExercisesErasePath)
@@ -332,5 +336,12 @@ TEST(DebugTokenBinarySmokeTest, InstallEnumerateFailure)
 
 TEST(DebugTokenBinarySmokeTest, DirectProbePublicMethods)
 {
-    EXPECT_EQ(runBinary({"99", "1.0"}, "direct_probe_public_methods"), 0);
+    // The probe runs from the preload, so the exit status is incidental;
+    // the operation code is unsupported and exits non-zero.
+    constexpr const char* unsupportedOperation = "99";
+    constexpr const char* version = "1.0";
+    constexpr int unsupportedOperationExit = 255;
+    EXPECT_EQ(runBinary({unsupportedOperation, version},
+                        "direct_probe_public_methods"),
+              unsupportedOperationExit);
 }

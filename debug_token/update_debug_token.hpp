@@ -27,6 +27,7 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <tuple>
 
 namespace dbus
@@ -81,6 +82,12 @@ static constexpr int eraseTokenSuccess = 0;
 static constexpr int eraseTokenFailed = -1;
 static constexpr int eraseTokenSkipped = 1;
 
+// nsmTokenInstallV2() return codes. NoMatch is distinct from success so the
+// caller can tell "nothing matched" from "everything installed".
+static constexpr int installTokenSuccess = 0;
+static constexpr int installTokenFailed = -1;
+static constexpr int installTokenNoMatch = 1;
+
 constexpr auto erasePolicyIntfName = "com.nvidia.DebugToken.ErasePolicy";
 constexpr auto erasePolicyPath = "/com/nvidia/debug_token/";
 constexpr auto mctpPCIeService = "xyz.openbmc_project.MCTP.Control.PCIe";
@@ -126,6 +133,8 @@ const std::string debugTokenEraseFailed{
     "NvidiaUpdate.1.0.DebugTokenEraseFailed"};
 const std::string debugTokenEraseSkipped{
     "NvidiaUpdate.1.1.DebugTokenEraseSkipped"};
+const std::string debugTokenInstallationSkipped{
+    "NvidiaUpdate.1.1.DebugTokenInstallationSkipped"};
 static constexpr size_t mctpCompletionCodeByte =
     8; // 8'th byte from beginning is the MCTP Completion code for debug token
        // query
@@ -699,7 +708,7 @@ class UpdateDebugToken : public TokenUtility
      * @brief debug token install for NSM endpoints V2 (TLV-based).
      *
      * @param[in] tokens - token map
-     * @return int
+     * @return installTokenSuccess, installTokenFailed or installTokenNoMatch.
      */
     int nsmTokenInstallV2(TokenMap& tokens);
 

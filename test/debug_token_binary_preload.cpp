@@ -96,6 +96,14 @@ void resetRuntimeState()
 {
     preload_state::responses.clear();
     preload_state::pendingSignals.clear();
+    // Without clearing the match state, a signal queued by a later scenario
+    // before its match is registered makes sd_bus_wait() invoke the previous
+    // scenario's callback with stale userdata.
+    preload_state::matchCallback = nullptr;
+    preload_state::matchUserdata = nullptr;
+    preload_state::matchSlot = nullptr;
+    preload_state::currentSlot = nullptr;
+    preload_state::slotUserdata = nullptr;
     preload_state::trackedFd = -1;
     preload_state::failMemfdCreateRemaining = 0;
     preload_state::shortWriteRemaining = 0;
@@ -444,6 +452,7 @@ struct DirectProbeApi
     using GetTokenStatusFn = std::string (*)(UpdateDebugToken*,
                                              const std::string&);
     using NsmTokenInstallFn = int (*)(UpdateDebugToken*, TokenMap&);
+    using NsmTokenInstallV2Fn = int (*)(UpdateDebugToken*, TokenMap&);
     using HandleAsyncCallInstallV2Fn = std::string (*)(UpdateDebugToken*,
                                                        const std::string&, int);
     using HandleAsyncCallEraseV2Fn = std::string (*)(UpdateDebugToken*,
@@ -463,7 +472,7 @@ struct DirectProbeApi
     HandleAsyncCallInstallV2Fn handleAsyncCallInstallV2 = nullptr;
     HandleAsyncCallEraseV2Fn handleAsyncCallEraseV2 = nullptr;
     EraseDebugTokenFn nsmTokenEraseV2 = nullptr;
-    NsmTokenInstallFn nsmTokenInstallV2 = nullptr;
+    NsmTokenInstallV2Fn nsmTokenInstallV2 = nullptr;
 };
 
 std::optional<DirectProbeApi> resolveDirectProbeApi()
@@ -526,7 +535,7 @@ std::optional<DirectProbeApi> resolveDirectProbeApi()
             "_ZN16UpdateDebugToken15nsmTokenEraseV2Ev")
             .value_or(nullptr);
     api.nsmTokenInstallV2 =
-        resolveExecutableFunction<DirectProbeApi::NsmTokenInstallFn>(
+        resolveExecutableFunction<DirectProbeApi::NsmTokenInstallV2Fn>(
             "_ZN16UpdateDebugToken17nsmTokenInstallV2ERSt8multimapINSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEESt6vectorIhSaIhEESt4lessIS6_ESaISt4pairIKS6_S9_EEE")
             .value_or(nullptr);
 
@@ -837,11 +846,14 @@ void runDirectProbePublicMethods()
         return updateDebugToken.nsmTokenEraseV2();
     };
     const auto callNsmTokenInstallV2 = [&](TokenMap& tokens) {
-        if (api->nsmTokenInstallV2 != nullptr)
-        {
-            return api->nsmTokenInstallV2(&updateDebugToken, tokens);
-        }
-        return updateDebugToken.nsmTokenInstallV2(tokens);
+        const int rc = (api->nsmTokenInstallV2 != nullptr)
+                           ? api->nsmTokenInstallV2(&updateDebugToken, tokens)
+                           : updateDebugToken.nsmTokenInstallV2(tokens);
+        // Record no-match separately; it is otherwise indistinguishable from
+        // a real install in the scenarios below.
+        appendMarker(rc == installTokenNoMatch ? "probe_install_v2_no_match"
+                                               : "probe_install_v2_result");
+        return rc;
     };
 
     swallowProbeExceptions([&] {
@@ -1817,8 +1829,12 @@ extern "C" ssize_t write(int fd, const void* buf, size_t count)
 {
     ensureInitialized();
 
+    // trackedFd is -1 after reset; without this guard a write(-1, ...) would
+    // be turned into a simulated short write instead of surfacing the
+    // invalid-fd path.
     if (preload_state::shortWriteRemaining > 0 &&
-        fd == preload_state::trackedFd && count > 0)
+        preload_state::trackedFd >= 0 && fd == preload_state::trackedFd &&
+        count > 0)
     {
         preload_state::shortWriteRemaining--;
         errno = ENOSPC;
