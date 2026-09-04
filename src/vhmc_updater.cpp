@@ -74,6 +74,28 @@ std::string VHMCItemUpdater::getImageUploadDir() const
     return fallback;
 }
 
+void VHMCItemUpdater::publishFirmwareInventory(sdbusplus::bus_t& bus)
+{
+    const std::string inventoryId = VHMC_FIRMWARE_INVENTORY_ID;
+    if (inventoryId.empty())
+    {
+        lg2::error("No vHMC firmware inventory id configured");
+        return;
+    }
+
+    std::string objPath =
+        std::string(VHMC_FIRMWARE_INVENTORY_OBJPATH) + "/" + inventoryId;
+    try
+    {
+        fwInventory = std::make_unique<SoftwareVersion>(bus, objPath);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to publish vHMC firmware inventory {PATH}: {ERROR}",
+                   "PATH", objPath, "ERROR", std::string(e.what()));
+    }
+}
+
 std::string
     VHMCItemUpdater::validateTarget(const sdbusplus::object_path& target)
 {

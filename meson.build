@@ -141,6 +141,10 @@ if get_option('VHMC_FLASH_SUPPORT').enabled()
         'VHMC_FIRMWARE_INVENTORY_ID',
         get_option('VHMC_FIRMWARE_INVENTORY_ID'),
     )
+    cdata.set_quoted(
+        'VHMC_FIRMWARE_INVENTORY_OBJPATH',
+        '/xyz/openbmc_project/software',
+    )
 endif
 
 if get_option('SMCU_FLASH_SUPPORT').enabled()
