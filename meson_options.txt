@@ -511,6 +511,19 @@ option('USBDFU_RECOVERY_FLASH_LENGTH',
                   + 'above this offset (FW logs, VSN, debug tokens) is never sent so it survives recovery. '
                   + '0 sends the whole file.')
 
+option('USBDFU_RECOVERY_SUPPORTED_MODEL',
+       type: 'string',
+       value: '',
+       description: 'PLDM compatible string for the USB DFU recovery firmware package (e.g. Nvidia:USBDFURecovery:<UUID>)')
+
+option('USBDFU_RECOVERY_TIMEOUT',
+       type: 'integer',
+       value: 3600,
+       description: 'Upper bound in seconds for the whole USB DFU recovery task (strap -> bundle -> flash -> deassert). '
+                  + 'The measured SPI programming rate on the AST2700 is ~77 KB/s (~14.5 min per 64 MiB chip), so a '
+                  + 'recovery_both flash alone can take ~30 min; see recovery_tool/usbdfu_recovery_tool/README.md '
+                  + '"Timing and timeouts".')
+
 option('DOT_KEYD_SUPPORT',
        type: 'feature',
        value: 'disabled',

@@ -574,6 +574,33 @@ if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
     )
 endif
 
+if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
+    # USBDFURecovery item-updater (code-manager -u USBDFURecovery)
+    add_project_arguments('-DUSBDFU_RECOVERY_SUPPORT', language: 'cpp')
+    cdata.set_quoted(
+        'USBDFU_RECOVERY_SUPPORTED_MODEL',
+        get_option('USBDFU_RECOVERY_SUPPORTED_MODEL'),
+    )
+    cdata.set_quoted(
+        'USBDFU_RECOVERY_INVENTORY_IFACE',
+        'xyz.openbmc_project.Inventory.Decorator.Asset',
+    )
+    cdata.set_quoted(
+        'USBDFU_RECOVERY_BUSNAME_UPDATER',
+        'com.Nvidia.Software.USBDFURecovery.Updater',
+    )
+    cdata.set_quoted(
+        'USBDFU_RECOVERY_BUSNAME_INVENTORY',
+        'xyz.openbmc_project.PLDM',
+    )
+    cdata.set_quoted('USBDFU_RECOVERY_NAME', 'USBDFURecovery')
+    cdata.set_quoted(
+        'USBDFU_RECOVERY_UPDATE_SERVICE',
+        'usb-dfu-recovery@.service',
+    )
+    cdata.set('USBDFU_RECOVERY_TIMEOUT', get_option('USBDFU_RECOVERY_TIMEOUT'))
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 

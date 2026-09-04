@@ -1,0 +1,13 @@
+[Unit]
+Description=USB DFU Recovery Updater for HMC (AST2700)
+Wants=pldmd.service
+After=pldmd.service
+
+[Service]
+ExecStart=/usr/bin/code-manager -u USBDFURecovery
+Restart=always
+Type=dbus
+BusName=com.Nvidia.Software.USBDFURecovery.Updater
+
+[Install]
+WantedBy=multi-user.target
