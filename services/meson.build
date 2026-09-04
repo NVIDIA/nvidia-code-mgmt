@@ -280,6 +280,10 @@ if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
     ]
 endif
 
+if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
+    unit_files = unit_files + ['usb-dfu-recovery@.service']
+endif
+
 if get_option('NVSWITCH_CONFIG_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.Nvidia.Software.NVSwitchConfig.Updater.service',

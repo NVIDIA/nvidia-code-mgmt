@@ -484,6 +484,33 @@ option('USBRCM_RECOVERY_TIMEOUT',
        value: 600,
        description: 'USB RCM Recovery timeout in seconds')
 
+option('USBDFU_RECOVERY_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables USB DFU recovery of the HMC (AST2700 on P4102 / vr-nvl-bmc-ast2700-a2): '
+                  + 'usbdfu-recovery-tool CLI, usb-dfu-recovery worker and the USBDFURecovery item-updater. '
+                  + 'The recovery PLDM package carries the preliminary boot bundle and the SPI image as '
+                  + 'separate components (see recovery_tool/common/usbdfu_components.hpp).')
+
+option('USBDFU_UTIL_PATH',
+       type: 'string',
+       value: '/usr/bin/dfu-util',
+       description: 'Path to the dfu-util binary on the BMC')
+
+option('USBDFU_RECOVERY_DFU_ALT',
+       type: 'string',
+       value: 'recovery_both',
+       description: 'dfu-util alt setting for the final SPI flash. recovery_both programs both SPI chips '
+                  + 'from one authenticated transfer (default, per the Sunda firmware recovery design); '
+                  + 'recovery_cs0 programs the primary chip only.')
+
+option('USBDFU_RECOVERY_FLASH_LENGTH',
+       type: 'integer',
+       value: 66256896,
+       description: 'Number of firmware image bytes sent to DFU (default 0x03F30000). The persistent tail '
+                  + 'above this offset (FW logs, VSN, debug tokens) is never sent so it survives recovery. '
+                  + '0 sends the whole file.')
+
 option('DOT_KEYD_SUPPORT',
        type: 'feature',
        value: 'disabled',

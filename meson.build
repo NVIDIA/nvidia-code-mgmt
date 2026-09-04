@@ -561,6 +561,19 @@ if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
     cdata.set('USBRCM_RECOVERY_TIMEOUT', get_option('USBRCM_RECOVERY_TIMEOUT'))
 endif
 
+if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
+    # usbdfu-recovery-tool CLI and usb-dfu-recovery worker
+    cdata.set_quoted('USBDFU_UTIL_PATH', get_option('USBDFU_UTIL_PATH'))
+    cdata.set_quoted(
+        'USBDFU_RECOVERY_DFU_ALT',
+        get_option('USBDFU_RECOVERY_DFU_ALT'),
+    )
+    cdata.set(
+        'USBDFU_RECOVERY_FLASH_LENGTH',
+        get_option('USBDFU_RECOVERY_FLASH_LENGTH'),
+    )
+endif
+
 cdata.set_quoted('SOFTWARE_OBJPATH', '/xyz/openbmc_project/software/other')
 cdata.set_quoted('ACTIVATE_INTERFACE', 'xyz.openbmc_project.Software.Activation')
 
@@ -674,6 +687,10 @@ endif
 
 if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
     subdir('recovery_tool/usbrcm_recovery_tool')
+endif
+
+if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
+    subdir('recovery_tool/usbdfu_recovery_tool')
 endif
 
 if get_option('DOT_KEYD_SUPPORT').enabled()

@@ -1,0 +1,8 @@
+[Unit]
+Description=USB DFU Recovery Utility for HMC (AST2700)
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment="ARGS=%I"
+ExecStart=/usr/bin/usb-dfu-recovery $ARGS
