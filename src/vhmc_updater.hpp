@@ -8,6 +8,9 @@
 
 #include "base_item_updater.hpp"
 
+#include <memory>
+#include <string>
+
 namespace nvidia
 {
 namespace software
@@ -22,7 +25,9 @@ class VHMCItemUpdater : public BaseItemUpdater
         BaseItemUpdater(bus, VHMC_SUPPORTED_MODEL, VHMC_INVENTORY_IFACE, "VHMC",
                         VHMC_BUSNAME_UPDATER, VHMC_UPDATE_SERVICE, false,
                         VHMC_BUSNAME_INVENTORY)
-    {}
+    {
+        publishFirmwareInventory(bus);
+    }
 
     std::string getImageUploadDir() const override;
 
@@ -81,6 +86,13 @@ class VHMCItemUpdater : public BaseItemUpdater
     {
         return false;
     }
+
+  private:
+    /** @brief Publish the firmware inventory object for the vHMC. */
+    void publishFirmwareInventory(sdbusplus::bus::bus& bus);
+
+    /** @brief Firmware inventory object representing the vHMC. */
+    std::unique_ptr<SoftwareVersion> fwInventory;
 };
 
 } // namespace updater
