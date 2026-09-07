@@ -530,7 +530,7 @@ struct Coroutine
 
         /** @brief For holding return value of coroutine
          */
-        uint8_t data;
+        uint8_t data {0};
 
         bool detached = false;
 
