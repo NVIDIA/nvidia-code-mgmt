@@ -21,11 +21,14 @@
 #include "socket_manager.hpp"
 #include "utils.hpp"
 
+#include <sys/socket.h>
+
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/source/io.hpp>
 
 #include <map>
 #include <optional>
+#include <tuple>
 #include <unordered_map>
 
 namespace mctp_socket
@@ -87,19 +90,22 @@ class Handler
         int ret = 0;
         for (const auto& eid : eids)
         {
-            auto endpoint = eidToSockMap.find(eid);
-            if (endpoint == eidToSockMap.end())
-            {
-                lg2::error("No MCTP socket info registered for EID={EID}",
-                           "EID", eid);
-                ret = -1;
-                continue;
-            }
-
-            const auto& [type, protocol, pathName] = endpoint->second;
             if (manager.getSocket(eid) >= 0)
             {
                 continue;
+            }
+
+            // Discovery registers the legacy mctp-ctrl socket tuple of an
+            // EID. On in-kernel MCTP (codeconstruct mctpd) nothing publishes
+            // those tuples, and the single AF_MCTP socket serves every
+            // endpoint anyway, so an unregistered EID is not an error.
+            int type = SOCK_DGRAM;
+            int protocol = 0;
+            std::vector<uint8_t> pathName{};
+            if (auto endpoint = eidToSockMap.find(eid);
+                endpoint != eidToSockMap.end())
+            {
+                std::tie(type, protocol, pathName) = endpoint->second;
             }
 
             auto entry = socketInfoMap.find(pathName);
@@ -142,18 +148,21 @@ class Handler
      * */
     void deactivateSocket(uint8_t eid)
     {
-        if (eidToSockMap.find(eid) == eidToSockMap.end())
+        // The EID may have been activated without a registration.
+        manager.clearMctpEndpoint(eid);
+
+        auto endpoint = eidToSockMap.find(eid);
+        if (endpoint == eidToSockMap.end())
         {
             return;
         }
 
-        auto pathName = std::get<2>(eidToSockMap[eid]);
+        auto pathName = std::get<2>(endpoint->second);
         auto entry = socketInfoMap.find(pathName);
         if (entry != socketInfoMap.end() && checkActiveEndpoints(eid))
         {
             socketInfoMap.erase(entry);
         }
-        manager.clearMctpEndpoint(eid);
     }
 
   private:
@@ -184,7 +193,7 @@ class Handler
     bool checkActiveEndpoints(uint8_t eid)
     {
         auto activeEids = manager.getActiveEndpoints();
-        auto currentEidPathName = std::get<2>(eidToSockMap[eid]);
+        auto currentEidPathName = std::get<2>(eidToSockMap.at(eid));
         for (const uint8_t activeEid : activeEids)
         {
             if (activeEid == eid)
@@ -192,7 +201,10 @@ class Handler
                 continue;
             }
 
-            if (currentEidPathName == std::get<2>(eidToSockMap[activeEid]))
+            // Unregistered active EIDs carry no path to compare against.
+            auto other = eidToSockMap.find(activeEid);
+            if (other != eidToSockMap.end() &&
+                currentEidPathName == std::get<2>(other->second))
             {
                 return false;
             }

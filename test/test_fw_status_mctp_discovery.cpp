@@ -562,9 +562,13 @@ TEST_F(FWStatusMctpDiscoveryTest,
 
     const mctp_vdm::Message* responseMsg = nullptr;
     size_t responseLen = 0;
+    // An unregistered EID is activated on demand now; the "no socket" path is
+    // a socket creation failure.
+    fakeSys.socketResult = -1;
     auto noSocket = helper.queryBootStatus(42, responseMsg, responseLen);
     EXPECT_EQ(responseMsg, nullptr);
     EXPECT_EQ(responseLen, 0u);
+    fakeSys.socketResult = fakeSys.pipeFds[0];
 
     const std::vector<uint8_t> sharedPath{1, 2, 3};
     socketHandler.socketInfoMap.emplace(
@@ -1173,4 +1177,42 @@ TEST_F(FWStatusMctpDiscoveryTest,
     fakeSys.getsockoptResult = 0;
     fakeSys.bindResult = -1;
     EXPECT_LT(failingSocketHandler.initSocket(SOCK_DGRAM, 0, {9, 8, 7}), 0);
+}
+
+// NVBug 6738446: on in-kernel MCTP (codeconstruct mctpd) nothing publishes the
+// legacy mctp-ctrl socket tuples, so no EID is ever registered. The single
+// AF_MCTP socket serves every endpoint regardless, so activation must not
+// depend on a registration.
+TEST_F(FWStatusMctpDiscoveryTest,
+       SocketHandlerActivatesUnregisteredEidOnInKernelMctp)
+{
+    auto event = sdeventplus::Event::get_default();
+    mctp_socket::Manager socketManager;
+    mctp_vdm::InstanceIdMgr ids;
+    mctp_vdm::requester::Handler requester(event, ids, socketManager,
+                                           std::chrono::seconds(1), 0,
+                                           std::chrono::milliseconds(1));
+    mctp_socket::Handler socketHandler(event, requester, socketManager);
+
+    // Never registered (discovery found nothing), yet usable.
+    EXPECT_EQ(socketHandler.activateSockets({9}), 0);
+    ASSERT_NE(socketHandler.io, nullptr);
+    const int fd = socketManager.getSocket(9);
+    ASSERT_GE(fd, 0);
+
+    // A second unregistered EID shares the same socket.
+    EXPECT_EQ(socketHandler.activateSockets({50}), 0);
+    EXPECT_EQ(socketManager.getSocket(50), fd);
+
+    // Deactivation releases the mapping even without a registration.
+    socketHandler.deactivateSocket(9);
+    EXPECT_EQ(socketManager.getSocket(9), -1);
+    EXPECT_EQ(socketManager.getSocket(50), fd);
+    socketHandler.deactivateSocket(50);
+    EXPECT_EQ(socketManager.getSocket(50), -1);
+
+    // A socket failure is still reported.
+    fakeSys.socketResult = -1;
+    mctp_socket::Handler failingHandler(event, requester, socketManager);
+    EXPECT_EQ(failingHandler.activateSockets({9}), -1);
 }
