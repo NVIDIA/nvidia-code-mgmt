@@ -48,6 +48,11 @@ constexpr auto resetGpioProperty = "ResetGpioName";
 constexpr auto spiMuxGpioProperty = "SpiMuxGpioName";
 constexpr auto recoveryPolarityProperty = "RecoveryGpioPolarity";
 constexpr auto resetPolarityProperty = "ResetGpioPolarity";
+// Optional: USB identity of a normally booted HMC and its kernel port path.
+// Without FunctionalUsbId a healthy HMC cannot be told from a dead one and
+// recovery is always attempted (status Unknown).
+constexpr auto functionalUsbIdProperty = "FunctionalUsbId";
+constexpr auto usbPortProperty = "UsbPort";
 
 using nvidia::software::updater::InterfaceMap;
 
@@ -132,6 +137,32 @@ static std::optional<std::string>
             return std::string(property);
         }
         dest = *activeLow;
+    }
+    return std::nullopt;
+}
+
+/**
+ * Populate the optional USB status properties in cfg.  Returns an error
+ * string if FunctionalUsbId is present but malformed.
+ */
+static std::optional<std::string>
+    readStatusConfig(const InterfaceMap& interfaces,
+                     UsbDfuRecovery::Config& cfg)
+{
+    if (auto id = getStringProperty(interfaces, usbDfuRecoveryObjInterface,
+                                    functionalUsbIdProperty))
+    {
+        cfg.functionalUsbId = usbdfu::UsbId::parse(*id);
+        if (!cfg.functionalUsbId)
+        {
+            return std::string(functionalUsbIdProperty) +
+                   " must be vvvv:pppp, got '" + *id + "'";
+        }
+    }
+    if (auto port = getStringProperty(interfaces, usbDfuRecoveryObjInterface,
+                                      usbPortProperty))
+    {
+        cfg.usbPortFilter = *port;
     }
     return std::nullopt;
 }
@@ -229,6 +260,18 @@ int usbdfuServiceMain(int argc, char** argv)
             recoveryTaskState = -1;
             continue;
         }
+        if (auto bad = readStatusConfig(*interfaces, cfg))
+        {
+            lg2::error("Invalid USB status configuration for {DEVICE}: {ERR}",
+                       "DEVICE", device, "ERR", *bad);
+            messageRegistry.createMessageRegistryResourceErrors(
+                resourceErrorsDetected, RecoveryProtocol::USBDFURecovery,
+                static_cast<ErrorCode>(
+                    USBDFURecoveryErrorCode::InvalidConfiguration),
+                device);
+            recoveryTaskState = -1;
+            continue;
+        }
 
         if (auto bad = readGpioPolarity(*interfaces, cfg))
         {
@@ -249,12 +292,26 @@ int usbdfuServiceMain(int argc, char** argv)
                   "DEVICE", device, "IMG", package.firmwareImage.string(),
                   "REC", cfg.recoveryGpioName, "RST", cfg.resetGpioName, "MUX",
                   cfg.spiMuxGpioName, "ALT", cfg.dfuAltSetting);
+        // Status probe first (USB descriptors only): a healthy HMC is skipped
+        // without touching the straps, like the other recovery workers.
+        UsbDfuRecovery recovery(cfg);
+        const auto status = recovery.probeStatus();
+        if (status.state == usbdfu::RecoveryState::NotInRecovery)
+        {
+            lg2::info("Device {DEVICE} is healthy ({ID} on {PORT}), skipping "
+                      "recovery",
+                      "DEVICE", device, "ID", status.usbId, "PORT",
+                      status.usbPortPath);
+            messageRegistry.createMessageRegistry(firmwareNotInRecovery,
+                                                  device);
+            continue;
+        }
         messageRegistry.createMessageRegistry(recoveryStarted, device);
 
-        UsbDfuRecovery recovery(cfg);
         nlohmann::json out;
-        if (!recovery.performFullRecovery(package.firmwareImage.string(),
-                                          package.bundle, out))
+        const auto outcome = recovery.performRecovery(
+            package.firmwareImage.string(), package.bundle, out, status);
+        if (outcome == UsbDfuRecovery::Outcome::Failed)
         {
             const auto errorCode = errorCodeOf(out);
             lg2::error("USB DFU recovery failed for {DEVICE} (code {CODE}): "
@@ -266,6 +323,13 @@ int usbdfuServiceMain(int argc, char** argv)
                 resourceErrorsDetected, RecoveryProtocol::USBDFURecovery,
                 errorCode, device);
             recoveryTaskState = -1;
+            continue;
+        }
+        if (outcome == UsbDfuRecovery::Outcome::Skipped)
+        {
+            // Became healthy between the probe and the sequence.
+            messageRegistry.createMessageRegistry(firmwareNotInRecovery,
+                                                  device);
             continue;
         }
 

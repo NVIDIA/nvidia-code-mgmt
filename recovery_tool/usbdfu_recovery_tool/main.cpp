@@ -54,6 +54,33 @@ static void addVerboseFlag(CLI::App* cmd, bool& verbose)
                   "Also print info-level diagnostics to stderr");
 }
 
+struct StatusOptions
+{
+    CLI::Option* functionalUsbId{nullptr};
+    CLI::Option* usbPort{nullptr};
+};
+
+// Status-probe options shared by PerformRecovery and GetRecoveryStatus.  Both
+// are bound to plain strings rather than cfg: the recovery configuration is
+// loaded after parsing and supplies the defaults, so a value given on the
+// command line has to be applied on top of it (see main), not under it.
+static StatusOptions addStatusOptions(CLI::App* cmd,
+                                      std::string& functionalUsbId,
+                                      std::string& usbPort)
+{
+    StatusOptions opts;
+    opts.functionalUsbId = cmd->add_option(
+        "--functional-usb-id", functionalUsbId,
+        "USB vid:pid of a normally booted HMC on the recovery "
+        "link; overrides FunctionalUsbId from the recovery "
+        "configuration. Unset: HMC health cannot be determined");
+    opts.usbPort = cmd->add_option(
+        "--usb-port", usbPort,
+        "Kernel USB port path of the HMC, e.g. 1-1.3; overrides "
+        "UsbPort from the recovery configuration (default: any port)");
+    return opts;
+}
+
 static int emit(const nlohmann::json& output, bool ok)
 {
     std::cout << output.dump(2) << '\n';
@@ -84,6 +111,9 @@ int main(int argc, char* argv[])
         std::string configPath{USBDFU_RECOVERY_CONFIG_PATH};
         std::string deviceName;
         bool noDetach = false;
+        std::string functionalUsbId; // CLI overrides of the config values
+        std::string usbPort;
+        bool noVerify = false;
         bool verbose = false;
 
         auto* performCmd = app.add_subcommand(
@@ -122,6 +152,21 @@ int main(int argc, char* argv[])
                          "(default: " USBDFU_RECOVERY_DFU_ALT ")")
             ->check(CLI::IsMember(
                 {"recovery_cs0", "recovery_cs1", "recovery_both"}));
+        auto performStatusOpts =
+            addStatusOptions(performCmd, functionalUsbId, usbPort);
+        performCmd->add_flag(
+            "--force", cfg.forceRecovery,
+            "Drive the recovery strap and flash regardless of the status "
+            "probe (also re-flashes a healthy HMC)");
+        performCmd->add_flag("--no-verify", noVerify,
+                             "Do not wait for the HMC to leave DFU mode after "
+                             "recovery");
+        performCmd->add_option(
+            "--verify-timeout", cfg.postRecoveryVerifyTimeoutSecs,
+            "Seconds to wait for the HMC to leave DFU mode after recovery "
+            "(default: " +
+                std::to_string(usbdfu::timing::postRecoveryVerifyTimeoutSecs) +
+                ")");
         performCmd->add_option(
             "--flash-length", cfg.flashLengthBytes,
             "Number of image bytes sent to DFU; 0 sends the whole file "
@@ -139,6 +184,19 @@ int main(int argc, char* argv[])
         addConfigOptions(performCmd, configPath, deviceName);
         addEnumerationOptions(performCmd, cfg);
         addVerboseFlag(performCmd, verbose);
+
+        auto* statusCmd = app.add_subcommand(
+            "GetRecoveryStatus",
+            "Report the HMC recovery status from its USB descriptors: In "
+            "Recovery (BootROM DFU 2245:2700 or recovery U-Boot DFU targets), "
+            "Not in Recovery (functional identity present) or Unknown");
+        auto statusStatusOpts =
+            addStatusOptions(statusCmd, functionalUsbId, usbPort);
+        statusCmd->add_option("--dfu-util", cfg.dfuUtilPath,
+                              "Path to the dfu-util binary on the BMC "
+                              "(default: " USBDFU_UTIL_PATH ")");
+        addConfigOptions(statusCmd, configPath, deviceName);
+        addVerboseFlag(statusCmd, verbose);
 
         auto* assertCmd = app.add_subcommand(
             "AssertRecovery",
@@ -168,6 +226,38 @@ int main(int argc, char* argv[])
         if (!loadRecoveryConfig(configPath, deviceName, cfg, output))
         {
             return emit(output, false);
+        }
+        cfg.verifyAfterRecovery = !noVerify;
+
+        // An explicit --functional-usb-id replaces the configured value; an
+        // empty one ("") probes as if the platform had none.
+        if (performStatusOpts.usbPort->count() > 0 ||
+            statusStatusOpts.usbPort->count() > 0)
+        {
+            cfg.usbPortFilter = usbPort; // "" = any port
+        }
+        if (performStatusOpts.functionalUsbId->count() > 0 ||
+            statusStatusOpts.functionalUsbId->count() > 0)
+        {
+            cfg.functionalUsbId = functionalUsbId.empty()
+                                      ? std::nullopt
+                                      : usbdfu::UsbId::parse(functionalUsbId);
+            if (!functionalUsbId.empty() && !cfg.functionalUsbId)
+            {
+                return fail(output,
+                            "--functional-usb-id must be vvvv:pppp (hex), got "
+                            "'" +
+                                functionalUsbId + "'",
+                            USBDFURecoveryErrorCode::InvalidConfiguration);
+            }
+        }
+
+        if (statusCmd->parsed())
+        {
+            UsbDfuRecovery recovery(cfg);
+            output = recovery.probeStatus().toJson();
+            // A derived status (even Unknown) is a successful query.
+            return emit(output, true);
         }
 
         if (performCmd->parsed())
@@ -214,8 +304,9 @@ int main(int argc, char* argv[])
             }
 
             UsbDfuRecovery recovery(cfg);
-            return emit(output,
-                        recovery.performFullRecovery(image, bundle, output));
+            const auto outcome =
+                recovery.performRecovery(image, bundle, output);
+            return emit(output, outcome != UsbDfuRecovery::Outcome::Failed);
         }
 
         UsbDfuRecovery recovery(cfg);

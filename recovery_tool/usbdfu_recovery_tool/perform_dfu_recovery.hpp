@@ -9,6 +9,7 @@
 // CLI does not link message_registry.cpp or sdbusplus.
 #include "message_registry.hpp"
 #include "usbdfu_components.hpp"
+#include "usbdfu_status.hpp"
 
 #include <gpiod.hpp>
 #include <nlohmann/json.hpp>
@@ -97,6 +98,10 @@ constexpr int flashTimeoutSecs = 300;
 // isProgrammingComplete() when one exists.
 constexpr int postFlashSettleSecs = 1200;
 constexpr int postFlashPollSecs = 10;
+// After the final reset the BootROM DFU device must disappear; the HMC needs
+// a few seconds to leave DFU and start booting the recovered image.
+constexpr int postRecoveryVerifyTimeoutSecs = 60;
+constexpr int postRecoveryVerifyPollMs = 1000;
 constexpr int dfuListTimeoutSecs = 30; // dfu-util -l
 } // namespace timing
 
@@ -191,7 +196,38 @@ class UsbDfuRecovery
         int flashTimeoutSecs{usbdfu::timing::flashTimeoutSecs};
         int postFlashSettleSecs{usbdfu::timing::postFlashSettleSecs};
         int postFlashPollSecs{usbdfu::timing::postFlashPollSecs};
+        /**
+         * USB identity of a normally booted HMC on the recovery link
+         * (Entity Manager FunctionalUsbId).  Unset: a healthy HMC cannot be
+         * told from a dead one and recovery is always attempted.
+         */
+        std::optional<usbdfu::UsbId> functionalUsbId;
+        /** Kernel USB port path of the HMC (Entity Manager UsbPort); empty =
+         *  any port */
+        std::string usbPortFilter;
+        /** Ignore the status probe: always drive the straps and flash */
+        bool forceRecovery{false};
+        /** After recovery, require the BootROM DFU device to disappear */
+        bool verifyAfterRecovery{true};
+        int postRecoveryVerifyTimeoutSecs{
+            usbdfu::timing::postRecoveryVerifyTimeoutSecs};
+        int postRecoveryVerifyPollMs{usbdfu::timing::postRecoveryVerifyPollMs};
         int dfuListTimeoutSecs{usbdfu::timing::dfuListTimeoutSecs};
+        /**
+         * Runs `dfu-util -l` for the status probe and returns its stdout.
+         * Empty = run the real binary; tests inject canned output.
+         */
+        usbdfu::CaptureFn dfuListCapture;
+    };
+
+    /** Result of performRecovery(). */
+    enum class Outcome
+    {
+        /** Sequence ran and the HMC left DFU mode */
+        Recovered,
+        /** HMC reported healthy (Not in Recovery); nothing was touched */
+        Skipped,
+        Failed,
     };
 
     /** Selects alt setting, timeout and error label for a dfu-util -D. */
@@ -237,12 +273,37 @@ class UsbDfuRecovery
      *  starts programming. */
     bool flashFirmware(const std::string& imagePath, nlohmann::json& out);
 
-    /** Verifies every input exists before touching any GPIO. */
+    /**
+     * Probe the HMC recovery status from its USB descriptors (see
+     * usbdfu_status.hpp); never touches a GPIO.
+     */
+    usbdfu::RecoveryStatus probeStatus() const;
+
+    /**
+     * Run the recovery sequence end-to-end, mirroring the other recovery
+     * workers:
+     *   1. preflight: image and bundle files exist
+     *   2. status probe: Not in Recovery -> Skipped (nothing touched);
+     *      In Recovery -> the strap/reset step is skipped (and the bundle
+     *      too when recovery U-Boot is already up); Unknown -> force
+     *      recovery via the straps, unless config_.forceRecovery overrides
+     *   3. bundle, wait for recovery U-Boot's DFU targets, flash, deassert
+     *   4. verify the BootROM DFU device is gone (config_.verifyAfterRecovery)
+     * out["Outcome"] is "Recovered" / "Skipped" / "Failed".
+     */
+    Outcome performRecovery(
+        const std::string& fwspiImage,
+        const std::vector<std::filesystem::path>& bundle, nlohmann::json& out,
+        std::optional<usbdfu::RecoveryStatus> probed = std::nullopt);
+
+    /** performRecovery() as a bool: true unless the outcome is Failed. */
     bool performFullRecovery(const std::string& fwspiImage,
                              const std::vector<std::filesystem::path>& bundle,
                              nlohmann::json& out);
 
     bool waitForDfuEnumeration(nlohmann::json& out);
+    /** Poll until the BootROM DFU device has left the bus (verification). */
+    bool waitForRecoveryExit(nlohmann::json& out);
 
     /** 0 = return immediately. */
     bool waitForRecoveryUBoot(nlohmann::json& out);
@@ -273,7 +334,8 @@ class UsbDfuRecovery
 
   private:
     /** Polls immediately, then every intervalMs.  The final nap is clamped
-     *  to the deadline; a timeout of 0 polls once without sleeping. */
+     *  to the deadline; a timeout of 0 polls once without sleeping.
+     *  Time spent inside `ready()` counts against the timeout too. */
     static bool pollUntil(int timeoutMs, int intervalMs,
                           const std::function<bool()>& ready);
 
@@ -284,14 +346,21 @@ class UsbDfuRecovery
 
     std::string lastCommand_;
 
+    /** Runs dfu-util -l for the status probe; tests inject canned output. */
+    usbdfu::CaptureFn captureFn_;
+
     static gpiod::line requestOutputLine(const std::string& pinName, int value,
                                          std::string& errorMsg) noexcept;
 
     /** Assert then release resetGpioName, per Config::resetActiveLow. */
     bool pulseReset() noexcept;
 
-    /** Acquires (or re-acquires) the session_ lines, then pulses reset. */
-    bool setRecoveryStrap(int recoveryValue, nlohmann::json& out);
+    /** Acquires (or re-acquires) the session_ lines (SPI mux low, strap at
+     *  recoveryValue), then pulses reset so the HMC samples the strap.
+     *  pulseResetAfter=false only holds the lines, for an HMC already in
+     *  DFU. */
+    bool setRecoveryStrap(int recoveryValue, nlohmann::json& out,
+                          bool pulseResetAfter = true);
 
     bool preflightChecks(const std::string& fwspiImage,
                          const std::vector<std::filesystem::path>& bundle,

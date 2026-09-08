@@ -6,7 +6,11 @@ dbus_utils_dir = '../../src'
 inc_dirs = include_directories(['.', '../../src/', '../common'])
 
 # Core recovery logic shared by both executables
-usbdfu_lib_sources = ['perform_dfu_recovery.cpp', 'process_utils.cpp']
+usbdfu_lib_sources = [
+    'perform_dfu_recovery.cpp',
+    'process_utils.cpp',
+    'usbdfu_status.cpp',
+]
 
 # 1. Standalone CLI tool (no D-Bus dependency)
 executable(

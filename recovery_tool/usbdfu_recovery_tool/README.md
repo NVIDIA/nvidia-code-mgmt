@@ -7,6 +7,9 @@ sequence from the Redfish/PLDM update path.
 
 The recovery sequence:
 
+- Probe the HMC recovery status from its USB descriptors (see
+  "GetRecoveryStatus"). A healthy HMC is skipped; an HMC already in DFU mode
+  holds the straps but skips the reset pulse and the enumeration wait.
 - Drive the HMC SPI mux so the HMC owns its SPI flash, assert the recovery strap
   (GPIO) and pulse reset so the BootROM enumerates as a USB DFU device (VID:PID
   `2245:2700`), then wait until that device is visible in sysfs.
@@ -69,15 +72,19 @@ hand-typed line names:
       "RecoveryGpioPolarity": "ActiveHigh",
       "ResetGpioName": "HMC_RST_R_L-O",
       "ResetGpioPolarity": "ActiveLow",
-      "SpiMuxGpioName": "HMC_SPI_MUX_R_SEL-O"
+      "SpiMuxGpioName": "HMC_SPI_MUX_R_SEL-O",
+      "FunctionalUsbId": "0525:a4a2"
     }
   ]
 }
 ```
 
 The two polarity properties are optional and default to `ActiveHigh` for the
-recovery strap and `ActiveLow` for reset. `--device` selects an entry when the
-configuration exposes more than one.
+recovery strap and `ActiveLow` for reset. `FunctionalUsbId` (USB `vid:pid` of a
+normally booted HMC on the recovery link) and `UsbPort` (its kernel port path)
+are optional too and feed the status probe (see "GetRecoveryStatus"); without
+`FunctionalUsbId` a healthy HMC cannot be told from a dead one. `--device`
+selects an entry when the configuration exposes more than one.
 
 ## Build and Install
 
@@ -121,6 +128,8 @@ usbdfu-recovery-tool PerformRecovery \
     [options]
 
 # options:
+    [--functional-usb-id vvvv:pppp] [--usb-port <path>] \
+    [--force] [--no-verify] [--verify-timeout <secs>] \
     [--dfu-util <path>] \
     [--dfu-alt recovery_cs0|recovery_cs1|recovery_both] \
     [--flash-length <bytes>] \
@@ -129,6 +138,9 @@ usbdfu-recovery-tool PerformRecovery \
     [--json <config.json>] [--device <name>] \
     [--enum-timeout <secs>] \
     [-v|--verbose]
+
+usbdfu-recovery-tool GetRecoveryStatus [--json <config.json>] [--device <name>] \
+    [--functional-usb-id vvvv:pppp] [--usb-port <path>] [--dfu-util <path>]
 
 usbdfu-recovery-tool AssertRecovery \
     [--json <config.json>] [--device <name>] \
@@ -148,13 +160,18 @@ On a terminal lg2 prefixes each line with its syslog priority, e.g.
 
 ## Recommended Recovery Flow
 
-1. Verify the HMC USB port is not yet in DFU mode: `lsusb` should not show
-   `2245:2700`.
+1. Check the HMC state: `usbdfu-recovery-tool GetRecoveryStatus`. `In Recovery`
+   means the BootROM (or recovery U-Boot) is already waiting over USB;
+   `Not in Recovery` means the HMC is running normally (only reported when a
+   functional USB identity is configured); `Unknown` means nothing was found on
+   the port.
 2. Copy the recovery inputs to the BMC: either the extracted recovery package
    directory, or the bundle stages and the SPI image.
-3. Run `PerformRecovery`. The tool performs the full sequence end-to-end.
-4. After completion, `lsusb` should no longer show `2245:2700` and the HMC
-   should boot normally.
+3. Run `PerformRecovery`. The tool probes the status again, forces recovery via
+   the straps only when the HMC is not already in DFU mode, performs the
+   sequence and waits for the HMC to leave DFU mode.
+4. After completion, `GetRecoveryStatus` should no longer report `In Recovery`
+   and the HMC should boot normally.
 
 Example:
 
@@ -179,40 +196,51 @@ usbdfu-recovery-tool PerformRecovery \
 1. Preflight: resolves the inputs (package components, or the `--images` list)
    and verifies the firmware image and every bundle binary exist before any GPIO
    is touched.
-2. Drives `HMC_SPI_MUX_R_SEL-O=0` (HMC owns its SPI flash) and
+2. Probes the recovery status (USB descriptors only). `Not in Recovery` ends the
+   command with `"Status": "Skipped"` and exit 0; `In Recovery` holds the SPI
+   mux and the strap but skips the reset pulse and the enumeration wait below
+   (and the bundle when recovery U-Boot is already up); `Unknown` proceeds with
+   the strap. `--force` always drives the strap, including on a healthy HMC.
+3. Drives `HMC_SPI_MUX_R_SEL-O=0` (HMC owns its SPI flash) and
    `HMC_RECOVERY_R-O=1` (recovery strap), then pulses `HMC_RST_R_L-O` to reset
    the HMC into BootROM DFU mode.
-3. Polls sysfs until a USB device with VID:PID `2245:2700` appears (default
+4. Polls sysfs until a USB device with VID:PID `2245:2700` appears (default
    timeout 15 s, `--enum-timeout`). If it never appears the straps are released
    and the command fails with `DfuEnumerationFailed`.
-4. Pushes each bundle binary in order via `dfu-util -D`, with an inter-step
+5. Pushes each bundle binary in order via `dfu-util -D`, with an inter-step
    delay (default 10 s, `--bundle-step-delay`).
-5. Polls `dfu-util -l` until recovery U-Boot exposes its `recovery_*` DFU
+6. Polls `dfu-util -l` until recovery U-Boot exposes its `recovery_*` DFU
    targets (default 180 s, 5 s interval). Recovery U-Boot first erases the
    debug-token and PDS slots on both SPI chips, which takes far longer than the
    lab script's `sleep 10`; if the targets never appear the command fails with
    `RecoveryUBootDfuTimeout` and releases the straps.
-6. Transfers the firmware SPI image via `dfu-util -a <alt> -D <image>`, sending
+7. Transfers the firmware SPI image via `dfu-util -a <alt> -D <image>`, sending
    only the first `--flash-length` bytes (see "Firmware image handling"), then
    ends the DFU session with `dfu-util -a <alt> -e`. The transfer only places
    the image in the HMC's DRAM; ending the session is what makes recovery U-Boot
    authenticate the manifests and program SPI.
-7. Waits for programming to finish (default ceiling 1200 s per chip-select, so
+8. Waits for programming to finish (default ceiling 1200 s per chip-select, so
    2400 s for `recovery_both`, `--post-flash-settle`). Recovery U-Boot gives the
    BMC no completion signal today, so the tool waits the full ceiling. Measured:
    901 s for CS0 and 794 s for CS1. Resetting the HMC earlier aborts programming
    and leaves the flash partly written.
-8. Deasserts `HMC_RECOVERY_R-O=0` and pulses reset so the HMC boots normally.
+9. Deasserts `HMC_RECOVERY_R-O=0` and pulses reset so the HMC boots normally.
+10. Verifies the BootROM DFU device (`2245:2700`) has left the USB bus (default
+    60 s, `--verify-timeout`; `--no-verify` skips), failing with
+    `RecoveryVerificationFailed` otherwise.
 
 Example output on success:
 
 ```json
 {
   "Status": "Successful",
+  "Outcome": "Recovered",
   "DfuAlt": "recovery_cs0",
   "FlashedBytes": 66256896,
+  "StatusCheck": { "Recovery Status": "Unknown", "...": "..." },
   "Steps": {
     "Preflight": "Successful",
+    "StatusCheck": "Successful",
     "AssertRecovery": "Successful",
     "ResetPulse1": "Successful",
     "DfuEnumeration": "Successful",
@@ -220,10 +248,17 @@ Example output on success:
     "RecoveryUBoot": "Successful",
     "FlashFirmware": "Successful",
     "DeassertRecovery": "Successful",
-    "ResetPulse2": "Successful"
+    "ResetPulse2": "Successful",
+    "Verify": "Successful"
   }
 }
 ```
+
+`"Outcome"` is `Recovered`, `Skipped` (healthy HMC, nothing touched, exit 0) or
+`Failed`. Steps that were not needed are reported as `"Skipped"`.
+`"Steps"."StatusCheck"` is `Inconclusive` when `dfu-util -l` could not be run,
+so the stage may be understated; the probe result itself is under
+`"StatusCheck"`.
 
 Example output on failure:
 
@@ -272,16 +307,61 @@ U-Boot, not only when the SPI image is written:
 them to Redfish `ResourceEvent.1.0.ResourceErrorsDetected` messages
 (`recovery_tool/common/message_registry.hpp`, `USBDFURecoveryErrorCode`).
 
-| Code | Name                      | Meaning                                                                                 |
-| ---- | ------------------------- | --------------------------------------------------------------------------------------- |
-| 1    | `GPIOAssertFailed`        | Could not drive the SPI mux / recovery strap or pulse reset                             |
-| 2    | `BundleSendFailed`        | A bundle binary is missing or its `dfu-util -D` failed                                  |
-| 3    | `FirmwareFlashFailed`     | Firmware image missing, could not be staged, or the final `dfu-util` failed             |
-| 4    | `GPIODeassertFailed`      | Could not deassert the recovery strap or pulse reset into normal boot                   |
-| 5    | `DfuEnumerationFailed`    | `2245:2700` did not appear on the USB bus after asserting recovery                      |
-| 6    | `InvalidConfiguration`    | `--images` list too short, or (worker) Entity Manager GPIO names missing                |
-| 7    | `PackageIncomplete`       | A component of the recovery package is missing (see "Recovery package layout")          |
-| 8    | `RecoveryUBootDfuTimeout` | Recovery U-Boot never exposed the `recovery_*` DFU targets after the preliminary bundle |
+| Code | Name                         | Meaning                                                                                  |
+| ---- | ---------------------------- | ---------------------------------------------------------------------------------------- |
+| 1    | `GPIOAssertFailed`           | Could not drive the SPI mux / recovery strap or pulse reset                              |
+| 2    | `BundleSendFailed`           | A bundle binary is missing or its `dfu-util -D` failed                                   |
+| 3    | `FirmwareFlashFailed`        | Firmware image missing, could not be staged, or the final `dfu-util` failed              |
+| 4    | `GPIODeassertFailed`         | Could not deassert the recovery strap or pulse reset into normal boot                    |
+| 5    | `DfuEnumerationFailed`       | `2245:2700` did not appear on the USB bus after asserting recovery                       |
+| 6    | `InvalidConfiguration`       | `--images` list too short, recovery configuration or FunctionalUsbId invalid             |
+| 7    | `PackageIncomplete`          | A component of the recovery package is missing (see "Recovery package layout")           |
+| 8    | `RecoveryUBootDfuTimeout`    | Recovery U-Boot never exposed the `recovery_*` DFU targets after the preliminary bundle  |
+| 9    | `RecoveryVerificationFailed` | The HMC still enumerates as `2245:2700` after recovery; the recovered image did not boot |
+
+## GetRecoveryStatus
+
+`GetRecoveryStatus` reports the HMC recovery state without touching any GPIO.
+Like the USB RCM and MCU recovery tools, the state is derived only from the
+device's own USB descriptors (sysfs) and the DFU alt settings listed by
+`dfu-util -l`; the tool never consults D-Bus inventory or MCTP (fw-status covers
+platform-level health).
+
+| Observation on the recovery USB link                   | `Recovery Status` | `Recovery Stage` |
+| ------------------------------------------------------ | ----------------- | ---------------- |
+| USB `2245:2700` present, no `recovery_*` DFU targets   | `In Recovery`     | `BootROM`        |
+| `dfu-util -l` lists `recovery_cs0/cs1/both`            | `In Recovery`     | `RecoveryUBoot`  |
+| Functional identity (`--functional-usb-id`) present    | `Not in Recovery` | `None`           |
+| Nothing found (dead HMC, unplugged, or identity unset) | `Unknown`         | `None`           |
+
+The functional identity is the USB `vid:pid` a normally booted HMC presents on
+the link; without it a healthy HMC cannot be told from a dead one and the tool
+never reports `Not in Recovery`. It comes from the `FunctionalUsbId` property of
+the recovery configuration entry (the same `--json` / `--device` the straps are
+read from), and `UsbPort` from that entry restricts the search to the HMC's
+kernel port path on platforms with several USB devices.
+`--functional-usb-id vvvv:pppp` and `--usb-port <path>` override both for a
+one-off probe.
+
+```bash
+usbdfu-recovery-tool GetRecoveryStatus
+```
+
+Example output:
+
+```json
+{
+  "Recovery Status": "In Recovery",
+  "Recovery Stage": "RecoveryUBoot",
+  "USB Device Present": true,
+  "USB Port Path": "1-1",
+  "USB ID": "2245:2700",
+  "DFU Alt Settings": ["recovery_both", "recovery_cs1", "recovery_cs0"]
+}
+```
+
+The command exits 0 whenever a status was derived, including `Unknown`
+(`"Error"` then explains why).
 
 ## AssertRecovery
 
@@ -423,17 +503,19 @@ from bench measurements on P4102 (Sep 2026), not specification minimums:
 | Wait for recovery U-Boot DFU    | 180 s (poll 5 s)   | bench: U-Boot erases both chips' debug-token/PDS slots first; `sleep 10` is too short               |
 | Final transfer dfu-util timeout | 300 s              | bounds only the DRAM transfer (seconds in practice)                                                 |
 | Post-flash programming wait     | 1200 s (poll 10 s) | bench: U-Boot programs SPI after the session ends, 901 s for CS0; ceiling, no completion signal yet |
+| Post-recovery verification      | 60 s (poll 1 s)    | time for the HMC to leave DFU and start booting the recovered image                                 |
 
 End-to-end estimate: strap + enumeration 5-20 s, bundle 9-11 x (~2 s transfer
 plus 10 s delay) = ~2-2.5 min, recovery U-Boot erase and enumeration up to 3
-min, image transfer a few seconds, programming wait 40 min (the fixed ceiling;
-the measured programming time is ~15 min for one chip-select), deassert ~5 s,
-i.e. **roughly 45 minutes** regardless of alt setting until recovery U-Boot can
-signal completion. The `USBDFU_RECOVERY_TIMEOUT` build option (default 3600 s)
-bounds the whole Redfish task; if it expires the item-updater stops the worker
-unit, which terminates the running `dfu-util`, and the task fails with a timeout
-message. The per-step `dfu-util` timeouts only protect against a hung transfer
-and are not individually bounded by the task timeout.
+min, image transfer ~12 s, programming wait 1200 s per chip-select (the fixed
+ceiling; measured ~15 min for one chip-select), deassert ~5 s and verification a
+few seconds, i.e. **roughly 27 minutes** for `recovery_cs0` and 47 for
+`recovery_both`, until recovery U-Boot can signal completion. The
+`USBDFU_RECOVERY_TIMEOUT` build option (default 5400 s) bounds the whole Redfish
+task; if it expires the item-updater stops the worker unit, which terminates the
+running `dfu-util`, and the task fails with a timeout message. The per-step
+`dfu-util` timeouts only protect against a hung transfer and are not
+individually bounded by the task timeout.
 
 ## Troubleshooting
 
@@ -489,20 +571,32 @@ the package and the platform:
     "Type": "USBDFURecovery",
     "RecoveryGpioName": "HMC_RECOVERY_R-O",
     "ResetGpioName": "HMC_RST_R_L-O",
-    "SpiMuxGpioName": "HMC_SPI_MUX_R_SEL-O"
+    "SpiMuxGpioName": "HMC_SPI_MUX_R_SEL-O",
+    "FunctionalUsbId": "0525:a4a2"
   }
   ```
 
   The object name is used as the device name in Redfish messages. If the object
-  or any of the three properties is missing the worker fails without touching
-  any GPIO.
+  or any of the three GPIO properties is missing the worker fails without
+  touching any GPIO. Two optional properties feed the status probe:
+  `FunctionalUsbId` (`"vvvv:pppp"`, USB identity of a normally booted HMC;
+  without it a healthy HMC cannot be detected. On P4102 the booted HMC exposes
+  an RNDIS gadget `0525:a4a2` behind the Aspeed virtual hub `1d6b:0107`) and
+  `UsbPort` (kernel port path of the HMC).
 
 - dfu-util path, alt setting and flash length from the `USBDFU_*` build options.
+
+Before touching any GPIO the worker probes the status like the other recovery
+workers: `Not in Recovery` logs `NvidiaUpdate.1.0.FirmwareNotInRecovery` and
+completes the task without recovering; `In Recovery` holds the straps without a
+reset pulse; `Unknown` forces recovery via the straps. After recovery the worker
+requires the BootROM DFU device to disappear.
 
 Redfish message registry entries logged by the worker:
 
 | Message                                    | When                                                         |
 | ------------------------------------------ | ------------------------------------------------------------ |
+| `NvidiaUpdate.1.0.FirmwareNotInRecovery`   | HMC healthy (functional identity present), recovery skipped  |
 | `NvidiaUpdate.1.0.RecoveryStarted`         | Configuration and package validated, sequence starting       |
 | `NvidiaUpdate.1.0.RecoverySuccessful`      | Sequence completed                                           |
 | `ResourceEvent.1.0.ResourceErrorsDetected` | Any failure, with the message/resolution for the `ErrorCode` |

@@ -67,25 +67,37 @@ bool UsbDfuRecovery::failStep(nlohmann::json& out, const char* step,
 bool UsbDfuRecovery::pollUntil(int timeoutMs, int intervalMs,
                                const std::function<bool()>& ready)
 {
+    using namespace std::chrono;
     const int timeout = std::max(0, timeoutMs);
     const int interval = std::max(1, intervalMs);
+    // Two clocks: `elapsed` sums the naps (deterministic under the test
+    // sleep wrapper); the steady_clock deadline also charges the time
+    // `ready()` itself spends, e.g. a slow `dfu-util -l`.
+    const auto deadline = steady_clock::now() + milliseconds(timeout);
     for (int elapsed = 0;;)
     {
         if (ready())
         {
             return true;
         }
-        if (elapsed >= timeout)
+        if (elapsed >= timeout || steady_clock::now() >= deadline)
         {
             return false;
         }
         const int nap = std::min(interval, timeout - elapsed);
-        std::this_thread::sleep_for(std::chrono::milliseconds(nap));
+        std::this_thread::sleep_for(milliseconds(nap));
         elapsed += nap;
     }
 }
 
-UsbDfuRecovery::UsbDfuRecovery(const Config& config) : config_(config)
+UsbDfuRecovery::UsbDfuRecovery(const Config& config) :
+    config_(config),
+    captureFn_(config.dfuListCapture
+                   ? config.dfuListCapture
+                   : usbdfu::CaptureFn(
+                         [](const std::vector<std::string>& argv, int timeout) {
+                             return usbdfu::process::capture(argv, timeout);
+                         }))
 {}
 
 // static
@@ -247,7 +259,8 @@ bool UsbDfuRecovery::runDfuDownload(DfuTransfer transfer,
     return true;
 }
 
-bool UsbDfuRecovery::setRecoveryStrap(int recoveryValue, nlohmann::json& out)
+bool UsbDfuRecovery::setRecoveryStrap(int recoveryValue, nlohmann::json& out,
+                                      bool pulseResetAfter)
 {
     // Release any lines held by a previous call before re-acquiring.
     session_.release();
@@ -276,7 +289,10 @@ bool UsbDfuRecovery::setRecoveryStrap(int recoveryValue, nlohmann::json& out)
     std::this_thread::sleep_for(
         std::chrono::seconds(usbdfu::timing::strapSettleSecs));
 
-    if (!pulseReset())
+    // The strap is a hardware strap sampled at reset: the pulse is what makes
+    // the HMC take the new value.  Callers that only need the lines held
+    // (HMC already in DFU) skip it.
+    if (pulseResetAfter && !pulseReset())
     {
         session_.release();
         return setFailure(out, "Failed to pulse reset GPIO: " +
@@ -297,9 +313,10 @@ bool UsbDfuRecovery::waitForDfuEnumeration(nlohmann::json& out)
     const bool enumerated =
         pollUntil(config_.dfuEnumerationTimeoutSecs * 1000,
                   config_.dfuEnumerationPollMs, [this] {
-                      return usb_sysfs::hasDeviceWithVidPid(
-                          config_.usbSysfsRoot, config_.dfuVendorId,
-                          config_.dfuProductId);
+                      return usb_sysfs::findDevice(
+                                 config_.usbSysfsRoot, config_.dfuVendorId,
+                                 config_.dfuProductId, config_.usbPortFilter)
+                          .has_value();
                   });
     if (enumerated)
     {
@@ -315,37 +332,6 @@ bool UsbDfuRecovery::waitForDfuEnumeration(nlohmann::json& out)
                    std::to_string(config_.dfuEnumerationTimeoutSecs) + "s";
     out["ErrorCode"] = code(USBDFURecoveryErrorCode::DfuEnumerationFailed);
     return false;
-}
-
-bool UsbDfuRecovery::waitForRecoveryUBoot(nlohmann::json& out)
-{
-    if (config_.uBootDfuTimeoutSecs <= 0)
-    {
-        return true;
-    }
-    lg2::info("Waiting up to {T}s for recovery U-Boot to expose the DFU flash "
-              "targets",
-              "T", config_.uBootDfuTimeoutSecs);
-    const std::vector<std::string> argv = {config_.dfuUtilPath, "-l"};
-    const bool ready = pollUntil(
-        config_.uBootDfuTimeoutSecs * 1000, config_.uBootDfuPollSecs * 1000,
-        [&] {
-            auto listing =
-                usbdfu::process::capture(argv, config_.dfuListTimeoutSecs);
-            return listing &&
-                   listing->find("name=\"recovery_") != std::string::npos;
-        });
-    if (ready)
-    {
-        lg2::info("Recovery U-Boot DFU targets available");
-        return true;
-    }
-    return setFailure(
-        out,
-        "Recovery U-Boot did not expose the recovery_* DFU targets "
-        "within " +
-            std::to_string(config_.uBootDfuTimeoutSecs) + "s",
-        USBDFURecoveryErrorCode::RecoveryUBootDfuTimeout);
 }
 
 bool UsbDfuRecovery::isProgrammingComplete() const
@@ -594,25 +580,185 @@ bool UsbDfuRecovery::preflightChecks(
     return true;
 }
 
-bool UsbDfuRecovery::performFullRecovery(
+usbdfu::RecoveryStatus UsbDfuRecovery::probeStatus() const
+{
+    usbdfu::StatusConfig sc;
+    sc.usbSysfsRoot = config_.usbSysfsRoot;
+    sc.bootRomId = usbdfu::UsbId{config_.dfuVendorId, config_.dfuProductId};
+    sc.functionalId = config_.functionalUsbId;
+    sc.usbPortFilter = config_.usbPortFilter;
+    sc.dfuUtilPath = config_.dfuUtilPath;
+    sc.dfuListTimeoutSecs = config_.dfuListTimeoutSecs;
+    return usbdfu::getRecoveryStatus(sc, captureFn_);
+}
+
+bool UsbDfuRecovery::waitForRecoveryExit(nlohmann::json& out)
+{
+    lg2::info("Waiting up to {T}s for the HMC to leave USB DFU mode", "T",
+              config_.postRecoveryVerifyTimeoutSecs);
+    const bool gone =
+        pollUntil(config_.postRecoveryVerifyTimeoutSecs * 1000,
+                  config_.postRecoveryVerifyPollMs, [this] {
+                      return !usb_sysfs::findDevice(
+                          config_.usbSysfsRoot, config_.dfuVendorId,
+                          config_.dfuProductId, config_.usbPortFilter);
+                  });
+    if (gone)
+    {
+        out["DfuDeviceGone"] = true;
+        return true;
+    }
+    out["Status"] = "Failed";
+    out["DfuDeviceGone"] = false;
+    out["Error"] = "HMC still enumerates as USB DFU device " +
+                   config_.dfuVendorId + ":" + config_.dfuProductId + " " +
+                   std::to_string(config_.postRecoveryVerifyTimeoutSecs) +
+                   "s after recovery";
+    out["ErrorCode"] =
+        code(USBDFURecoveryErrorCode::RecoveryVerificationFailed);
+    return false;
+}
+
+bool UsbDfuRecovery::waitForRecoveryUBoot(nlohmann::json& out)
+{
+    if (config_.uBootDfuTimeoutSecs <= 0)
+    {
+        return true;
+    }
+    lg2::info("Waiting up to {T}s for recovery U-Boot to expose the DFU flash "
+              "targets",
+              "T", config_.uBootDfuTimeoutSecs);
+    std::vector<std::string> argv = {config_.dfuUtilPath, "-l"};
+    if (!config_.usbPortFilter.empty())
+    {
+        argv.push_back("-p");
+        argv.push_back(config_.usbPortFilter);
+    }
+    std::vector<std::string> names;
+    const bool ready =
+        pollUntil(config_.uBootDfuTimeoutSecs * 1000,
+                  config_.uBootDfuPollSecs * 1000, [&] {
+                      if (!captureFn_)
+                      {
+                          return false;
+                      }
+                      auto listing =
+                          captureFn_(argv, config_.dfuListTimeoutSecs);
+                      if (!listing)
+                      {
+                          return false;
+                      }
+                      names.clear();
+                      bool found = false;
+                      for (const auto& alt : usbdfu::parseDfuUtilList(*listing))
+                      {
+                          names.push_back(alt.name);
+                          found = found || usbdfu::isRecoveryAlt(alt.name);
+                      }
+                      return found;
+                  });
+    if (ready)
+    {
+        lg2::info("Recovery U-Boot DFU targets available");
+        out["DfuAltSettings"] = names;
+        return true;
+    }
+    return setFailure(
+        out,
+        "Recovery U-Boot did not expose the recovery_* DFU targets within " +
+            std::to_string(config_.uBootDfuTimeoutSecs) + "s",
+        USBDFURecoveryErrorCode::RecoveryUBootDfuTimeout);
+}
+
+UsbDfuRecovery::Outcome UsbDfuRecovery::performRecovery(
     const std::string& fwspiImage,
-    const std::vector<std::filesystem::path>& bundle, nlohmann::json& out)
+    const std::vector<std::filesystem::path>& bundle, nlohmann::json& out,
+    std::optional<usbdfu::RecoveryStatus> probed)
 {
     out.clear();
     auto& steps = out["Steps"];
+    auto fail = [&](const char* step, const nlohmann::json& s,
+                    const char* fallback,
+                    USBDFURecoveryErrorCode fallbackCode) {
+        failStep(out, step, s, fallback, fallbackCode);
+        out["Outcome"] = "Failed";
+        return Outcome::Failed;
+    };
 
     // Fail before touching any GPIO if the inputs are not all present.
     if (!preflightChecks(fwspiImage, bundle, out))
     {
         steps["Preflight"] = "Failed";
-        return false;
+        out["Outcome"] = "Failed";
+        return Outcome::Failed;
     }
     steps["Preflight"] = "Successful";
 
+    // Status probe (USB descriptors only, no GPIO); callers that already
+    // probed (the worker) pass their result in so the bus is read once.
+    const auto status = probed ? std::move(*probed) : probeStatus();
+    out["StatusCheck"] = status.toJson();
+    // The probe always yields a state, but dfu-util -l may have been
+    // unavailable, in which case the stage can only be "BootROM" at best.
+    steps["StatusCheck"] = status.error.empty() ? "Successful" : "Inconclusive";
+
+    if (!config_.forceRecovery &&
+        status.state == usbdfu::RecoveryState::NotInRecovery)
     {
+        lg2::info("HMC is healthy ({ID} on {PORT}); skipping recovery", "ID",
+                  status.usbId, "PORT", status.usbPortPath);
+        out["Status"] = "Skipped";
+        out["Outcome"] = "Skipped";
+        return Outcome::Skipped;
+    }
+
+    const bool alreadyInRecovery =
+        !config_.forceRecovery &&
+        status.state == usbdfu::RecoveryState::InRecovery;
+    const bool uBootReady =
+        alreadyInRecovery &&
+        status.stage == usbdfu::RecoveryStage::RecoveryUBoot;
+
+    if (alreadyInRecovery)
+    {
+        // The HMC is in DFU already: the strap was sampled at its last reset,
+        // so no reset pulse (BootROM would restart; recovery U-Boot would
+        // fall back to BootROM and lose the bundle) and nothing to wait for.
+        // The SPI mux and the strap are still driven and held: recovery
+        // U-Boot needs the HMC to own its flash, and the strap must read
+        // asserted until the final deassert/reset returns the HMC to normal
+        // boot.
+        lg2::info("HMC already in USB DFU recovery ({STAGE}); holding the "
+                  "straps without a reset pulse",
+                  "STAGE", usbdfu::toString(status.stage));
+        nlohmann::json s;
+        if (!setRecoveryStrap(1, s, /*pulseResetAfter=*/false))
+        {
+            return fail("AssertRecovery", s, "setRecoveryStrap failed",
+                        USBDFURecoveryErrorCode::GPIOAssertFailed);
+        }
+        steps["AssertRecovery"] = "Successful";
+        steps["ResetPulse1"] = "Skipped";
+        steps["DfuEnumeration"] = "Skipped";
+    }
+    else
+    {
+        if (config_.forceRecovery)
+        {
+            lg2::info("Force recovery requested; driving the recovery strap");
+        }
+        else
+        {
+            lg2::warning("HMC recovery status unknown ({ERR}); forcing "
+                         "recovery via the strap",
+                         "ERR", status.error);
+        }
         nlohmann::json s;
         if (!assertRecoveryMode(s))
         {
+            auto outcome =
+                fail("AssertRecovery", s, "assertRecoveryMode failed",
+                     USBDFURecoveryErrorCode::GPIOAssertFailed);
             if (s.value("ErrorCode", std::uint8_t{0}) ==
                 code(USBDFURecoveryErrorCode::DfuEnumerationFailed))
             {
@@ -621,37 +767,42 @@ bool UsbDfuRecovery::performFullRecovery(
                 nlohmann::json cleanup;
                 deassertRecoveryMode(cleanup);
             }
-            return failStep(out, "AssertRecovery", s,
-                            "assertRecoveryMode failed",
-                            USBDFURecoveryErrorCode::GPIOAssertFailed);
+            return outcome;
         }
         steps["AssertRecovery"] = "Successful";
         steps["ResetPulse1"] = "Successful";
         steps["DfuEnumeration"] = "Successful";
     }
 
+    if (uBootReady)
+    {
+        lg2::info("Recovery U-Boot already exposes the DFU targets; skipping "
+                  "the preliminary bundle");
+        steps["PreliminaryBundle"] = "Skipped";
+    }
+    else
     {
         nlohmann::json s;
         if (!runPreliminaryBundle(bundle, s))
         {
+            auto outcome =
+                fail("PreliminaryBundle", s, "Preliminary bundle failed",
+                     USBDFURecoveryErrorCode::BundleSendFailed);
             nlohmann::json cleanup;
             deassertRecoveryMode(cleanup);
-            return failStep(out, "PreliminaryBundle", s,
-                            "Preliminary bundle failed",
-                            USBDFURecoveryErrorCode::BundleSendFailed);
+            return outcome;
         }
         steps["PreliminaryBundle"] = "Successful";
-    }
 
-    {
         nlohmann::json w;
         if (!waitForRecoveryUBoot(w))
         {
+            auto outcome = fail(
+                "RecoveryUBoot", w, "recovery U-Boot DFU targets not found",
+                USBDFURecoveryErrorCode::RecoveryUBootDfuTimeout);
             nlohmann::json cleanup;
             deassertRecoveryMode(cleanup);
-            return failStep(out, "RecoveryUBoot", w,
-                            "recovery U-Boot DFU targets not found",
-                            USBDFURecoveryErrorCode::RecoveryUBootDfuTimeout);
+            return outcome;
         }
         steps["RecoveryUBoot"] = "Successful";
     }
@@ -660,11 +811,12 @@ bool UsbDfuRecovery::performFullRecovery(
         nlohmann::json s;
         if (!flashFirmware(fwspiImage, s))
         {
+            auto outcome = fail("FlashFirmware", s, "Firmware flash failed",
+                                USBDFURecoveryErrorCode::FirmwareFlashFailed);
             // Best-effort: deassert recovery before returning.
             nlohmann::json cleanup;
             deassertRecoveryMode(cleanup);
-            return failStep(out, "FlashFirmware", s, "Firmware flash failed",
-                            USBDFURecoveryErrorCode::FirmwareFlashFailed);
+            return outcome;
         }
         steps["FlashFirmware"] = "Successful";
         out["DfuAlt"] = s.value("DfuAlt", config_.dfuAltSetting);
@@ -683,16 +835,34 @@ bool UsbDfuRecovery::performFullRecovery(
         nlohmann::json s;
         if (!deassertRecoveryMode(s))
         {
-            return failStep(out, "DeassertRecovery", s,
-                            "deassertRecoveryMode failed",
-                            USBDFURecoveryErrorCode::GPIODeassertFailed);
+            return fail("DeassertRecovery", s, "deassertRecoveryMode failed",
+                        USBDFURecoveryErrorCode::GPIODeassertFailed);
         }
         steps["DeassertRecovery"] = "Successful";
         steps["ResetPulse2"] = "Successful";
     }
 
+    if (config_.verifyAfterRecovery)
+    {
+        nlohmann::json s;
+        if (!waitForRecoveryExit(s))
+        {
+            return fail("Verify", s, "HMC did not leave DFU mode",
+                        USBDFURecoveryErrorCode::RecoveryVerificationFailed);
+        }
+        steps["Verify"] = "Successful";
+    }
+
     out["Status"] = "Successful";
-    return true;
+    out["Outcome"] = "Recovered";
+    return Outcome::Recovered;
+}
+
+bool UsbDfuRecovery::performFullRecovery(
+    const std::string& fwspiImage,
+    const std::vector<std::filesystem::path>& bundle, nlohmann::json& out)
+{
+    return performRecovery(fwspiImage, bundle, out) != Outcome::Failed;
 }
 
 namespace
@@ -781,6 +951,29 @@ bool loadRecoveryConfig(const std::string& configPath,
             !applyPolarity(entry, "ResetGpioPolarity", cfg.resetActiveLow, out))
         {
             return false;
+        }
+
+        // Optional status-probe properties, same names as the worker reads
+        // over D-Bus.  Without FunctionalUsbId a healthy HMC cannot be told
+        // from a dead one and the probe reports Unknown.
+        if (entry.contains("FunctionalUsbId") &&
+            entry["FunctionalUsbId"].is_string())
+        {
+            const auto id = entry["FunctionalUsbId"].get<std::string>();
+            cfg.functionalUsbId = usbdfu::UsbId::parse(id);
+            if (!cfg.functionalUsbId)
+            {
+                return UsbDfuRecovery::setFailure(
+                    out,
+                    std::format("FunctionalUsbId must be vvvv:pppp, got '{}' "
+                                "in {}",
+                                id, configPath),
+                    USBDFURecoveryErrorCode::InvalidConfiguration);
+            }
+        }
+        if (entry.contains("UsbPort") && entry["UsbPort"].is_string())
+        {
+            cfg.usbPortFilter = entry["UsbPort"].get<std::string>();
         }
         return true;
     }

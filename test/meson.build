@@ -1152,6 +1152,7 @@ usbdfu_recovery_test_src = declare_dependency(
     sources: [
         '../recovery_tool/usbdfu_recovery_tool/perform_dfu_recovery.cpp',
         '../recovery_tool/usbdfu_recovery_tool/process_utils.cpp',
+        '../recovery_tool/usbdfu_recovery_tool/usbdfu_status.cpp',
     ],
 )
 test(

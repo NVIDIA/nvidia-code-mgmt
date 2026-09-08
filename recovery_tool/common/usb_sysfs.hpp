@@ -8,6 +8,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -50,16 +51,25 @@ inline std::string readAttribute(const std::filesystem::path& attr) noexcept
     }
 }
 
+/** A USB device found in sysfs. */
+struct Device
+{
+    /** Directory name = kernel port path, e.g. "1-1.3" */
+    std::string portPath;
+    std::string vid;
+    std::string pid;
+};
+
 /**
- * Return true if any device directory directly under `root` reports
- * idVendor == vid and idProduct == pid.  Both IDs must be given as lower-case
- * hex without a "0x" prefix (the sysfs representation, e.g. "2245", "2700").
- * Hub/interface entries without idVendor are skipped.  Never throws; an
- * unreadable root simply yields false.
+ * Find the first device directory directly under `root` whose idVendor /
+ * idProduct match `vid` / `pid` (lower-case hex without "0x", the sysfs
+ * representation).  If `portFilter` is non-empty only the directory with that
+ * exact name (kernel port path) is considered.  Hub/interface entries without
+ * idVendor are skipped.  Never throws; an unreadable root yields nullopt.
  */
-inline bool hasDeviceWithVidPid(const std::filesystem::path& root,
-                                std::string_view vid,
-                                std::string_view pid) noexcept
+inline std::optional<Device>
+    findDevice(const std::filesystem::path& root, std::string_view vid,
+               std::string_view pid, std::string_view portFilter = {}) noexcept
 {
     std::error_code ec;
     for (auto it = std::filesystem::directory_iterator(root, ec),
@@ -67,16 +77,22 @@ inline bool hasDeviceWithVidPid(const std::filesystem::path& root,
          !ec && it != end; it.increment(ec))
     {
         const auto& dev = it->path();
-        if (readAttribute(dev / "idVendor") != vid)
+        if (!portFilter.empty() && dev.filename().string() != portFilter)
         {
             continue;
         }
-        if (readAttribute(dev / "idProduct") == pid)
+        const auto devVid = readAttribute(dev / "idVendor");
+        if (devVid.empty() || devVid != vid)
         {
-            return true;
+            continue;
+        }
+        const auto devPid = readAttribute(dev / "idProduct");
+        if (devPid == pid)
+        {
+            return Device{dev.filename().string(), devVid, devPid};
         }
     }
-    return false;
+    return std::nullopt;
 }
 
 } // namespace usb_sysfs

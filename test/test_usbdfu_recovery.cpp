@@ -21,6 +21,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -40,6 +41,7 @@
 // is affected.
 #include "message_registry.hpp"
 #include "usb_sysfs.hpp"
+#include "usbdfu_status.hpp"
 
 #include "gtest/gtest.h"
 
@@ -186,6 +188,21 @@ constexpr uint8_t kPackageIncomplete =
     ec(USBDFURecoveryErrorCode::PackageIncomplete);
 constexpr uint8_t kRecoveryUBootDfuTimeout =
     ec(USBDFURecoveryErrorCode::RecoveryUBootDfuTimeout);
+constexpr uint8_t kRecoveryVerificationFailed =
+    ec(USBDFURecoveryErrorCode::RecoveryVerificationFailed);
+
+/// Functional (normally booted HMC) identity used by status tests
+constexpr const char* kFuncVid = "0b05";
+constexpr const char* kFuncPid = "1234";
+
+/// dfu-util -l output of recovery U-Boot exposing the SPI targets
+constexpr const char* kUBootDfuList =
+    "dfu-util 0.11\n\nFound DFU: [2245:2700] ver=0100, devnum=12, cfg=1, "
+    "intf=0, path=\"1-1\", alt=2, name=\"recovery_both\", serial=\"UNKNOWN\"\n"
+    "Found DFU: [2245:2700] ver=0100, devnum=12, cfg=1, intf=0, path=\"1-1\", "
+    "alt=1, name=\"recovery_cs1\", serial=\"UNKNOWN\"\n"
+    "Found DFU: [2245:2700] ver=0100, devnum=12, cfg=1, intf=0, path=\"1-1\", "
+    "alt=0, name=\"recovery_cs0\", serial=\"UNKNOWN\"\n";
 
 /// Register all three standard GPIO lines as present in the fake.
 void registerAllLines()
@@ -269,7 +286,23 @@ class UsbDfuRecoveryTest : public ::testing::Test
         // 1 s / 500 ms -> polls at 0, 0.5 and 1 s (three attempts)
         cfg.dfuEnumerationTimeoutSecs = 1;
         cfg.dfuEnumerationPollMs = 500;
+        // Most tests exercise the forced sequence; status-driven behavior
+        // and post-recovery verification have dedicated tests.
+        cfg.forceRecovery = true;
+        cfg.verifyAfterRecovery = false;
+        cfg.postRecoveryVerifyTimeoutSecs = 2;
+        cfg.postRecoveryVerifyPollMs = 1000;
+        // No dfu-util -l process: canned empty listing (tests override).
+        cfg.dfuListCapture = cannedDfuList("");
         return cfg;
+    }
+
+    /// Capture function returning canned dfu-util -l output.
+    static usbdfu::CaptureFn cannedDfuList(std::string text)
+    {
+        return [text](const std::vector<std::string>&, int) {
+            return std::optional<std::string>(text);
+        };
     }
 
     /// Add a USB device entry to the fake sysfs tree.
@@ -519,6 +552,26 @@ TEST_F(UsbDfuRecoveryTest, PollUntil_TimeoutBelowIntervalStillPollsAtDeadline)
     }));
     EXPECT_EQ(polls, 2u);
     EXPECT_EQ(sleeps, 1u);
+}
+
+TEST_F(UsbDfuRecoveryTest, PollUntil_ChargesTimeSpentInReady)
+{
+    // ready() burns more real time than the whole budget (busy wait; the
+    // sleep wrapper makes sleep_for a no-op here): no second poll, no nap.
+    std::size_t polls = 0;
+    std::size_t sleeps = 0;
+    g_onSleep = [&sleeps]() { ++sleeps; };
+    EXPECT_FALSE(UsbDfuRecovery::pollUntil(20, 5, [&polls]() {
+        ++polls;
+        const auto until =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
+        while (std::chrono::steady_clock::now() < until)
+        {
+        }
+        return false;
+    }));
+    EXPECT_EQ(polls, 1u);
+    EXPECT_EQ(sleeps, 0u);
 }
 
 TEST_F(UsbDfuRecoveryTest, PollUntil_ReturnsAsSoonAsReady)
@@ -1131,17 +1184,26 @@ TEST_F(UsbDfuRecoveryTest, RunDfuUtil_ReportsExitCodeAndOutputOnFailure)
               std::string::npos);
 }
 
+TEST_F(UsbDfuRecoveryTest, WaitForRecoveryUBoot_TargetsPresent)
+{
+    auto cfg = makeConfig();
+    cfg.uBootDfuTimeoutSecs = 2;
+    cfg.dfuListCapture = cannedDfuList(kUBootDfuList);
+    UsbDfuRecovery dut(cfg);
+    nlohmann::json out;
+    EXPECT_TRUE(dut.waitForRecoveryUBoot(out));
+    EXPECT_EQ(out["DfuAltSettings"].size(), 3u);
+}
+
 TEST_F(UsbDfuRecoveryTest, WaitForRecoveryUBoot_TimesOut)
 {
     auto cfg = makeConfig();
-    cfg.uBootDfuTimeoutSecs = 2; // polls at 0, 1 and 2 s; the wrapped fork
-                                 // yields an empty dfu-util -l listing
+    cfg.uBootDfuTimeoutSecs = 2; // polls at 0, 1 and 2 s, canned empty listing
     UsbDfuRecovery dut(cfg);
     nlohmann::json out;
     EXPECT_FALSE(dut.waitForRecoveryUBoot(out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Failed");
     EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kRecoveryUBootDfuTimeout);
-    EXPECT_EQ(g_waitpidCallCount, 3u);
 }
 
 TEST_F(UsbDfuRecoveryTest, WaitForRecoveryUBoot_DisabledReturnsImmediately)
@@ -1150,28 +1212,28 @@ TEST_F(UsbDfuRecoveryTest, WaitForRecoveryUBoot_DisabledReturnsImmediately)
     nlohmann::json out;
     EXPECT_TRUE(dut.waitForRecoveryUBoot(out));
     EXPECT_FALSE(out.contains("Error"));
-    EXPECT_EQ(g_waitpidCallCount, 0u);
 }
 
-TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_UBootNeverAppears_Deasserts)
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_UBootNeverAppears_Deasserts)
 {
     makeRecoveryReady();
     touchFile(tmpDir_ / "bundle.bin");
     auto fwPath = tmpDir_ / "hmc_fw.bin";
     touchFile(fwPath);
 
-    auto cfg = makeConfig();
+    auto cfg = makeConfig(); // forced path, canned empty dfu-util -l
     cfg.uBootDfuTimeoutSecs = 2;
     UsbDfuRecovery dut(cfg);
     nlohmann::json out;
-    EXPECT_FALSE(dut.performFullRecovery(fwPath.string(),
-                                         {tmpDir_ / "bundle.bin"}, out));
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Failed);
     EXPECT_EQ(out["Steps"]["PreliminaryBundle"].get<std::string>(),
               "Successful");
     EXPECT_EQ(out["Steps"]["RecoveryUBoot"].get<std::string>(), "Failed");
     EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kRecoveryUBootDfuTimeout);
     // The SPI image was never sent and the strap was released best-effort.
-    EXPECT_EQ(g_waitpidCallCount, 4u); // bundle stage + three dfu-util -l polls
+    EXPECT_EQ(g_waitpidCallCount, 1u); // the single bundle stage
     EXPECT_EQ(test::usbdfu_fake_gpio::lines[kRecovery].setValues.back(), 0);
 }
 
@@ -1457,6 +1519,54 @@ TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_PolaritiesAreOptional)
     EXPECT_TRUE(cfg.resetActiveLow);     // ActiveLow
 }
 
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_ReadsStatusProperties)
+{
+    const auto cfgFile = tmpDir_ / "recovery.json";
+    writeFile(cfgFile, R"({"Exposes": [{
+        "Name": "FW_HMC_0", "Type": "USBDFURecovery",
+        "RecoveryGpioName": "REC", "ResetGpioName": "RST",
+        "SpiMuxGpioName": "MUX",
+        "FunctionalUsbId": "0525:A4A2", "UsbPort": "2-1.1"}]})");
+
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    ASSERT_TRUE(loadRecoveryConfig(cfgFile.string(), "", cfg, out));
+    ASSERT_TRUE(cfg.functionalUsbId.has_value());
+    EXPECT_EQ(cfg.functionalUsbId->str(), "0525:a4a2"); // sysfs case
+    EXPECT_EQ(cfg.usbPortFilter, "2-1.1");
+}
+
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_StatusPropertiesAreOptional)
+{
+    const auto cfgFile = tmpDir_ / "recovery.json";
+    writeFile(cfgFile, R"({"Exposes": [{
+        "Name": "FW_HMC_0", "Type": "USBDFURecovery",
+        "RecoveryGpioName": "REC", "ResetGpioName": "RST",
+        "SpiMuxGpioName": "MUX"}]})");
+
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    ASSERT_TRUE(loadRecoveryConfig(cfgFile.string(), "", cfg, out));
+    EXPECT_FALSE(cfg.functionalUsbId.has_value());
+    EXPECT_TRUE(cfg.usbPortFilter.empty());
+}
+
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_BadFunctionalUsbIdRejected)
+{
+    const auto cfgFile = tmpDir_ / "recovery.json";
+    writeFile(cfgFile, R"({"Exposes": [{
+        "Name": "FW_HMC_0", "Type": "USBDFURecovery",
+        "RecoveryGpioName": "REC", "ResetGpioName": "RST",
+        "SpiMuxGpioName": "MUX", "FunctionalUsbId": "0525-a4a2"}]})");
+
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    EXPECT_FALSE(loadRecoveryConfig(cfgFile.string(), "", cfg, out));
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kInvalidConfiguration);
+    EXPECT_NE(out["Error"].get<std::string>().find("FunctionalUsbId"),
+              std::string::npos);
+}
+
 TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_BadPolarityRejected)
 {
     const auto cfgFile = tmpDir_ / "recovery.json";
@@ -1641,4 +1751,505 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_FromPackage_Success)
     // transferred is covered by ResolvePackageComponents_Complete.
     EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -a recovery_cs0 -e");
     EXPECT_EQ(out["FlashedBytes"].get<uint64_t>(), 4u);
+}
+
+// ============================================================================
+// usbdfu_status: UsbId / dfu-util -l parsing / status derivation
+// ============================================================================
+
+TEST_F(UsbDfuRecoveryTest, UsbId_Parse)
+{
+    auto id = usbdfu::UsbId::parse("2245:2700");
+    ASSERT_TRUE(id.has_value());
+    EXPECT_EQ(id->vid, "2245");
+    EXPECT_EQ(id->pid, "2700");
+    EXPECT_EQ(id->str(), "2245:2700");
+
+    auto upper = usbdfu::UsbId::parse("0B05:ABCD");
+    ASSERT_TRUE(upper.has_value());
+    EXPECT_EQ(upper->str(), "0b05:abcd"); // normalized to sysfs case
+
+    EXPECT_FALSE(usbdfu::UsbId::parse("2245-2700").has_value());
+    EXPECT_FALSE(usbdfu::UsbId::parse("22452700").has_value());
+    EXPECT_FALSE(usbdfu::UsbId::parse("0x2245:0x2700").has_value());
+    EXPECT_FALSE(usbdfu::UsbId::parse("").has_value());
+}
+
+TEST_F(UsbDfuRecoveryTest, ParseDfuUtilList_RecoveryUBoot)
+{
+    auto alts = usbdfu::parseDfuUtilList(kUBootDfuList);
+    ASSERT_EQ(alts.size(), 3u);
+    EXPECT_EQ(alts[0].usbId, "2245:2700");
+    EXPECT_EQ(alts[0].path, "1-1");
+    EXPECT_EQ(alts[0].name, "recovery_both");
+    EXPECT_EQ(alts[2].name, "recovery_cs0");
+}
+
+TEST_F(UsbDfuRecoveryTest, ParseDfuUtilList_EmptyOrGarbage)
+{
+    EXPECT_TRUE(usbdfu::parseDfuUtilList("").empty());
+    EXPECT_TRUE(usbdfu::parseDfuUtilList("dfu-util 0.11\nNo DFU capable USB "
+                                         "device available\n")
+                    .empty());
+}
+
+TEST_F(UsbDfuRecoveryTest, DeriveRecoveryStatus_UsesRecoveryAltIdentity)
+{
+    // Recovery U-Boot also exposes fw_logs_* alts; when dfu-util lists one of
+    // those first the reported identity must still come from the recovery_*
+    // entry.
+    std::vector<usbdfu::DfuAlt> alts(2);
+    alts[0].name = "fw_logs_cs0";
+    alts[0].path = "1-3";
+    alts[0].usbId = "2245:2701";
+    alts[1].name = "recovery_cs0";
+    alts[1].path = "1-1";
+    alts[1].usbId = "2245:2700";
+
+    auto s =
+        usbdfu::deriveRecoveryStatus(std::nullopt, alts, std::nullopt, false);
+    EXPECT_EQ(s.state, usbdfu::RecoveryState::InRecovery);
+    EXPECT_EQ(s.stage, usbdfu::RecoveryStage::RecoveryUBoot);
+    EXPECT_EQ(s.usbPortPath, "1-1");
+    EXPECT_EQ(s.usbId, "2245:2700");
+    ASSERT_EQ(s.dfuAltSettings.size(), 2u);
+}
+
+TEST_F(UsbDfuRecoveryTest, DeriveRecoveryStatus_IgnoresRecoveryAltOnOtherPort)
+{
+    // Another HMC's recovery U-Boot on port 1-3 must not mark the device
+    // on port 1-1 as recovered.
+    std::vector<usbdfu::DfuAlt> alts(1);
+    alts[0].name = "recovery_cs0";
+    alts[0].path = "1-3";
+    alts[0].usbId = "2245:2700";
+    usb_sysfs::Device bootRom{"1-1", "2245", "2700"};
+
+    auto s =
+        usbdfu::deriveRecoveryStatus(bootRom, alts, std::nullopt, false, "1-1");
+    EXPECT_EQ(s.state, usbdfu::RecoveryState::InRecovery);
+    EXPECT_EQ(s.stage, usbdfu::RecoveryStage::BootRom); // not RecoveryUBoot
+    EXPECT_EQ(s.usbPortPath, "1-1");
+
+    // Nothing of ours on the bus: the foreign alt is ignored too.
+    s = usbdfu::deriveRecoveryStatus(std::nullopt, alts, std::nullopt, false,
+                                     "1-1");
+    EXPECT_EQ(s.state, usbdfu::RecoveryState::Unknown);
+
+    // Without an expected port (no filter, nothing probed) the alt counts.
+    s = usbdfu::deriveRecoveryStatus(std::nullopt, alts, std::nullopt, false);
+    EXPECT_EQ(s.stage, usbdfu::RecoveryStage::RecoveryUBoot);
+}
+
+TEST_F(UsbDfuRecoveryTest, ProbeStatus_RecoveryUBootOnOtherPortIsBootRom)
+{
+    fakeUsbDevice("1-2", kVid, kPid); // our HMC's BootROM is on port 1-2
+    UsbDfuRecovery dut(makeConfig());
+    dut.captureFn_ = cannedDfuList(kUBootDfuList); // its alts say path 1-1
+
+    auto s = dut.probeStatus();
+    EXPECT_EQ(s.state, usbdfu::RecoveryState::InRecovery);
+    EXPECT_EQ(s.stage, usbdfu::RecoveryStage::BootRom);
+    EXPECT_EQ(s.usbPortPath, "1-2");
+}
+
+TEST_F(UsbDfuRecoveryTest, DeriveRecoveryStatus_TruthTable)
+{
+    using usbdfu::RecoveryStage;
+    using usbdfu::RecoveryState;
+    usb_sysfs::Device bootRom{"1-1", "2245", "2700"};
+    usb_sysfs::Device func{"1-1", kFuncVid, kFuncPid};
+    auto uboot = usbdfu::parseDfuUtilList(kUBootDfuList);
+
+    // BootROM only
+    auto s = usbdfu::deriveRecoveryStatus(bootRom, {}, std::nullopt, false);
+    EXPECT_EQ(s.state, RecoveryState::InRecovery);
+    EXPECT_EQ(s.stage, RecoveryStage::BootRom);
+    EXPECT_EQ(s.usbPortPath, "1-1");
+    EXPECT_EQ(s.usbId, "2245:2700");
+
+    // Recovery U-Boot (alts present, BootROM device may or may not be listed)
+    s = usbdfu::deriveRecoveryStatus(std::nullopt, uboot, std::nullopt, false);
+    EXPECT_EQ(s.state, RecoveryState::InRecovery);
+    EXPECT_EQ(s.stage, RecoveryStage::RecoveryUBoot);
+    EXPECT_EQ(s.dfuAltSettings.size(), 3u);
+    EXPECT_EQ(s.usbId, "2245:2700");
+
+    // Healthy HMC: functional identity present, no DFU device
+    s = usbdfu::deriveRecoveryStatus(std::nullopt, {}, func, true);
+    EXPECT_EQ(s.state, RecoveryState::NotInRecovery);
+    EXPECT_EQ(s.usbId, std::string(kFuncVid) + ":" + kFuncPid);
+
+    // Nothing on the bus, identity configured -> Unknown (dead or unplugged)
+    s = usbdfu::deriveRecoveryStatus(std::nullopt, {}, std::nullopt, true);
+    EXPECT_EQ(s.state, RecoveryState::Unknown);
+    EXPECT_FALSE(s.usbDevicePresent);
+    EXPECT_NE(s.error.find("not found"), std::string::npos);
+
+    // Nothing on the bus, no identity configured -> Unknown, different reason
+    s = usbdfu::deriveRecoveryStatus(std::nullopt, {}, std::nullopt, false);
+    EXPECT_EQ(s.state, RecoveryState::Unknown);
+    EXPECT_NE(s.error.find("no functional USB identity"), std::string::npos);
+
+    // JSON shape (usbrcm style)
+    auto j = s.toJson();
+    EXPECT_EQ(j["Recovery Status"].get<std::string>(), "Unknown");
+    EXPECT_TRUE(j.contains("USB Port Path"));
+    EXPECT_TRUE(j.contains("DFU Alt Settings"));
+    EXPECT_TRUE(j.contains("Error"));
+}
+
+TEST_F(UsbDfuRecoveryTest, ProbeStatus_BootRomPresent)
+{
+    fakeUsbDevice("1-1", kVid, kPid);
+    UsbDfuRecovery dut(makeConfig());
+    dut.captureFn_ = cannedDfuList("");
+
+    auto s = dut.probeStatus();
+    EXPECT_EQ(s.state, usbdfu::RecoveryState::InRecovery);
+    EXPECT_EQ(s.stage, usbdfu::RecoveryStage::BootRom);
+}
+
+TEST_F(UsbDfuRecoveryTest, ProbeStatus_RecoveryUBoot)
+{
+    fakeUsbDevice("1-1", kVid, kPid);
+    UsbDfuRecovery dut(makeConfig());
+    dut.captureFn_ = cannedDfuList(kUBootDfuList);
+
+    auto s = dut.probeStatus();
+    EXPECT_EQ(s.state, usbdfu::RecoveryState::InRecovery);
+    EXPECT_EQ(s.stage, usbdfu::RecoveryStage::RecoveryUBoot);
+}
+
+TEST_F(UsbDfuRecoveryTest, ProbeStatus_FunctionalIdentity)
+{
+    fakeUsbDevice("1-1", kFuncVid, kFuncPid);
+    auto cfg = makeConfig();
+    cfg.functionalUsbId = usbdfu::UsbId{kFuncVid, kFuncPid};
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList("");
+
+    EXPECT_EQ(dut.probeStatus().state, usbdfu::RecoveryState::NotInRecovery);
+}
+
+TEST_F(UsbDfuRecoveryTest, ProbeStatus_PortFilterIgnoresOtherPorts)
+{
+    fakeUsbDevice("1-1.3", kVid, kPid); // HMC configured on 1-1.4
+    auto cfg = makeConfig();
+    cfg.usbPortFilter = "1-1.4";
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList("");
+
+    EXPECT_EQ(dut.probeStatus().state, usbdfu::RecoveryState::Unknown);
+
+    cfg.usbPortFilter = "1-1.3";
+    UsbDfuRecovery dut2(cfg);
+    dut2.captureFn_ = cannedDfuList("");
+    EXPECT_EQ(dut2.probeStatus().state, usbdfu::RecoveryState::InRecovery);
+}
+
+TEST_F(UsbDfuRecoveryTest, ProbeStatus_DfuUtilUnavailableStillDerives)
+{
+    fakeUsbDevice("1-1", kVid, kPid);
+    UsbDfuRecovery dut(makeConfig());
+    dut.captureFn_ = [](const std::vector<std::string>&, int) {
+        return std::optional<std::string>(); // could not run dfu-util
+    };
+
+    auto s = dut.probeStatus();
+    EXPECT_EQ(s.state, usbdfu::RecoveryState::InRecovery); // from sysfs
+    EXPECT_NE(s.error.find("dfu-util"), std::string::npos);
+}
+
+// ============================================================================
+// performRecovery: status-driven policy and post-recovery verification
+// ============================================================================
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_SkipsHealthyHmc)
+{
+    registerAllLines();
+    fakeUsbDevice("1-1", kFuncVid, kFuncPid); // healthy HMC, no DFU device
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    cfg.functionalUsbId = usbdfu::UsbId{kFuncVid, kFuncPid};
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList("");
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Skipped);
+    EXPECT_EQ(out["Outcome"].get<std::string>(), "Skipped");
+    EXPECT_EQ(out["StatusCheck"]["Recovery Status"].get<std::string>(),
+              "Not in Recovery");
+    // Nothing was touched
+    EXPECT_FALSE(test::usbdfu_fake_gpio::lines[kRecovery].requested);
+    EXPECT_FALSE(test::usbdfu_fake_gpio::lines[kSpiMux].requested);
+    EXPECT_EQ(g_waitpidCallCount, 0u);
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_ForceReflashesHealthyHmc)
+{
+    registerAllLines();
+    fakeUsbDevice("1-1", kFuncVid, kFuncPid);
+    // The forced strap sequence makes the BootROM appear during the poll.
+    g_onSleep = [this]() { fakeUsbDevice("1-2", kVid, kPid); };
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig(); // forceRecovery = true
+    cfg.functionalUsbId = usbdfu::UsbId{kFuncVid, kFuncPid};
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList("");
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Recovered);
+    EXPECT_EQ(out["Steps"]["AssertRecovery"].get<std::string>(), "Successful");
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_AlreadyInBootRom_SkipsStrap)
+{
+    registerAllLines();
+    fakeUsbDevice("1-1", kVid, kPid); // BootROM DFU already enumerated
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList("");
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Recovered);
+    // Straps held (mux + strap driven) but no reset pulse and no wait: the
+    // HMC is already in DFU and a reset would boot it out of BootROM.
+    EXPECT_EQ(out["Steps"]["AssertRecovery"].get<std::string>(), "Successful");
+    EXPECT_EQ(out["Steps"]["ResetPulse1"].get<std::string>(), "Skipped");
+    EXPECT_EQ(out["Steps"]["DfuEnumeration"].get<std::string>(), "Skipped");
+    EXPECT_EQ(out["Steps"]["PreliminaryBundle"].get<std::string>(),
+              "Successful");
+    // Strap asserted (held) and then released by the final deassert
+    const auto& vals = test::usbdfu_fake_gpio::lines[kRecovery].setValues;
+    ASSERT_EQ(vals.size(), 2u);
+    EXPECT_EQ(vals[0], 1);
+    EXPECT_EQ(vals[1], 0);
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kSpiMux].setValues.front(), 0);
+    // Reset pulsed once only (assert -> release), by the final deassert.
+    const auto& reset = test::usbdfu_fake_gpio::lines[kReset];
+    EXPECT_EQ(reset.requestCount, 1u);
+    EXPECT_EQ(reset.setValues.size(), 2u);
+    EXPECT_EQ(g_waitpidCallCount, 3u); // bundle + flash + detach
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_RecoveryUBootReady_SkipsBundle)
+{
+    registerAllLines();
+    fakeUsbDevice("1-1", kVid, kPid);
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList(kUBootDfuList);
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Recovered);
+    EXPECT_EQ(out["Steps"]["AssertRecovery"].get<std::string>(), "Successful");
+    EXPECT_EQ(out["Steps"]["ResetPulse1"].get<std::string>(), "Skipped");
+    EXPECT_EQ(out["Steps"]["PreliminaryBundle"].get<std::string>(), "Skipped");
+    EXPECT_EQ(out["Steps"]["FlashFirmware"].get<std::string>(), "Successful");
+    EXPECT_EQ(g_waitpidCallCount, 2u); // flash + detach only
+    // A reset here would drop recovery U-Boot back to BootROM: only the
+    // final deassert may pulse it.
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kReset].requestCount, 1u);
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kReset].setValues.size(), 2u);
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_UnknownStatus_PulsesResetTwice)
+{
+    registerAllLines();
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    UsbDfuRecovery dut(cfg);
+    // Nothing on the bus at probe time (empty dfu-util -l, no sysfs device);
+    // the HMC appears once the strap and reset have been driven, and
+    // recovery U-Boot's alts show up from then on.
+    auto calls = std::make_shared<int>(0);
+    dut.captureFn_ = [calls](const std::vector<std::string>&, int) {
+        return std::optional<std::string>((*calls)++ == 0 ? "" : kUBootDfuList);
+    };
+    g_onSleep = [this] { fakeUsbDevice("1-1", kVid, kPid); };
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Recovered);
+    EXPECT_EQ(out["Steps"]["ResetPulse1"].get<std::string>(), "Successful");
+    EXPECT_EQ(out["Steps"]["ResetPulse2"].get<std::string>(), "Successful");
+    // One pulse to enter recovery, one to boot the programmed image.
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kReset].requestCount, 2u);
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kReset].setValues.size(), 4u);
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_ReusesCallerProbe)
+{
+    registerAllLines();
+    fakeUsbDevice("1-1", kFuncVid, kFuncPid); // healthy right now
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    cfg.functionalUsbId = usbdfu::UsbId{kFuncVid, kFuncPid};
+    UsbDfuRecovery dut(cfg);
+    std::size_t probes = 0;
+    dut.captureFn_ = [&probes](const std::vector<std::string>&, int) {
+        ++probes;
+        return std::optional<std::string>("");
+    };
+    // The caller probed earlier and saw Unknown; the sequence must trust
+    // that result rather than probe again (and see a healthy HMC).
+    usbdfu::RecoveryStatus earlier;
+    earlier.state = usbdfu::RecoveryState::Unknown;
+    g_onSleep = [this]() { fakeUsbDevice("1-2", kVid, kPid); };
+    nlohmann::json out;
+    EXPECT_EQ(dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"},
+                                  out, earlier),
+              UsbDfuRecovery::Outcome::Recovered);
+    EXPECT_EQ(out["StatusCheck"]["Recovery Status"].get<std::string>(),
+              "Unknown");
+    EXPECT_EQ(probes, 0u); // no second dfu-util -l from the status probe
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_ProbeWithoutDfuUtilIsInconclusive)
+{
+    registerAllLines();
+    fakeUsbDevice("1-1", kVid, kPid);
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = [](const std::vector<std::string>&, int) {
+        return std::optional<std::string>(); // dfu-util -l not runnable
+    };
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Recovered);
+    EXPECT_EQ(out["Steps"]["StatusCheck"].get<std::string>(), "Inconclusive");
+    EXPECT_NE(out["StatusCheck"]["Error"].get<std::string>().find("dfu-util"),
+              std::string::npos);
+}
+
+TEST_F(UsbDfuRecoveryTest, WaitForDfuEnumeration_HonorsPortFilter)
+{
+    fakeUsbDevice("1-1.3", kVid, kPid); // a DFU device, but on another port
+    auto cfg = makeConfig();
+    cfg.usbPortFilter = "1-1.4";
+    UsbDfuRecovery dut(cfg);
+    nlohmann::json out;
+    EXPECT_FALSE(dut.waitForDfuEnumeration(out));
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kDfuEnumerationFailed);
+
+    cfg.usbPortFilter = "1-1.3";
+    UsbDfuRecovery dut2(cfg);
+    EXPECT_TRUE(dut2.waitForDfuEnumeration(out));
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_UnknownStatus_Forces)
+{
+    registerAllLines();
+    // Nothing on the bus at probe time; the BootROM appears once the strap
+    // sequence runs (hook fires on the strap-settle sleep).
+    g_onSleep = [this]() { fakeUsbDevice("1-1", kVid, kPid); };
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList("");
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Recovered);
+    EXPECT_EQ(out["StatusCheck"]["Recovery Status"].get<std::string>(),
+              "Unknown");
+    EXPECT_EQ(out["Steps"]["AssertRecovery"].get<std::string>(), "Successful");
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kRecovery].setValues.front(), 1);
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_VerifyFailsWhenDfuDeviceStays)
+{
+    registerAllLines();
+    fakeUsbDevice("1-1", kVid, kPid);
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    cfg.verifyAfterRecovery = true;
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList("");
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Failed);
+    EXPECT_EQ(out["Steps"]["DeassertRecovery"].get<std::string>(),
+              "Successful");
+    EXPECT_EQ(out["Steps"]["Verify"].get<std::string>(), "Failed");
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kRecoveryVerificationFailed);
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformRecovery_VerifyPassesWhenDfuDeviceLeaves)
+{
+    registerAllLines();
+    fakeUsbDevice("1-1", kVid, kPid);
+    // The device disappears "while" the tool waits (first intercepted sleep
+    // is the strap-settle of the final deassert, after the flash).
+    g_onSleep = [this]() { std::filesystem::remove_all(sysfsRoot_ / "1-1"); };
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    auto cfg = makeConfig();
+    cfg.forceRecovery = false;
+    cfg.verifyAfterRecovery = true;
+    UsbDfuRecovery dut(cfg);
+    dut.captureFn_ = cannedDfuList("");
+    nlohmann::json out;
+    EXPECT_EQ(
+        dut.performRecovery(fwPath.string(), {tmpDir_ / "bundle.bin"}, out),
+        UsbDfuRecovery::Outcome::Recovered);
+    EXPECT_EQ(out["Steps"]["Verify"].get<std::string>(), "Successful");
+    EXPECT_EQ(out["Outcome"].get<std::string>(), "Recovered");
+}
+
+TEST_F(UsbDfuRecoveryTest, WaitForRecoveryExit_TimesOut)
+{
+    fakeUsbDevice("1-1", kVid, kPid);
+    UsbDfuRecovery dut(makeConfig());
+    nlohmann::json out;
+    EXPECT_FALSE(dut.waitForRecoveryExit(out));
+    EXPECT_FALSE(out["DfuDeviceGone"].get<bool>());
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kRecoveryVerificationFailed);
 }

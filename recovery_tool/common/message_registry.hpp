@@ -683,6 +683,7 @@ enum class USBDFURecoveryErrorCode : uint8_t
     InvalidConfiguration = 0x6,
     PackageIncomplete = 0x7,
     RecoveryUBootDfuTimeout = 0x8,
+    RecoveryVerificationFailed = 0x9,
 };
 
 static const ErrorMapping usbDfuRecoveryErrorMapping{
@@ -710,6 +711,10 @@ static const ErrorMapping usbDfuRecoveryErrorMapping{
     {static_cast<ErrorCode>(USBDFURecoveryErrorCode::RecoveryUBootDfuTimeout),
      {"Recovery U-Boot did not expose the SPI flash DFU targets after the preliminary bundle",
       "Power-cycle the HMC and retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {static_cast<ErrorCode>(
+         USBDFURecoveryErrorCode::RecoveryVerificationFailed),
+     {"HMC still enumerates as a USB DFU device after recovery",
+      "Power-cycle the HMC and retry recovery using the recovery package intended for this platform. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
 
     // Generic error codes
     {deviceNotResponding,
