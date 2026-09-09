@@ -530,7 +530,8 @@ struct Coroutine
 
         /** @brief For holding return value of coroutine
          */
-        uint8_t data {0};
+        uint8_t data{
+            static_cast<uint8_t>(mctp_vdm::CompletionCodes::ErrGeneral)};
 
         bool detached = false;
 
@@ -592,8 +593,10 @@ struct Coroutine
         /** @brief The handler for an exception was thrown in
          * coroutine body.
          */
-        void unhandled_exception()
-        {}
+        void unhandled_exception() noexcept
+        {
+            data = static_cast<uint8_t>(mctp_vdm::CompletionCodes::ErrGeneral);
+        }
 
         /** @brief Keeping the value returned by co_return operator
          */
