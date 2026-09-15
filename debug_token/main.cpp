@@ -91,16 +91,15 @@ int main(int argc, char** argv)
                 DebugTokenInstallStatus::DebugTokenInstallFailed)
             {
                 log<level::ERR>("Debug Token: Install failed");
-                updateDebugToken->createMessageRegistry(
-                    transferFailed, DEBUG_TOKEN_INSTALL_NAME, version);
+                // onUpdateFailed() already emits Update.1.0.TransferFailed.
+                return -1;
             }
             else if (tokenInstallStatus ==
                      DebugTokenInstallStatus::DebugTokenInstallNone)
             {
-                log<level::ERR>(
+                // Not a failure, but do not claim success either.
+                log<level::INFO>(
                     "Debug Token: No matching serial numbers for install token");
-                updateDebugToken->createMessageRegistry(
-                    transferFailed, DEBUG_TOKEN_INSTALL_NAME, version);
             }
             else
             {
@@ -108,6 +107,11 @@ int main(int argc, char** argv)
                 updateDebugToken->createMessageRegistry(
                     updateSuccessful, DEBUG_TOKEN_INSTALL_NAME, version);
             }
+        }
+        else
+        {
+            log<level::ERR>("Debug Token: unsupported operation");
+            return -1;
         }
     }
     catch (const std::exception& e)

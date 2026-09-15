@@ -49,17 +49,32 @@ DebugTokenInstallStatus
         return status;
     }
 
-    if (nsmTokenInstallV2(tokens) != 0)
+    int installRc = nsmTokenInstallV2(tokens);
+    if (installRc == installTokenFailed)
     {
         log<level::ERR>("NSM V2 token installation failed");
         status = DebugTokenInstallStatus::DebugTokenInstallFailed;
         return status;
     }
-    else
+
+    if (installRc == installTokenNoMatch)
     {
-        log<level::INFO>("NSM V2 token installation succeeded");
-        status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
+        // Informational, not an error: debug firmware ships a dummy token
+        // file to force an erase, and that run legitimately matches nothing.
+        log<level::INFO>("No matching serial numbers for install token; "
+                         "nothing was installed");
+        std::map<std::string, std::string> addData;
+        Level level = Level::Informational;
+        addData["REDFISH_MESSAGE_ID"] = debugTokenInstallationSkipped;
+        addData["REDFISH_MESSAGE_ARGS"] = "no matching devices";
+        addData["namespace"] = "FWUpdate";
+        createLog(debugTokenInstallationSkipped, addData, level);
+        status = DebugTokenInstallStatus::DebugTokenInstallNone;
+        return status;
     }
+
+    log<level::INFO>("NSM V2 token installation succeeded");
+    status = DebugTokenInstallStatus::DebugTokenInstallSuccess;
     return status;
 }
 

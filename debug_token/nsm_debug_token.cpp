@@ -26,6 +26,7 @@
 #include <unistd.h>
 
 #include <boost/container/flat_map.hpp>
+#include <sdbusplus/exception.hpp>
 
 #include <cerrno>
 #include <chrono>
@@ -706,23 +707,24 @@ std::string UpdateDebugToken::handleAsyncCallEraseV2(const std::string& path)
  * @brief Install debug tokens using NSM V2 async D-Bus interface with file
  * descriptors
  * @param tokens Map of serial numbers to token data
- * @return 0 on success, -1 on failure
+ * @return installTokenSuccess, installTokenFailed or installTokenNoMatch
  */
 int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
 {
-    int status = 0;
+    int status = installTokenSuccess;
+    size_t installed = 0;
     NSMEndpoints nsmEndpoints;
 
     if (enumerateNsmDebugTokenEndpointsV2(nsmEndpoints) != 0)
     {
         log<level::ERR>("NSM V2 Endpoints enumeration error");
-        return -1;
+        return installTokenFailed;
     }
 
     if (nsmEndpoints.size() == 0)
     {
         log<level::ERR>("No NSM V2 debug token endpoints found.");
-        return -1;
+        return installTokenFailed;
     }
 
     for (const auto& path : nsmEndpoints)
@@ -736,6 +738,18 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
             std::variant<std::string> property;
             reply.read(property);
             const std::string serialNumber = std::get<std::string>(property);
+
+            if (serialNumber.empty())
+            {
+                // TokenDeviceID is still at its D-Bus default. nsmd never got
+                // a device ID for this endpoint (NSM QueryDeviceIDs did not
+                // answer), so it can never match a token in the package.
+                log<level::WARNING>(
+                    (path + ": endpoint reports an empty TokenDeviceID; "
+                            "it cannot be matched against the token package")
+                        .c_str());
+                continue;
+            }
 
             auto range = tokens.equal_range(serialNumber);
             if (range.first == range.second)
@@ -760,7 +774,7 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
                     log<level::ERR>((path + ": Failed to create memfd: " +
                                      std::string(strerror(errno)))
                                         .c_str());
-                    status = -1;
+                    status = installTokenFailed;
                     continue;
                 }
 
@@ -772,7 +786,7 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
                                      std::string(strerror(errno)))
                                         .c_str());
                     close(memfd);
-                    status = -1;
+                    status = installTokenFailed;
                     continue;
                 }
 
@@ -784,11 +798,12 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
                 if (asyncPath.empty())
                 {
                     log<level::ERR>((path + ": Token install failed").c_str());
-                    status = -1;
+                    status = installTokenFailed;
                     continue;
                 }
                 else
                 {
+                    ++installed;
                     log<level::INFO>(
                         (path + ": Token install succeeded").c_str());
                 }
@@ -799,8 +814,19 @@ int UpdateDebugToken::nsmTokenInstallV2(TokenMap& tokens)
             log<level::ERR>(
                 (path + ": NSM V2 D-Bus Exception: " + std::string(e.what()))
                     .c_str());
-            status = -1;
+            status = installTokenFailed;
         }
+    }
+
+    log<level::INFO>(("NSM V2 token install summary: endpoints=" +
+                      std::to_string(nsmEndpoints.size()) +
+                      " tokensInPackage=" + std::to_string(tokens.size()) +
+                      " installed=" + std::to_string(installed))
+                         .c_str());
+
+    if (status == installTokenSuccess && installed == 0)
+    {
+        return installTokenNoMatch;
     }
 
     return status;
