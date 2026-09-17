@@ -271,8 +271,8 @@ if get_option('DEBUG_TOKEN_SUPPORT').enabled()
         'DEBUG_TOKEN_ERASE_BUSNAME_UPDATER',
         'com.Nvidia.Software.DebugTokenErase.Updater',
     )
-    cdata.set_quoted('DEBUG_TOKEN_INSTALL_NAME', 'HGX_FW_Debug_Token_Install')
-    cdata.set_quoted('DEBUG_TOKEN_ERASE_NAME', 'HGX_FW_Debug_Token_Erase')
+    cdata.set_quoted('DEBUG_TOKEN_INSTALL_NAME', 'Debug_Token_Install')
+    cdata.set_quoted('DEBUG_TOKEN_ERASE_NAME', 'Debug_Token_Erase')
     cdata.set_quoted('DEBUG_TOKEN_BUSNAME_INVENTORY', 'xyz.openbmc_project.PLDM')
     cdata.set_quoted('DEBUG_TOKEN_INVENTORY_PATH', '/xyz/openbmc_project/PLDM')
     cdata.set_quoted('DEBUG_TOKEN_UPDATE_SERVICE', 'debug-token-update@.service')
