@@ -614,6 +614,10 @@ void GPIOResource::pollGpio()
                 "GPIO", gpioLineName, "VALUE", value);
             updateERoTHealth(HealthUpdateReason::FatalErrorAssert);
         }
+        else
+        {
+            updateERoTHealth(HealthUpdateReason::FatalErrorDeassert);
+        }
         return;
     }
 
