@@ -36,13 +36,14 @@ using UpdateIntf = sdbusplus::server::object_t<
 // handed to callers through the GetReadFd method (the GraceSPIData interface
 // exposes a unixfd, which cannot be a D-Bus property). readFd is non-owning;
 // the descriptor's lifetime is managed by the dumpFiles cache.
-class SpiProgress :
-    public sdbusplus::server::object_t<
-        sdbusplus::server::xyz::openbmc_project::common::Progress,
-        sdbusplus::com::nvidia::server::GraceSPIData>
+using SpiProgressBase = sdbusplus::server::object_t<
+    sdbusplus::server::xyz::openbmc_project::common::Progress,
+    sdbusplus::com::nvidia::server::GraceSPIData>;
+
+class SpiProgress : public SpiProgressBase
 {
   public:
-    using object_t::object_t;
+    using SpiProgressBase::SpiProgressBase;
 
     sdbusplus::message::unix_fd getReadFd() override
     {
