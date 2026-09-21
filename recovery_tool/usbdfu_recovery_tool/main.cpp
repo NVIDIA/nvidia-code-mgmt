@@ -86,7 +86,7 @@ int main(int argc, char* argv[])
         std::string bundleDir;
         std::string manifestPath;
         std::string packageDir;
-        bool noReset = false;
+        bool noDetach = false;
         bool verbose = false;
 
         auto* performCmd = app.add_subcommand(
@@ -127,9 +127,15 @@ int main(int argc, char* argv[])
             "Number of image bytes sent to DFU; 0 sends the whole file "
             "(default: " +
                 std::to_string(USBDFU_RECOVERY_FLASH_LENGTH) + ")");
-        performCmd->add_flag("--no-reset", noReset,
-                             "Do not pass -R to dfu-util after the final "
-                             "flash");
+        performCmd->add_flag("--no-detach", noDetach,
+                             "Do not detach the DFU session after the final "
+                             "transfer; recovery U-Boot will NOT program SPI");
+        performCmd->add_option(
+            "--post-flash-settle", cfg.postFlashSettleSecs,
+            "Seconds to wait after the DFU transfer for recovery U-Boot to "
+            "authenticate and program SPI before deasserting recovery "
+            "(default: " +
+                std::to_string(USBDFU_RECOVERY_POST_FLASH_SETTLE) + ")");
         addGpioOptions(performCmd, cfg);
         addEnumerationOptions(performCmd, cfg);
         addVerboseFlag(performCmd, verbose);
@@ -155,7 +161,7 @@ int main(int argc, char* argv[])
             // 4 = warning.  An explicit environment setting wins.
             ::setenv("LG2_LOG_LEVEL", "4", 0);
         }
-        cfg.resetAfterFlash = !noReset;
+        cfg.detachAfterFlash = !noDetach;
 
         nlohmann::json output;
 

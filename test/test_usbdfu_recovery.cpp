@@ -81,6 +81,30 @@ std::size_t g_waitpidFailOnCall = 0;
 /// production code waits, e.g. make the USB device appear on a later poll).
 std::function<void()> g_onSleep;
 
+/// Requested duration, in seconds, of every intercepted sleep, in order.
+/// Lets a test assert how long production code *asked* to wait even though
+/// the sleep itself is a no-op.
+std::vector<long> g_sleepSecs;
+
+/// Sum of g_sleepSecs.
+long totalSlept()
+{
+    long total = 0;
+    for (long s : g_sleepSecs)
+        total += s;
+    return total;
+}
+
+/// How many intercepted sleeps requested exactly `secs` seconds.
+std::size_t countSleeps(long secs)
+{
+    std::size_t n = 0;
+    for (long s : g_sleepSecs)
+        if (s == secs)
+            ++n;
+    return n;
+}
+
 } // namespace
 
 extern "C" pid_t __wrap_fork()
@@ -104,18 +128,22 @@ extern "C" pid_t __wrap_waitpid(pid_t /*pid*/, int* status, int /*options*/)
 // Make std::this_thread::sleep_for a no-op so tests don't actually sleep.
 // Both nanosleep and clock_nanosleep are intercepted because which one glibc
 // routes sleep_for through is implementation-defined.
-extern "C" int __wrap_nanosleep(const struct timespec* /*req*/,
+extern "C" int __wrap_nanosleep(const struct timespec* req,
                                 struct timespec* /*rem*/)
 {
+    if (req)
+        g_sleepSecs.push_back(req->tv_sec);
     if (g_onSleep)
         g_onSleep();
     return 0;
 }
 
 extern "C" int __wrap_clock_nanosleep(clockid_t /*clock*/, int /*flags*/,
-                                      const struct timespec* /*req*/,
+                                      const struct timespec* req,
                                       struct timespec* /*rem*/)
 {
+    if (req)
+        g_sleepSecs.push_back(req->tv_sec);
     if (g_onSleep)
         g_onSleep();
     return 0;
@@ -206,6 +234,7 @@ class UsbDfuRecoveryTest : public ::testing::Test
         g_waitpidCallCount = 0;
         g_waitpidFailOnCall = 0;
         g_onSleep = nullptr;
+        g_sleepSecs.clear();
 
         tmpDir_ = std::filesystem::temp_directory_path() /
                   ("usbdfu_recovery_test_" + std::to_string(::getpid()));
@@ -740,7 +769,7 @@ TEST_F(UsbDfuRecoveryTest, RunDfuDownload_BundleStageUsesDefaultAlt)
     EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -D " + blob.string());
 }
 
-TEST_F(UsbDfuRecoveryTest, RunDfuDownload_FirmwareImageUsesAltAndReset)
+TEST_F(UsbDfuRecoveryTest, RunDfuDownload_FirmwareImageUsesAltOnly)
 {
     auto fwPath = tmpDir_ / "fw.bin";
     touchFile(fwPath);
@@ -749,15 +778,18 @@ TEST_F(UsbDfuRecoveryTest, RunDfuDownload_FirmwareImageUsesAltAndReset)
     nlohmann::json out;
     EXPECT_TRUE(dut.runDfuDownload(UsbDfuRecovery::DfuTransfer::FirmwareImage,
                                    fwPath.string(), out));
+    // -R would reset the HMC as soon as the image reached DRAM, i.e. before
+    // recovery U-Boot has programmed any of it.  flashFirmware() detaches
+    // explicitly instead.
     EXPECT_EQ(dut.lastCommand(),
-              "/fake/dfu-util -a recovery_both -R -D " + fwPath.string());
+              "/fake/dfu-util -a recovery_both -D " + fwPath.string());
 }
 
 TEST_F(UsbDfuRecoveryTest, TransferParams_DeriveFromConfig)
 {
     auto cfg = makeConfig();
     cfg.dfuAltSetting = "recovery_cs0";
-    cfg.resetAfterFlash = false;
+    cfg.detachAfterFlash = false;
     cfg.bundleStepTimeoutSecs = 7;
     cfg.flashTimeoutSecs = 9;
     UsbDfuRecovery dut(cfg);
@@ -938,7 +970,7 @@ TEST_F(UsbDfuRecoveryTest, FlashFirmware_Success)
     EXPECT_EQ(out["FlashedBytes"].get<uint64_t>(), 32u);
 }
 
-TEST_F(UsbDfuRecoveryTest, FlashFirmware_UsesConfiguredAltAndReset)
+TEST_F(UsbDfuRecoveryTest, FlashFirmware_UsesConfiguredAltAndDetaches)
 {
     auto fwPath = tmpDir_ / "hmc_fw.bin";
     touchFile(fwPath);
@@ -948,22 +980,113 @@ TEST_F(UsbDfuRecoveryTest, FlashFirmware_UsesConfiguredAltAndReset)
     UsbDfuRecovery dut(cfg);
     nlohmann::json out;
     EXPECT_TRUE(dut.flashFirmware(fwPath.string(), out));
-    EXPECT_EQ(dut.lastCommand(),
-              "/fake/dfu-util -a recovery_cs0 -R -D " + fwPath.string());
+    // The transfer no longer carries -R; the detach that follows it is the
+    // last command issued, and carries the same configured alt setting.
+    EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -a recovery_cs0 -e");
+    EXPECT_EQ(g_waitpidCallCount, 2u);
     EXPECT_EQ(out["DfuAlt"].get<std::string>(), "recovery_cs0");
 }
 
-TEST_F(UsbDfuRecoveryTest, FlashFirmware_NoResetFlag)
+TEST_F(UsbDfuRecoveryTest, FlashFirmware_NoDetachSkipsDetach)
 {
     auto fwPath = tmpDir_ / "hmc_fw.bin";
     touchFile(fwPath);
 
     auto cfg = makeConfig();
-    cfg.resetAfterFlash = false;
+    cfg.detachAfterFlash = false;
     UsbDfuRecovery dut(cfg);
     nlohmann::json out;
     EXPECT_TRUE(dut.flashFirmware(fwPath.string(), out));
     EXPECT_EQ(dut.lastCommand().find(" -R"), std::string::npos);
+    // --no-detach leaves the DFU session open, so recovery U-Boot never starts
+    // programming: the transfer is the last command issued.
+    EXPECT_EQ(dut.lastCommand().find(" -e"), std::string::npos);
+    EXPECT_EQ(g_waitpidCallCount, 1u);
+}
+
+TEST_F(UsbDfuRecoveryTest, FlashFirmware_DetachesAfterTransfer)
+{
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+
+    UsbDfuRecovery dut(makeConfig());
+    nlohmann::json out;
+    EXPECT_TRUE(dut.flashFirmware(fwPath.string(), out));
+    EXPECT_EQ(out["Status"].get<std::string>(), "Successful");
+    // The alt setting must be repeated: recovery U-Boot exposes
+    // recovery_cs0/cs1/both and fw_logs_cs0/cs1, so a bare -e fails with
+    // "More than one DFU capable USB device found".
+    EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -a recovery_both -e");
+    EXPECT_EQ(g_waitpidCallCount, 2u);
+}
+
+TEST_F(UsbDfuRecoveryTest, FlashFirmware_DetachFailureIsFlashFailure)
+{
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    touchFile(fwPath);
+    g_waitpidFailOnCall = 2; // transfer (call 1) ok, detach (call 2) fails
+
+    UsbDfuRecovery dut(makeConfig());
+    nlohmann::json out;
+    EXPECT_FALSE(dut.flashFirmware(fwPath.string(), out));
+    EXPECT_EQ(out["Status"].get<std::string>(), "Failed");
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kFirmwareFlashFailed);
+}
+
+TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_RunsToCeiling)
+{
+    auto cfg = makeConfig();
+    cfg.postFlashSettleSecs = 100;
+    cfg.postFlashPollSecs = 10;
+    UsbDfuRecovery dut(cfg);
+
+    dut.waitForProgrammingComplete();
+
+    // isProgrammingComplete() has no signal to read yet, so the poll runs the
+    // full ceiling.  Wiring a signal in should turn this into an early return.
+    EXPECT_FALSE(dut.isProgrammingComplete());
+    EXPECT_EQ(g_sleepSecs.size(), 10u);
+    EXPECT_EQ(totalSlept(), 100);
+}
+
+TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_ClampsFinalPoll)
+{
+    auto cfg = makeConfig();
+    cfg.postFlashSettleSecs = 95; // not a multiple of the poll interval
+    cfg.postFlashPollSecs = 10;
+    UsbDfuRecovery dut(cfg);
+
+    dut.waitForProgrammingComplete();
+
+    // An attempt count of 95/10 would truncate to 9 and return 5 s early.
+    ASSERT_EQ(g_sleepSecs.size(), 10u);
+    EXPECT_EQ(g_sleepSecs.back(), 5);
+    EXPECT_EQ(totalSlept(), 95);
+}
+
+TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_CeilingBelowPollInterval)
+{
+    auto cfg = makeConfig();
+    cfg.postFlashSettleSecs = 5;
+    cfg.postFlashPollSecs = 10;
+    UsbDfuRecovery dut(cfg);
+
+    dut.waitForProgrammingComplete();
+
+    // A single unclamped poll would sleep 10 s and overshoot the ceiling.
+    ASSERT_EQ(g_sleepSecs.size(), 1u);
+    EXPECT_EQ(totalSlept(), 5);
+}
+
+TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_ZeroCeilingDoesNotWait)
+{
+    auto cfg = makeConfig();
+    cfg.postFlashSettleSecs = 0;
+    UsbDfuRecovery dut(cfg);
+
+    dut.waitForProgrammingComplete();
+
+    EXPECT_TRUE(g_sleepSecs.empty());
 }
 
 TEST_F(UsbDfuRecoveryTest, FlashFirmware_TruncatesAndCleansUp)
@@ -974,6 +1097,9 @@ TEST_F(UsbDfuRecoveryTest, FlashFirmware_TruncatesAndCleansUp)
 
     auto cfg = makeConfig();
     cfg.flashLengthBytes = 16;
+    // Suppress the detach so lastCommand() is the transfer under test rather
+    // than the -e that follows it.
+    cfg.detachAfterFlash = false;
     UsbDfuRecovery dut(cfg);
     nlohmann::json out;
     EXPECT_TRUE(dut.flashFirmware(fwPath.string(), out));
@@ -1202,9 +1328,35 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_Success)
               "Successful");
     EXPECT_EQ(out["DfuAlt"].get<std::string>(), "recovery_both");
     EXPECT_EQ(out["FlashedBytes"].get<uint64_t>(), 48u);
-    // bundle + flash
-    EXPECT_EQ(g_waitpidCallCount, 2u);
+    // bundle + flash + detach
+    EXPECT_EQ(g_waitpidCallCount, 3u);
     EXPECT_FALSE(static_cast<bool>(dut.session_));
+}
+
+TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_NoDetachSkipsProgrammingWait)
+{
+    makeRecoveryReady();
+    touchFile(tmpDir_ / "bundle.bin");
+    auto fwPath = tmpDir_ / "hmc_fw.bin";
+    writeBytes(fwPath, 48);
+
+    auto cfg = makeConfig();
+    cfg.detachAfterFlash = false;
+    cfg.postFlashSettleSecs = 2400;
+    UsbDfuRecovery dut(cfg);
+    nlohmann::json out;
+    EXPECT_TRUE(dut.performFullRecovery(fwPath.string(),
+                                        {tmpDir_ / "bundle.bin"}, out));
+
+    // --no-detach leaves the DFU session open, so recovery U-Boot never starts
+    // programming.  Waiting out the settle ceiling would add 40 minutes to a
+    // run that has nothing to wait for.  The strap settle and the two reset
+    // pulses still sleep 1 s each, so assert no poll-interval sleep happened
+    // rather than no sleep at all.
+    EXPECT_EQ(countSleeps(cfg.postFlashPollSecs), 0u);
+    EXPECT_LT(totalSlept(), cfg.postFlashPollSecs);
+    // bundle + flash, no detach
+    EXPECT_EQ(g_waitpidCallCount, 2u);
 }
 
 // ============================================================================
@@ -1321,10 +1473,12 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_FromPackage_Success)
     EXPECT_TRUE(dut.performFullRecovery(contents.firmwareImage.string(),
                                         contents.bundle, out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Successful");
-    // 9 bundle stages + 1 flash
-    EXPECT_EQ(g_waitpidCallCount, usbdfu::componentMap.size());
-    EXPECT_NE(dut.lastCommand().find("16/HMC_SPI_Image.bin"),
-              std::string::npos);
+    // bundle stages + flash + detach
+    EXPECT_EQ(g_waitpidCallCount, usbdfu::componentMap.size() + 1);
+    // The detach is now the last command; that the SPI image was the one
+    // transferred is covered by ResolvePackageComponents_Complete.
+    EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -a recovery_both -e");
+    EXPECT_EQ(out["FlashedBytes"].get<uint64_t>(), 4u);
 }
 
 // ============================================================================

@@ -25,6 +25,7 @@ inline UsbDfuRecovery::Config makeDefaultConfig()
     cfg.dfuAltSetting = USBDFU_RECOVERY_DFU_ALT;
     cfg.flashLengthBytes =
         static_cast<std::uintmax_t>(USBDFU_RECOVERY_FLASH_LENGTH);
+    cfg.postFlashSettleSecs = USBDFU_RECOVERY_POST_FLASH_SETTLE;
     return cfg;
 }
 

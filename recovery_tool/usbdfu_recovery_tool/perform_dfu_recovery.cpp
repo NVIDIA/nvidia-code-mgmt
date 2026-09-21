@@ -208,10 +208,6 @@ UsbDfuRecovery::DfuTransferParams
         case DfuTransfer::FirmwareImage:
         {
             std::vector<std::string> args = {"-a", config_.dfuAltSetting};
-            if (config_.resetAfterFlash)
-            {
-                args.push_back("-R");
-            }
             return {"Firmware image", std::move(args),
                     config_.flashTimeoutSecs};
         }
@@ -350,6 +346,34 @@ bool UsbDfuRecovery::waitForRecoveryUBoot(nlohmann::json& out)
         "within " +
             std::to_string(config_.uBootDfuTimeoutSecs) + "s",
         USBDFURecoveryErrorCode::RecoveryUBootDfuTimeout);
+}
+
+bool UsbDfuRecovery::isProgrammingComplete() const
+{
+    // No observable signal today: recovery U-Boot detaches its DFU gadget
+    // before programming and returns to its prompt afterwards without
+    // re-enumerating, and the HMC console is not routed to the BMC on this
+    // platform.  Returning false makes waitForProgrammingComplete() run to
+    // its ceiling, which is the current (correct but slow) behaviour.
+    return false;
+}
+
+void UsbDfuRecovery::waitForProgrammingComplete()
+{
+    const int settleSecs = std::max(0, config_.postFlashSettleSecs);
+    const int pollSecs = std::max(1, config_.postFlashPollSecs);
+
+    lg2::info("Waiting up to {T}s for recovery U-Boot to authenticate and "
+              "program SPI (polling every {P}s)",
+              "T", settleSecs, "P", pollSecs);
+
+    if (pollUntil(settleSecs * 1000, pollSecs * 1000,
+                  [this] { return isProgrammingComplete(); }))
+    {
+        lg2::info("Recovery U-Boot reported programming complete");
+        return;
+    }
+    lg2::info("Post-flash settle ceiling of {T}s reached", "T", settleSecs);
 }
 
 bool UsbDfuRecovery::assertRecoveryMode(nlohmann::json& out)
@@ -515,6 +539,28 @@ bool UsbDfuRecovery::flashFirmware(const std::string& imagePath,
     out["Status"] = "Successful";
     out["DfuAlt"] = config_.dfuAltSetting;
     out["FlashedBytes"] = staged.sizeBytes;
+
+    // The transfer only streams the image into the HMC's DRAM.  Recovery
+    // U-Boot begins authenticating and programming SPI when the DFU session
+    // ends, so it must be told the transfer is finished.  A bare `-e` fails
+    // with "More than one DFU capable USB device found" because recovery
+    // U-Boot exposes recovery_cs0/cs1/both and fw_logs_cs0/cs1, so the alt
+    // setting is always passed.
+    if (config_.detachAfterFlash)
+    {
+        lg2::info("Detaching DFU session so recovery U-Boot programs SPI");
+        nlohmann::json detach;
+        if (!runDfuUtil({"-a", config_.dfuAltSetting, "-e"},
+                        config_.dfuListTimeoutSecs, detach))
+        {
+            return setFailure(out,
+                              detach.value("Error",
+                                           "Failed to detach the DFU session; "
+                                           "recovery U-Boot will not program "
+                                           "SPI"),
+                              USBDFURecoveryErrorCode::FirmwareFlashFailed);
+        }
+    }
     return true;
 }
 
@@ -621,8 +667,13 @@ bool UsbDfuRecovery::performFullRecovery(
         out["FlashedBytes"] = s.value("FlashedBytes", std::uintmax_t{0});
     }
 
-    std::this_thread::sleep_for(
-        std::chrono::seconds(config_.postFlashSettleSecs));
+    // flashFirmware() only detaches -- and so only starts programming --
+    // when detachAfterFlash is set.  On the --no-detach path recovery U-Boot
+    // is still sitting in its DFU session, so there is nothing to wait for.
+    if (config_.detachAfterFlash)
+    {
+        waitForProgrammingComplete();
+    }
 
     {
         nlohmann::json s;

@@ -15,11 +15,14 @@ The recovery sequence:
   to the BootROM via `dfu-util`, staging the recovery U-Boot that exposes the
   SPI flash over DFU. The bundle travels inside the recovery PLDM package
   together with the SPI image, one component each.
-- Flash the firmware SPI image via `dfu-util -a recovery_both -R` (both SPI
-  chips from one authenticated transfer). Only the first `0x03F30000` bytes of
-  the image are sent so the persistent tail (FW logs, VSN, debug tokens)
-  survives recovery.
-- Deassert the recovery strap and pulse reset so the HMC boots normally.
+- Transfer the firmware SPI image via `dfu-util -a recovery_both -D` (both SPI
+  chips from one authenticated transfer) and end the DFU session with
+  `dfu-util -a recovery_both -e`. Only the first `0x03F30000` bytes of the image
+  are sent so the persistent tail (FW logs, VSN, debug tokens) survives
+  recovery.
+- Wait for recovery U-Boot to authenticate and program both chips (this is the
+  slow part, about 30 minutes; the tool waits up to 40 minutes), then deassert
+  the recovery strap and pulse reset so the HMC boots normally.
 
 ## Components
 
@@ -95,7 +98,7 @@ usbdfu-recovery-tool PerformRecovery \
     [--dfu-util <path>] \
     [--dfu-alt recovery_both|recovery_cs0] \
     [--flash-length <bytes>] \
-    [--no-reset] \
+    [--no-detach] [--post-flash-settle <secs>] \
     --gpio-recovery <name> --gpio-reset <name> --gpio-spi-mux <name> \
     [--enum-timeout <secs>] \
     [-v|--verbose]
@@ -158,9 +161,17 @@ usbdfu-recovery-tool PerformRecovery \
    debug-token and PDS slots on both SPI chips, which takes far longer than the
    lab script's `sleep 10`; if the targets never appear the command fails with
    `RecoveryUBootDfuTimeout` and releases the straps.
-6. Flashes the firmware SPI image via `dfu-util -a <alt> -R -D <image>`, sending
-   only the first `--flash-length` bytes (see "Firmware image handling").
-7. Deasserts `HMC_RECOVERY_R-O=0` and pulses reset so the HMC boots normally.
+6. Transfers the firmware SPI image via `dfu-util -a <alt> -D <image>`, sending
+   only the first `--flash-length` bytes (see "Firmware image handling"), then
+   ends the DFU session with `dfu-util -a <alt> -e`. The transfer only places
+   the image in the HMC's DRAM; ending the session is what makes recovery U-Boot
+   authenticate the manifests and program SPI.
+7. Waits for programming to finish (default ceiling 2400 s,
+   `--post-flash-settle`). Recovery U-Boot gives the BMC no completion signal
+   today, so the tool waits the full ceiling; on P4102 `recovery_both` takes
+   about 901 s (CS0) plus 794 s (CS1). Resetting the HMC earlier aborts
+   programming and leaves the flash partly written.
+8. Deasserts `HMC_RECOVERY_R-O=0` and pulses reset so the HMC boots normally.
 
 Example output on success:
 
@@ -364,33 +375,40 @@ All entries must be plain filenames (no `/` or `..`), resolved relative to
   logs, VSN and debug-token regions that must survive recovery. This temporarily
   needs ~63 MiB of extra space on the image's filesystem. Pass
   `--flash-length 0` to send the whole file.
-- **Reset.** `-R` is passed so the HMC leaves DFU once the download completes;
-  `--no-reset` suppresses it.
+- **Detach.** After the transfer the tool sends `dfu-util -a <alt> -e` to end
+  the DFU session, which is what starts programming. The alt setting is repeated
+  because recovery U-Boot also exposes `fw_logs_cs0/cs1`, so a bare `-e` fails
+  with "More than one DFU capable USB device found". `-R` is not used: it resets
+  the HMC as soon as the image reaches DRAM, before anything is programmed, and
+  dfu-util then exits non-zero even on a good download. `--no-detach` suppresses
+  the detach (debug only: recovery U-Boot keeps the session open and programs
+  nothing).
 
 ## Timing and timeouts
 
 All values are conservative upper bounds taken from the P4102 lab material and
 from bench measurements on P4102 (Sep 2026), not specification minimums:
 
-| Constant                     | Value              | Source                                                                                |
-| ---------------------------- | ------------------ | ------------------------------------------------------------------------------------- |
-| Strap settle / reset pulse   | 1 s / 1 s          | HMC USB DFU recovery runbook                                                          |
-| DFU enumeration timeout      | 15 s (poll 500 ms) | runbook shows ~2 s until `lsusb` lists `2245:2700`; 5x margin                         |
-| Delay between bundle stages  | 10 s               | `usb_recovery_ddr5.sh` (`sleep 10`); manifest `step_delay_secs` overrides             |
-| Per-stage dfu-util timeout   | 120 s              | bundle blobs are < 2 MB each                                                          |
-| Wait for recovery U-Boot DFU | 180 s (poll 5 s)   | bench: U-Boot erases both chips' debug-token/PDS slots first; `sleep 10` is too short |
-| Final flash dfu-util timeout | 2400 s             | bench: SPI programming runs at ~77 KB/s, ~14.5 min per 64 MiB chip, two chips         |
-| Post-flash settle            | 10 s               | `usb_recovery_ddr5.sh`                                                                |
+| Constant                        | Value              | Source                                                                                                          |
+| ------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Strap settle / reset pulse      | 1 s / 1 s          | HMC USB DFU recovery runbook                                                                                    |
+| DFU enumeration timeout         | 15 s (poll 500 ms) | runbook shows ~2 s until `lsusb` lists `2245:2700`; 5x margin                                                   |
+| Delay between bundle stages     | 10 s               | `usb_recovery_ddr5.sh` (`sleep 10`); manifest `step_delay_secs` overrides                                       |
+| Per-stage dfu-util timeout      | 120 s              | bundle blobs are < 2 MB each                                                                                    |
+| Wait for recovery U-Boot DFU    | 180 s (poll 5 s)   | bench: U-Boot erases both chips' debug-token/PDS slots first; `sleep 10` is too short                           |
+| Final transfer dfu-util timeout | 2400 s             | bounds only the DRAM transfer (seconds in practice)                                                             |
+| Post-flash programming wait     | 2400 s (poll 10 s) | bench: U-Boot programs SPI after the session ends, 901 s (CS0) + 794 s (CS1); ceiling, no completion signal yet |
 
 End-to-end estimate: strap + enumeration 5-20 s, bundle 9-11 x (~2 s transfer
 plus 10 s delay) = ~2-2.5 min, recovery U-Boot erase and enumeration up to 3
-min, flash of ~63 MB to both chips at the measured ~77 KB/s ~ 14-30 min,
-settle + deassert ~15 s, i.e. **roughly 20-35 minutes** for `recovery_both`
-(about half with `recovery_cs0`). The `USBDFU_RECOVERY_TIMEOUT` build option
-(default 3600 s) bounds the whole Redfish task; if it expires the item-updater
-stops the worker unit, which terminates the running `dfu-util`, and the task
-fails with a timeout message. The per-step `dfu-util` timeouts only protect
-against a hung transfer and are not individually bounded by the task timeout.
+min, image transfer a few seconds, programming wait 40 min (the fixed ceiling;
+the measured programming time is ~28 min for `recovery_both`), deassert ~5 s,
+i.e. **roughly 45 minutes** regardless of alt setting until recovery U-Boot can
+signal completion. The `USBDFU_RECOVERY_TIMEOUT` build option (default 3600 s)
+bounds the whole Redfish task; if it expires the item-updater stops the worker
+unit, which terminates the running `dfu-util`, and the task fails with a timeout
+message. The per-step `dfu-util` timeouts only protect against a hung transfer
+and are not individually bounded by the task timeout.
 
 ## Troubleshooting
 

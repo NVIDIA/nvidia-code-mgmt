@@ -71,11 +71,26 @@ constexpr int bundleStepTimeoutSecs = 120; // (c) per dfu-util -D of one blob
 //     enumerate its DFU targets, so it is polled for instead of slept for.
 constexpr int uBootDfuTimeoutSecs = 180;
 constexpr int uBootDfuPollSecs = 5;
-// (d) measured SPI programming rate on this silicon is ~77 KB/s, i.e. about
-//     14.5 min per 64 MiB chip; recovery_both writes both chips.
-constexpr int flashTimeoutSecs = 2400;
-constexpr int postFlashSettleSecs = 10; // (a)
-constexpr int dfuListTimeoutSecs = 30;  // dfu-util -l
+// (d) `dfu-util -D` only streams the image into the HMC's DRAM and returns
+//     within seconds.  Recovery U-Boot authenticates the manifests and
+//     programs SPI *after* the DFU session ends, and that is the slow part:
+//     measured on P4102 at 901 s (CS0) + 794 s (CS1), ~75-85 KB/s, for
+//     recovery_both.  The HMC must not be reset until both chip-selects
+//     report "programming and readback verified", so the settle covers the
+//     programming phase, not the transfer.
+// The transfer itself only streams into DRAM: a full 63 MiB recovery_both
+// download completes in well under a minute over USB 2.0.  2400 s was sized
+// for programming, which postFlashSettleSecs now covers, so this only needs
+// enough margin for a slow link.
+constexpr int flashTimeoutSecs = 300;
+// Upper bound, not an unconditional sleep: waitForProgrammingComplete()
+// polls for a completion signal and returns as soon as one is seen.  The
+// BMC currently has no view of the HMC console and recovery U-Boot does not
+// re-enumerate after programming, so today the poll always runs to the
+// ceiling.  Wire a signal into isProgrammingComplete() when one exists.
+constexpr int postFlashSettleSecs = 2400; // (d)
+constexpr int postFlashPollSecs = 10;
+constexpr int dfuListTimeoutSecs = 30; // dfu-util -l
 } // namespace timing
 
 } // namespace usbdfu
@@ -159,7 +174,7 @@ class UsbDfuRecovery
         /** Firmware image bytes sent to DFU; 0 = whole file */
         std::uintmax_t flashLengthBytes{usbdfu::defaultFlashLengthBytes};
         /** Pass -R so the device leaves DFU after the final download */
-        bool resetAfterFlash{true};
+        bool detachAfterFlash{true};
         /** sysfs root scanned for the BootROM DFU device (tests override) */
         std::string usbSysfsRoot{usbdfu::defaultUsbSysfsRoot};
         std::string dfuVendorId{usbdfu::bootRomDfuVendorId};
@@ -176,6 +191,7 @@ class UsbDfuRecovery
         int uBootDfuPollSecs{usbdfu::timing::uBootDfuPollSecs};
         int flashTimeoutSecs{usbdfu::timing::flashTimeoutSecs};
         int postFlashSettleSecs{usbdfu::timing::postFlashSettleSecs};
+        int postFlashPollSecs{usbdfu::timing::postFlashPollSecs};
         int dfuListTimeoutSecs{usbdfu::timing::dfuListTimeoutSecs};
     };
 
@@ -264,6 +280,20 @@ class UsbDfuRecovery
      * targets, for at most uBootDfuTimeoutSecs (0 = return immediately).
      */
     bool waitForRecoveryUBoot(nlohmann::json& out);
+
+    /**
+     * @brief Has recovery U-Boot finished authenticating and programming?
+     *
+     * dfu-util returning only means the image reached the HMC's DRAM.  There
+     * is currently no signal the BMC can observe while U-Boot programs SPI,
+     * so this returns false and the caller falls back to its ceiling.
+     */
+    bool isProgrammingComplete() const;
+
+    /**
+     * @brief Wait for programming to finish, bounded by postFlashSettleSecs.
+     */
+    void waitForProgrammingComplete();
 
     /** Last dfu-util command line that was executed (diagnostics / tests). */
     const std::string& lastCommand() const

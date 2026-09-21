@@ -516,13 +516,22 @@ option('USBDFU_RECOVERY_SUPPORTED_MODEL',
        value: '',
        description: 'PLDM compatible string for the USB DFU recovery firmware package (e.g. Nvidia:USBDFURecovery:<UUID>)')
 
+option('USBDFU_RECOVERY_POST_FLASH_SETTLE',
+       type: 'integer',
+       value: 2400,
+       description: 'Seconds to wait after the DFU transfer for recovery U-Boot to authenticate and program '
+                  + 'SPI before the HMC is reset.  It is an upper bound, not a fixed sleep, but there is no '
+                  + 'completion signal to observe today so a run costs the whole of it.  Measured on P4102 at '
+                  + '901 s + 794 s for recovery_both; must stay comfortably inside USBDFU_RECOVERY_TIMEOUT, '
+                  + 'which also has to cover the bundle, the transfer and the deassert.')
+
 option('USBDFU_RECOVERY_TIMEOUT',
        type: 'integer',
-       value: 3600,
+       value: 5400,
        description: 'Upper bound in seconds for the whole USB DFU recovery task (strap -> bundle -> flash -> deassert). '
-                  + 'The measured SPI programming rate on the AST2700 is ~77 KB/s (~14.5 min per 64 MiB chip), so a '
-                  + 'recovery_both flash alone can take ~30 min; see recovery_tool/usbdfu_recovery_tool/README.md '
-                  + '"Timing and timeouts".')
+                  + 'Programming runs at ~75-85 KB/s, measured on P4102 at 901 s + 794 s for recovery_both, and the '
+                  + 'post-flash settle waits up to 2400 s for it, so a full run is roughly 45 min; see '
+                  + 'recovery_tool/usbdfu_recovery_tool/README.md "Timing and timeouts".')
 
 option('DOT_KEYD_SUPPORT',
        type: 'feature',
