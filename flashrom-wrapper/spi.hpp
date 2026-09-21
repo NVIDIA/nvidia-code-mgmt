@@ -12,6 +12,7 @@
 #include <sdbusplus/bus/match.hpp>
 #include <sdbusplus/server.hpp>
 #include <xyz/openbmc_project/Common/Progress/server.hpp>
+#include <xyz/openbmc_project/Common/error.hpp>
 #include <xyz/openbmc_project/Software/ApplyTime/server.hpp>
 #include <xyz/openbmc_project/Software/Update/server.hpp>
 
@@ -31,9 +32,29 @@ using SpiIntf = sdbusplus::server::object_t<
 using UpdateIntf = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::Software::server::Update>;
 
-using SpiProgress = sdbusplus::server::object_t<
-    sdbusplus::server::xyz::openbmc_project::common::Progress,
-    sdbusplus::com::nvidia::server::GraceSPIData>;
+// Progress object for a single SPI operation. The read file descriptor is
+// handed to callers through the GetReadFd method (the GraceSPIData interface
+// exposes a unixfd, which cannot be a D-Bus property). readFd is non-owning;
+// the descriptor's lifetime is managed by the dumpFiles cache.
+class SpiProgress :
+    public sdbusplus::server::object_t<
+        sdbusplus::server::xyz::openbmc_project::common::Progress,
+        sdbusplus::com::nvidia::server::GraceSPIData>
+{
+  public:
+    using object_t::object_t;
+
+    sdbusplus::message::unix_fd getReadFd() override
+    {
+        if (readFd < 0)
+        {
+            throw sdbusplus::error::xyz::openbmc_project::common::Unavailable{};
+        }
+        return sdbusplus::message::unix_fd(readFd);
+    }
+
+    int readFd{-1};
+};
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
 constexpr auto inventoryRootPath = "/xyz/openbmc_project/inventory";

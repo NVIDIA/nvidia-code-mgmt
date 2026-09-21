@@ -179,8 +179,7 @@ void Spi::executeFlashrom(std::vector<std::string> args, Operation ops)
 
                     if (auto currentProgressObj = getCurrentProgressObj())
                     {
-                        sdbusplus::message::unix_fd unixFd(fd);
-                        currentProgressObj->spiReadFd(unixFd);
+                        currentProgressObj->readFd = fd;
                     }
                 }
                 finishSpiOperation(SpiProgress::OperationStatus::Completed);
@@ -625,7 +624,7 @@ SpiFailureReason Spi::startSpiOperation(Operation ops)
             .count());
     newProgress->status(SpiProgress::OperationStatus::InProgress);
     newProgress->progress(0);
-    newProgress->spiReadFd(sdbusplus::message::unix_fd(-1));
+    newProgress->readFd = -1;
 
     progressHistory.push_back(std::move(newProgress));
 
