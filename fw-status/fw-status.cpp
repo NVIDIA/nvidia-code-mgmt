@@ -77,6 +77,8 @@ constexpr auto fwStatusService = "com.Nvidia.FWStatus";
 constexpr auto fwStatusObjManager = "/";
 constexpr auto recoveryConfigIntfName =
     "xyz.openbmc_project.Inventory.Item.Recovery_Config";
+constexpr auto probeIntfName = "xyz.openbmc_project.Configuration.Probe";
+constexpr auto recoveryConfigType = "Recovery_Config";
 constexpr auto chassisInterface = "xyz.openbmc_project.State.Chassis";
 constexpr auto stateBasePath = "/xyz/openbmc_project/state";
 
@@ -1681,6 +1683,41 @@ void armCentralizedPowerStateWatcherRetry()
 }
 
 /**
+ * @brief Checks whether an EntityManager object is a recovery config board.
+ *
+ * Older EntityManager marks recovery config boards with the
+ * 'recoveryConfigIntfName' interface. Newer EntityManager only exports
+ * Inventory.Item.<Type> for a fixed set of upstream types and publishes the
+ * board Type on Configuration.Probe instead, so accept either.
+ *
+ * @param[in] interfaces - Interfaces of the EntityManager object
+ *
+ * @return True if the object is a recovery config board, false otherwise
+ */
+bool isRecoveryConfigObject(const InterfaceMap& interfaces)
+{
+    if (interfaces.contains(recoveryConfigIntfName))
+    {
+        return true;
+    }
+
+    auto probe = interfaces.find(probeIntfName);
+    if (probe == interfaces.end())
+    {
+        return false;
+    }
+
+    auto type = probe->second.find("Type");
+    if (type == probe->second.end())
+    {
+        return false;
+    }
+
+    const auto* typeName = std::get_if<std::string>(&type->second);
+    return typeName != nullptr && *typeName == recoveryConfigType;
+}
+
+/**
  * @brief Get recovery configurations from the D-Bus
  *
  * @return True when configurations are available on D-Bus,
@@ -1694,7 +1731,7 @@ bool checkForRecoveryConfigEMObjects()
 
     for (const auto& [emObjectPath, interfaces] : managedObjects)
     {
-        if (interfaces.contains(recoveryConfigIntfName))
+        if (isRecoveryConfigObject(interfaces))
         {
             return true;
         }
@@ -1730,18 +1767,13 @@ void checkEntityManagerAvailability()
             getBus(), MatchRules::interfacesAdded(entityManagerObjManager),
             []([[maybe_unused]] sdbusplus::message::message& msg) {
                 sdbusplus::object_path objPath;
-                std::map<std::string, std::map<std::string, Value>> interfaces;
+                InterfaceMap interfaces;
                 msg.read(objPath, interfaces);
 
-                for (const auto& [interfaceName, properties] : interfaces)
+                if (isRecoveryConfigObject(interfaces))
                 {
-                    if (interfaceName == recoveryConfigIntfName)
-                    {
-                        // Idempotent: only newly-published configs are acted
-                        // on.
-                        publishDBusRecoveryObject();
-                        break;
-                    }
+                    // Idempotent: only newly-published configs are acted on.
+                    publishDBusRecoveryObject();
                 }
             });
     }

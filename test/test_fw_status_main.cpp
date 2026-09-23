@@ -2089,6 +2089,46 @@ TEST_F(FWStatusMainTest, CheckEntityManagerAvailabilityIgnoresUnrelatedSignal)
     EXPECT_TRUE(resources.empty());
 }
 
+TEST_F(FWStatusMainTest, CheckForRecoveryConfigDetectsProbeType)
+{
+    using test::fw_status_fake_dbus::setProperty;
+
+    setProperty("/xyz/openbmc_project/inventory/system/board/other",
+                probeIntfName, "Type", std::string("Board"));
+    EXPECT_FALSE(checkForRecoveryConfigEMObjects());
+
+    setProperty("/xyz/openbmc_project/inventory/system/recovery_config/devs",
+                probeIntfName, "Type", std::string(recoveryConfigType));
+    EXPECT_TRUE(checkForRecoveryConfigEMObjects());
+}
+
+TEST_F(FWStatusMainTest, CheckEntityManagerAvailabilityPublishesOnProbeSignal)
+{
+    using test::fw_status_fake_dbus::setProperty;
+
+    checkEntityManagerAvailability();
+    ASSERT_NE(entityManagerServiceMatch, nullptr);
+    ASSERT_TRUE(resources.empty());
+
+    setProperty("/xyz/openbmc_project/inventory/cpld-probe",
+                cpldMonitorObjInterface, "SMAEID", static_cast<uint64_t>(45));
+    setProperty("/xyz/openbmc_project/inventory/cpld-probe",
+                cpldMonitorObjInterface, "DeviceId", std::string("CPLD_PROBE"));
+    test::fw_status_fake_dbus::setProperty(
+        "/au/com/codeconstruct/mctp1/networks/1/endpoints/45",
+        mctpEndpointIntfName, "EID", static_cast<uint8_t>(45));
+
+    auto signalBus = sdbusplus::bus::new_default();
+    InterfaceMap interfaces{
+        {probeIntfName, {{"Type", std::string(recoveryConfigType)}}}};
+    auto signal = makeObjectManagerSignal(
+        signalBus, entityManagerObjManager, "InterfacesAdded",
+        "/xyz/openbmc_project/inventory/system/recovery_config/devs",
+        interfaces);
+    EXPECT_GT(dispatchMatchCallback(entityManagerServiceMatch, signal), 0);
+    EXPECT_EQ(resources.size(), 1u);
+}
+
 TEST_F(FWStatusMainTest, CheckEntityManagerAvailabilityRegistersWatcher)
 {
     checkEntityManagerAvailability();
