@@ -9,35 +9,22 @@
 #include <string_view>
 
 /**
- * Layout of the USB DFU recovery PLDM firmware package.
- *
- * The package carries the whole recovery kit, exactly like the USB RCM
- * recovery package carries its components: the preliminary boot bundle that
- * brings the AST2700 BootROM up to recovery U-Boot, followed by the SPI
- * firmware image.  PLDM extracts every component to
+ * Layout of the USB DFU recovery PLDM package: the preliminary boot bundle
+ * that brings the BootROM up to recovery U-Boot, then the SPI image.  PLDM
+ * extracts each component to
  *   <IMG_UPLOAD_DIR>/USBDFURecovery/<UUID>/<component id, decimal>/<file>
- * The item-updater watches those directories, the worker sends the bundle
- * stages in table order and then flashes the firmware image.
  *
- * The component identifiers below are the single source of truth for this
- * repository and must match the package definition owned by the release
- * team.
- *
- * The stage list is package-dependent, not platform-fixed: on P4102 the
- * Core-26.05-1_br release kit's MCU runtime requests zephyr-aspeed-ssp.bin and
- * zephyr-aspeed-tsp.bin after U-Boot (11 stages), while the develop
- * "verified" kit reaches recovery U-Boot after 9.  The Zephyr stages are
- * therefore optional components: sent when the package carries them, skipped
- * otherwise.
+ * These identifiers must match the package definition owned by the release
+ * team.  The stage list is package-dependent: some kits request the Zephyr
+ * images after U-Boot (11 stages), others reach recovery U-Boot after 9, so
+ * those stages are optional.
  */
 namespace usbdfu
 {
 
 enum class ComponentRole : uint8_t
 {
-    /** Blob streamed to the BootROM / staged loader with plain dfu-util -D */
     BundleStage,
-    /** Final SPI image written through recovery U-Boot's DFU alt setting */
     FirmwareImage,
 };
 
