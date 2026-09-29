@@ -28,7 +28,7 @@ The recovery sequence:
 
 | Component                        | Role                                                                                                                                                                                                      |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `usbdfu-recovery-tool`           | Standalone CLI (this README). No D-Bus dependency; the GPIO line names are passed on the command line (`--gpio-*`).                                                                                       |
+| `usbdfu-recovery-tool`           | Standalone CLI (this README). No D-Bus dependency; reads the GPIO line names and strap polarities from the Entity Manager recovery configuration file (`--json`).                                         |
 | `usb-dfu-recovery`               | systemd worker started by `usb-dfu-recovery@.service` with the extracted package directory as its only argument. Resolves the components, reads GPIO names from Entity Manager and logs Redfish messages. |
 | `code-manager -u USBDFURecovery` | Item-updater (`com.Nvidia.USBDFURecovery.Updater.service`) that receives the PLDM package and starts the worker unit.                                                                                     |
 
@@ -47,10 +47,37 @@ Prerequisites:
 - The recovery inputs: either an extracted recovery PLDM package
   (`--package-dir`, see "Recovery package layout") or, for lab use, the
   images listed in send order (`--images`).
-- GPIO lines `HMC_RECOVERY_R-O`, `HMC_RST_R_L-O`, and `HMC_SPI_MUX_R_SEL-O` (or
-  the platform equivalents) accessible via libgpiod on the BMC.
+- An Entity Manager recovery configuration naming the strap lines and their
+  polarities, at the configured path or given with `--json`. The lines it
+  names must be accessible via libgpiod on the BMC.
 - The HMC USB recovery port connected to the BMC (enumerated as `2245:2700` when
   in DFU mode; verify with `lsusb`).
+
+### Recovery configuration
+
+The CLI reads the same Entity Manager configuration the `usb-dfu-recovery`
+worker reads over D-Bus, so a lab run uses the platform's own wiring rather
+than hand-typed line names:
+
+```json
+{
+  "Exposes": [
+    {
+      "Name": "FW_HMC_0",
+      "Type": "USBDFURecovery",
+      "RecoveryGpioName": "HMC_RECOVERY_R-O",
+      "RecoveryGpioPolarity": "ActiveHigh",
+      "ResetGpioName": "HMC_RST_R_L-O",
+      "ResetGpioPolarity": "ActiveLow",
+      "SpiMuxGpioName": "HMC_SPI_MUX_R_SEL-O"
+    }
+  ]
+}
+```
+
+The two polarity properties are optional and default to `ActiveHigh` for the
+recovery strap and `ActiveLow` for reset. `--device` selects an entry when the
+configuration exposes more than one.
 
 ## Build and Install
 
@@ -97,16 +124,16 @@ usbdfu-recovery-tool PerformRecovery \
     [--flash-length <bytes>] \
     [--bundle-step-delay <secs>] \
     [--no-detach] [--post-flash-settle <secs>] \
-    --gpio-recovery <name> --gpio-reset <name> --gpio-spi-mux <name> \
+    [--json <config.json>] [--device <name>] \
     [--enum-timeout <secs>] \
     [-v|--verbose]
 
 usbdfu-recovery-tool AssertRecovery \
-    --gpio-recovery <name> --gpio-reset <name> --gpio-spi-mux <name> \
+    [--json <config.json>] [--device <name>] \
     [--enum-timeout <secs>]
 
 usbdfu-recovery-tool DeassertRecovery \
-    --gpio-recovery <name> --gpio-reset <name> --gpio-spi-mux <name>
+    [--json <config.json>] [--device <name>]
 ```
 
 All commands print a JSON object to stdout. Non-zero exit status means failure;
@@ -136,9 +163,6 @@ scp -r hmc_bundle/ root@<bmc-ip>:/tmp/hmc_bundle
 
 # Run full recovery: bundle stages in send order, SPI image last
 usbdfu-recovery-tool PerformRecovery \
-    --gpio-recovery HMC_RECOVERY_R-O \
-    --gpio-reset HMC_RST_R_L-O \
-    --gpio-spi-mux HMC_SPI_MUX_R_SEL-O \
     --images /tmp/hmc_bundle/ast2700-caliptra-fw.bin \
              /tmp/hmc_bundle/ast2700-soc-manifest.bin \
              ... \
@@ -266,10 +290,7 @@ does not enumerate the command fails but leaves the straps asserted so the state
 can be inspected; run `DeassertRecovery` to return to normal boot.
 
 ```bash
-usbdfu-recovery-tool AssertRecovery \
-  --gpio-recovery HMC_RECOVERY_R-O \
-  --gpio-reset HMC_RST_R_L-O \
-  --gpio-spi-mux HMC_SPI_MUX_R_SEL-O
+usbdfu-recovery-tool AssertRecovery
 ```
 
 Example output:
@@ -289,10 +310,7 @@ the image manually with `dfu-util`, then run `DeassertRecovery`.
 HMC to normal boot. Run after manual DFU operations are complete.
 
 ```bash
-usbdfu-recovery-tool DeassertRecovery \
-  --gpio-recovery HMC_RECOVERY_R-O \
-  --gpio-reset HMC_RST_R_L-O \
-  --gpio-spi-mux HMC_SPI_MUX_R_SEL-O
+usbdfu-recovery-tool DeassertRecovery
 ```
 
 Example output:
@@ -352,9 +370,6 @@ element but the last through `dfu-util -D`, then flashes the final one.
 
 ```bash
 usbdfu-recovery-tool PerformRecovery \
-    --gpio-recovery HMC_RECOVERY_R-O \
-    --gpio-reset HMC_RST_R_L-O \
-    --gpio-spi-mux HMC_SPI_MUX_R_SEL-O \
     --images ast2700-caliptra-fw-v1.2-ecc-lms_patched.bin \
              ast2700-soc-manifest.bin \
              ast2700-mcu-runtime.bin \

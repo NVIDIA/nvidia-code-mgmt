@@ -572,6 +572,10 @@ if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
         'USBDFU_RECOVERY_FLASH_LENGTH',
         get_option('USBDFU_RECOVERY_FLASH_LENGTH'),
     )
+    cdata.set_quoted(
+        'USBDFU_RECOVERY_CONFIG_PATH',
+        get_option('USBDFU_RECOVERY_CONFIG_PATH'),
+    )
     cdata.set(
         'USBDFU_RECOVERY_POST_FLASH_SETTLE',
         get_option('USBDFU_RECOVERY_POST_FLASH_SETTLE'),

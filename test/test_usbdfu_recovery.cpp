@@ -1348,6 +1348,151 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_NoDetachSkipsProgrammingWait)
 }
 
 // ============================================================================
+// GPIO polarity and recovery configuration
+// ============================================================================
+
+TEST_F(UsbDfuRecoveryTest, ParseActiveLowPolarity_CanonicalValuesOnly)
+{
+    auto low = usbdfu::parseActiveLowPolarity("ActiveLow");
+    ASSERT_TRUE(low.has_value());
+    EXPECT_TRUE(*low);
+
+    auto high = usbdfu::parseActiveLowPolarity("ActiveHigh");
+    ASSERT_TRUE(high.has_value());
+    EXPECT_FALSE(*high);
+
+    // Rejected rather than defaulted: guessing drives a strap the wrong way.
+    EXPECT_FALSE(usbdfu::parseActiveLowPolarity("activelow"));
+    EXPECT_FALSE(usbdfu::parseActiveLowPolarity("Low"));
+    EXPECT_FALSE(usbdfu::parseActiveLowPolarity(""));
+}
+
+TEST_F(UsbDfuRecoveryTest, AssertRecoveryMode_DefaultPolarityIsActiveHigh)
+{
+    makeRecoveryReady();
+    UsbDfuRecovery dut(makeConfig());
+    nlohmann::json out;
+    ASSERT_TRUE(dut.assertRecoveryMode(out));
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kRecovery].setValues.front(), 1);
+}
+
+TEST_F(UsbDfuRecoveryTest, AssertRecoveryMode_ActiveLowInvertsTheStrap)
+{
+    makeRecoveryReady();
+    auto cfg = makeConfig();
+    cfg.recoveryActiveLow = true;
+    UsbDfuRecovery dut(cfg);
+    nlohmann::json out;
+
+    ASSERT_TRUE(dut.assertRecoveryMode(out));
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kRecovery].setValues.front(), 0);
+
+    test::usbdfu_fake_gpio::lines[kRecovery].setValues.clear();
+    ASSERT_TRUE(dut.deassertRecoveryMode(out));
+    EXPECT_EQ(test::usbdfu_fake_gpio::lines[kRecovery].setValues.front(), 1);
+}
+
+TEST_F(UsbDfuRecoveryTest, AssertRecoveryMode_ActiveHighResetInvertsThePulse)
+{
+    makeRecoveryReady();
+    auto cfg = makeConfig();
+    cfg.resetActiveLow = false;
+    UsbDfuRecovery dut(cfg);
+    nlohmann::json out;
+
+    ASSERT_TRUE(dut.assertRecoveryMode(out));
+    const auto& values = test::usbdfu_fake_gpio::lines[kReset].setValues;
+    ASSERT_GE(values.size(), 2u);
+    EXPECT_EQ(values.front(), 1);
+    EXPECT_EQ(values.back(), 0);
+}
+
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_ReadsNamesAndPolarities)
+{
+    const auto cfgFile = tmpDir_ / "recovery.json";
+    writeFile(cfgFile, R"({"Exposes": [{
+        "Name": "FW_HMC_0", "Type": "USBDFURecovery",
+        "RecoveryGpioName": "REC", "RecoveryGpioPolarity": "ActiveLow",
+        "ResetGpioName": "RST", "ResetGpioPolarity": "ActiveHigh",
+        "SpiMuxGpioName": "MUX"}]})");
+
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    ASSERT_TRUE(loadRecoveryConfig(cfgFile.string(), "", cfg, out));
+    EXPECT_EQ(cfg.recoveryGpioName, "REC");
+    EXPECT_EQ(cfg.resetGpioName, "RST");
+    EXPECT_EQ(cfg.spiMuxGpioName, "MUX");
+    EXPECT_TRUE(cfg.recoveryActiveLow);
+    EXPECT_FALSE(cfg.resetActiveLow);
+}
+
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_PolaritiesAreOptional)
+{
+    const auto cfgFile = tmpDir_ / "recovery.json";
+    writeFile(cfgFile, R"({"Exposes": [{
+        "Name": "FW_HMC_0", "Type": "USBDFURecovery",
+        "RecoveryGpioName": "REC", "ResetGpioName": "RST",
+        "SpiMuxGpioName": "MUX"}]})");
+
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    ASSERT_TRUE(loadRecoveryConfig(cfgFile.string(), "", cfg, out));
+    EXPECT_FALSE(cfg.recoveryActiveLow); // ActiveHigh
+    EXPECT_TRUE(cfg.resetActiveLow);     // ActiveLow
+}
+
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_BadPolarityRejected)
+{
+    const auto cfgFile = tmpDir_ / "recovery.json";
+    writeFile(cfgFile, R"({"Exposes": [{
+        "Name": "FW_HMC_0", "Type": "USBDFURecovery",
+        "RecoveryGpioName": "REC", "ResetGpioName": "RST",
+        "ResetGpioPolarity": "Low", "SpiMuxGpioName": "MUX"}]})");
+
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    EXPECT_FALSE(loadRecoveryConfig(cfgFile.string(), "", cfg, out));
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kInvalidConfiguration);
+}
+
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_SelectsNamedDevice)
+{
+    const auto cfgFile = tmpDir_ / "recovery.json";
+    writeFile(cfgFile, R"({"Exposes": [
+      {"Name": "FW_HMC_0", "Type": "USBDFURecovery",
+       "RecoveryGpioName": "A", "ResetGpioName": "A", "SpiMuxGpioName": "A"},
+      {"Name": "FW_HMC_1", "Type": "USBDFURecovery",
+       "RecoveryGpioName": "B", "ResetGpioName": "B",
+       "SpiMuxGpioName": "B"}]})");
+
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    ASSERT_TRUE(loadRecoveryConfig(cfgFile.string(), "FW_HMC_1", cfg, out));
+    EXPECT_EQ(cfg.recoveryGpioName, "B");
+}
+
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_MissingFileRejected)
+{
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    EXPECT_FALSE(loadRecoveryConfig("/nonexistent/recovery.json", "", cfg,
+                                    out));
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kInvalidConfiguration);
+}
+
+TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_NoMatchingEntryRejected)
+{
+    const auto cfgFile = tmpDir_ / "recovery.json";
+    writeFile(cfgFile,
+              R"({"Exposes": [{"Name": "X", "Type": "MCURecovery"}]})");
+
+    UsbDfuRecovery::Config cfg;
+    nlohmann::json out;
+    EXPECT_FALSE(loadRecoveryConfig(cfgFile.string(), "", cfg, out));
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kInvalidConfiguration);
+}
+
+// ============================================================================
 // resolvePackageComponents tests (PLDM-extracted package layout)
 // ============================================================================
 

@@ -46,6 +46,8 @@ constexpr auto fallbackDeviceName = "USBDFURecovery";
 constexpr auto recoveryGpioProperty = "RecoveryGpioName";
 constexpr auto resetGpioProperty = "ResetGpioName";
 constexpr auto spiMuxGpioProperty = "SpiMuxGpioName";
+constexpr auto recoveryPolarityProperty = "RecoveryGpioPolarity";
+constexpr auto resetPolarityProperty = "ResetGpioPolarity";
 
 using nvidia::software::updater::InterfaceMap;
 
@@ -98,6 +100,38 @@ static std::optional<std::string> readGpioConfig(const InterfaceMap& interfaces,
             return std::string(property);
         }
         dest = *value;
+    }
+    return std::nullopt;
+}
+
+/**
+ * Apply the strap polarities from Entity Manager.  Both are optional: an
+ * entry that omits them keeps the compiled defaults.  A present but
+ * unrecognized value is rejected rather than defaulted, because guessing
+ * drives the strap the wrong way round.  Returns the offending property.
+ */
+static std::optional<std::string>
+    readGpioPolarity(const InterfaceMap& interfaces,
+                     UsbDfuRecovery::Config& cfg)
+{
+    const std::pair<const char*, bool&> fields[] = {
+        {recoveryPolarityProperty, cfg.recoveryActiveLow},
+        {resetPolarityProperty, cfg.resetActiveLow},
+    };
+    for (const auto& [property, dest] : fields)
+    {
+        auto value =
+            getStringProperty(interfaces, usbDfuRecoveryObjInterface, property);
+        if (!value)
+        {
+            continue;
+        }
+        auto activeLow = usbdfu::parseActiveLowPolarity(*value);
+        if (!activeLow)
+        {
+            return std::string(property);
+        }
+        dest = *activeLow;
     }
     return std::nullopt;
 }
@@ -187,6 +221,20 @@ int usbdfuServiceMain(int argc, char** argv)
         {
             lg2::error("Property {PROP} missing or empty for {DEVICE}", "PROP",
                        *missing, "DEVICE", device);
+            messageRegistry.createMessageRegistryResourceErrors(
+                resourceErrorsDetected, RecoveryProtocol::USBDFURecovery,
+                static_cast<ErrorCode>(
+                    USBDFURecoveryErrorCode::InvalidConfiguration),
+                device);
+            recoveryTaskState = -1;
+            continue;
+        }
+
+        if (auto bad = readGpioPolarity(*interfaces, cfg))
+        {
+            lg2::error("Property {PROP} is not ActiveHigh or ActiveLow for "
+                       "{DEVICE}",
+                       "PROP", *bad, "DEVICE", device);
             messageRegistry.createMessageRegistryResourceErrors(
                 resourceErrorsDetected, RecoveryProtocol::USBDFURecovery,
                 static_cast<ErrorCode>(

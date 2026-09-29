@@ -21,21 +21,18 @@ namespace
 {
 
 // The GPIO names are platform data and live in the Entity Manager
-// configuration read by the D-Bus worker (usb-dfu-recovery); the standalone
-// CLI has no D-Bus access, so they must be given on the command line.
-static void addGpioOptions(CLI::App* cmd, UsbDfuRecovery::Config& cfg)
+// The worker reads this configuration from Entity Manager over D-Bus; the
+// standalone CLI has no D-Bus access and reads the same file directly.
+static void addConfigOptions(CLI::App* cmd, std::string& configPath,
+                             std::string& deviceName)
 {
-    cmd->add_option("--gpio-recovery", cfg.recoveryGpioName,
-                    "GPIO line name for the HMC recovery strap, e.g. "
-                    "HMC_RECOVERY_R-O")
-        ->required();
-    cmd->add_option("--gpio-reset", cfg.resetGpioName,
-                    "GPIO line name for HMC reset, e.g. HMC_RST_R_L-O")
-        ->required();
-    cmd->add_option("--gpio-spi-mux", cfg.spiMuxGpioName,
-                    "GPIO line name for the HMC SPI mux select, e.g. "
-                    "HMC_SPI_MUX_R_SEL-O")
-        ->required();
+    cmd->add_option("-j,--json", configPath,
+                    "Entity Manager recovery configuration providing the "
+                    "GPIO line names and strap polarities "
+                    "(default: " USBDFU_RECOVERY_CONFIG_PATH ")");
+    cmd->add_option("--device", deviceName,
+                    "Name of the USBDFURecovery entry to use when the "
+                    "configuration exposes more than one");
 }
 
 static void addEnumerationOptions(CLI::App* cmd, UsbDfuRecovery::Config& cfg)
@@ -84,6 +81,8 @@ int main(int argc, char* argv[])
         UsbDfuRecovery::Config cfg = usbdfu::makeDefaultConfig();
         std::vector<std::string> images;
         std::string packageDir;
+        std::string configPath{USBDFU_RECOVERY_CONFIG_PATH};
+        std::string deviceName;
         bool noDetach = false;
         bool verbose = false;
 
@@ -138,7 +137,7 @@ int main(int argc, char* argv[])
             "authenticate and program SPI before deasserting recovery "
             "(default: " +
                 std::to_string(USBDFU_RECOVERY_POST_FLASH_SETTLE) + ")");
-        addGpioOptions(performCmd, cfg);
+        addConfigOptions(performCmd, configPath, deviceName);
         addEnumerationOptions(performCmd, cfg);
         addVerboseFlag(performCmd, verbose);
 
@@ -146,14 +145,14 @@ int main(int argc, char* argv[])
             "AssertRecovery",
             "Set SPI MUX, assert the recovery strap, pulse reset and wait for "
             "the HMC to enumerate as a USB DFU device");
-        addGpioOptions(assertCmd, cfg);
+        addConfigOptions(assertCmd, configPath, deviceName);
         addEnumerationOptions(assertCmd, cfg);
         addVerboseFlag(assertCmd, verbose);
 
         auto* deassertCmd = app.add_subcommand(
             "DeassertRecovery",
             "Deassert the HMC recovery strap and pulse reset into normal boot");
-        addGpioOptions(deassertCmd, cfg);
+        addConfigOptions(deassertCmd, configPath, deviceName);
         addVerboseFlag(deassertCmd, verbose);
 
         CLI11_PARSE(app, argc, argv);
@@ -166,6 +165,11 @@ int main(int argc, char* argv[])
         cfg.detachAfterFlash = !noDetach;
 
         nlohmann::json output;
+
+        if (!loadRecoveryConfig(configPath, deviceName, cfg, output))
+        {
+            return emit(output, false);
+        }
 
         if (performCmd->parsed())
         {

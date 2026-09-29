@@ -516,6 +516,13 @@ option('USBDFU_RECOVERY_SUPPORTED_MODEL',
        value: '',
        description: 'PLDM compatible string for the USB DFU recovery firmware package (e.g. Nvidia:USBDFURecovery:<UUID>)')
 
+option('USBDFU_RECOVERY_CONFIG_PATH',
+       type: 'string',
+       value: '/usr/share/entity-manager/configurations/vr_usbdfu_recovery_configuration.json',
+       description: 'Entity Manager recovery configuration the standalone CLI reads its GPIO line names '
+                  + 'and strap polarities from, so a lab run uses the same wiring description as the '
+                  + 'usb-dfu-recovery worker. Override with --json.')
+
 option('USBDFU_RECOVERY_POST_FLASH_SETTLE',
        type: 'integer',
        value: 2400,

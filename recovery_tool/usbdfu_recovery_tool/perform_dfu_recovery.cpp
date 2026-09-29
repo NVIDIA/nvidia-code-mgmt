@@ -125,10 +125,13 @@ gpiod::line UsbDfuRecovery::requestOutputLine(const std::string& pinName,
 
 bool UsbDfuRecovery::pulseReset() noexcept
 {
-    lg2::debug("Pulsing reset GPIO {GPIO}: low -> {PULSE}s -> high", "GPIO",
-               config_.resetGpioName, "PULSE", usbdfu::timing::resetPulseSecs);
+    const int asserted = usbdfu::gpioActive(config_.resetActiveLow);
+    const int released = usbdfu::gpioInactive(config_.resetActiveLow);
+    lg2::debug("Pulsing reset GPIO {GPIO}: {ON} -> {PULSE}s -> {OFF}", "GPIO",
+               config_.resetGpioName, "ON", asserted, "PULSE",
+               usbdfu::timing::resetPulseSecs, "OFF", released);
     std::string err;
-    gpiod::line line = requestOutputLine(config_.resetGpioName, 0, err);
+    gpiod::line line = requestOutputLine(config_.resetGpioName, asserted, err);
     if (!line)
     {
         lg2::error("Pulse reset failed: {ERR}", "ERR", err);
@@ -138,7 +141,7 @@ bool UsbDfuRecovery::pulseReset() noexcept
         std::chrono::seconds(usbdfu::timing::resetPulseSecs));
     try
     {
-        line.set_value(1);
+        line.set_value(released);
     }
     catch (const std::exception& e)
     {
@@ -256,8 +259,11 @@ bool UsbDfuRecovery::setRecoveryStrap(int recoveryValue, nlohmann::json& out)
         return setFailure(out, "Failed to set SPI MUX GPIO: " + err);
     }
 
+    const int recoveryLevel =
+        recoveryValue ? usbdfu::gpioActive(config_.recoveryActiveLow)
+                      : usbdfu::gpioInactive(config_.recoveryActiveLow);
     session_.recoveryLine =
-        requestOutputLine(config_.recoveryGpioName, recoveryValue, err);
+        requestOutputLine(config_.recoveryGpioName, recoveryLevel, err);
     if (!session_.recoveryLine)
     {
         session_.release();
@@ -348,7 +354,7 @@ bool UsbDfuRecovery::isProgrammingComplete() const
     // before programming and returns to its prompt afterwards without
     // re-enumerating, and the HMC console is not routed to the BMC on this
     // platform.  Returning false makes waitForProgrammingComplete() run to
-    // its ceiling, which is the current (correct but slow) behaviour.
+    // its ceiling, which is the current (correct but slow) behavior.
     return false;
 }
 
@@ -681,6 +687,106 @@ bool UsbDfuRecovery::performFullRecovery(
 
     out["Status"] = "Successful";
     return true;
+}
+
+namespace
+{
+
+/// Read an optional polarity property; returns false if present but invalid.
+bool applyPolarity(const nlohmann::json& entry, const char* property,
+                   bool& dest, nlohmann::json& out)
+{
+    if (!entry.contains(property))
+    {
+        return true;
+    }
+    if (!entry[property].is_string())
+    {
+        return UsbDfuRecovery::setFailure(
+            out, std::format("{} is not a string", property),
+            USBDFURecoveryErrorCode::InvalidConfiguration);
+    }
+    auto activeLow =
+        usbdfu::parseActiveLowPolarity(entry[property].get<std::string>());
+    if (!activeLow)
+    {
+        return UsbDfuRecovery::setFailure(
+            out,
+            std::format("{} must be ActiveHigh or ActiveLow", property),
+            USBDFURecoveryErrorCode::InvalidConfiguration);
+    }
+    dest = *activeLow;
+    return true;
+}
+
+} // namespace
+
+bool loadRecoveryConfig(const std::string& configPath,
+                        const std::string& deviceName,
+                        UsbDfuRecovery::Config& cfg, nlohmann::json& out)
+{
+    std::ifstream in(configPath);
+    if (!in)
+    {
+        return UsbDfuRecovery::setFailure(
+            out, "Recovery configuration not readable: " + configPath,
+            USBDFURecoveryErrorCode::InvalidConfiguration);
+    }
+
+    nlohmann::json config = nlohmann::json::parse(in, nullptr, false);
+    if (config.is_discarded() || !config.contains("Exposes") ||
+        !config["Exposes"].is_array())
+    {
+        return UsbDfuRecovery::setFailure(
+            out, "Recovery configuration has no Exposes array: " + configPath,
+            USBDFURecoveryErrorCode::InvalidConfiguration);
+    }
+
+    for (const auto& entry : config["Exposes"])
+    {
+        if (!entry.is_object() || entry.value("Type", "") != "USBDFURecovery")
+        {
+            continue;
+        }
+        if (!deviceName.empty() && entry.value("Name", "") != deviceName)
+        {
+            continue;
+        }
+
+        const std::pair<const char*, std::string&> names[] = {
+            {"RecoveryGpioName", cfg.recoveryGpioName},
+            {"ResetGpioName", cfg.resetGpioName},
+            {"SpiMuxGpioName", cfg.spiMuxGpioName},
+        };
+        for (const auto& [property, dest] : names)
+        {
+            if (!entry.contains(property) || !entry[property].is_string())
+            {
+                return UsbDfuRecovery::setFailure(
+                    out,
+                    std::format("{} missing from {} in {}", property,
+                                entry.value("Name", "<unnamed>"), configPath),
+                    USBDFURecoveryErrorCode::InvalidConfiguration);
+            }
+            dest = entry[property].get<std::string>();
+        }
+
+        if (!applyPolarity(entry, "RecoveryGpioPolarity",
+                           cfg.recoveryActiveLow, out) ||
+            !applyPolarity(entry, "ResetGpioPolarity", cfg.resetActiveLow,
+                           out))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    return UsbDfuRecovery::setFailure(
+        out,
+        std::format("No USBDFURecovery entry{} in {}",
+                    deviceName.empty() ? "" : " named " + deviceName,
+                    configPath),
+        USBDFURecoveryErrorCode::InvalidConfiguration);
 }
 
 bool resolvePackageComponents(const std::filesystem::path& packageDir,

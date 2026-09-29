@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,31 @@ constexpr const char* defaultUsbSysfsRoot = "/sys/bus/usb/devices";
 /** recovery U-Boot also exposes recovery_cs0 and recovery_cs1; the design
  *  writes both chips from one authenticated transfer. */
 constexpr const char* defaultDfuAltSetting = "recovery_both";
+
+/** Anything but the canonical values returns nullopt, so the caller rejects
+ *  the config rather than driving a strap the wrong way round. */
+inline std::optional<bool> parseActiveLowPolarity(const std::string& value)
+{
+    if (value == "ActiveHigh")
+    {
+        return false;
+    }
+    if (value == "ActiveLow")
+    {
+        return true;
+    }
+    return std::nullopt;
+}
+
+constexpr int gpioActive(bool activeLow)
+{
+    return activeLow ? 0 : 1;
+}
+
+constexpr int gpioInactive(bool activeLow)
+{
+    return activeLow ? 1 : 0;
+}
 
 
 /**
@@ -134,6 +160,9 @@ class UsbDfuRecovery
         std::string recoveryGpioName;
         std::string resetGpioName;
         std::string spiMuxGpioName;
+        /** Strap polarities; from the recovery configuration */
+        bool recoveryActiveLow{false};
+        bool resetActiveLow{true};
         std::string dfuUtilPath;
         std::string dfuAltSetting{usbdfu::defaultDfuAltSetting};
         /** Bytes sent to DFU; 0 = whole file.  The tail above this offset
@@ -254,7 +283,7 @@ class UsbDfuRecovery
     static gpiod::line requestOutputLine(const std::string& pinName, int value,
                                          std::string& errorMsg) noexcept;
 
-    /** Drive resetGpioName active, then release it. */
+    /** Assert then release resetGpioName, per Config::resetActiveLow. */
     bool pulseReset() noexcept;
 
     /** Acquires (or re-acquires) the session_ lines, then pulses reset. */
@@ -310,6 +339,19 @@ struct PackageContents
  * description to out["Error"], sets out["ErrorCode"] =
  * USBDFURecoveryErrorCode::PackageIncomplete and returns false.
  */
+/**
+ * Fill the GPIO names and strap polarities from an Entity Manager
+ * configuration file -- the same file the worker reads over D-Bus, so a lab
+ * run uses the platform's own wiring rather than hand-typed line names.
+ *
+ * `deviceName` selects one Exposes entry; empty takes the first
+ * USBDFURecovery entry.  Polarities are optional and keep their defaults
+ * when absent, but a present-and-unrecognized value is rejected.
+ */
+bool loadRecoveryConfig(const std::string& configPath,
+                        const std::string& deviceName,
+                        UsbDfuRecovery::Config& cfg, nlohmann::json& out);
+
 bool resolvePackageComponents(const std::filesystem::path& packageDir,
                               PackageContents& contents, nlohmann::json& out);
 
