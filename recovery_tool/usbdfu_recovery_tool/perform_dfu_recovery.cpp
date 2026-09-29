@@ -11,8 +11,8 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -223,11 +223,7 @@ bool UsbDfuRecovery::runDfuDownload(DfuTransfer transfer,
 {
     const DfuTransferParams params = transferParams(transfer);
 
-    if (!std::filesystem::exists(filePath))
-    {
-        return setFailure(out, params.label + " not found: " + filePath);
-    }
-
+    // File existence is a precondition established by preflightChecks().
     std::vector<std::string> args(params.dfuUtilArgs);
     args.push_back("-D");
     args.push_back(filePath);
@@ -303,12 +299,10 @@ bool UsbDfuRecovery::waitForDfuEnumeration(nlohmann::json& out)
     {
         lg2::info("USB DFU device {VID}:{PID} enumerated", "VID",
                   config_.dfuVendorId, "PID", config_.dfuProductId);
-        out["DfuEnumerated"] = true;
         return true;
     }
 
     out["Status"] = "Failed";
-    out["DfuEnumerated"] = false;
     out["Error"] = "HMC did not enumerate as USB DFU device " +
                    config_.dfuVendorId + ":" + config_.dfuProductId +
                    " within " +
@@ -462,11 +456,8 @@ bool UsbDfuRecovery::prepareFlashImage(const std::string& imagePath,
     std::error_code ec;
     const std::filesystem::path src(imagePath);
 
-    if (!std::filesystem::is_regular_file(src, ec))
-    {
-        return setFailure(out, "Firmware image not found: " + imagePath);
-    }
-
+    // Existence is a precondition checked by preflightChecks(); file_size()
+    // reports a missing or unreadable image here anyway.
     const auto size = std::filesystem::file_size(src, ec);
     if (ec)
     {
@@ -610,7 +601,8 @@ bool UsbDfuRecovery::performFullRecovery(
         nlohmann::json s;
         if (!assertRecoveryMode(s))
         {
-            if (s.value("DfuEnumerated", true) == false)
+            if (s.value("ErrorCode", std::uint8_t{0}) ==
+                code(USBDFURecoveryErrorCode::DfuEnumerationFailed))
             {
                 // Straps were driven but the HMC never showed up: best-effort
                 // return to normal boot so it is not left in recovery.
@@ -709,6 +701,7 @@ bool resolvePackageComponents(const std::filesystem::path& packageDir,
         // PLDM extracts component 0x10 to ".../16/<file>" (decimal id).
         const auto componentDir = packageDir / std::to_string(component.id);
         std::filesystem::path file;
+        std::size_t regularFiles = 0;
         for (auto it = std::filesystem::directory_iterator(componentDir, ec),
                   end = std::filesystem::directory_iterator();
              !ec && it != end; it.increment(ec))
@@ -716,8 +709,20 @@ bool resolvePackageComponents(const std::filesystem::path& packageDir,
             if (it->is_regular_file(ec))
             {
                 file = it->path();
-                break;
+                ++regularFiles;
             }
+        }
+        // directory_iterator order is unspecified, so taking the first of
+        // several files would pick a different blob run to run.
+        if (regularFiles > 1)
+        {
+            return UsbDfuRecovery::setFailure(
+                out,
+                std::format("Recovery package component 0x{:X} ({}) has {} "
+                            "files under {}; expected exactly one",
+                            component.id, component.name, regularFiles,
+                            componentDir.string()),
+                USBDFURecoveryErrorCode::PackageIncomplete);
         }
         if (file.empty() && component.optional)
         {
@@ -728,18 +733,13 @@ bool resolvePackageComponents(const std::filesystem::path& packageDir,
         }
         if (file.empty())
         {
-            out["Status"] = "Failed";
-            out["Error"] =
-                "Recovery package component 0x" +
-                [&] {
-                    char buf[8];
-                    std::snprintf(buf, sizeof(buf), "%X", component.id);
-                    return std::string(buf);
-                }() +
-                " (" + std::string(component.name) +
-                ") missing: no file under " + componentDir.string();
-            out["ErrorCode"] = code(USBDFURecoveryErrorCode::PackageIncomplete);
-            return false;
+            return UsbDfuRecovery::setFailure(
+                out,
+                std::format("Recovery package component 0x{:X} ({}) missing: "
+                            "no file under {}",
+                            component.id, component.name,
+                            componentDir.string()),
+                USBDFURecoveryErrorCode::PackageIncomplete);
         }
         lg2::debug("Package component 0x{ID} {NAME}: {FILE}", "ID", lg2::hex,
                    component.id, "NAME", component.name, "FILE", file.string());
@@ -755,73 +755,3 @@ bool resolvePackageComponents(const std::filesystem::path& packageDir,
     return true;
 }
 
-std::vector<std::string> loadBundleManifest(const std::string& manifestPath,
-                                            int& stepDelaySecs,
-                                            nlohmann::json& out)
-{
-    std::vector<std::string> binaries;
-    stepDelaySecs = usbdfu::timing::bundleStepDelaySecs;
-
-    if (!std::filesystem::exists(manifestPath))
-    {
-        out["Error"] = "Bundle manifest not found: " + manifestPath;
-        return {};
-    }
-
-    std::ifstream f(manifestPath);
-    if (!f.is_open())
-    {
-        out["Error"] = "Cannot open bundle manifest: " + manifestPath;
-        return {};
-    }
-
-    nlohmann::json manifest;
-    try
-    {
-        f >> manifest;
-    }
-    catch (const nlohmann::json::parse_error& e)
-    {
-        out["Error"] =
-            std::string("Bundle manifest JSON parse error: ") + e.what();
-        return {};
-    }
-
-    if (!manifest.contains("binaries") || !manifest["binaries"].is_array())
-    {
-        out["Error"] = "Bundle manifest missing 'binaries' array";
-        return {};
-    }
-
-    for (const auto& entry : manifest["binaries"])
-    {
-        if (!entry.is_string())
-        {
-            out["Error"] = "Bundle manifest 'binaries' must contain strings";
-            return {};
-        }
-        const std::string name = entry.get<std::string>();
-        if (name.find('/') != std::string::npos ||
-            name.find("..") != std::string::npos)
-        {
-            out["Error"] =
-                "Bundle manifest entry is not a plain filename: " + name;
-            return {};
-        }
-        binaries.push_back(name);
-    }
-
-    if (manifest.contains("step_delay_secs") &&
-        manifest["step_delay_secs"].is_number_integer())
-    {
-        stepDelaySecs = manifest["step_delay_secs"].get<int>();
-    }
-
-    if (binaries.empty())
-    {
-        out["Error"] = "Bundle manifest contains no binaries";
-        return {};
-    }
-
-    return binaries;
-}

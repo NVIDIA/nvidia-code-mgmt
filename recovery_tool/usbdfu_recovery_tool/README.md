@@ -45,9 +45,8 @@ Prerequisites:
 
 - `dfu-util` installed at the configured path (default `/usr/bin/dfu-util`).
 - The recovery inputs: either an extracted recovery PLDM package
-  (`--package-dir`, see "Recovery package layout") or, for lab use, the SPI
-  image plus a directory with the bundle binaries and a `manifest.json`
-  (`--firmware`/`--bundle-dir`).
+  (`--package-dir`, see "Recovery package layout") or, for lab use, the
+  images listed in send order (`--images`).
 - GPIO lines `HMC_RECOVERY_R-O`, `HMC_RST_R_L-O`, and `HMC_SPI_MUX_R_SEL-O` (or
   the platform equivalents) accessible via libgpiod on the BMC.
 - The HMC USB recovery port connected to the BMC (enumerated as `2245:2700` when
@@ -87,25 +86,27 @@ Build dependencies: `libgpiodcxx`, `nlohmann_json`, `CLI11`, `phosphor-logging`
 # From an extracted recovery package (same inputs as the Redfish path)
 usbdfu-recovery-tool PerformRecovery --package-dir <UUID dir> [options]
 
-# From a firmware image plus a lab bundle directory
+# From a lab drop: bundle stages in send order, SPI image last
 usbdfu-recovery-tool PerformRecovery \
-    --firmware <spi-image> \
-    --bundle-dir <dir> \
-    [--manifest <manifest.json>] \
+    --images <stage1> <stage2> ... <stageN> <spi-image> \
     [options]
 
 # options:
     [--dfu-util <path>] \
-    [--dfu-alt recovery_both|recovery_cs0] \
+    [--dfu-alt recovery_cs0|recovery_cs1|recovery_both] \
     [--flash-length <bytes>] \
+    [--bundle-step-delay <secs>] \
     [--no-detach] [--post-flash-settle <secs>] \
     --gpio-recovery <name> --gpio-reset <name> --gpio-spi-mux <name> \
     [--enum-timeout <secs>] \
     [-v|--verbose]
 
-usbdfu-recovery-tool AssertRecovery   --gpio-* <names> [--enum-timeout <secs>]
+usbdfu-recovery-tool AssertRecovery \
+    --gpio-recovery <name> --gpio-reset <name> --gpio-spi-mux <name> \
+    [--enum-timeout <secs>]
 
-usbdfu-recovery-tool DeassertRecovery --gpio-* <names>
+usbdfu-recovery-tool DeassertRecovery \
+    --gpio-recovery <name> --gpio-reset <name> --gpio-spi-mux <name>
 ```
 
 All commands print a JSON object to stdout. Non-zero exit status means failure;
@@ -121,8 +122,7 @@ On a terminal lg2 prefixes each line with its syslog priority, e.g.
 1. Verify the HMC USB port is not yet in DFU mode: `lsusb` should not show
    `2245:2700`.
 2. Copy the recovery inputs to the BMC: either the extracted recovery package
-   directory, or the SPI image (e.g. `/tmp/hmc_fwspi.bin`) together with the
-   bundle directory and its `manifest.json`.
+   directory, or the bundle stages and the SPI image.
 3. Run `PerformRecovery`. The tool performs the full sequence end-to-end.
 4. After completion, `lsusb` should no longer show `2245:2700` and the HMC
    should boot normally.
@@ -134,20 +134,25 @@ Example:
 scp hmc_fwspi.bin root@<bmc-ip>:/tmp/
 scp -r hmc_bundle/ root@<bmc-ip>:/tmp/hmc_bundle
 
-# Run full recovery
+# Run full recovery: bundle stages in send order, SPI image last
 usbdfu-recovery-tool PerformRecovery \
-    --firmware /tmp/hmc_fwspi.bin \
-    --bundle-dir /tmp/hmc_bundle \
-    --manifest /tmp/hmc_bundle/manifest.json
+    --gpio-recovery HMC_RECOVERY_R-O \
+    --gpio-reset HMC_RST_R_L-O \
+    --gpio-spi-mux HMC_SPI_MUX_R_SEL-O \
+    --images /tmp/hmc_bundle/ast2700-caliptra-fw.bin \
+             /tmp/hmc_bundle/ast2700-soc-manifest.bin \
+             ... \
+             /tmp/hmc_bundle/u-boot.bin \
+             /tmp/hmc_fwspi.bin
 ```
 
 ## PerformRecovery
 
 `PerformRecovery` drives the entire USB DFU recovery sequence:
 
-1. Preflight: resolves the inputs (package components, or manifest entries
-   relative to `--bundle-dir`) and verifies the firmware image and every bundle
-   binary exist before any GPIO is touched.
+1. Preflight: resolves the inputs (package components, or the `--images`
+   list) and verifies the firmware image and every bundle binary exist before
+   any GPIO is touched.
 2. Drives `HMC_SPI_MUX_R_SEL-O=0` (HMC owns its SPI flash) and
    `HMC_RECOVERY_R-O=1` (recovery strap), then pulses `HMC_RST_R_L-O` to reset
    the HMC into BootROM DFU mode.
@@ -155,7 +160,7 @@ usbdfu-recovery-tool PerformRecovery \
    timeout 15 s, `--enum-timeout`). If it never appears the straps are released
    and the command fails with `DfuEnumerationFailed`.
 4. Pushes each bundle binary in order via `dfu-util -D`, with an inter-step
-   delay (default 10 s; a lab manifest may override it).
+   delay (default 10 s, `--bundle-step-delay`).
 5. Polls `dfu-util -l` until recovery U-Boot exposes its `recovery_*` DFU
    targets (default 180 s, 5 s interval). Recovery U-Boot first erases the
    debug-token and PDS slots on both SPI chips, which takes far longer than the
@@ -248,7 +253,7 @@ them to Redfish `ResourceEvent.1.0.ResourceErrorsDetected` messages
 | 3    | `FirmwareFlashFailed`     | Firmware image missing, could not be staged, or the final `dfu-util` failed             |
 | 4    | `GPIODeassertFailed`      | Could not deassert the recovery strap or pulse reset into normal boot                   |
 | 5    | `DfuEnumerationFailed`    | `2245:2700` did not appear on the USB bus after asserting recovery                      |
-| 6    | `InvalidConfiguration`    | Manifest unreadable/empty, or (worker) Entity Manager GPIO names missing                |
+| 6    | `InvalidConfiguration`    | `--images` list too short, or (worker) Entity Manager GPIO names missing                |
 | 7    | `PackageIncomplete`       | A component of the recovery package is missing (see "Recovery package layout")          |
 | 8    | `RecoveryUBootDfuTimeout` | Recovery U-Boot never exposed the `recovery_*` DFU targets after the preliminary bundle |
 
@@ -261,15 +266,17 @@ does not enumerate the command fails but leaves the straps asserted so the state
 can be inspected; run `DeassertRecovery` to return to normal boot.
 
 ```bash
-usbdfu-recovery-tool AssertRecovery
+usbdfu-recovery-tool AssertRecovery \
+  --gpio-recovery HMC_RECOVERY_R-O \
+  --gpio-reset HMC_RST_R_L-O \
+  --gpio-spi-mux HMC_SPI_MUX_R_SEL-O
 ```
 
 Example output:
 
 ```json
 {
-  "Status": "Successful",
-  "DfuEnumerated": true
+  "Status": "Successful"
 }
 ```
 
@@ -282,7 +289,10 @@ the image manually with `dfu-util`, then run `DeassertRecovery`.
 HMC to normal boot. Run after manual DFU operations are complete.
 
 ```bash
-usbdfu-recovery-tool DeassertRecovery
+usbdfu-recovery-tool DeassertRecovery \
+  --gpio-recovery HMC_RECOVERY_R-O \
+  --gpio-reset HMC_RST_R_L-O \
+  --gpio-spi-mux HMC_SPI_MUX_R_SEL-O
 ```
 
 Example output:
@@ -334,32 +344,30 @@ Flows" design document (section 7.1.2) lists the EVB / DDR4 bundle with 13
 entries (extra `ddr4_2d_*` blobs); if a platform needs those, the table and the
 package definition grow together.
 
-## Lab bundle directory (CLI only)
+## Lab drop (CLI only)
 
-For manual recovery with a lab drop, `PerformRecovery --firmware --bundle-dir`
-reads the send order from a JSON manifest (default
-`<bundle-dir>/manifest.json`). An optional `step_delay_secs` field overrides the
-inter-step delay.
+For manual recovery, pass the images to `PerformRecovery --images` in send
+order: the bundle stages first, the HMC SPI image last. The tool sends every
+element but the last through `dfu-util -D`, then flashes the final one.
 
-```json
-{
-  "binaries": [
-    "ast2700-caliptra-fw-v1.2-ecc-lms_patched.bin",
-    "ast2700-soc-manifest.bin",
-    "ast2700-mcu-runtime.bin",
-    "dp_fw.bin",
-    "ddr5_pmu_train_imem.bin",
-    "ddr5_pmu_train_dmem.bin",
-    "bl31-ast2700.bin",
-    "tee-raw.bin",
-    "u-boot.bin"
-  ],
-  "step_delay_secs": 10
-}
+```bash
+usbdfu-recovery-tool PerformRecovery \
+    --gpio-recovery HMC_RECOVERY_R-O \
+    --gpio-reset HMC_RST_R_L-O \
+    --gpio-spi-mux HMC_SPI_MUX_R_SEL-O \
+    --images ast2700-caliptra-fw-v1.2-ecc-lms_patched.bin \
+             ast2700-soc-manifest.bin \
+             ast2700-mcu-runtime.bin \
+             dp_fw.bin \
+             ddr5_pmu_train_imem.bin \
+             ddr5_pmu_train_dmem.bin \
+             bl31-ast2700.bin \
+             tee-raw.bin \
+             u-boot.bin \
+             hmc_fwspi.bin
 ```
 
-All entries must be plain filenames (no `/` or `..`), resolved relative to
-`--bundle-dir`.
+`--bundle-step-delay` overrides the inter-stage delay.
 
 ## Firmware image handling
 
@@ -393,7 +401,7 @@ from bench measurements on P4102 (Sep 2026), not specification minimums:
 | ------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------- |
 | Strap settle / reset pulse      | 1 s / 1 s          | HMC USB DFU recovery runbook                                                                                    |
 | DFU enumeration timeout         | 15 s (poll 500 ms) | runbook shows ~2 s until `lsusb` lists `2245:2700`; 5x margin                                                   |
-| Delay between bundle stages     | 10 s               | `usb_recovery_ddr5.sh` (`sleep 10`); manifest `step_delay_secs` overrides                                       |
+| Delay between bundle stages     | 10 s               | lab recovery script (`sleep 10`); `--bundle-step-delay` overrides                                               |
 | Per-stage dfu-util timeout      | 120 s              | bundle blobs are < 2 MB each                                                                                    |
 | Wait for recovery U-Boot DFU    | 180 s (poll 5 s)   | bench: U-Boot erases both chips' debug-token/PDS slots first; `sleep 10` is too short                           |
 | Final transfer dfu-util timeout | 2400 s             | bounds only the DRAM transfer (seconds in practice)                                                             |
@@ -429,14 +437,11 @@ and are not individually bounded by the task timeout.
   has likely already run (see "Side effects of a recovery attempt"); AC
   power-cycle the HMC before retrying and check the recovery U-Boot's USB/DFU
   support with the HMC firmware team.
-- **`Bundle binary not found`**: Confirm all binaries listed in the lab manifest
-  exist in `--bundle-dir`.
+- **`Bundle binary not found`**: Confirm every path given to `--images`
+  exists.
 - **`Recovery package component ... missing`** (`PackageIncomplete`): the
   extracted package lacks a component directory or file; rebuild the `.fwpkg`
   with every entry of the component table.
-- **`Bundle manifest entry is not a plain filename`**: The manifest contains an
-  absolute path or `..` traversal. Edit the manifest so all entries are plain
-  filenames.
 - **Worker reports `No USB DFU recovery device configured`**: Entity Manager
   does not expose an `xyz.openbmc_project.Configuration.USBDFURecovery` object
   (see below), or it was not yet published when the worker ran.

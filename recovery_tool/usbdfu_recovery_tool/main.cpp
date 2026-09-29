@@ -82,9 +82,7 @@ int main(int argc, char* argv[])
         app.require_subcommand(1);
 
         UsbDfuRecovery::Config cfg = usbdfu::makeDefaultConfig();
-        std::string fwspiImage;
-        std::string bundleDir;
-        std::string manifestPath;
+        std::vector<std::string> images;
         std::string packageDir;
         bool noDetach = false;
         bool verbose = false;
@@ -93,35 +91,39 @@ int main(int argc, char* argv[])
             "PerformRecovery",
             "Full USB DFU recovery: assert recovery, wait for DFU "
             "enumeration, push the preliminary bundle, flash the firmware, "
-            "deassert recovery. Inputs come either from an extracted "
-            "recovery package (--package-dir) or from a firmware image plus "
-            "a bundle directory with a manifest (--firmware/--bundle-dir).");
-        auto* fwOpt = performCmd->add_option(
-            "-f,--firmware", fwspiImage,
-            "Path to the HMC firmware SPI image to flash");
-        auto* bundleOpt = performCmd->add_option(
-            "-b,--bundle-dir", bundleDir,
-            "Directory containing the preliminary DFU bundle binaries "
-            "listed in the manifest");
-        auto* manifestOpt = performCmd->add_option(
-            "-m,--manifest", manifestPath,
-            "JSON manifest listing the ordered bundle binary filenames "
-            "(default: <bundle-dir>/manifest.json)");
+            "deassert recovery. Takes either an extracted recovery package "
+            "(--package-dir) or an ordered list of images (--images).");
+        auto* imagesOpt = performCmd->add_option(
+            "-i,--images", images,
+            "Recovery images in send order: the preliminary bundle stages "
+            "followed by the HMC firmware SPI image last "
+            "(e.g. caliptra.bin ... u-boot.bin hmc_spi.bin)");
         performCmd
             ->add_option("-p,--package-dir", packageDir,
                          "Extracted recovery PLDM package directory "
                          "(<UUID>/<component id>/<file> layout, as used by "
                          "the usb-dfu-recovery worker)")
-            ->excludes(fwOpt)
-            ->excludes(bundleOpt)
-            ->excludes(manifestOpt);
+            ->excludes(imagesOpt);
+        performCmd
+            ->add_option("--bundle-step-delay", cfg.bundleStepDelaySecs,
+                         "Seconds to wait between bundle stages "
+                         "(default: " +
+                             std::to_string(
+                                 usbdfu::timing::bundleStepDelaySecs) +
+                             ")")
+            ->check(CLI::NonNegativeNumber);
         performCmd->add_option("--dfu-util", cfg.dfuUtilPath,
                                "Path to the dfu-util binary on the BMC "
                                "(default: " USBDFU_UTIL_PATH ")");
-        performCmd->add_option(
-            "--dfu-alt", cfg.dfuAltSetting,
-            "dfu-util alt setting for the final flash: recovery_both or "
-            "recovery_cs0 (default: " USBDFU_RECOVERY_DFU_ALT ")");
+        performCmd
+            ->add_option("--dfu-alt", cfg.dfuAltSetting,
+                         "Which SPI chip-select recovery U-Boot programs: "
+                         "recovery_cs0 (primary chip only), recovery_cs1 "
+                         "(secondary chip only) or recovery_both (both chips "
+                         "from one authenticated transfer) "
+                         "(default: " USBDFU_RECOVERY_DFU_ALT ")")
+            ->check(CLI::IsMember(
+                {"recovery_cs0", "recovery_cs1", "recovery_both"}));
         performCmd->add_option(
             "--flash-length", cfg.flashLengthBytes,
             "Number of image bytes sent to DFU; 0 sends the whole file "
@@ -182,36 +184,21 @@ int main(int argc, char* argv[])
             }
             else
             {
-                if (fwspiImage.empty() || bundleDir.empty())
+                // The SPI image is sent last, so it is the final element and
+                // everything before it is a bundle stage in send order.
+                if (images.size() < 2)
                 {
                     return fail(output,
-                                "--firmware and --bundle-dir are required "
-                                "unless --package-dir is given",
+                                "--images needs at least one bundle stage "
+                                "and the firmware image, unless "
+                                "--package-dir is given",
                                 USBDFURecoveryErrorCode::InvalidConfiguration);
                 }
-                if (manifestPath.empty())
+                for (std::size_t i = 0; i + 1 < images.size(); ++i)
                 {
-                    manifestPath =
-                        (std::filesystem::path(bundleDir) / "manifest.json")
-                            .string();
+                    bundle.emplace_back(images[i]);
                 }
-                int manifestDelay = cfg.bundleStepDelaySecs;
-                nlohmann::json manifestErr;
-                auto names = loadBundleManifest(manifestPath, manifestDelay,
-                                                manifestErr);
-                if (names.empty())
-                {
-                    return fail(output,
-                                manifestErr.value(
-                                    "Error", "Failed to load bundle manifest"),
-                                USBDFURecoveryErrorCode::InvalidConfiguration);
-                }
-                cfg.bundleStepDelaySecs = manifestDelay;
-                for (const auto& name : names)
-                {
-                    bundle.push_back(std::filesystem::path(bundleDir) / name);
-                }
-                image = fwspiImage;
+                image = images.back();
             }
 
             if (verbose)

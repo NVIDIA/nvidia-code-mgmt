@@ -51,7 +51,7 @@ constexpr int strapSettleSecs = 1;
 constexpr int resetPulseSecs = 1;
 constexpr int dfuEnumerationTimeoutSecs = 15; // typ. 2-3 s, 5x margin
 constexpr int dfuEnumerationPollMs = 500;
-constexpr int bundleStepDelaySecs = 10;    // manifest step_delay_secs wins
+constexpr int bundleStepDelaySecs = 10;    // --bundle-step-delay wins
 constexpr int bundleStepTimeoutSecs = 120; // per dfu-util -D of one blob
 // Recovery U-Boot boots, erases the debug-token/PDS slots on both chips and
 // only then enumerates its DFU targets, so it is polled for, not slept for.
@@ -88,18 +88,29 @@ struct GpioSession
         release();
     }
 
-    /** Drops the handles, so a second call never releases a line twice. */
+    /** Drops the handles, so a second call never releases a line twice.
+     *  Each release is guarded on its own: one throwing must not leave the
+     *  other line requested while its handle is dropped. */
     void release() noexcept
     {
-        try
+        if (recoveryLine)
         {
-            if (recoveryLine)
+            try
+            {
                 recoveryLine.release();
-            if (spiMuxLine)
-                spiMuxLine.release();
+            }
+            catch (...)
+            {}
         }
-        catch (...)
-        {}
+        if (spiMuxLine)
+        {
+            try
+            {
+                spiMuxLine.release();
+            }
+            catch (...)
+            {}
+        }
         recoveryLine = gpiod::line();
         spiMuxLine = gpiod::line();
     }
@@ -302,12 +313,3 @@ struct PackageContents
 bool resolvePackageComponents(const std::filesystem::path& packageDir,
                               PackageContents& contents, nlohmann::json& out);
 
-/**
- * Load an ordered list of bundle binary filenames from a JSON manifest:
- * { "binaries": [...], "step_delay_secs": N }.  stepDelaySecs defaults to
- * usbdfu::timing::bundleStepDelaySecs.  Returns an empty vector on error,
- * with a description in out["Error"].
- */
-std::vector<std::string> loadBundleManifest(const std::string& manifestPath,
-                                            int& stepDelaySecs,
-                                            nlohmann::json& out);

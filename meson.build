@@ -576,9 +576,7 @@ if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
         'USBDFU_RECOVERY_POST_FLASH_SETTLE',
         get_option('USBDFU_RECOVERY_POST_FLASH_SETTLE'),
     )
-endif
 
-if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
     # USBDFURecovery item-updater (code-manager -u USBDFURecovery)
     add_project_arguments('-DUSBDFU_RECOVERY_SUPPORT', language: 'cpp')
     cdata.set_quoted(

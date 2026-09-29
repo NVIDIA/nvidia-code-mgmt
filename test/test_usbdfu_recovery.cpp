@@ -3,7 +3,7 @@
 // All rights reserved.
 
 /**
- * Unit tests for UsbDfuRecovery and loadBundleManifest.
+ * Unit tests for UsbDfuRecovery.
  *
  * Pattern follows test_mcu_recovery.cpp:
  *   - usbdfu_fakes/gpiod.hpp shadows the real <gpiod.hpp> via include path
@@ -543,7 +543,6 @@ TEST_F(UsbDfuRecoveryTest, WaitForDfuEnumeration_DevicePresent)
     UsbDfuRecovery dut(makeConfig());
     nlohmann::json out;
     EXPECT_TRUE(dut.waitForDfuEnumeration(out));
-    EXPECT_TRUE(out["DfuEnumerated"].get<bool>());
     EXPECT_FALSE(out.contains("ErrorCode"));
 }
 
@@ -555,7 +554,6 @@ TEST_F(UsbDfuRecoveryTest, WaitForDfuEnumeration_WrongPid)
     nlohmann::json out;
     EXPECT_FALSE(dut.waitForDfuEnumeration(out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Failed");
-    EXPECT_FALSE(out["DfuEnumerated"].get<bool>());
     EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kDfuEnumerationFailed);
 }
 
@@ -614,7 +612,6 @@ TEST_F(UsbDfuRecoveryTest, WaitForDfuEnumeration_AppearsOnSecondPoll)
     UsbDfuRecovery dut(makeConfig());
     nlohmann::json out;
     EXPECT_TRUE(dut.waitForDfuEnumeration(out));
-    EXPECT_TRUE(out["DfuEnumerated"].get<bool>());
 }
 
 TEST_F(UsbDfuRecoveryTest, WaitForDfuEnumeration_ZeroTimeoutChecksOnce)
@@ -651,7 +648,6 @@ TEST_F(UsbDfuRecoveryTest, AssertRecoveryMode_EnumerationTimeout)
     nlohmann::json out;
     EXPECT_FALSE(dut.assertRecoveryMode(out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Failed");
-    EXPECT_FALSE(out["DfuEnumerated"].get<bool>());
     EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kDfuEnumerationFailed);
 
     // Straps were driven (recovery=1) and are intentionally left asserted so
@@ -669,7 +665,6 @@ TEST_F(UsbDfuRecoveryTest, AssertRecoveryMode_Success)
     nlohmann::json out;
     EXPECT_TRUE(dut.assertRecoveryMode(out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Successful");
-    EXPECT_TRUE(out["DfuEnumerated"].get<bool>());
     EXPECT_FALSE(out.contains("ErrorCode"));
 }
 
@@ -681,6 +676,22 @@ TEST_F(UsbDfuRecoveryTest, DeassertRecoveryMode_Fails)
     EXPECT_FALSE(dut.deassertRecoveryMode(out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Failed");
     EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kGpioDeassertFailed);
+}
+
+TEST_F(UsbDfuRecoveryTest, ReleaseSession_ThrowingReleaseStillFreesOtherLine)
+{
+    makeRecoveryReady();
+    UsbDfuRecovery dut(makeConfig());
+    nlohmann::json tmp;
+    ASSERT_TRUE(dut.assertRecoveryMode(tmp));
+
+    // A shared try/catch would skip the SPI mux and still drop its handle,
+    // leaving the line requested and unreacquirable on the next attempt.
+    test::usbdfu_fake_gpio::lines[kRecovery].throwOnRelease = true;
+
+    nlohmann::json out;
+    EXPECT_TRUE(dut.deassertRecoveryMode(out));
+    EXPECT_GE(test::usbdfu_fake_gpio::lines[kSpiMux].releaseCount, 1u);
 }
 
 TEST_F(UsbDfuRecoveryTest, DeassertRecoveryMode_ReleasesSession)
@@ -704,17 +715,6 @@ TEST_F(UsbDfuRecoveryTest, DeassertRecoveryMode_ReleasesSession)
 // ============================================================================
 // runDfuDownload / runDfuUtil tests
 // ============================================================================
-
-TEST_F(UsbDfuRecoveryTest, RunDfuDownload_FileNotFound)
-{
-    UsbDfuRecovery dut(makeConfig());
-    nlohmann::json out;
-    EXPECT_FALSE(dut.runDfuDownload(UsbDfuRecovery::DfuTransfer::FirmwareImage,
-                                    "/nonexistent/firmware.bin", out));
-    EXPECT_EQ(out["Status"].get<std::string>(), "Failed");
-    EXPECT_NE(out["Error"].get<std::string>().find("not found"),
-              std::string::npos);
-}
 
 TEST_F(UsbDfuRecoveryTest, RunDfuDownload_DfuUtilFails)
 {
@@ -824,18 +824,6 @@ TEST_F(UsbDfuRecoveryTest, RunPreliminaryBundle_EmptyBundle)
     nlohmann::json out;
     EXPECT_TRUE(dut.runPreliminaryBundle({}, out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Successful");
-}
-
-TEST_F(UsbDfuRecoveryTest, RunPreliminaryBundle_FirstBinaryMissing)
-{
-    // Do NOT create the binary file
-    UsbDfuRecovery dut(makeConfig());
-    nlohmann::json out;
-    EXPECT_FALSE(dut.runPreliminaryBundle({tmpDir_ / "missing.bin"}, out));
-    EXPECT_EQ(out["Status"].get<std::string>(), "Failed");
-    EXPECT_EQ(out["FailedStep"].get<int>(), 1);
-    EXPECT_EQ(out["FailedBinary"].get<std::string>(), "missing.bin");
-    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kBundleSendFailed);
 }
 
 TEST_F(UsbDfuRecoveryTest, RunPreliminaryBundle_SecondBinaryFails)
@@ -1412,6 +1400,19 @@ TEST_F(UsbDfuRecoveryTest, ResolvePackageComponents_OptionalZephyrAbsent)
     EXPECT_EQ(contents.firmwareImage, pkg / "16" / "HMC_SPI_Image.bin");
 }
 
+TEST_F(UsbDfuRecoveryTest, ResolvePackageComponents_MultipleFilesRejected)
+{
+    auto pkg = makePackage(tmpDir_ / "pkg");
+    // directory_iterator order is unspecified, so a stale second file would
+    // otherwise make the chosen blob non-deterministic.
+    writeBytes(pkg / "9" / "stale.bin", 4);
+
+    PackageContents contents;
+    nlohmann::json out;
+    EXPECT_FALSE(resolvePackageComponents(pkg, contents, out));
+    EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kPackageIncomplete);
+}
+
 TEST_F(UsbDfuRecoveryTest, ResolvePackageComponents_MissingComponent)
 {
     auto pkg = makePackage(tmpDir_ / "pkg");
@@ -1481,120 +1482,3 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_FromPackage_Success)
     EXPECT_EQ(out["FlashedBytes"].get<uint64_t>(), 4u);
 }
 
-// ============================================================================
-// loadBundleManifest tests
-// ============================================================================
-
-TEST_F(UsbDfuRecoveryTest, LoadBundleManifest_NotFound)
-{
-    nlohmann::json out;
-    int delay = 10;
-    auto bins = loadBundleManifest("/nonexistent/bundle.json", delay, out);
-
-    EXPECT_TRUE(bins.empty());
-    EXPECT_NE(out["Error"].get<std::string>().find("not found"),
-              std::string::npos);
-}
-
-TEST_F(UsbDfuRecoveryTest, LoadBundleManifest_InvalidJson)
-{
-    auto p = tmpDir_ / "bad.json";
-    writeFile(p, "{ NOT VALID JSON");
-
-    nlohmann::json out;
-    int delay = 10;
-    auto bins = loadBundleManifest(p.string(), delay, out);
-
-    EXPECT_TRUE(bins.empty());
-    EXPECT_NE(out["Error"].get<std::string>().find("parse error"),
-              std::string::npos);
-}
-
-TEST_F(UsbDfuRecoveryTest, LoadBundleManifest_MissingBinariesKey)
-{
-    auto p = tmpDir_ / "manifest.json";
-    writeFile(p, R"({ "step_delay_secs": 5 })");
-
-    nlohmann::json out;
-    int delay = 10;
-    auto bins = loadBundleManifest(p.string(), delay, out);
-
-    EXPECT_TRUE(bins.empty());
-    EXPECT_NE(out["Error"].get<std::string>().find("binaries"),
-              std::string::npos);
-}
-
-TEST_F(UsbDfuRecoveryTest, LoadBundleManifest_EmptyBinariesArray)
-{
-    auto p = tmpDir_ / "manifest.json";
-    writeFile(p, R"({ "binaries": [] })");
-
-    nlohmann::json out;
-    int delay = 10;
-    auto bins = loadBundleManifest(p.string(), delay, out);
-
-    EXPECT_TRUE(bins.empty());
-    EXPECT_NE(out["Error"].get<std::string>().find("no binaries"),
-              std::string::npos);
-}
-
-TEST_F(UsbDfuRecoveryTest, LoadBundleManifest_PathTraversalRejected)
-{
-    auto p = tmpDir_ / "manifest.json";
-    writeFile(p, R"({ "binaries": ["../../../etc/passwd"] })");
-
-    nlohmann::json out;
-    int delay = 10;
-    auto bins = loadBundleManifest(p.string(), delay, out);
-
-    EXPECT_TRUE(bins.empty());
-    EXPECT_NE(out["Error"].get<std::string>().find("plain filename"),
-              std::string::npos);
-}
-
-TEST_F(UsbDfuRecoveryTest, LoadBundleManifest_SlashInNameRejected)
-{
-    auto p = tmpDir_ / "manifest.json";
-    writeFile(p, R"({ "binaries": ["subdir/file.bin"] })");
-
-    nlohmann::json out;
-    int delay = 10;
-    auto bins = loadBundleManifest(p.string(), delay, out);
-
-    EXPECT_TRUE(bins.empty());
-    EXPECT_NE(out["Error"].get<std::string>().find("plain filename"),
-              std::string::npos);
-}
-
-TEST_F(UsbDfuRecoveryTest, LoadBundleManifest_ValidManifest)
-{
-    auto p = tmpDir_ / "manifest.json";
-    writeFile(p, R"({
-        "binaries": ["boot1.bin", "boot2.bin", "boot3.bin"],
-        "step_delay_secs": 7
-    })");
-
-    nlohmann::json out;
-    int delay = 10;
-    auto bins = loadBundleManifest(p.string(), delay, out);
-
-    ASSERT_EQ(bins.size(), 3u);
-    EXPECT_EQ(bins[0], "boot1.bin");
-    EXPECT_EQ(bins[1], "boot2.bin");
-    EXPECT_EQ(bins[2], "boot3.bin");
-    EXPECT_EQ(delay, 7);
-    EXPECT_FALSE(out.contains("Error"));
-}
-
-TEST_F(UsbDfuRecoveryTest, LoadBundleManifest_DefaultDelay)
-{
-    auto p = tmpDir_ / "manifest.json";
-    writeFile(p, R"({ "binaries": ["only.bin"] })");
-
-    nlohmann::json out;
-    int delay = 42; // should be reset to the documented default when absent
-    auto bins = loadBundleManifest(p.string(), delay, out);
-
-    ASSERT_EQ(bins.size(), 1u);
-    EXPECT_EQ(delay, usbdfu::timing::bundleStepDelaySecs);
-}
