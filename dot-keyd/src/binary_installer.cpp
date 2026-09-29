@@ -200,5 +200,6 @@ asio::awaitable<RunResult>
     {
         result.code = 1;
     }
+    /* coverity[missing_return] */
     co_return result;
 }
