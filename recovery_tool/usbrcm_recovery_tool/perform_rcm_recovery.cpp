@@ -217,19 +217,36 @@ enum class ProgressStatus
 }
 
 /**
- * @brief Check if data is the expected "empty" DOT blob (1024 bytes of zeros).
+ * @brief Check if data is the expected "empty" DOT blob used in recovery.
  *        Used in DOT recovery override flow where PSC reports
  *        PSC_ROM_EC_MUTABLE_DOT_HEADER_CHECK_FAIL for this payload; we treat
  *        it as expected and continue recovery instead of aborting.
+ *        The fmc_svn field (bytes 8-11) may be set to the fuse floor value
+ *        (e.g. 1) to satisfy ROM's SVN ratchet check; all other bytes are zero.
  * @param data Image data that was sent
- * @return true if data is exactly 1024 bytes and all zeros
+ * @return true if data is exactly 1024 bytes with only fmc_svn bytes non-zero
  */
 [[nodiscard]] bool isEmptyDotBlob(const std::vector<uint8_t>& data) noexcept
 {
-    constexpr size_t emptyDotBlobSize = 1024; // PSC expects exactly 1024B
-    return data.size() == emptyDotBlobSize &&
-           std::all_of(data.begin(), data.end(),
-                       [](uint8_t b) { return b == 0; });
+    constexpr size_t emptyDotBlobSize = 1024;
+    constexpr size_t fmcSvnOffset = 8;
+    constexpr size_t fmcSvnSize = 4;
+    if (data.size() != emptyDotBlobSize)
+    {
+        return false;
+    }
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        if (i >= fmcSvnOffset && i < fmcSvnOffset + fmcSvnSize)
+        {
+            continue; // fmc_svn may be set to fuse floor value
+        }
+        if (data[i] != 0)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 [[nodiscard]] bool

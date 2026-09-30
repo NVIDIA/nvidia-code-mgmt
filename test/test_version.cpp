@@ -19,9 +19,12 @@
 #undef private
 #undef protected
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -72,6 +75,10 @@ class FakeItemUpdaterUtils : public ItemUpdaterUtils
     bool inventorySupportedValue = false;
     bool verifyNeeded = false;
     bool verifyResult = true;
+    bool requiresActivationCycleValue = false;
+    bool reportsTaskMessagesValue = false;
+    std::set<std::string> skippedDevices;
+    std::map<std::string, std::string> deviceNames;
     uint32_t timeout = 5;
 
     std::vector<std::string> getItemUpdaterInventoryPaths() override
@@ -150,6 +157,28 @@ class FakeItemUpdaterUtils : public ItemUpdaterUtils
         lastVerifyPath = imagePath;
         return verifyResult;
     }
+
+    bool requiresActivationCycle() const override
+    {
+        return requiresActivationCycleValue;
+    }
+
+    bool reportsTaskMessages() const override
+    {
+        return reportsTaskMessagesValue;
+    }
+
+    bool deviceWillBeUpdated(const std::string& inventoryPath,
+                             const TargetFilter&) const override
+    {
+        return skippedDevices.find(inventoryPath) == skippedDevices.end();
+    }
+
+    std::string getDeviceName(const std::string& inventoryPath) const override
+    {
+        auto it = deviceNames.find(inventoryPath);
+        return it == deviceNames.end() ? updaterName : it->second;
+    }
 };
 
 class VersionTest : public testing::Test
@@ -170,6 +199,32 @@ class VersionTest : public testing::Test
             "TestUpdater_123", filePath, activationStatus, "Model-A", "NVIDIA",
             [this](std::string versionId) { erasedVersionId = versionId; },
             nullptr, &itemUpdaterUtils);
+    }
+
+    std::vector<std::string> appendedStrings;
+
+    /* Each createLog() appends the message ID twice: once as the Create
+     * call's message argument and once as the REDFISH_MESSAGE_ID value. */
+    size_t countEmissions(const std::string& messageID) const
+    {
+        return static_cast<size_t>(std::count(
+                   appendedStrings.begin(), appendedStrings.end(), messageID)) /
+               2;
+    }
+
+    void captureAppendedStrings()
+    {
+        EXPECT_CALL(sdbusMock, sd_bus_message_append_basic(
+                                   testing::_, testing::_, testing::_))
+            .WillRepeatedly(
+                [this](sd_bus_message*, char type, const void* value) {
+                    if (type == 's' && value != nullptr)
+                    {
+                        appendedStrings.emplace_back(
+                            static_cast<const char*>(value));
+                    }
+                    return 0;
+                });
     }
 };
 
@@ -394,6 +449,191 @@ TEST_F(VersionTest, ActivationProcessesMultipleDevicesAndCompletes)
     EXPECT_EQ(version->activationProgress, nullptr);
     EXPECT_EQ(version->deviceQueue.size(), 0u);
     EXPECT_EQ(itemUpdaterUtils.cleanupCalls, 1);
+}
+
+TEST_F(VersionTest, ActivationLogsTaskMessagesWhenUpdaterReportsThem)
+{
+    itemUpdaterUtils.inventoryPaths = {"/xyz/openbmc_project/inventory/gpu0"};
+    itemUpdaterUtils.reportsTaskMessagesValue = true;
+    captureAppendedStrings();
+
+    auto version = makeVersion("/tmp/test-image.bin");
+    EXPECT_EQ(version->activation(Version::Status::Activating),
+              Version::Status::Activating);
+    EXPECT_EQ(version->deviceQueue.size(), 1u);
+    EXPECT_THAT(appendedStrings,
+                testing::Contains("Update.1.0.TargetDetermined"));
+    EXPECT_THAT(appendedStrings,
+                testing::Contains("Update.1.0.TransferringToComponent"));
+
+    EXPECT_NO_THROW(version->onUpdateDone());
+    EXPECT_EQ(version->deviceQueue.size(), 0u);
+    EXPECT_THAT(appendedStrings,
+                testing::Contains("Update.1.0.UpdateSuccessful"));
+}
+
+TEST_F(VersionTest, ActivationLogsNoTaskMessagesWhenUpdaterDoesNotReportThem)
+{
+    // The default for every item updater. Version is shared by all of them,
+    // so an updater that has not opted in must stay silent.
+    itemUpdaterUtils.inventoryPaths = {"/xyz/openbmc_project/inventory/gpu0"};
+    itemUpdaterUtils.reportsTaskMessagesValue = false;
+    itemUpdaterUtils.requiresActivationCycleValue = true;
+    captureAppendedStrings();
+
+    auto version = makeVersion("/tmp/test-image.bin");
+    EXPECT_EQ(version->activation(Version::Status::Activating),
+              Version::Status::Activating);
+
+    EXPECT_NO_THROW(version->onUpdateDone());
+    EXPECT_EQ(version->activation(), Version::Status::Active);
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains("Update.1.0.TargetDetermined")));
+    EXPECT_THAT(appendedStrings, testing::Not(testing::Contains(
+                                     "Update.1.0.TransferringToComponent")));
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains("Update.1.0.UpdateSuccessful")));
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains("Update.1.0.AwaitToActivate")));
+}
+
+TEST_F(VersionTest, ActivationLogsNoTaskMessagesForFilteredOutDevice)
+{
+    // The device is queued because it is compatible, but target filtering
+    // makes the item updater skip it, so no message may claim otherwise.
+    itemUpdaterUtils.inventoryPaths = {"/xyz/openbmc_project/inventory/gpu0"};
+    itemUpdaterUtils.reportsTaskMessagesValue = true;
+    itemUpdaterUtils.requiresActivationCycleValue = true;
+    itemUpdaterUtils.skippedDevices = {"/xyz/openbmc_project/inventory/gpu0"};
+    captureAppendedStrings();
+
+    auto version = makeVersion("/tmp/test-image.bin");
+    EXPECT_EQ(version->activation(Version::Status::Activating),
+              Version::Status::Activating);
+
+    EXPECT_NO_THROW(version->onUpdateDone());
+    EXPECT_EQ(version->activation(), Version::Status::Active);
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains("Update.1.0.TargetDetermined")));
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains("Update.1.0.UpdateSuccessful")));
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains("Update.1.0.AwaitToActivate")));
+}
+
+TEST_F(VersionTest, FilteredOutDeviceAddsNoSuccessOnAMultiDeviceUpdate)
+{
+    // POST with Targets naming only the first of two CPLDs. The second is
+    // still queued and its update unit still exits zero, so the task must
+    // not gain a second success or a second activation notice.
+    itemUpdaterUtils.inventoryPaths = {"/xyz/openbmc_project/inventory/cpld_1",
+                                       "/xyz/openbmc_project/inventory/cpld_2"};
+    itemUpdaterUtils.reportsTaskMessagesValue = true;
+    itemUpdaterUtils.requiresActivationCycleValue = true;
+    itemUpdaterUtils.skippedDevices = {"/xyz/openbmc_project/inventory/cpld_2"};
+    itemUpdaterUtils.deviceNames = {
+        {"/xyz/openbmc_project/inventory/cpld_1", "FW_CPLD_1"},
+        {"/xyz/openbmc_project/inventory/cpld_2", "FW_CPLD_2"}};
+    captureAppendedStrings();
+
+    auto version = makeVersion("/tmp/test-image.bin");
+    EXPECT_EQ(version->activation(Version::Status::Activating),
+              Version::Status::Activating);
+    EXPECT_EQ(version->deviceQueue.size(), 2u);
+
+    version->onUpdateDone(); // cpld_1, which the filter selected
+    version->onUpdateDone(); // cpld_2, which the filter turned into IGNORE
+    EXPECT_EQ(version->activation(), Version::Status::Active);
+
+    EXPECT_EQ(countEmissions("Update.1.0.TargetDetermined"), 1u);
+    EXPECT_EQ(countEmissions("Update.1.0.TransferringToComponent"), 1u);
+    EXPECT_EQ(countEmissions("Update.1.0.UpdateSuccessful"), 1u);
+    EXPECT_EQ(countEmissions("Update.1.0.AwaitToActivate"), 1u);
+    EXPECT_THAT(appendedStrings,
+                testing::Contains(testing::HasSubstr("FW_CPLD_1")));
+    EXPECT_THAT(appendedStrings, testing::Not(testing::Contains(
+                                     testing::HasSubstr("FW_CPLD_2"))));
+}
+
+TEST_F(VersionTest, TaskMessagesNameTheDeviceNotTheItemUpdater)
+{
+    itemUpdaterUtils.inventoryPaths = {"/xyz/openbmc_project/inventory/cpld_1"};
+    itemUpdaterUtils.reportsTaskMessagesValue = true;
+    itemUpdaterUtils.deviceNames = {
+        {"/xyz/openbmc_project/inventory/cpld_1", "FW_CPLD_1"}};
+    captureAppendedStrings();
+
+    auto version = makeVersion("/tmp/test-image.bin");
+    EXPECT_EQ(version->activation(Version::Status::Activating),
+              Version::Status::Activating);
+    EXPECT_NO_THROW(version->onUpdateDone());
+
+    // The device name reaches the message arguments, which are joined into
+    // a single REDFISH_MESSAGE_ARGS string.
+    EXPECT_THAT(appendedStrings,
+                testing::Contains(testing::HasSubstr("FW_CPLD_1")));
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains(
+                    testing::HasSubstr(itemUpdaterUtils.updaterName))));
+}
+
+TEST_F(VersionTest,
+       FinishActivationLogsAwaitToActivateWhenRequiresActivationCycle)
+{
+    itemUpdaterUtils.inventoryPaths = {"/xyz/openbmc_project/inventory/gpu0"};
+    itemUpdaterUtils.reportsTaskMessagesValue = true;
+    itemUpdaterUtils.requiresActivationCycleValue = true;
+    captureAppendedStrings();
+
+    auto version = makeVersion("/tmp/test-image.bin");
+    EXPECT_EQ(version->activation(Version::Status::Activating),
+              Version::Status::Activating);
+    EXPECT_EQ(version->deviceQueue.size(), 1u);
+
+    EXPECT_NO_THROW(version->onUpdateDone());
+    EXPECT_EQ(version->activation(), Version::Status::Active);
+    EXPECT_THAT(appendedStrings,
+                testing::Contains("Update.1.0.AwaitToActivate"));
+}
+
+TEST_F(VersionTest, FinishActivationSkipsAwaitToActivateWhenNoDeviceUpdated)
+{
+    itemUpdaterUtils.reportsTaskMessagesValue = true;
+    itemUpdaterUtils.requiresActivationCycleValue = true;
+    captureAppendedStrings();
+
+    // finishActivation() also runs when target filtering selected no device.
+    // updatedDevices stays empty there, so no activation cycle is claimed.
+    auto version = makeVersion("/tmp/test-image.bin", Version::Status::Ready);
+    version->activationProgress =
+        std::make_unique<ActivationProgress>(bus, version->getObjectPath());
+
+    version->finishActivation();
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains("Update.1.0.AwaitToActivate")));
+}
+
+TEST_F(VersionTest, TransferFailedNamesTheDeviceNotTheItemUpdater)
+{
+    // The failure message is not gated on reportsTaskMessages(); it is
+    // emitted for every item updater. getDeviceName() defaults to
+    // getName(), so only an updater that overrides it sees a change.
+    itemUpdaterUtils.inventoryPaths = {"/xyz/openbmc_project/inventory/cpld_1"};
+    itemUpdaterUtils.deviceNames = {
+        {"/xyz/openbmc_project/inventory/cpld_1", "FW_CPLD_1"}};
+    captureAppendedStrings();
+
+    auto version = makeVersion("/tmp/test-image.bin");
+    EXPECT_EQ(version->activation(Version::Status::Activating),
+              Version::Status::Activating);
+
+    EXPECT_NO_THROW(version->onUpdateFailed());
+    EXPECT_EQ(version->activation(), Version::Status::Failed);
+    EXPECT_THAT(appendedStrings,
+                testing::Contains(testing::HasSubstr("FW_CPLD_1")));
+    EXPECT_THAT(appendedStrings,
+                testing::Not(testing::Contains(
+                    testing::HasSubstr(itemUpdaterUtils.updaterName))));
 }
 
 TEST_F(VersionTest, OnUpdateFailedClearsQueueAndCleansUp)

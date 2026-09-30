@@ -293,27 +293,7 @@ class CPLDItemUpdater : public BaseItemUpdater
 
         // The systemd unit shall be escaped
         std::string args = "";
-        nlohmann::json cfgJson =
-            cpldcommonutils::loadJSONFile(configFile.c_str());
-        std::string targetCpldDeviceNo = "";
-        for (const auto& component : cfgJson.at("CPLD"))
-        {
-            try
-            {
-                std::string name = component.at("Name");
-                if (std::find(targetFilter.targets.begin(),
-                              targetFilter.targets.end(),
-                              name) != targetFilter.targets.end())
-                {
-                    targetCpldDeviceNo = component.at("CPLDDeviceNo").dump();
-                    break;
-                }
-            }
-            catch (const std::exception& e)
-            {
-                std::cerr << e.what() << std::endl;
-            }
-        }
+        std::string targetCpldDeviceNo = getTargetCpldDeviceNo(targetFilter);
 
         for (auto& inv : invs)
         {
@@ -400,6 +380,95 @@ class CPLDItemUpdater : public BaseItemUpdater
     {
         return !publicKey.empty() &&
                std::filesystem::exists("/var/check_signature");
+    }
+
+    /**
+     * @brief Get the CPLD device number named by the target filter
+     *
+     * @param targetFilter - the filter applied to this activation
+     *
+     * @return std::string - CPLDDeviceNo of the named target, empty when
+     *         no configured component matches
+     */
+    std::string getTargetCpldDeviceNo(const TargetFilter& targetFilter) const
+    {
+        nlohmann::json cfgJson =
+            cpldcommonutils::loadJSONFile(configFile.c_str());
+        if (cfgJson.is_null() || !cfgJson.contains("CPLD"))
+        {
+            log<level::ERR>(
+                ("No CPLD section in the config: " + configFile).c_str());
+            return "";
+        }
+        for (const auto& component : cfgJson.at("CPLD"))
+        {
+            try
+            {
+                std::string name = component.at("Name");
+                if (std::find(targetFilter.targets.begin(),
+                              targetFilter.targets.end(),
+                              name) != targetFilter.targets.end())
+                {
+                    return component.at("CPLDDeviceNo").dump();
+                }
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << e.what() << std::endl;
+            }
+        }
+        return "";
+    }
+
+    bool reportsTaskMessages() const override
+    {
+        return true;
+    }
+
+    bool requiresActivationCycle() const override
+    {
+        return true;
+    }
+
+    bool deviceWillBeUpdated(const std::string& inventoryPath,
+                             const TargetFilter& targetFilter) const override
+    {
+        if (targetFilter.type == TargetFilterType::UpdateAll)
+        {
+            return true;
+        }
+        std::string targetCpldDeviceNo = getTargetCpldDeviceNo(targetFilter);
+        for (auto& inv : invs)
+        {
+            if (inv->getInventoryPath() == inventoryPath)
+            {
+                return targetCpldDeviceNo == inv->getCPLDDeviceNum();
+            }
+        }
+        return false;
+    }
+
+    std::string getDeviceName(const std::string& inventoryPath) const override
+    {
+        return cpldDeviceName(inventoryPath);
+    }
+
+    /**
+     * @brief Get the device name for a CPLD inventory path
+     *
+     * @param inventoryPath - inventory path of the device
+     *
+     * @return std::string - FW_CPLD_<index>, or the path unchanged when it
+     *         carries no index
+     */
+    static std::string cpldDeviceName(const std::string& inventoryPath)
+    {
+        size_t lastUnderscore = inventoryPath.find_last_of('_');
+        if (lastUnderscore == std::string::npos)
+        {
+            return inventoryPath;
+        }
+        return "FW_CPLD_" + inventoryPath.substr(lastUnderscore + 1);
     }
 
     /**

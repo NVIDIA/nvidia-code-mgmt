@@ -42,6 +42,10 @@ const std::string transferFailed{"Update.1.0.TransferFailed"};
 const std::string debugTokenEraseFailed{
     "NvidiaUpdate.1.0.DebugTokenEraseFailed"};
 const std::string verificationFailed{"Update.1.0.VerificationFailed"};
+const std::string targetDetermined{"Update.1.0.TargetDetermined"};
+const std::string transferringToComponent{"Update.1.0.TransferringToComponent"};
+const std::string updateSuccessful{"Update.1.0.UpdateSuccessful"};
+const std::string awaitToActivate{"Update.1.0.AwaitToActivate"};
 
 void Delete::delete_()
 {
@@ -129,6 +133,13 @@ bool Version::doUpdate(const std::string& inventoryPath)
                                           SYSTEMD_INTERFACE, "StartUnit");
         method.append(deviceUpdateUnit, "replace");
         bus.call_noreply(method);
+        if (reportsDeviceMessages(inventoryPath))
+        {
+            auto deviceName = itemUpdaterUtils->getDeviceName(inventoryPath);
+            logUpdateMessage(targetDetermined, deviceName, extendedVersion());
+            logUpdateMessage(transferringToComponent, extendedVersion(),
+                             deviceName);
+        }
         startTimer(itemUpdaterUtils->getTimeout());
         return true;
     }
@@ -165,6 +176,19 @@ void Version::onUpdateDone()
         auto progress = activationProgress->progress() + progressStep;
         activationProgress->progress(progress);
 
+        if (itemUpdaterUtils->deviceWillBeUpdated(currentUpdatingDevice,
+                                                  targetFilter))
+        {
+            auto deviceName =
+                itemUpdaterUtils->getDeviceName(currentUpdatingDevice);
+            updatedDevices.emplace_back(deviceName);
+            if (itemUpdaterUtils->reportsTaskMessages())
+            {
+                logUpdateMessage(updateSuccessful, deviceName,
+                                 extendedVersion());
+            }
+        }
+
         deviceQueue.pop();
         doUpdate(); // Update the next device
     }
@@ -176,7 +200,8 @@ void Version::onUpdateFailed()
     {
         return;
     }
-    logTransferFailed(itemUpdaterUtils->getName(), extendedVersion());
+    logTransferFailed(itemUpdaterUtils->getDeviceName(currentUpdatingDevice),
+                      extendedVersion());
     log<level::ERR>("Failed to udpate device",
                     entry("device=%s", deviceQueue.front().c_str()));
     std::queue<std::string>().swap(deviceQueue); // Clear the queue
@@ -209,7 +234,8 @@ void Version::cancelInProgressUpdate()
     std::map<std::string, std::string> addData;
     addData["REDFISH_MESSAGE_ID"] = resourceErrorsDetected;
     addData["REDFISH_MESSAGE_ARGS"] =
-        (itemUpdaterUtils->getName() + "," + "Update timed out");
+        (itemUpdaterUtils->getDeviceName(currentUpdatingDevice) + "," +
+         "Update timed out");
     addData["xyz.openbmc_project.Logging.Entry.Resolution"] =
         "Retry firmware update operation";
     addData["namespace"] = "FWUpdate";
@@ -221,6 +247,8 @@ void Version::cancelInProgressUpdate()
 
 Version::Status Version::startActivation()
 {
+    updatedDevices.clear();
+
     // Check if the activation has file path
     if (path().empty())
     {
@@ -306,6 +334,14 @@ Version::Status Version::startActivation()
 void Version::finishActivation()
 {
     activationProgress->progress(100);
+    if (itemUpdaterUtils->reportsTaskMessages() &&
+        itemUpdaterUtils->requiresActivationCycle())
+    {
+        for (const auto& deviceName : updatedDevices)
+        {
+            logUpdateMessage(awaitToActivate, extendedVersion(), deviceName);
+        }
+    }
     // Reset RequestedActivations to none so that it could be activated in
     // future
     requestedActivation(SoftwareActivation::RequestedActivations::None);
@@ -424,6 +460,23 @@ void Version::createLog(const std::string& messageID,
             << "Failed to create D-Bus log entry for message registry, ERROR="
             << e.what() << "\n";
     }
+}
+
+bool Version::reportsDeviceMessages(const std::string& inventoryPath) const
+{
+    return itemUpdaterUtils->reportsTaskMessages() &&
+           itemUpdaterUtils->deviceWillBeUpdated(inventoryPath, targetFilter);
+}
+
+void Version::logUpdateMessage(const std::string& messageID,
+                               const std::string& arg1, const std::string& arg2)
+{
+    std::map<std::string, std::string> addData;
+    addData["REDFISH_MESSAGE_ID"] = messageID;
+    addData["REDFISH_MESSAGE_ARGS"] = (arg1 + "," + arg2);
+    addData["namespace"] = "FWUpdate";
+    Level level = Level::Informational;
+    createLog(messageID, addData, level);
 }
 
 void Version::logTransferFailed(const std::string& compName,

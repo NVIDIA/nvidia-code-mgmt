@@ -81,8 +81,7 @@ std::vector<std::string> CPLDItemUpdater::getItemUpdaterInventoryPaths()
         bool isPowerOnDev = dev.second;
 
         // get index of CPLD and create dev string for message
-        size_t last_slash = path.find_last_of("_");
-        std::string devName = "FW_CPLD_" + path.substr(last_slash + 1);
+        std::string devName = cpldDeviceName(path);
         if (isPowerOnDev)
         {
             if (pwrStatus == hostOn)

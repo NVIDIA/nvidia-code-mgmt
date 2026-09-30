@@ -186,4 +186,59 @@ class ItemUpdaterUtils
      * @return true - if signature verification succeeds, false otherwise
      */
     virtual bool doVerify(const std::string& imagePath) const = 0;
+
+    /**
+     * @brief Opt in to the Update message registry entries reported into
+     *        the running task
+     *
+     *        The activation flow only learns that the update unit exited
+     *        zero, which is not a result for every device type, so an
+     *        updater has to assert that it is one.
+     *
+     * @return bool - true when the messages should be reported
+     */
+    virtual bool reportsTaskMessages() const
+    {
+        return false;
+    }
+
+    /**
+     * @brief Whether the activation leaves the image staged
+     *
+     * @return bool - true when an activation cycle is required
+     */
+    virtual bool requiresActivationCycle() const
+    {
+        return false;
+    }
+
+    /**
+     * @brief Whether the device is flashed by this activation
+     *
+     * @param inventoryPath - inventory path of the device
+     * @param targetFilter - the filter applied to this activation
+     *
+     * @return bool - true when the device is updated, false when target
+     *         filtering excluded it
+     */
+    virtual bool deviceWillBeUpdated(
+        [[maybe_unused]] const std::string& inventoryPath,
+        [[maybe_unused]] const TargetFilter& targetFilter) const
+    {
+        return true;
+    }
+
+    /**
+     * @brief Get the Redfish visible name of an individual device
+     *
+     * @param inventoryPath - inventory path of the device
+     *
+     * @return std::string - the device name, defaulting to the item
+     *         updater name
+     */
+    virtual std::string
+        getDeviceName([[maybe_unused]] const std::string& inventoryPath) const
+    {
+        return getName();
+    }
 };

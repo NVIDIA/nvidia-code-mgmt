@@ -47,6 +47,7 @@
 #include <iostream>
 #include <queue>
 #include <string>
+#include <vector>
 
 namespace nvidia
 {
@@ -506,6 +507,28 @@ class Version : public VersionInherit, public DBUSUtils
     void logTransferFailed(const std::string& compName,
                            [[maybe_unused]] const std::string& compVersion);
 
+    /**
+     * @brief Log an Update message registry entry into the running task
+     *
+     * @param messageID - message registry entry ID
+     * @param arg1 - first message argument
+     * @param arg2 - second message argument
+     *
+     * @return void
+     */
+    void logUpdateMessage(const std::string& messageID, const std::string& arg1,
+                          const std::string& arg2);
+
+    /**
+     * @brief Whether the task messages apply to a device
+     *
+     * @param inventoryPath - inventory path of the device
+     *
+     * @return bool - true when the item updater opted in and the device is
+     *         not skipped by target filtering
+     */
+    bool reportsDeviceMessages(const std::string& inventoryPath) const;
+
   private:
     std::string versionId;
 
@@ -522,6 +545,8 @@ class Version : public VersionInherit, public DBUSUtils
     std::queue<std::string> deviceQueue;
 
     uint32_t progressStep{0};
+
+    std::vector<std::string> updatedDevices;
 
     std::string deviceUpdateUnit;
 
