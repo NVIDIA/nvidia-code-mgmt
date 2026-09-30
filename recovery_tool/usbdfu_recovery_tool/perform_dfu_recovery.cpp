@@ -360,12 +360,18 @@ bool UsbDfuRecovery::isProgrammingComplete() const
 
 void UsbDfuRecovery::waitForProgrammingComplete()
 {
-    const int settleSecs = std::max(0, config_.postFlashSettleSecs);
+    // The ceiling is per chip-select: recovery_both programs the image twice,
+    // so it needs twice the wait.  Getting this wrong resets the HMC while it
+    // is still writing, which is the failure this settle exists to prevent.
+    const int chipSelects =
+        config_.dfuAltSetting == usbdfu::bothChipSelectsAlt ? 2 : 1;
+    const int settleSecs =
+        std::max(0, config_.postFlashSettleSecs) * chipSelects;
     const int pollSecs = std::max(1, config_.postFlashPollSecs);
 
     lg2::info("Waiting up to {T}s for recovery U-Boot to authenticate and "
-              "program SPI (polling every {P}s)",
-              "T", settleSecs, "P", pollSecs);
+              "program SPI on {N} chip-select(s) (polling every {P}s)",
+              "T", settleSecs, "N", chipSelects, "P", pollSecs);
 
     if (pollUntil(settleSecs * 1000, pollSecs * 1000,
                   [this] { return isProgrammingComplete(); }))
@@ -711,8 +717,7 @@ bool applyPolarity(const nlohmann::json& entry, const char* property,
     if (!activeLow)
     {
         return UsbDfuRecovery::setFailure(
-            out,
-            std::format("{} must be ActiveHigh or ActiveLow", property),
+            out, std::format("{} must be ActiveHigh or ActiveLow", property),
             USBDFURecoveryErrorCode::InvalidConfiguration);
     }
     dest = *activeLow;
@@ -771,10 +776,9 @@ bool loadRecoveryConfig(const std::string& configPath,
             dest = entry[property].get<std::string>();
         }
 
-        if (!applyPolarity(entry, "RecoveryGpioPolarity",
-                           cfg.recoveryActiveLow, out) ||
-            !applyPolarity(entry, "ResetGpioPolarity", cfg.resetActiveLow,
-                           out))
+        if (!applyPolarity(entry, "RecoveryGpioPolarity", cfg.recoveryActiveLow,
+                           out) ||
+            !applyPolarity(entry, "ResetGpioPolarity", cfg.resetActiveLow, out))
         {
             return false;
         }
@@ -860,4 +864,3 @@ bool resolvePackageComponents(const std::filesystem::path& packageDir,
     }
     return true;
 }
-

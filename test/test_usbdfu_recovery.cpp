@@ -782,7 +782,7 @@ TEST_F(UsbDfuRecoveryTest, RunDfuDownload_FirmwareImageUsesAltOnly)
     // recovery U-Boot has programmed any of it.  flashFirmware() detaches
     // explicitly instead.
     EXPECT_EQ(dut.lastCommand(),
-              "/fake/dfu-util -a recovery_both -D " + fwPath.string());
+              "/fake/dfu-util -a recovery_cs0 -D " + fwPath.string());
 }
 
 TEST_F(UsbDfuRecoveryTest, TransferParams_DeriveFromConfig)
@@ -954,7 +954,7 @@ TEST_F(UsbDfuRecoveryTest, FlashFirmware_Success)
     nlohmann::json out;
     EXPECT_TRUE(dut.flashFirmware(fwPath.string(), out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Successful");
-    EXPECT_EQ(out["DfuAlt"].get<std::string>(), "recovery_both");
+    EXPECT_EQ(out["DfuAlt"].get<std::string>(), "recovery_cs0");
     EXPECT_EQ(out["FlashedBytes"].get<uint64_t>(), 32u);
 }
 
@@ -1004,7 +1004,7 @@ TEST_F(UsbDfuRecoveryTest, FlashFirmware_DetachesAfterTransfer)
     // The alt setting must be repeated: recovery U-Boot exposes
     // recovery_cs0/cs1/both and fw_logs_cs0/cs1, so a bare -e fails with
     // "More than one DFU capable USB device found".
-    EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -a recovery_both -e");
+    EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -a recovery_cs0 -e");
     EXPECT_EQ(g_waitpidCallCount, 2u);
 }
 
@@ -1035,6 +1035,22 @@ TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_RunsToCeiling)
     EXPECT_FALSE(dut.isProgrammingComplete());
     EXPECT_EQ(g_sleepSecs.size(), 10u);
     EXPECT_EQ(totalSlept(), 100);
+}
+
+TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_DoublesForBothChips)
+{
+    auto cfg = makeConfig();
+    cfg.dfuAltSetting = "recovery_both";
+    cfg.postFlashSettleSecs = 100;
+    cfg.postFlashPollSecs = 10;
+    UsbDfuRecovery dut(cfg);
+
+    dut.waitForProgrammingComplete();
+
+    // recovery_both writes the image twice, so a per-chip ceiling that was
+    // not doubled would reset the HMC while the second chip is still being
+    // written.
+    EXPECT_EQ(totalSlept(), 200);
 }
 
 TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_ClampsFinalPoll)
@@ -1314,7 +1330,7 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_Success)
     EXPECT_EQ(out["Steps"]["FlashFirmware"].get<std::string>(), "Successful");
     EXPECT_EQ(out["Steps"]["DeassertRecovery"].get<std::string>(),
               "Successful");
-    EXPECT_EQ(out["DfuAlt"].get<std::string>(), "recovery_both");
+    EXPECT_EQ(out["DfuAlt"].get<std::string>(), "recovery_cs0");
     EXPECT_EQ(out["FlashedBytes"].get<uint64_t>(), 48u);
     // bundle + flash + detach
     EXPECT_EQ(g_waitpidCallCount, 3u);
@@ -1475,8 +1491,8 @@ TEST_F(UsbDfuRecoveryTest, LoadRecoveryConfig_MissingFileRejected)
 {
     UsbDfuRecovery::Config cfg;
     nlohmann::json out;
-    EXPECT_FALSE(loadRecoveryConfig("/nonexistent/recovery.json", "", cfg,
-                                    out));
+    EXPECT_FALSE(
+        loadRecoveryConfig("/nonexistent/recovery.json", "", cfg, out));
     EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kInvalidConfiguration);
 }
 
@@ -1623,7 +1639,6 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_FromPackage_Success)
     EXPECT_EQ(g_waitpidCallCount, usbdfu::componentMap.size() + 1);
     // The detach is now the last command; that the SPI image was the one
     // transferred is covered by ResolvePackageComponents_Complete.
-    EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -a recovery_both -e");
+    EXPECT_EQ(dut.lastCommand(), "/fake/dfu-util -a recovery_cs0 -e");
     EXPECT_EQ(out["FlashedBytes"].get<uint64_t>(), 4u);
 }
-

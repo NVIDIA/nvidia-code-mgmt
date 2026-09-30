@@ -104,12 +104,11 @@ int main(int argc, char* argv[])
                          "the usb-dfu-recovery worker)")
             ->excludes(imagesOpt);
         performCmd
-            ->add_option("--bundle-step-delay", cfg.bundleStepDelaySecs,
-                         "Seconds to wait between bundle stages "
-                         "(default: " +
-                             std::to_string(
-                                 usbdfu::timing::bundleStepDelaySecs) +
-                             ")")
+            ->add_option(
+                "--bundle-step-delay", cfg.bundleStepDelaySecs,
+                "Seconds to wait between bundle stages "
+                "(default: " +
+                    std::to_string(usbdfu::timing::bundleStepDelaySecs) + ")")
             ->check(CLI::NonNegativeNumber);
         performCmd->add_option("--dfu-util", cfg.dfuUtilPath,
                                "Path to the dfu-util binary on the BMC "

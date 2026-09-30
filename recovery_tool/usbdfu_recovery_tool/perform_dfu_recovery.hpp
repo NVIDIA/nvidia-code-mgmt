@@ -28,9 +28,13 @@ constexpr const char* bootRomDfuVendorId = "2245";
 constexpr const char* bootRomDfuProductId = "2700";
 constexpr const char* defaultUsbSysfsRoot = "/sys/bus/usb/devices";
 
-/** recovery U-Boot also exposes recovery_cs0 and recovery_cs1; the design
- *  writes both chips from one authenticated transfer. */
-constexpr const char* defaultDfuAltSetting = "recovery_both";
+/** Program the primary chip only: half the SPI writes, so half the
+ *  programming time.  recovery_cs1 and recovery_both are also available;
+ *  recovery_both writes both chips from one authenticated transfer. */
+constexpr const char* defaultDfuAltSetting = "recovery_cs0";
+
+/** Alt setting that programs both chips, and so needs twice the settle. */
+constexpr const char* bothChipSelectsAlt = "recovery_both";
 
 /** Anything but the canonical values returns nullopt, so the caller rejects
  *  the config rather than driving a strap the wrong way round. */
@@ -56,7 +60,6 @@ constexpr int gpioInactive(bool activeLow)
 {
     return activeLow ? 1 : 0;
 }
-
 
 /**
  * Number of firmware image bytes sent to DFU: [0, 0x03F30000).  The region
@@ -85,13 +88,14 @@ constexpr int uBootDfuTimeoutSecs = 180;
 constexpr int uBootDfuPollSecs = 5;
 // dfu-util -D only streams the image into DRAM and returns within seconds;
 // recovery U-Boot authenticates and programs SPI after the session ends, so
-// this bounds the transfer alone.
+// this bounds the transfer alone, whichever chip-selects are written.
 constexpr int flashTimeoutSecs = 300;
-// Upper bound, not an unconditional sleep: waitForProgrammingComplete() polls
-// and returns as soon as programming is reported done.  No signal is
-// observable today, so the poll runs to this ceiling; wire one into
+// Upper bound per chip-select, not an unconditional sleep:
+// waitForProgrammingComplete() polls and returns as soon as programming is
+// reported done, and doubles this for recovery_both.  No signal is observable
+// today, so the poll runs to the ceiling; wire one into
 // isProgrammingComplete() when one exists.
-constexpr int postFlashSettleSecs = 2400;
+constexpr int postFlashSettleSecs = 1200;
 constexpr int postFlashPollSecs = 10;
 constexpr int dfuListTimeoutSecs = 30; // dfu-util -l
 } // namespace timing
@@ -354,4 +358,3 @@ bool loadRecoveryConfig(const std::string& configPath,
 
 bool resolvePackageComponents(const std::filesystem::path& packageDir,
                               PackageContents& contents, nlohmann::json& out);
-

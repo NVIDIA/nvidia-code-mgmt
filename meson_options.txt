@@ -499,10 +499,11 @@ option('USBDFU_UTIL_PATH',
 
 option('USBDFU_RECOVERY_DFU_ALT',
        type: 'string',
-       value: 'recovery_both',
-       description: 'dfu-util alt setting for the final SPI flash. recovery_both programs both SPI chips '
-                  + 'from one authenticated transfer (default, per the Sunda firmware recovery design); '
-                  + 'recovery_cs0 programs the primary chip only.')
+       value: 'recovery_cs0',
+       description: 'dfu-util alt setting for the final SPI flash. recovery_cs0 programs the primary chip '
+                  + 'only (default): half the SPI writes, so roughly half the programming time. '
+                  + 'recovery_cs1 programs the secondary chip; recovery_both programs both from one '
+                  + 'authenticated transfer.')
 
 option('USBDFU_RECOVERY_FLASH_LENGTH',
        type: 'integer',
@@ -525,11 +526,11 @@ option('USBDFU_RECOVERY_CONFIG_PATH',
 
 option('USBDFU_RECOVERY_POST_FLASH_SETTLE',
        type: 'integer',
-       value: 2400,
+       value: 1200,
        description: 'Seconds to wait after the DFU transfer for recovery U-Boot to authenticate and program '
                   + 'SPI before the HMC is reset.  It is an upper bound, not a fixed sleep, but there is no '
                   + 'completion signal to observe today so a run costs the whole of it.  Measured on P4102 at '
-                  + '901 s + 794 s for recovery_both; must stay comfortably inside USBDFU_RECOVERY_TIMEOUT, '
+                  + '901 s for one chip-select and 1695 s for both; must stay inside USBDFU_RECOVERY_TIMEOUT, '
                   + 'which also has to cover the bundle, the transfer and the deassert.')
 
 option('USBDFU_RECOVERY_TIMEOUT',

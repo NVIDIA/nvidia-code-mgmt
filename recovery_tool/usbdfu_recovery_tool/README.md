@@ -15,14 +15,14 @@ The recovery sequence:
   to the BootROM via `dfu-util`, staging the recovery U-Boot that exposes the
   SPI flash over DFU. The bundle travels inside the recovery PLDM package
   together with the SPI image, one component each.
-- Transfer the firmware SPI image via `dfu-util -a recovery_both -D` (both SPI
-  chips from one authenticated transfer) and end the DFU session with
-  `dfu-util -a recovery_both -e`. Only the first `0x03F30000` bytes of the image
-  are sent so the persistent tail (FW logs, VSN, debug tokens) survives
-  recovery.
-- Wait for recovery U-Boot to authenticate and program both chips (this is the
-  slow part, about 30 minutes; the tool waits up to 40 minutes), then deassert
-  the recovery strap and pulse reset so the HMC boots normally.
+- Transfer the firmware SPI image via `dfu-util -a recovery_cs0 -D` (the primary
+  chip; `recovery_both` writes both from one authenticated transfer) and end the
+  DFU session with `dfu-util -a recovery_cs0 -e`. Only the first `0x03F30000`
+  bytes are sent so the persistent tail (FW logs, VSN, VRoT debug token)
+  survives recovery.
+- Wait for recovery U-Boot to authenticate and program (the slow part, about 15
+  minutes for one chip-select; the tool waits up to 20), then deassert the
+  recovery strap and pulse reset so the HMC boots normally.
 
 ## Components
 
@@ -45,19 +45,19 @@ Prerequisites:
 
 - `dfu-util` installed at the configured path (default `/usr/bin/dfu-util`).
 - The recovery inputs: either an extracted recovery PLDM package
-  (`--package-dir`, see "Recovery package layout") or, for lab use, the
-  images listed in send order (`--images`).
+  (`--package-dir`, see "Recovery package layout") or, for lab use, the images
+  listed in send order (`--images`).
 - An Entity Manager recovery configuration naming the strap lines and their
-  polarities, at the configured path or given with `--json`. The lines it
-  names must be accessible via libgpiod on the BMC.
+  polarities, at the configured path or given with `--json`. The lines it names
+  must be accessible via libgpiod on the BMC.
 - The HMC USB recovery port connected to the BMC (enumerated as `2245:2700` when
   in DFU mode; verify with `lsusb`).
 
 ### Recovery configuration
 
 The CLI reads the same Entity Manager configuration the `usb-dfu-recovery`
-worker reads over D-Bus, so a lab run uses the platform's own wiring rather
-than hand-typed line names:
+worker reads over D-Bus, so a lab run uses the platform's own wiring rather than
+hand-typed line names:
 
 ```json
 {
@@ -97,12 +97,14 @@ meson install -C build
 
 Build options (all under `USBDFU_*` in `meson_options.txt`):
 
-| Option                         | Default                 | Meaning                                                                |
-| ------------------------------ | ----------------------- | ---------------------------------------------------------------------- |
-| `USBDFU_UTIL_PATH`             | `/usr/bin/dfu-util`     | dfu-util binary                                                        |
-| `USBDFU_RECOVERY_DFU_ALT`      | `recovery_both`         | dfu-util alt setting for the final flash (`recovery_cs0` for CS0 only) |
-| `USBDFU_RECOVERY_FLASH_LENGTH` | `66256896` (0x03F30000) | Image bytes sent to DFU; `0` sends the whole file                      |
-| `USBDFU_RECOVERY_TIMEOUT`      | `3600`                  | Redfish task timeout in seconds (see "Timing and timeouts")            |
+| Option                              | Default                 | Meaning                                                     |
+| ----------------------------------- | ----------------------- | ----------------------------------------------------------- |
+| `USBDFU_UTIL_PATH`                  | `/usr/bin/dfu-util`     | dfu-util binary                                             |
+| `USBDFU_RECOVERY_DFU_ALT`           | `recovery_cs0`          | Chip-select written; `recovery_both` writes both            |
+| `USBDFU_RECOVERY_FLASH_LENGTH`      | `66256896` (0x03F30000) | Image bytes sent to DFU; `0` sends the whole file           |
+| `USBDFU_RECOVERY_CONFIG_PATH`       | Entity Manager config   | Recovery configuration the CLI reads (`--json`)             |
+| `USBDFU_RECOVERY_POST_FLASH_SETTLE` | `1200`                  | Programming wait per chip-select, in seconds                |
+| `USBDFU_RECOVERY_TIMEOUT`           | `5400`                  | Redfish task timeout in seconds (see "Timing and timeouts") |
 
 Build dependencies: `libgpiodcxx`, `nlohmann_json`, `CLI11`, `phosphor-logging`
 (CLI); additionally `sdbusplus` and `phosphor-dbus-interfaces` (worker).
@@ -174,9 +176,9 @@ usbdfu-recovery-tool PerformRecovery \
 
 `PerformRecovery` drives the entire USB DFU recovery sequence:
 
-1. Preflight: resolves the inputs (package components, or the `--images`
-   list) and verifies the firmware image and every bundle binary exist before
-   any GPIO is touched.
+1. Preflight: resolves the inputs (package components, or the `--images` list)
+   and verifies the firmware image and every bundle binary exist before any GPIO
+   is touched.
 2. Drives `HMC_SPI_MUX_R_SEL-O=0` (HMC owns its SPI flash) and
    `HMC_RECOVERY_R-O=1` (recovery strap), then pulses `HMC_RST_R_L-O` to reset
    the HMC into BootROM DFU mode.
@@ -195,11 +197,11 @@ usbdfu-recovery-tool PerformRecovery \
    ends the DFU session with `dfu-util -a <alt> -e`. The transfer only places
    the image in the HMC's DRAM; ending the session is what makes recovery U-Boot
    authenticate the manifests and program SPI.
-7. Waits for programming to finish (default ceiling 2400 s,
-   `--post-flash-settle`). Recovery U-Boot gives the BMC no completion signal
-   today, so the tool waits the full ceiling; on P4102 `recovery_both` takes
-   about 901 s (CS0) plus 794 s (CS1). Resetting the HMC earlier aborts
-   programming and leaves the flash partly written.
+7. Waits for programming to finish (default ceiling 1200 s per chip-select, so
+   2400 s for `recovery_both`, `--post-flash-settle`). Recovery U-Boot gives the
+   BMC no completion signal today, so the tool waits the full ceiling. Measured:
+   901 s for CS0 and 794 s for CS1. Resetting the HMC earlier aborts programming
+   and leaves the flash partly written.
 8. Deasserts `HMC_RECOVERY_R-O=0` and pulses reset so the HMC boots normally.
 
 Example output on success:
@@ -207,7 +209,7 @@ Example output on success:
 ```json
 {
   "Status": "Successful",
-  "DfuAlt": "recovery_both",
+  "DfuAlt": "recovery_cs0",
   "FlashedBytes": 66256896,
   "Steps": {
     "Preflight": "Successful",
@@ -387,11 +389,11 @@ usbdfu-recovery-tool PerformRecovery \
 ## Firmware image handling
 
 - **Alt setting.** Recovery U-Boot exposes `recovery_cs0`, `recovery_cs1` and
-  `recovery_both` DFU targets (see `dfu-util -l` while it is waiting for the
-  image). The default `recovery_both` programs both SPI chips from one
-  authenticated transfer, as required by the Sunda recovery design; use
-  `--dfu-alt recovery_cs0` (or the `USBDFU_RECOVERY_DFU_ALT` build option) to
-  program the primary chip only.
+  `recovery_*` DFU targets (see `dfu-util -l` while it is waiting for the
+  image). The default `recovery_cs0` programs the primary chip only;
+  `recovery_both` programs both from one authenticated transfer, as required by
+  the Sunda recovery design; use `--dfu-alt recovery_cs0` (or the
+  `USBDFU_RECOVERY_DFU_ALT` build option) to program the primary chip only.
 - **Truncation.** A normal 64 MiB signed image can be passed as is. Only bytes
   `[0, 0x03F30000)` are sent: the tool stages a truncated copy next to the image
   (`<image>.dfu`, removed afterwards) because the persistent tail holds the FW
@@ -412,20 +414,20 @@ usbdfu-recovery-tool PerformRecovery \
 All values are conservative upper bounds taken from the P4102 lab material and
 from bench measurements on P4102 (Sep 2026), not specification minimums:
 
-| Constant                        | Value              | Source                                                                                                          |
-| ------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------- |
-| Strap settle / reset pulse      | 1 s / 1 s          | HMC USB DFU recovery runbook                                                                                    |
-| DFU enumeration timeout         | 15 s (poll 500 ms) | runbook shows ~2 s until `lsusb` lists `2245:2700`; 5x margin                                                   |
-| Delay between bundle stages     | 10 s               | lab recovery script (`sleep 10`); `--bundle-step-delay` overrides                                               |
-| Per-stage dfu-util timeout      | 120 s              | bundle blobs are < 2 MB each                                                                                    |
-| Wait for recovery U-Boot DFU    | 180 s (poll 5 s)   | bench: U-Boot erases both chips' debug-token/PDS slots first; `sleep 10` is too short                           |
-| Final transfer dfu-util timeout | 2400 s             | bounds only the DRAM transfer (seconds in practice)                                                             |
-| Post-flash programming wait     | 2400 s (poll 10 s) | bench: U-Boot programs SPI after the session ends, 901 s (CS0) + 794 s (CS1); ceiling, no completion signal yet |
+| Constant                        | Value              | Source                                                                                              |
+| ------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------- |
+| Strap settle / reset pulse      | 1 s / 1 s          | HMC USB DFU recovery runbook                                                                        |
+| DFU enumeration timeout         | 15 s (poll 500 ms) | runbook shows ~2 s until `lsusb` lists `2245:2700`; 5x margin                                       |
+| Delay between bundle stages     | 10 s               | lab recovery script (`sleep 10`); `--bundle-step-delay` overrides                                   |
+| Per-stage dfu-util timeout      | 120 s              | bundle blobs are < 2 MB each                                                                        |
+| Wait for recovery U-Boot DFU    | 180 s (poll 5 s)   | bench: U-Boot erases both chips' debug-token/PDS slots first; `sleep 10` is too short               |
+| Final transfer dfu-util timeout | 300 s              | bounds only the DRAM transfer (seconds in practice)                                                 |
+| Post-flash programming wait     | 1200 s (poll 10 s) | bench: U-Boot programs SPI after the session ends, 901 s for CS0; ceiling, no completion signal yet |
 
 End-to-end estimate: strap + enumeration 5-20 s, bundle 9-11 x (~2 s transfer
 plus 10 s delay) = ~2-2.5 min, recovery U-Boot erase and enumeration up to 3
 min, image transfer a few seconds, programming wait 40 min (the fixed ceiling;
-the measured programming time is ~28 min for `recovery_both`), deassert ~5 s,
+the measured programming time is ~15 min for one chip-select), deassert ~5 s,
 i.e. **roughly 45 minutes** regardless of alt setting until recovery U-Boot can
 signal completion. The `USBDFU_RECOVERY_TIMEOUT` build option (default 3600 s)
 bounds the whole Redfish task; if it expires the item-updater stops the worker
@@ -446,14 +448,13 @@ and are not individually bounded by the task timeout.
   the last lines dfu-util printed, e.g. `No DFU capable USB device available` or
   `Cannot set alternate interface: LIBUSB_ERROR_OTHER`. Run `dfu-util -l` to
   confirm the device is enumerated and, for the final flash, that the configured
-  alt setting (`recovery_both`) is listed.
+  alt setting is listed.
 - **`RecoveryUBootDfuTimeout`**: the bundle was accepted but recovery U-Boot
   never exposed `recovery_cs0/cs1/both`. Its erase of the debug-token/PDS slots
   has likely already run (see "Side effects of a recovery attempt"); AC
   power-cycle the HMC before retrying and check the recovery U-Boot's USB/DFU
   support with the HMC firmware team.
-- **`Bundle binary not found`**: Confirm every path given to `--images`
-  exists.
+- **`Bundle binary not found`**: Confirm every path given to `--images` exists.
 - **`Recovery package component ... missing`** (`PackageIncomplete`): the
   extracted package lacks a component directory or file; rebuild the `.fwpkg`
   with every entry of the component table.
