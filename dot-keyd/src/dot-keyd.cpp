@@ -412,7 +412,8 @@ static boost::asio::awaitable<void> runCakInstall(ServiceState svc)
     catch (const CakInstallDeclinedException& ex)
     {
         svc.lastInstallStatus = "Installed";
-        lg2::info("CAK already installed on device: {MSG}", "MSG", ex.what());
+        lg2::info("CAK installation declined, skipping L1 reset: {MSG}", "MSG",
+                  ex.what());
     }
     catch (const CpuInRecoveryException& ex)
     {
