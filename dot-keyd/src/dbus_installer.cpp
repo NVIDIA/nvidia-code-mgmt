@@ -17,6 +17,8 @@
 
 #include "dbus_installer.hpp"
 
+#include "cak.hpp"
+
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <phosphor-logging/lg2.hpp>
@@ -172,19 +174,24 @@ asio::awaitable<void> DbusInstaller::doVerify()
 asio::awaitable<void> DbusInstaller::install(const json& payload,
                                              std::set<std::string>& donePaths)
 {
+    // The payload passed validateDotPayload before reaching here, so CAKKey
+    // is present and a Hybrid key carries its LMSKey.
+    const json& cakKey = payload["CAKKey"];
     std::string cakAuthEnum = toDbusAuthScheme(
-        payload["CAKKey"]["AuthenticationScheme"].get<std::string>());
-    std::string cakEcdsaKey = payload["CAKKey"]["ECDSAKey"].get<std::string>();
-    std::string cakLmsKey;
+        dotAuthScheme(cakKey["AuthenticationScheme"].get<std::string>()));
+    std::string cakEcdsaKey = cakKey["ECDSAKey"].get<std::string>();
+    std::string cakLmsKey = cakKey.value("LMSKey", std::string{});
     std::string lakAuthEnum = kCakSchemeEcdsa;
     std::string lakEcdsaKey;
     std::string lakLmsKey;
 
     if (payload.contains("LAKKey") && payload["LAKKey"].is_object())
     {
+        const json& lakKey = payload["LAKKey"];
         lakAuthEnum = toDbusAuthScheme(
-            payload["LAKKey"]["AuthenticationScheme"].get<std::string>());
-        lakEcdsaKey = payload["LAKKey"]["ECDSAKey"].get<std::string>();
+            dotAuthScheme(lakKey["AuthenticationScheme"].get<std::string>()));
+        lakEcdsaKey = lakKey["ECDSAKey"].get<std::string>();
+        lakLmsKey = lakKey.value("LMSKey", std::string{});
     }
 
     bool lockDisable = payload.value("LockDisable", false);

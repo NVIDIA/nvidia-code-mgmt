@@ -41,7 +41,15 @@ fs::path payloadPath(const fs::path& keyStorePath);
 
 void validateCakBytes(const std::string& data, size_t maxBytes);
 void normalizePemKeyFormat(std::string& key);
+void validateEcdsaPem(const std::string& field, const std::string& pem,
+                      size_t maxBytes);
 void validateDotPayload(const nlohmann::json& payload);
+// Validates the payload, then settles AuthenticationScheme on its canonical
+// spelling ("Ecdsa"/"Hybrid") and normalizes the ECDSA PEM keys in place.
+void normalizeDotPayload(nlohmann::json& payload);
+// Maps any accepted spelling of a key authentication scheme ("ECDSA", "Ecdsa",
+// "Hybrid", ...) to its canonical form; throws on an unknown scheme.
+std::string dotAuthScheme(const std::string& scheme);
 std::string extractCakFromJson(const std::string& jsonPayload);
 
 // ---------------------------------------------------------------------------
@@ -65,4 +73,8 @@ std::optional<nlohmann::json> bakedCakPayload(const Config& config);
 // ---------------------------------------------------------------------------
 
 void storeCak(const Config& config, const std::string& cakBytes);
+// Validates and normalizes a complete DOT install payload received as JSON
+// text (the Redfish CAKInstall body) and writes it to the key store.
+void storeDotPayload(const Config& config, nlohmann::json payload);
+void storeDotPayload(const Config& config, const std::string& jsonPayload);
 void deleteCak(const Config& config);
