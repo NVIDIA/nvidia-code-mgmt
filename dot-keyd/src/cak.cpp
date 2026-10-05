@@ -135,15 +135,35 @@ void validateCakBytes(const std::string& data, size_t maxBytes)
 {
     if (data.empty())
     {
-        throw std::runtime_error("CAK is empty");
+        throw std::invalid_argument("CAK is empty");
     }
     if (data.size() > maxBytes)
     {
-        throw std::runtime_error("CAK exceeds maximum size");
+        throw std::invalid_argument("CAK exceeds maximum size");
     }
     if (!isValidPem(data))
     {
-        throw std::runtime_error("CAK is not a valid PEM public key");
+        throw std::invalid_argument("CAK is not a valid PEM public key");
+    }
+}
+
+/** Rejects a CAKKey/LAKKey ECDSAKey that is empty, oversized or not a PEM
+ *  public key, naming the field so the caller can report it. */
+void validateEcdsaPem(const std::string& field, const std::string& pem,
+                      size_t maxBytes)
+{
+    if (pem.empty())
+    {
+        throw std::invalid_argument(field + ".ECDSAKey cannot be empty");
+    }
+    if (pem.size() > maxBytes)
+    {
+        throw std::invalid_argument(field + ".ECDSAKey exceeds maximum size");
+    }
+    if (!isValidPem(pem))
+    {
+        throw std::invalid_argument(field +
+                                    ".ECDSAKey is not a valid PEM public key");
     }
 }
 
@@ -277,6 +297,112 @@ void normalizePemKeyFormat(std::string& key)
     key += endMarker + "\n";
 }
 
+namespace
+{
+
+/** Returns the canonical spelling of a DOT key authentication scheme.
+ *  The Redfish schema spells the ECDSA member "ECDSA" while nsmd and the
+ *  baked payload use "Ecdsa"; accept both and settle on one spelling. */
+std::string canonicalAuthScheme(const std::string& field,
+                                const std::string& scheme)
+{
+    if (scheme == "Ecdsa" || scheme == "ECDSA" || scheme == "ecdsa")
+    {
+        return "Ecdsa";
+    }
+    if (scheme == "Hybrid" || scheme == "hybrid")
+    {
+        return "Hybrid";
+    }
+    throw std::invalid_argument(field +
+                                ".AuthenticationScheme must be Ecdsa or "
+                                "Hybrid, got '" +
+                                scheme + "'");
+}
+
+/** Validates one KeyStructure (CAKKey or LAKKey): the allowed members, the
+ *  scheme, the ECDSA key, and the LMS key that a Hybrid scheme requires. */
+void validateKeyStructure(const std::string& field, const json& key)
+{
+    if (!key.is_object())
+    {
+        throw std::invalid_argument(field + " must be an object");
+    }
+
+    static const std::set<std::string> allowed = {"AuthenticationScheme",
+                                                  "ECDSAKey", "LMSKey"};
+    for (const auto& [member, value] : key.items())
+    {
+        if (allowed.find(member) == allowed.end())
+        {
+            throw std::invalid_argument(
+                "Disallowed field in JSON payload: " + field + "." + member);
+        }
+    }
+
+    if (!key.contains("AuthenticationScheme"))
+    {
+        throw std::invalid_argument(field +
+                                    ".AuthenticationScheme is required");
+    }
+    if (!key["AuthenticationScheme"].is_string())
+    {
+        throw std::invalid_argument(field +
+                                    ".AuthenticationScheme must be a string");
+    }
+    std::string scheme = key["AuthenticationScheme"].get<std::string>();
+    if (scheme.empty())
+    {
+        throw std::invalid_argument(field +
+                                    ".AuthenticationScheme cannot be empty");
+    }
+    scheme = canonicalAuthScheme(field, scheme);
+
+    if (!key.contains("ECDSAKey"))
+    {
+        throw std::invalid_argument(field + ".ECDSAKey is required");
+    }
+    if (!key["ECDSAKey"].is_string())
+    {
+        throw std::invalid_argument(field + ".ECDSAKey must be a string");
+    }
+    if (key["ECDSAKey"].get<std::string>().empty())
+    {
+        throw std::invalid_argument(field + ".ECDSAKey cannot be empty");
+    }
+
+    if (scheme == "Hybrid")
+    {
+        if (!key.contains("LMSKey"))
+        {
+            throw std::invalid_argument(
+                field +
+                ".LMSKey is required when AuthenticationScheme is Hybrid");
+        }
+        if (!key["LMSKey"].is_string())
+        {
+            throw std::invalid_argument(field + ".LMSKey must be a string");
+        }
+        if (key["LMSKey"].get<std::string>().empty())
+        {
+            throw std::invalid_argument(field + ".LMSKey cannot be empty");
+        }
+    }
+    else if (key.contains("LMSKey"))
+    {
+        throw std::invalid_argument(
+            field +
+            ".LMSKey is only valid when AuthenticationScheme is Hybrid");
+    }
+}
+
+} // namespace
+
+std::string dotAuthScheme(const std::string& scheme)
+{
+    return canonicalAuthScheme("Key", scheme);
+}
+
 void validateDotPayload(const json& payload)
 {
     const std::set<std::string> allowedFields = {
@@ -286,126 +412,73 @@ void validateDotPayload(const json& payload)
     {
         if (allowedFields.find(key) == allowedFields.end())
         {
-            throw std::runtime_error("Disallowed field in JSON payload: " +
-                                     key);
+            throw std::invalid_argument("Disallowed field in JSON payload: " +
+                                        key);
         }
     }
 
     if (!payload.contains("CAKKey"))
     {
-        throw std::runtime_error("CAKKey is required in JSON payload");
+        throw std::invalid_argument("CAKKey is required in JSON payload");
     }
-
-    const auto& cakKey = payload["CAKKey"];
-    if (!cakKey.is_object())
-    {
-        throw std::runtime_error("CAKKey must be an object");
-    }
-
-    if (!cakKey.contains("AuthenticationScheme"))
-    {
-        throw std::runtime_error("CAKKey.AuthenticationScheme is required");
-    }
-    if (!cakKey.contains("ECDSAKey"))
-    {
-        throw std::runtime_error("CAKKey.ECDSAKey is required");
-    }
-
-    if (!cakKey["AuthenticationScheme"].is_string())
-    {
-        throw std::runtime_error(
-            "CAKKey.AuthenticationScheme must be a string");
-    }
-    std::string authScheme = cakKey["AuthenticationScheme"].get<std::string>();
-    if (authScheme.empty())
-    {
-        throw std::runtime_error("CAKKey.AuthenticationScheme cannot be empty");
-    }
-
-    if (!cakKey["ECDSAKey"].is_string())
-    {
-        throw std::runtime_error("CAKKey.ECDSAKey must be a string");
-    }
-    std::string ecdsaKey = cakKey["ECDSAKey"].get<std::string>();
-    if (ecdsaKey.empty())
-    {
-        throw std::runtime_error("CAKKey.ECDSAKey cannot be empty");
-    }
+    validateKeyStructure("CAKKey", payload["CAKKey"]);
 
     if (payload.contains("LAKKey"))
     {
-        const auto& lakKey = payload["LAKKey"];
-        if (!lakKey.is_object())
-        {
-            throw std::runtime_error("LAKKey must be an object");
-        }
-
-        if (!lakKey.contains("AuthenticationScheme"))
-        {
-            throw std::runtime_error("LAKKey.AuthenticationScheme is required");
-        }
-        if (!lakKey.contains("ECDSAKey"))
-        {
-            throw std::runtime_error("LAKKey.ECDSAKey is required");
-        }
-
-        if (!lakKey["AuthenticationScheme"].is_string())
-        {
-            throw std::runtime_error(
-                "LAKKey.AuthenticationScheme must be a string");
-        }
-        std::string lakAuthScheme =
-            lakKey["AuthenticationScheme"].get<std::string>();
-        if (lakAuthScheme.empty())
-        {
-            throw std::runtime_error(
-                "LAKKey.AuthenticationScheme cannot be empty");
-        }
-
-        if (!lakKey["ECDSAKey"].is_string())
-        {
-            throw std::runtime_error("LAKKey.ECDSAKey must be a string");
-        }
-        std::string lakEcdsaKey = lakKey["ECDSAKey"].get<std::string>();
-        if (lakEcdsaKey.empty())
-        {
-            throw std::runtime_error("LAKKey.ECDSAKey cannot be empty");
-        }
+        validateKeyStructure("LAKKey", payload["LAKKey"]);
     }
 
     if (!payload.contains("LockDisable"))
     {
-        throw std::runtime_error("LockDisable is required in JSON payload");
+        throw std::invalid_argument("LockDisable is required in JSON payload");
     }
     if (!payload["LockDisable"].is_boolean())
     {
-        throw std::runtime_error("LockDisable must be a boolean");
+        throw std::invalid_argument("LockDisable must be a boolean");
     }
     if (!payload["LockDisable"].get<bool>())
     {
-        throw std::runtime_error("LockDisable must be true");
+        throw std::invalid_argument("LockDisable must be true");
     }
 
     if (!payload.contains("VendorMinimumSecurityVersion"))
     {
-        throw std::runtime_error(
+        throw std::invalid_argument(
             "VendorMinimumSecurityVersion is required in JSON payload");
     }
     if (!payload["VendorMinimumSecurityVersion"].is_number())
     {
-        throw std::runtime_error(
+        throw std::invalid_argument(
             "VendorMinimumSecurityVersion must be a number");
     }
 
     if (!payload.contains("OwnerMinimumSecurityVersion"))
     {
-        throw std::runtime_error(
+        throw std::invalid_argument(
             "OwnerMinimumSecurityVersion is required in JSON payload");
     }
     if (!payload["OwnerMinimumSecurityVersion"].is_number())
     {
-        throw std::runtime_error(
+        throw std::invalid_argument(
             "OwnerMinimumSecurityVersion must be a number");
+    }
+}
+
+void normalizeDotPayload(json& payload)
+{
+    validateDotPayload(payload);
+    for (const char* field : {"CAKKey", "LAKKey"})
+    {
+        if (!payload.contains(field))
+        {
+            continue;
+        }
+        json& key = payload[field];
+        key["AuthenticationScheme"] = canonicalAuthScheme(
+            field, key["AuthenticationScheme"].get<std::string>());
+        std::string pem = key["ECDSAKey"].get<std::string>();
+        normalizePemKeyFormat(pem);
+        key["ECDSAKey"] = pem;
     }
 }
 
@@ -457,6 +530,43 @@ void storeCak(const Config& config, const std::string& cakBytes)
     validateCakBytes(pem, config.maxCakBytes);
     atomicWrite(payloadPath(config.keyStorePath),
                 buildCakPayload(config, pem).dump());
+}
+
+void storeDotPayload(const Config& config, json payload)
+{
+    if (!payload.is_object())
+    {
+        throw std::invalid_argument("CAK payload is not an object");
+    }
+
+    normalizeDotPayload(payload);
+    for (const char* field : {"CAKKey", "LAKKey"})
+    {
+        if (payload.contains(field))
+        {
+            validateEcdsaPem(field,
+                             payload[field]["ECDSAKey"].get<std::string>(),
+                             config.maxCakBytes);
+        }
+    }
+    atomicWrite(
+        payloadPath(config.keyStorePath),
+        payload.dump(-1, ' ', true, nlohmann::json::error_handler_t::replace));
+}
+
+void storeDotPayload(const Config& config, const std::string& jsonPayload)
+{
+    json payload;
+    try
+    {
+        payload = json::parse(jsonPayload);
+    }
+    catch (const json::parse_error& ex)
+    {
+        throw std::invalid_argument("Invalid JSON in CAK payload: " +
+                                    std::string(ex.what()));
+    }
+    storeDotPayload(config, std::move(payload));
 }
 
 void deleteCak(const Config& config)

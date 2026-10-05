@@ -35,7 +35,9 @@
 #include <sdbusplus/asio/property.hpp>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/exception.hpp>
 
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <iostream>
@@ -47,57 +49,130 @@
 #include <tuple>
 #include <variant>
 
+namespace
+{
+
+/** D-Bus error raised by installCak2BmcFs.  sdbusplus turns a thrown
+ *  sdbusplus::exception::exception into a D-Bus error reply named name()
+ *  with description() as the message, so callers see a real method
+ *  failure instead of a status string they have to inspect. */
+class DotDbusError : public sdbusplus::exception::exception
+{
+  public:
+    DotDbusError(const char* errName, std::string reason) :
+        errName_(errName), reason_(std::move(reason))
+    {}
+    const char* name() const noexcept override
+    {
+        return errName_;
+    }
+    const char* description() const noexcept override
+    {
+        return reason_.c_str();
+    }
+    const char* what() const noexcept override
+    {
+        return reason_.c_str();
+    }
+
+  private:
+    const char* errName_;
+    std::string reason_;
+};
+
+/** The CAKInstall body failed validation. */
+class DotPayloadRejected final : public DotDbusError
+{
+  public:
+    explicit DotPayloadRejected(std::string reason) :
+        DotDbusError("xyz.openbmc_project.Common.Error.InvalidArgument",
+                     std::move(reason))
+    {}
+    int get_errno() const noexcept override
+    {
+        return EINVAL;
+    }
+};
+
+/** The payload was valid but could not be written to the key store. */
+class DotStoreFailed final : public DotDbusError
+{
+  public:
+    explicit DotStoreFailed(std::string reason) :
+        DotDbusError("xyz.openbmc_project.Common.Error.InternalFailure",
+                     std::move(reason))
+    {}
+    int get_errno() const noexcept override
+    {
+        return EIO;
+    }
+};
+
+} // namespace
+
 using json = nlohmann::json;
 
-// ---------------------------------------------------------------------------
-// D-Bus key-store write method (called by installCak2BmcFs)
-// ---------------------------------------------------------------------------
-
-/** Validates and writes a CAK payload received via D-Bus arguments to the
- *  on-disk key store. */
-static void
-    storeCakFromDbusArgs(const Config& config,
-                         const std::tuple<std::string, std::string>& cakKey,
-                         bool lockDisable, int64_t vendorMinimumSecurityVersion,
-                         int64_t ownerMinimumSecurityVersion, bool hasLakKey,
-                         const std::tuple<std::string, std::string>& lakKey)
+namespace
 {
-    json payload;
-    payload["CAKKey"] = {
-        {"AuthenticationScheme", std::get<0>(cakKey)},
-        {"ECDSAKey", std::get<1>(cakKey)},
-    };
-    payload["LockDisable"] = lockDisable;
-    payload["VendorMinimumSecurityVersion"] = vendorMinimumSecurityVersion;
-    payload["OwnerMinimumSecurityVersion"] = ownerMinimumSecurityVersion;
 
-    if (hasLakKey)
+/** KeyStructure as received over D-Bus: a{ss}. */
+using DotKeyStructure = std::map<std::string, std::string>;
+
+/** installCak2BmcFs arguments: a{sv} with KeyStructure, bool and int64. */
+using DotInstallArgs =
+    std::map<std::string, std::variant<bool, int64_t, DotKeyStructure>>;
+
+/** Builds the stored JSON payload from the D-Bus dictionary. The member
+ *  names and value types are the only things checked here; the payload rules
+ *  (allowed members, required members, scheme spelling, LMSKey) are applied
+ *  by validateDotPayload on the result. */
+json dotPayloadFromArgs(const DotInstallArgs& args)
+{
+    json payload = json::object();
+    for (const auto& [name, value] : args)
     {
-        payload["LAKKey"] = {
-            {"AuthenticationScheme", std::get<0>(lakKey)},
-            {"ECDSAKey", std::get<1>(lakKey)},
-        };
+        if (name == "CAKKey" || name == "LAKKey")
+        {
+            const auto* key = std::get_if<DotKeyStructure>(&value);
+            if (key == nullptr)
+            {
+                throw std::invalid_argument(name + " must be a KeyStructure");
+            }
+            json obj = json::object();
+            for (const auto& [member, text] : *key)
+            {
+                obj[member] = text;
+            }
+            payload[name] = std::move(obj);
+        }
+        else if (name == "LockDisable")
+        {
+            const auto* flag = std::get_if<bool>(&value);
+            if (flag == nullptr)
+            {
+                throw std::invalid_argument(name + " must be a boolean");
+            }
+            payload[name] = *flag;
+        }
+        else if (name == "VendorMinimumSecurityVersion" ||
+                 name == "OwnerMinimumSecurityVersion")
+        {
+            const auto* version = std::get_if<int64_t>(&value);
+            if (version == nullptr)
+            {
+                throw std::invalid_argument(name + " must be an integer");
+            }
+            payload[name] = *version;
+        }
+        else
+        {
+            throw std::invalid_argument("Disallowed field in payload: " + name);
+        }
     }
-
-    validateDotPayload(payload);
-
-    std::string cakEcdsaKey = payload["CAKKey"]["ECDSAKey"].get<std::string>();
-    normalizePemKeyFormat(cakEcdsaKey);
-    payload["CAKKey"]["ECDSAKey"] = cakEcdsaKey;
-
-    if (hasLakKey)
-    {
-        std::string lakEcdsaKey =
-            payload["LAKKey"]["ECDSAKey"].get<std::string>();
-        normalizePemKeyFormat(lakEcdsaKey);
-        payload["LAKKey"]["ECDSAKey"] = lakEcdsaKey;
-    }
-
-    std::string normalizedPayload =
-        payload.dump(-1, ' ', true, nlohmann::json::error_handler_t::replace);
-    validateCakBytes(cakEcdsaKey, config.maxCakBytes);
-    atomicWrite(payloadPath(config.keyStorePath), normalizedPayload);
+    return payload;
 }
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -549,26 +624,28 @@ static int runService(const Args& args)
         [&config](const int&) { return config.timeouts.installMs / 1000; });
 
     iface->register_method("InstallCak", [svc]() { triggerCakInstall(svc); });
+    // Takes the CAKInstall arguments bmcweb validated against the Redfish
+    // schema as a D-Bus dictionary: CAKKey and LAKKey as a{ss}
+    // (AuthenticationScheme, ECDSAKey, LMSKey), LockDisable as b, the two
+    // minimum security versions as x. dot-keyd owns the key store and checks
+    // the payload again (validateDotPayload). A rejected payload is a D-Bus
+    // error (Common.Error.InvalidArgument with the reason as its message);
+    // anything else is InternalFailure.
     iface->register_method(
-        "installCak2BmcFs",
-        [&config, iface](const std::tuple<std::string, std::string>& cakKey,
-                         const bool& lockDisable,
-                         const int64_t& vendorMinimumSecurityVersion,
-                         const int64_t& ownerMinimumSecurityVersion,
-                         const bool& hasLakKey,
-                         const std::tuple<std::string, std::string>& lakKey) {
+        "installCak2BmcFs", [&config, iface](const DotInstallArgs& args) {
             try
             {
-                storeCakFromDbusArgs(
-                    config, cakKey, lockDisable, vendorMinimumSecurityVersion,
-                    ownerMinimumSecurityVersion, hasLakKey, lakKey);
-                iface->signal_property("Stored");
-                return std::string{"Success"};
+                storeDotPayload(config, dotPayloadFromArgs(args));
+            }
+            catch (const std::invalid_argument& ex)
+            {
+                throw DotPayloadRejected(ex.what());
             }
             catch (const std::exception& ex)
             {
-                return std::string{"Error: "} + ex.what();
+                throw DotStoreFailed(ex.what());
             }
+            iface->signal_property("Stored");
         });
     iface->register_method("DeleteCak", [&config, iface]() {
         try
