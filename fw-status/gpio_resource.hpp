@@ -48,6 +48,17 @@ class GPIOResource : public BaseResource
         Polling
     };
 
+    /** @brief How the Polling-mode recovery monitor detects that the ERoT
+     *         left recovery: by its MCTP endpoint being present (then the
+     *         crisis I2C is probed) or by a successful QueryBootStatus VDM
+     *         (no crisis I2C traffic while the ERoT is in recovery).
+     */
+    enum class RecoveryExitCheck : uint8_t
+    {
+        MctpEndpoint,
+        MctpVdm
+    };
+
   private:
     enum class HealthUpdateReason : uint8_t
     {
@@ -91,7 +102,8 @@ class GPIOResource : public BaseResource
                  std::optional<uint64_t> apBootStatusRetryIntervalMs,
                  std::optional<uint64_t> apBootStatusMaxRetries,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
-                 bool hideWhenHealthy = false);
+                 bool hideWhenHealthy = false,
+                 const std::string& recoveryExitCheck = "");
 
     ~GPIOResource() override;
 
@@ -104,6 +116,7 @@ class GPIOResource : public BaseResource
     bool hideWhenHealthy = false;
     int polarity;
     MonitorMode monitorMode = MonitorMode::Interrupt;
+    RecoveryExitCheck recoveryExitCheck = RecoveryExitCheck::MctpEndpoint;
     std::chrono::milliseconds pollingInterval{0};
     std::chrono::milliseconds apBootStatusQueryRetryInterval{0};
     size_t maxAPBootStatusQueryRetries = 0;
@@ -127,6 +140,8 @@ class GPIOResource : public BaseResource
         std::make_shared<bool>(true);
     std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type>
         apBootStatusCo;
+    std::coroutine_handle<mctp_vdm::requester::Coroutine::promise_type>
+        erotExitCheckCo;
 
     /** @brief callback function to handle GPIO event
      *
@@ -268,6 +283,14 @@ class GPIOResource : public BaseResource
      * the ERoT MCTP endpoint is already present, re-evaluates health.
      */
     void runERoTRecoveryMonitor();
+
+    /** @brief MctpVdm exit check: send QueryBootStatus to the ERoT; a reply
+     *         means it left recovery, so re-evaluate health. No crisis I2C
+     *         access until then.
+     */
+    void runERoTExitVdmCheck();
+
+    mctp_vdm::requester::Coroutine queryERoTExitAsync();
 
     /** @brief Restart the MCTP init target to (re)trigger discovery of a
      * directly-attached ERoT. No-op when no target is configured.

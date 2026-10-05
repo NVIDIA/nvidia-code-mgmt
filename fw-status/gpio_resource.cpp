@@ -56,6 +56,26 @@ GPIOResource::MonitorMode parseMonitorMode(const std::string& monitorMode)
     return GPIOResource::MonitorMode::Interrupt;
 }
 
+GPIOResource::RecoveryExitCheck
+    parseRecoveryExitCheck(const std::string& recoveryExitCheck)
+{
+    if (recoveryExitCheck.empty() || recoveryExitCheck == "MctpEndpoint")
+    {
+        return GPIOResource::RecoveryExitCheck::MctpEndpoint;
+    }
+
+    if (recoveryExitCheck == "MctpVdm")
+    {
+        return GPIOResource::RecoveryExitCheck::MctpVdm;
+    }
+
+    lg2::warning(
+        "Invalid RecoveryExitCheck {CHECK}. Use MctpEndpoint as default",
+        "CHECK", recoveryExitCheck);
+
+    return GPIOResource::RecoveryExitCheck::MctpEndpoint;
+}
+
 int parseGPIOPolarity(const std::string& gpioPolarity)
 {
     if (gpioPolarity.empty() || gpioPolarity == "ActiveHigh")
@@ -204,11 +224,13 @@ GPIOResource::GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
                            std::optional<uint64_t> apBootStatusRetryIntervalMs,
                            std::optional<uint64_t> apBootStatusMaxRetries,
                            std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
-                           bool hideWhenHealthy) :
+                           bool hideWhenHealthy,
+                           const std::string& recoveryExitCheckConfig) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
     systemTarget(target), hideWhenHealthy(hideWhenHealthy),
     polarity(parseGPIOPolarity(gpioPolarity)),
     monitorMode(parseMonitorMode(monitorModeConfig)),
+    recoveryExitCheck(parseRecoveryExitCheck(recoveryExitCheckConfig)),
     pollingInterval(getPollingInterval(pollingIntervalMs)),
     apBootStatusQueryRetryInterval(
         getAPBootStatusQueryRetryInterval(apBootStatusRetryIntervalMs)),
@@ -265,6 +287,16 @@ GPIOResource::~GPIOResource()
         apBootStatusCo.promise().detached = true;
     }
     apBootStatusCo = nullptr;
+
+    if (erotExitCheckCo && erotExitCheckCo.done())
+    {
+        erotExitCheckCo.destroy();
+    }
+    else if (erotExitCheckCo)
+    {
+        erotExitCheckCo.promise().detached = true;
+    }
+    erotExitCheckCo = nullptr;
 }
 
 void GPIOResource::waitForGPIOEvent()
@@ -1130,6 +1162,12 @@ void GPIOResource::onERoTEndpointAdded(sdbusplus::message::message& msg)
             return;
         }
 
+        if (recoveryExitCheck == RecoveryExitCheck::MctpVdm)
+        {
+            runERoTExitVdmCheck();
+            return;
+        }
+
         // The ERoT MCTP endpoint is back, so glacier recovery has completed and
         // the glacier I2C is free again. Re-evaluate health, which clears the
         // ERoT object and hands off to the AP boot-status check.
@@ -1207,6 +1245,12 @@ void GPIOResource::runERoTRecoveryMonitor()
         return;
     }
 
+    if (recoveryExitCheck == RecoveryExitCheck::MctpVdm)
+    {
+        runERoTExitVdmCheck();
+        return;
+    }
+
     // Fallback path: the interfacesAdded match normally detects the endpoint
     // first. If the endpoint is already present here (e.g. the add signal was
     // missed), re-evaluate health directly. It is safe to read glacier now
@@ -1226,6 +1270,76 @@ void GPIOResource::runERoTRecoveryMonitor()
               "re-triggering discovery",
               "OBJ", path, "EID", eid);
     triggerMctpDiscovery();
+}
+
+void GPIOResource::runERoTExitVdmCheck()
+{
+    if (!mctpVdmHelper)
+    {
+        lg2::warning(
+            "RecoveryExitCheck MctpVdm for {OBJ} needs the MCTP VDM helper; falling back to the MCTP endpoint check",
+            "OBJ", path);
+        recoveryExitCheck = RecoveryExitCheck::MctpEndpoint;
+        runERoTRecoveryMonitor();
+        return;
+    }
+
+    if (erotExitCheckCo && !erotExitCheckCo.done())
+    {
+        lg2::info("ERoT recovery exit VDM query already in progress for {OBJ}",
+                  "OBJ", path);
+        return;
+    }
+
+    if (erotExitCheckCo)
+    {
+        erotExitCheckCo.destroy();
+        erotExitCheckCo = nullptr;
+    }
+
+    auto rc = queryERoTExitAsync();
+    erotExitCheckCo = rc.handle;
+    rc.handle = nullptr;
+
+    if (erotExitCheckCo.done())
+    {
+        erotExitCheckCo.destroy();
+        erotExitCheckCo = nullptr;
+    }
+}
+
+mctp_vdm::requester::Coroutine GPIOResource::queryERoTExitAsync()
+{
+    auto erotEid = fetchEid();
+    auto mctpVdmHelperRef = mctpVdmHelper;
+    std::weak_ptr<bool> lifetimeToken(apBootStatusLifetimeToken);
+
+    const mctp_vdm::Message* responseMsg = nullptr;
+    size_t responseLen = 0;
+    auto rc = co_await mctpVdmHelperRef->queryBootStatus(erotEid, responseMsg,
+                                                         responseLen);
+
+    if (lifetimeToken.expired() || !erotRecoveryMonitorActive)
+    {
+        co_return rc;
+    }
+
+    if (rc != 0 || responseMsg == nullptr || responseLen < 1)
+    {
+        // Still in recovery (or not reachable): no crisis I2C access, just
+        // make sure MCTP discovery keeps running until the ERoT answers.
+        lg2::info(
+            "ERoT {OBJ} (EID={EID}) does not answer QueryBootStatus yet; recovery not finished (RC={RC})",
+            "OBJ", path, "EID", erotEid, "RC", rc);
+        triggerMctpDiscovery();
+        co_return rc;
+    }
+
+    lg2::info(
+        "ERoT {OBJ} (EID={EID}) answers QueryBootStatus; recovery finished, re-evaluating health",
+        "OBJ", path, "EID", erotEid);
+    reevaluateERoTHealthAfterRecovery();
+    co_return 0;
 }
 
 bool GPIOResource::isMctpEndpointPresent()
