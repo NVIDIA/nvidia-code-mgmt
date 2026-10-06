@@ -17,13 +17,13 @@
 #pragma once
 #include "config.h"
 
-#include "../nvidia_igx/igx/src/igx_util.hpp"
 #include "../nvidia_igx/igx/src/platform_client.hpp"
 #include "base_item_updater.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <tuple>
@@ -439,8 +439,13 @@ class SMCUItemUpdater : public BaseItemUpdater
     }
 
     /**
-     * @brief Generate stable IDs: ASMCU -> Aurix_SMCU,
-     * RSMCU -> Renesas_SMCU; other models fall back to UUID.
+     * @brief Generate stable IDs per model.
+     *        Resolution order:
+     *          1. Model from deviceIds map keyed by the given UUID
+     *          2. SMCU type cached from startup platform detection
+     *          3. Live platform detection via detectPlatformSmcu()
+     *          4. The caller's UUID when the SMCU type cannot be
+     *             determined (getName() if no UUID was given)
      */
     std::string getIdProperty(const std::string& uniqueIdentifier) override
     {

@@ -15,15 +15,17 @@
  * limitations under the License.
  */
 
-#include "platform_client.hpp"
+#pragma once
 
 #include <unistd.h>
 
 #include <phosphor-logging/lg2.hpp>
 
 #include <array>
+#include <cstdio>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace nvidia::igx::common
@@ -71,22 +73,6 @@ class Util
         }
 
         return version;
-    }
-
-    virtual std::string getPlatformName() const
-    {
-        try
-        {
-            // Single source of truth: read identity from the platform-state
-            // daemon over D-Bus instead of spawning igx-platform-detection.py.
-            std::string platform = nvidia::platform::platformShort();
-            return platform.empty() ? "Host" : platform;
-        }
-        catch (const std::exception& e)
-        {
-            lg2::error("Failed to fetch platform name: ", "ERROR", e.what());
-            return "Host";
-        }
     }
 };
 

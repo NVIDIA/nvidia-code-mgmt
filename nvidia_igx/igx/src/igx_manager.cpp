@@ -98,14 +98,12 @@ void IgxManager::resolveAndRegister()
 
         // Register once per distinct path; skip if unchanged so unrelated
         // property changes never tear down a live inventory object (§10a).
-        if (orinInvs && currentName == inventoryName)
+        if (igxInventory && currentName == inventoryName)
         {
             return;
         }
-        auto replacement =
-            std::make_unique<Igx>(bus, basePath + "/" + inventoryName);
-        replacement->prettyName(inventoryPrettyName);
-        orinInvs = std::move(replacement);
+        igxInventory = std::make_unique<Igx>(
+            bus, basePath + "/" + inventoryName, inventoryPrettyName);
         currentName = inventoryName;
         lg2::info("IGX inventory registered at {NAME}", "NAME", inventoryName);
     }

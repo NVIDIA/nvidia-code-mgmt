@@ -161,14 +161,7 @@ inline std::string smcuVersionString(sdbusplus::bus_t& bus)
                              getString(bus, smcuIface, "Version"));
 }
 
-// One-shot variants that open their own system bus, for const/no-bus callers
-// (e.g. Util::getPlatformName()).
-inline std::string platformShort()
-{
-    auto bus = sdbusplus::bus::new_default_system();
-    return platformShort(bus);
-}
-
+// One-shot variants that open their own system bus, for const/no-bus callers.
 inline std::string smcuModelOneShot()
 {
     auto bus = sdbusplus::bus::new_default_system();

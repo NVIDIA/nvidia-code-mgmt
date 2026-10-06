@@ -52,7 +52,7 @@ class IgxManager
     std::string basePath;
     std::string currentName;
 
-    std::unique_ptr<Igx> orinInvs;
+    std::unique_ptr<Igx> igxInventory;
     // Re-resolve when the daemon publishes a (real) identity, and re-subscribe
     // when it restarts -- D-Bus signals do not replay (§10a/NG-7).
     std::unique_ptr<sdbusplus::bus::match_t> platformPropsMatch;

@@ -80,11 +80,12 @@ class Igx : public IgxInherit, public Util
     Igx& operator=(Igx&&) = delete;
     ~Igx() = default;
 
-    Igx(sdbusplus::bus_t& bus, const std::string& objPath) :
+    Igx(sdbusplus::bus_t& bus, const std::string& objPath,
+        const std::string& name) :
         IgxInherit(bus, (objPath).c_str()), bus(bus), inventoryPath(objPath)
     {
         sdbusplus::xyz::openbmc_project::Inventory::server::Item::prettyName(
-            "ORIN");
+            name);
 
         registerSoftwareVersion(bus, objPath);
     }
@@ -101,9 +102,8 @@ class Igx : public IgxInherit, public Util
         std::string fName = std::filesystem::path(ifPath).filename().string();
         swpath += "/" + fName;
 
-        std::string orinVersion = getVersion();
-        VersionObj =
-            std::make_unique<VersionInterface>(bus, swpath, orinVersion);
+        std::string fwVersion = getVersion();
+        VersionObj = std::make_unique<VersionInterface>(bus, swpath, fwVersion);
     }
 
     const std::string& getInventoryPath() const
