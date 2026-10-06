@@ -60,7 +60,7 @@ class SMCUItemUpdater : public BaseItemUpdater
     std::unique_ptr<sdbusplus::bus::match_t> platformOwnerMatch;
     /** @brief Retries deferred onPlatformChanged once Activation→Active. */
     std::unique_ptr<sdbusplus::bus::match_t> activationMatch;
-    /** @brief Retries deferred convergence when a Failed/Ready object is erased. */
+    /** @brief Retries deferred convergence once a Failed/Ready obj is gone. */
     std::unique_ptr<sdbusplus::bus::match_t> softwareRemovedMatch;
     bool pendingPlatformConvergence = false;
 
@@ -302,8 +302,7 @@ class SMCUItemUpdater : public BaseItemUpdater
                     return;
                 }
                 const std::string expected =
-                    std::string(SOFTWARE_OBJPATH) + "/" +
-                    detectedPlatformSmcu;
+                    std::string(SOFTWARE_OBJPATH) + "/" + detectedPlatformSmcu;
                 if (std::string(path) == expected)
                 {
                     onPlatformChanged();
@@ -313,7 +312,8 @@ class SMCUItemUpdater : public BaseItemUpdater
         // M3: drive one initial convergence so the SMCU object registers on a
         // clean boot even when the daemon is already Ready (signals do not
         // replay, and the base ctor may query inventory paths before
-        // detectedPlatformSmcu is set). Idempotent; guarded by onPlatformChanged.
+        // detectedPlatformSmcu is set). Idempotent; guarded by
+        // onPlatformChanged.
         onPlatformChanged();
     }
     /**

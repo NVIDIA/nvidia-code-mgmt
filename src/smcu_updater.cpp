@@ -56,7 +56,8 @@ std::string SMCUItemUpdater::getVersion(
         if (fwVersion.empty() || fwVersion == "--")
         {
             // Fallback to device type only if version not available
-            lg2::warning("SMCU firmware version not available, using device type only");
+            lg2::warning(
+                "SMCU firmware version not available, using device type only");
             return deviceType;
         }
 
@@ -67,7 +68,8 @@ std::string SMCUItemUpdater::getVersion(
     }
     catch (const std::exception& e)
     {
-        lg2::error("Failed to get SMCU firmware version: {ERROR}", "ERROR", e.what());
+        lg2::error("Failed to get SMCU firmware version: {ERROR}", "ERROR",
+                   e.what());
         // Fallback to device type only
         return deviceType;
     }

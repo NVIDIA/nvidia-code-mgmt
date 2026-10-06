@@ -29,20 +29,17 @@ TEST(PlatformClient, FormatsBestAvailableSmcuVersion)
 
 TEST(PlatformClient, ResolvesAtomicPlatformSnapshot)
 {
-    using nvidia::platform::platformShortFromProperties;
     using nvidia::platform::PlatformProperties;
+    using nvidia::platform::platformShortFromProperties;
 
-    EXPECT_EQ(platformShortFromProperties(
-                  PlatformProperties{{"IdentityReady", true},
-                                     {"Name", std::string{"IGX Thor"}}}),
+    EXPECT_EQ(platformShortFromProperties(PlatformProperties{
+                  {"IdentityReady", true}, {"Name", std::string{"IGX Thor"}}}),
               "Thor");
-    EXPECT_EQ(platformShortFromProperties(
-                  PlatformProperties{{"IdentityReady", true},
-                                     {"Name", std::string{"IGX Orin"}}}),
+    EXPECT_EQ(platformShortFromProperties(PlatformProperties{
+                  {"IdentityReady", true}, {"Name", std::string{"IGX Orin"}}}),
               "Orin");
-    EXPECT_EQ(platformShortFromProperties(
-                  PlatformProperties{{"IdentityReady", false},
-                                     {"Name", std::string{"IGX Thor"}}}),
+    EXPECT_EQ(platformShortFromProperties(PlatformProperties{
+                  {"IdentityReady", false}, {"Name", std::string{"IGX Thor"}}}),
               "");
     EXPECT_EQ(platformShortFromProperties(
                   PlatformProperties{{"Name", std::string{"IGX Thor"}}}),

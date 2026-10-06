@@ -44,8 +44,7 @@ inline std::string readVersionFile(const std::string& cmd)
         output += buffer.data();
     }
 
-    while (!output.empty() &&
-           (output.back() == '\n' || output.back() == '\r'))
+    while (!output.empty() && (output.back() == '\n' || output.back() == '\r'))
     {
         output.pop_back();
     }

@@ -44,8 +44,8 @@ class IgxManager
   private:
     // Resolve the platform identity from com.Nvidia.Platform and (re)register
     // the inventory object. Registers the path-specific object only when
-    // IdentityReady is true; re-registers only on an actual path change to avoid
-    // ObjectMapper churn (ARCHITECTURE §10a).
+    // IdentityReady is true; re-registers only on an actual path change to
+    // avoid ObjectMapper churn (ARCHITECTURE §10a).
     void resolveAndRegister();
 
     sdbusplus::bus_t& bus;
