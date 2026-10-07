@@ -8,7 +8,18 @@
 
 #include "base_item_updater.hpp"
 
+#include <systemd/sd-event.h>
+
+#include <sdbusplus/server/manager.hpp>
+#include <xyz/openbmc_project/Association/Definitions/server.hpp>
+#include <xyz/openbmc_project/Software/BuildType/server.hpp>
+#include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
+#include <xyz/openbmc_project/Software/Slot/server.hpp>
+#include <xyz/openbmc_project/Software/State/server.hpp>
+#include <xyz/openbmc_project/Software/VersionComparison/server.hpp>
+
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace nvidia
@@ -18,16 +29,47 @@ namespace software
 namespace updater
 {
 
+using softwareSlotInherit = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::Software::server::Slot,
+    sdbusplus::xyz::openbmc_project::Software::server::ExtendedVersion,
+    sdbusplus::xyz::openbmc_project::Software::server::BuildType,
+    sdbusplus::xyz::openbmc_project::Software::server::State,
+    sdbusplus::xyz::openbmc_project::Software::server::VersionComparison,
+    sdbusplus::xyz::openbmc_project::Association::server::Definitions>;
+
+/**
+ * @brief One slot of the vHMC A/B image pair on D-Bus.
+ */
+class VHMCFirmwareSlot : public softwareSlotInherit
+{
+  public:
+    /** @brief Constructor
+     *
+     *  @param[in] bus - Bus to attach to
+     *  @param[in] objPath - D-Bus object path
+     */
+    VHMCFirmwareSlot(sdbusplus::bus_t& bus, const std::string& objPath) :
+        softwareSlotInherit(bus, objPath.c_str(), action::emit_interface_added)
+    {}
+};
+
 class VHMCItemUpdater : public BaseItemUpdater
 {
   public:
     VHMCItemUpdater(sdbusplus::bus_t& bus) :
         BaseItemUpdater(bus, VHMC_SUPPORTED_MODEL, VHMC_INVENTORY_IFACE, "VHMC",
                         VHMC_BUSNAME_UPDATER, VHMC_UPDATE_SERVICE, false,
-                        VHMC_BUSNAME_INVENTORY)
+                        VHMC_BUSNAME_INVENTORY),
+        invObjManager(bus, VHMC_FIRMWARE_INVENTORY_OBJPATH), slotBus(bus)
     {
         publishFirmwareInventory(bus);
+        publishFirmwareSlots();
     }
+
+    /**
+     * @brief Destructor
+     */
+    ~VHMCItemUpdater() override;
 
     std::string getImageUploadDir() const override;
 
@@ -87,11 +129,88 @@ class VHMCItemUpdater : public BaseItemUpdater
     }
 
   private:
+    /** @brief Metadata describing one vHMC image slot. */
+    struct SlotMetadata
+    {
+        std::string version;
+        std::string buildType;
+        uint32_t comparisonNumber = 0;
+        bool hasComparisonNumber = false;
+    };
+
     /** @brief Publish the firmware inventory object for the vHMC. */
     void publishFirmwareInventory(sdbusplus::bus_t& bus);
 
+    /** @brief Publish the vHMC image slots and watch them for changes. */
+    void publishFirmwareSlots();
+
+    /** @brief Refresh both slot objects from the on-disk image metadata. */
+    void refreshFirmwareSlots();
+
+    /**
+     * @brief Refresh a single slot object from its image link.
+     *
+     * @param slot Slot object to create, update or drop
+     * @param slotId Slot identifier reported on D-Bus
+     * @param isActive Whether the slot holds the running image
+     * @param imageLink Path of the symlink pointing at the slot image
+     * @return Version read for the slot, empty when it did not resolve
+     */
+    std::string refreshSlot(std::unique_ptr<VHMCFirmwareSlot>& slot,
+                            uint8_t slotId, bool isActive,
+                            const std::string& imageLink);
+
+    /**
+     * @brief Read the metadata sidecar belonging to a slot image.
+     *
+     * @param imageLink Path of the symlink pointing at the slot image
+     * @return Metadata of the slot, or nothing when the image is absent
+     */
+    std::optional<SlotMetadata>
+        readSlotMetadata(const std::string& imageLink) const;
+
+    /** @brief Watch the work directory so slot changes are picked up. */
+    void startSlotWatch();
+
+    /**
+     * @brief sd-event callback draining the slot inotify descriptor.
+     *
+     * @param source Event source, unused
+     * @param fd inotify descriptor
+     * @param revents Events that matched for fd
+     * @param userdata Pointer to the VHMCItemUpdater
+     * @return 0 on success, -1 on failure
+     */
+    static int slotWatchCallback(sd_event_source* source, int fd,
+                                 uint32_t revents, void* userdata);
+
+    /** @brief Object manager covering the firmware inventory and its slots.
+     *
+     * The shared manager sits at SOFTWARE_OBJPATH, which is not an ancestor
+     * of these objects, and sd-bus drops InterfacesAdded for a path no
+     * manager covers.  Without this the object mapper only ever sees the
+     * objects that existed when it introspected the service, so a slot
+     * published after an update stays missing from Redfish.
+     */
+    sdbusplus::server::manager_t invObjManager;
+
+    /** @brief Bus the firmware inventory and slot objects live on. */
+    sdbusplus::bus_t& slotBus;
+
+    /** @brief Directory holding the vHMC images and their metadata. */
+    std::string slotWorkDir;
+
     /** @brief Firmware inventory object representing the vHMC. */
     std::unique_ptr<SoftwareVersion> fwInventory;
+
+    /** @brief Slot holding the image the vHMC is running from. */
+    std::unique_ptr<VHMCFirmwareSlot> activeSlot;
+
+    /** @brief Slot holding the image staged for the next activation. */
+    std::unique_ptr<VHMCFirmwareSlot> inactiveSlot;
+
+    /** @brief inotify descriptor watching the vHMC work directory. */
+    int slotWatchFd = -1;
 };
 
 } // namespace updater
