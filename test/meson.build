@@ -858,6 +858,7 @@ test(
             fmt,
             nlohmann_json,
             sdbusplus,
+            phosphor_logging,
             ocp_recovery_test_src,
         ],
         include_directories: include_directories(

@@ -19,6 +19,8 @@
 
 #include <fmt/format.h>
 
+#include <phosphor-logging/lg2.hpp>
+
 #include <chrono>
 #include <thread>
 namespace recovery_tool
@@ -62,7 +64,7 @@ void OCPRecoveryCommands::printBuffer(bool isTx,
     {
         formattedMessage.pop_back();
     }
-    std::cout << formattedMessage << "\n";
+    lg2::info("{MSG}", "MSG", formattedMessage);
 }
 
 bool OCPRecoveryCommands::setRecoveryControlRegisterCommand(ImageType imageType,
@@ -173,9 +175,9 @@ bool OCPRecoveryCommands::isDeviceReadyForTx()
     {
         if ((i > 0) && verbose)
         {
-            std::cout
-                << "Retry #" << i
-                << ": Verifying ack from device in a polling address space.\n";
+            lg2::info(
+                "Retry #{RETRY}: Verifying ack from device in a polling address space.",
+                "RETRY", i);
         }
         auto [success, hexResponse, errorMsg] = getIndirectStatusCommand();
         if (!success)
@@ -232,7 +234,7 @@ bool OCPRecoveryCommands::writeRecoveryChunk(
             "Writing Image ({} to {}), Progress: {}% ({} / {} bytes)",
             imageName, targetName, progress, (offset + currentChunkSize),
             imageSize);
-        std::cout << progressMessage << "\n";
+        lg2::info("{MSG}", "MSG", progressMessage);
     }
 
     static constexpr size_t retryAttemptsPerChunk = 3;
@@ -258,7 +260,7 @@ bool OCPRecoveryCommands::writeRecoveryImage(
     const std::vector<uint8_t>& imageData)
 {
     size_t imageSize = imageData.size();
-    std::cout << "Initiating recovery image write process...\n";
+    lg2::info("Initiating recovery image write process...");
 
     for (size_t offset = 0; offset < imageSize; offset += chunkSize)
     {

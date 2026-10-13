@@ -16,7 +16,7 @@ executable(
     'ocp-recovery-tool',
     sources: recovery_tool_source_files,
     include_directories: inc_dirs,
-    dependencies: [fmt, CLI11_dep, nlohmann_json],
+    dependencies: [fmt, CLI11_dep, phosphor_logging, nlohmann_json],
     install: true,
     install_dir: get_option('bindir'),
 )
