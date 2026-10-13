@@ -91,6 +91,9 @@
 #ifdef USBRCM_RECOVERY_SUPPORT
 #include "usb_rcm_recovery.hpp"
 #endif
+#ifdef USBDFU_RECOVERY_SUPPORT
+#include "usb_dfu_recovery.hpp"
+#endif
 
 #include "watch.hpp"
 
@@ -322,6 +325,12 @@ try
     if (updater == "USBRCMRecovery")
     {
         itemUpdater = std::make_unique<USBRCMRecovery>(bus);
+    }
+#endif
+#ifdef USBDFU_RECOVERY_SUPPORT
+    if (updater == "USBDFURecovery")
+    {
+        itemUpdater = std::make_unique<USBDFURecovery>(bus);
     }
 #endif
 

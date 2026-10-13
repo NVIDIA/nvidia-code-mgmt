@@ -37,7 +37,8 @@ enum class RecoveryProtocol : uint8_t
     OCPDeviceStatusCode = 0x3,
     OCPRecovery = 0x4,
     MCURecovery = 0x5,
-    USBRCMRecovery = 0x6
+    USBRCMRecovery = 0x6,
+    USBDFURecovery = 0x7,
 };
 
 using RecoveryErrorMapping = std::unordered_map<RecoveryProtocol, ErrorMapping>;
@@ -672,6 +673,56 @@ static ErrorMapping usbRcmRecoveryErrorMapping{
       "Verify the target device is present and accessible, then retry recovery."}},
 };
 
+enum class USBDFURecoveryErrorCode : uint8_t
+{
+    GPIOAssertFailed = 0x1,
+    BundleSendFailed = 0x2,
+    FirmwareFlashFailed = 0x3,
+    GPIODeassertFailed = 0x4,
+    DfuEnumerationFailed = 0x5,
+    InvalidConfiguration = 0x6,
+    PackageIncomplete = 0x7,
+    RecoveryUBootDfuTimeout = 0x8,
+};
+
+static const ErrorMapping usbDfuRecoveryErrorMapping{
+    {static_cast<ErrorCode>(USBDFURecoveryErrorCode::GPIOAssertFailed),
+     {"Failed to assert the HMC recovery strap or pulse reset",
+      "Retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {static_cast<ErrorCode>(USBDFURecoveryErrorCode::BundleSendFailed),
+     {"Failed to push the preliminary DFU bundle to the HMC BootROM",
+      "Check the USB connection between the BMC and the HMC and retry recovery using the recovery package intended for this platform. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {static_cast<ErrorCode>(USBDFURecoveryErrorCode::FirmwareFlashFailed),
+     {"Failed to flash the HMC firmware SPI image via dfu-util",
+      "Retry recovery using the recovery package intended for this platform. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {static_cast<ErrorCode>(USBDFURecoveryErrorCode::GPIODeassertFailed),
+     {"Failed to deassert the HMC recovery strap or pulse reset into normal boot",
+      "Power-cycle the HMC and retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {static_cast<ErrorCode>(USBDFURecoveryErrorCode::DfuEnumerationFailed),
+     {"HMC did not enumerate as a USB DFU device (2245:2700) after asserting the recovery strap",
+      "Check the USB connection between the BMC and the HMC and retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {static_cast<ErrorCode>(USBDFURecoveryErrorCode::InvalidConfiguration),
+     {"USB DFU recovery configuration is missing or incomplete",
+      "Verify the platform configuration for HMC USB DFU recovery and retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {static_cast<ErrorCode>(USBDFURecoveryErrorCode::PackageIncomplete),
+     {"USB DFU recovery package is missing a component",
+      "Retry recovery using the recovery package intended for this platform. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {static_cast<ErrorCode>(USBDFURecoveryErrorCode::RecoveryUBootDfuTimeout),
+     {"Recovery U-Boot did not expose the SPI flash DFU targets after the preliminary bundle",
+      "Power-cycle the HMC and retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+
+    // Generic error codes
+    {deviceNotResponding,
+     {"HMC is not responding",
+      "Check the USB connection between the BMC and the HMC and retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {deviceRecoveryFailed,
+     {"HMC USB DFU recovery failed",
+      "Retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+    {noDevicesFound,
+     {"No USB DFU recovery device configured",
+      "Verify the platform configuration for HMC USB DFU recovery and retry recovery. If the failure persists, collect diagnostic data and contact NVIDIA support."}},
+};
+
 static const RecoveryErrorMapping recoveryMappingTbl = {
     {RecoveryProtocol::GlacierRecovery, glacierRecoveryErrorMapping},
     {RecoveryProtocol::OCPRecovery, ocpRecoveryErrorMapping},
@@ -681,6 +732,7 @@ static const RecoveryErrorMapping recoveryMappingTbl = {
      ocpRecoveryProtocolErrorMapping},
     {RecoveryProtocol::MCURecovery, mcuRecoveryErrorMapping},
     {RecoveryProtocol::USBRCMRecovery, usbRcmRecoveryErrorMapping},
+    {RecoveryProtocol::USBDFURecovery, usbDfuRecoveryErrorMapping},
 };
 
 class MessageRegistry

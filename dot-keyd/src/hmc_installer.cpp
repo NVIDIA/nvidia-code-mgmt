@@ -241,26 +241,15 @@ asio::awaitable<void>
     {
         lg2::info("Sending CAK installation request to {PATH}", "PATH",
                   installPath);
-        try
+        std::string response =
+            co_await httpRequest(http::verb::post, installPath, payloadStr);
+        if (!response.empty())
         {
-            std::string response =
-                co_await httpRequest(http::verb::post, installPath, payloadStr);
-            if (!response.empty())
-            {
-                lg2::info("Response from {PATH}: {BODY}", "PATH", installPath,
-                          "BODY", response);
-            }
-            donePaths.insert(installPath);
-            lg2::info("CAK installation succeeded for {PATH}", "PATH",
-                      installPath);
+            lg2::info("Response from {PATH}: {BODY}", "PATH", installPath,
+                      "BODY", response);
         }
-        catch (const CakInstallDeclinedException& ex)
-        {
-            lg2::info(
-                "CAK already installed on {PATH} (409), skipping: {ERROR}",
-                "PATH", installPath, "ERROR", ex.what());
-            donePaths.insert(installPath);
-        }
+        donePaths.insert(installPath);
+        lg2::info("CAK installation succeeded for {PATH}", "PATH", installPath);
     }
 }
 
@@ -333,9 +322,8 @@ asio::awaitable<std::string> HmcInstaller::httpRequest(http::verb method,
 
     if (res.result_int() == 409)
     {
-        throw CakInstallDeclinedException(
-            "HTTP 409 from " + path +
-            ": CAK installation declined (already installed or policy rejection)");
+        throw CakInstallDeclinedException("HTTP 409 from " + path +
+                                          ": endpoint refused the install");
     }
     if (res.result_int() >= 300)
     {

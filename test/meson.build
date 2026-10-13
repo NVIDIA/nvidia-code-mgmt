@@ -1130,6 +1130,41 @@ test(
     workdir: meson.current_source_dir(),
 )
 
+usbdfu_recovery_test_src = declare_dependency(
+    sources: [
+        '../recovery_tool/usbdfu_recovery_tool/perform_dfu_recovery.cpp',
+        '../recovery_tool/usbdfu_recovery_tool/process_utils.cpp',
+    ],
+)
+test(
+    'test_usbdfu_recovery',
+    executable(
+        'test_usbdfu_recovery',
+        'test_usbdfu_recovery.cpp',
+        implicit_include_directories: false,
+        link_args: [
+            '-Wl,--wrap=fork',
+            '-Wl,--wrap=waitpid',
+            '-Wl,--wrap=nanosleep',
+            '-Wl,--wrap=clock_nanosleep',
+        ],
+        dependencies: [
+            test_dep,
+            phosphor_logging,
+            sdbusplus,
+            phosphor_dbus_interfaces,
+            nlohmann_json,
+            usbdfu_recovery_test_src,
+        ],
+        include_directories: include_directories(
+            'usbdfu_fakes',
+            '../recovery_tool/usbdfu_recovery_tool',
+            '../recovery_tool/common',
+        ),
+    ),
+    workdir: meson.current_source_dir(),
+)
+
 fw_status_fake_inc = include_directories('fw_status_fakes')
 test(
     'test_fw_status_misc',

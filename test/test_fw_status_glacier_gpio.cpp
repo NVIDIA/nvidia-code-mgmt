@@ -464,6 +464,99 @@ TEST_F(FWStatusGlacierGpioTest,
               OperationalStatusServer::StateType::UnavailableOffline);
 }
 
+TEST_F(FWStatusGlacierGpioTest, GPIOResourceRecoveryExitCheckMctpVdm)
+{
+    auto event = sdeventplus::Event::get_default();
+    auto helper = std::make_shared<MCTPVdmHelper>();
+    using Reason = GPIOResource::HealthUpdateReason;
+    using Result =
+        glacier_recovery_tool::glacier_recovery_commands::RecoveryResult;
+    using Check = GPIOResource::RecoveryExitCheck;
+
+    test::fw_status_fake_gpio::lines["VDM_EXIT_GPIO"] = {};
+    test::fw_status_fake_gpio::lines["VDM_EXIT_GPIO"].getValue = 0;
+    test::fw_status_fake_vdm::reset();
+
+    // Unknown value falls back to the endpoint check.
+    GPIOResource bogus(bus, "/xyz/openbmc_project/software/erot-exit-bogus",
+                       event, 11, 0x5a, 43, "VDM_EXIT_GPIO", "", "Polling",
+                       std::optional<uint64_t>(100), "ActiveHigh", "",
+                       std::nullopt, std::nullopt, helper, false, "Bogus");
+    EXPECT_EQ(bogus.recoveryExitCheck, Check::MctpEndpoint);
+
+    GPIOResource erot(bus, "/xyz/openbmc_project/software/erot-exit-vdm", event,
+                      11, 0x5a, 44, "VDM_EXIT_GPIO", "", "Polling",
+                      std::optional<uint64_t>(100), "ActiveHigh", "",
+                      std::nullopt, std::nullopt, helper, false, "MctpVdm");
+    EXPECT_EQ(erot.recoveryExitCheck, Check::MctpVdm);
+
+    // ERoT enters recovery: monitor armed.
+    test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(Result::Ok));
+    erot.updateERoTHealth(Reason::FatalErrorAssert);
+    EXPECT_TRUE(erot.isFirmwareInRecovery);
+    EXPECT_TRUE(erot.erotRecoveryMonitorActive);
+
+    // Endpoint present but the ERoT does not answer the VDM: no crisis I2C
+    // access (the queued glacier result is untouched), still in recovery.
+    test::fw_status_fake_dbus::setProperty(
+        "/au/com/codeconstruct/mctp1/networks/1/endpoints/44",
+        "xyz.openbmc_project.MCTP.Endpoint", "EID", static_cast<uint8_t>(44));
+    test::fw_status_fake_vdm::returnResponse = false;
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(Result::FirmwareNotInRecovery));
+    erot.runERoTRecoveryMonitor();
+    EXPECT_EQ(test::fw_status_fake_vdm::queryCalls, 1);
+    EXPECT_EQ(test::fw_status_fake_glacier::initResults.size(), 1u);
+    EXPECT_TRUE(erot.isFirmwareInRecovery);
+
+    // A reply means the ERoT left recovery: the normal re-evaluation runs
+    // (one crisis I2C probe; GPIO inactive -> deassert -> healthy).
+    test::fw_status_fake_vdm::returnResponse = true;
+    test::fw_status_fake_vdm::bootStatusPayload = {0x00, 0, 0, 0, 0,
+                                                   0,    0, 0, 0};
+    erot.runERoTRecoveryMonitor();
+    EXPECT_EQ(test::fw_status_fake_vdm::queryCalls, 2);
+    EXPECT_TRUE(test::fw_status_fake_glacier::initResults.empty());
+    EXPECT_FALSE(erot.isFirmwareInRecovery);
+    EXPECT_EQ(erot.health(), HealthServer::HealthType::OK);
+    EXPECT_FALSE(erot.erotRecoveryMonitorActive);
+
+    // A query still in flight is not duplicated.
+    test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(Result::Ok));
+    erot.updateERoTHealth(Reason::FatalErrorAssert);
+    EXPECT_TRUE(erot.erotRecoveryMonitorActive);
+    test::fw_status_fake_vdm::suspendQuery = true;
+    erot.runERoTRecoveryMonitor();
+    erot.runERoTRecoveryMonitor();
+    EXPECT_EQ(test::fw_status_fake_vdm::queryCalls, 3);
+    ASSERT_TRUE(erot.erotExitCheckCo && !erot.erotExitCheckCo.done());
+    EXPECT_TRUE(erot.isFirmwareInRecovery);
+    // Release the suspended frame like the other pending-query tests do, so
+    // the leak sanitizer does not flag it at exit.
+    auto pendingExitHandle = erot.erotExitCheckCo;
+    erot.erotExitCheckCo = nullptr;
+    pendingExitHandle.destroy();
+    test::fw_status_fake_vdm::suspendQuery = false;
+
+    // Without a VDM helper the option falls back to the endpoint check.
+    GPIOResource noHelper(
+        bus, "/xyz/openbmc_project/software/erot-exit-nohelper", event, 11,
+        0x5a, 45, "VDM_EXIT_GPIO", "", "Polling", std::optional<uint64_t>(100),
+        "ActiveHigh", "", std::nullopt, std::nullopt, nullptr, false,
+        "MctpVdm");
+    test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(Result::Ok));
+    noHelper.updateERoTHealth(Reason::FatalErrorAssert);
+    EXPECT_TRUE(noHelper.erotRecoveryMonitorActive);
+    test::fw_status_fake_dbus::setProperty(
+        "/au/com/codeconstruct/mctp1/networks/1/endpoints/45",
+        "xyz.openbmc_project.MCTP.Endpoint", "EID", static_cast<uint8_t>(45));
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(Result::FirmwareNotInRecovery));
+    noHelper.runERoTRecoveryMonitor();
+    EXPECT_EQ(noHelper.recoveryExitCheck, Check::MctpEndpoint);
+    EXPECT_FALSE(noHelper.isFirmwareInRecovery);
+}
+
 TEST(BootStatusUtils, BootStatusUtilsCoversAllHelpers)
 {
     using namespace nvidia::fw_status::boot_status;
