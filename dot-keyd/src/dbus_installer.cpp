@@ -482,6 +482,26 @@ asio::awaitable<void> DbusInstaller::doL1Reset()
     lg2::info("L1 reset: calling {SVC} {PATH} {INTF}.Reset()", "SVC", service,
               "PATH", path, "INTF", kL1ResetIntf);
 
+    // DOTCAKInitialization is "Waiting" between the CAK install and the
+    // reset; the CPU re-publishes EarlyBoot and then Complete once it has
+    // been reset. Remember the pre-reset state so a failed call can be
+    // checked against what the CPU actually did.
+    std::string before = "Waiting";
+    try
+    {
+        std::string state = co_await readCakInitState();
+        if (!state.empty())
+        {
+            before = state;
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        lg2::warning("L1 reset: could not read DOTCAKInitialization before "
+                     "the reset ({ERROR}), assuming Waiting",
+                     "ERROR", ex.what());
+    }
+
     std::string lastError;
     for (int attempt = 1; attempt <= 5; ++attempt)
     {
@@ -520,6 +540,21 @@ asio::awaitable<void> DbusInstaller::doL1Reset()
         lg2::warning("L1 reset D-Bus attempt {ATTEMPT}/5 failed: {ERROR}",
                      "ATTEMPT", attempt, "ERROR", lastError);
 
+        // A failed call does not mean the reset did not happen. snoopd does
+        // its boot-progress polling with blocking USB transfers on the same
+        // loop that serves this method; if it is slow to pick the call up
+        // the D-Bus call times out while the reset still goes through a
+        // moment later. Calling again then resets the CPU a second time.
+        // Only retry once the DOT state shows the CPU did not move.
+        if (co_await l1ResetTookEffect(before))
+        {
+            lg2::info("L1 reset D-Bus attempt {ATTEMPT}/5 failed but the CPU "
+                      "left DOTCAKInitialization={BEFORE}; treating the "
+                      "reset as done",
+                      "ATTEMPT", attempt, "BEFORE", before);
+            co_return;
+        }
+
         if (attempt < 5)
         {
             auto executor = co_await asio::this_coro::executor;
@@ -531,6 +566,51 @@ asio::awaitable<void> DbusInstaller::doL1Reset()
 
     throw L1ResetFailedException(
         "L1 reset D-Bus call failed after 5 attempts: " + lastError);
+}
+
+/** After a failed L1 reset call, polls DOTCAKInitialization for up to
+ *  kL1ResetConfirmMs. Returns true as soon as the state differs from
+ *  @before (the CPU rebooted and re-published EarlyBoot or Complete), false
+ *  if it is still @before when the window closes. An unreadable state is
+ *  inconclusive and keeps polling. */
+asio::awaitable<bool>
+    DbusInstaller::l1ResetTookEffect(const std::string& before)
+{
+    constexpr int kL1ResetConfirmMs = 10000;
+    constexpr int kPollMs = 1000;
+
+    auto executor = co_await asio::this_coro::executor;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds(kL1ResetConfirmMs);
+    asio::steady_timer timer(executor);
+
+    while (true)
+    {
+        std::string state;
+        try
+        {
+            state = co_await readCakInitState();
+        }
+        catch (const std::exception& ex)
+        {
+            lg2::debug(
+                "L1 reset check: DOTCAKInitialization unreadable: {ERROR}",
+                "ERROR", ex.what());
+        }
+        lg2::info(
+            "L1 reset check: DOTCAKInitialization={STATE} (before={BEFORE})",
+            "STATE", state.empty() ? "<unavailable>" : state, "BEFORE", before);
+        if (!state.empty() && state != before)
+        {
+            co_return true;
+        }
+        if (std::chrono::steady_clock::now() >= deadline)
+        {
+            co_return false;
+        }
+        timer.expires_after(std::chrono::milliseconds(kPollMs));
+        co_await timer.async_wait(asio::use_awaitable);
+    }
 }
 
 // ---------------------------------------------------------------------------
