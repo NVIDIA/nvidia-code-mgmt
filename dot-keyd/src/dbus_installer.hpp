@@ -48,6 +48,7 @@ class DbusInstaller : public DotInstaller
     asio::awaitable<std::string> pollAsyncStatus(const std::string& asyncPath);
     asio::awaitable<void> waitForCakComplete();
     asio::awaitable<std::string> readCakInitState();
+    asio::awaitable<bool> l1ResetTookEffect(const std::string& before);
     asio::awaitable<bool> logSbiosFmcRecoveryStatus();
     static std::string toDbusAuthScheme(const std::string& scheme);
 };
