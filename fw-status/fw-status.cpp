@@ -78,6 +78,8 @@ constexpr auto fwStatusObjManager = "/";
 constexpr auto recoveryConfigIntfName =
     "xyz.openbmc_project.Inventory.Item.Recovery_Config";
 constexpr auto chassisInterface = "xyz.openbmc_project.State.Chassis";
+constexpr auto chassisPowerStateOff =
+    "xyz.openbmc_project.State.Chassis.PowerState.Off";
 constexpr auto stateBasePath = "/xyz/openbmc_project/state";
 
 // Delay after chassis power-on before re-checking fw-status of devices. Gives
@@ -516,6 +518,75 @@ void refreshAllResourceHealth()
             lg2::error("Failed to refresh health for resource {PATH}: {ERR}",
                        "PATH", resource->getObjectPath(), "ERR", e.what());
         }
+    }
+}
+
+/**
+ * @brief Correct cached chassis power state that no longer matches D-Bus.
+ *
+ * Behaves as if the missed PropertiesChanged signal had arrived, same as the
+ * centralized watcher: Off refreshes health now, On defers to the settle
+ * timer. Empty (failed Get) is ignored, and resources whose cache already
+ * matches are left alone.
+ */
+void reconcileChassisPowerState(const std::string& powerState)
+{
+    if (powerState.empty())
+    {
+        return;
+    }
+
+    const bool poweringOff = powerState == chassisPowerStateOff;
+    std::string previous;
+    bool changed = false;
+
+    for (auto& resource : resources)
+    {
+        if (!resource->hasChassisPowerSource() ||
+            resource->getChassisPowerState() == powerState)
+        {
+            continue;
+        }
+
+        previous = resource->getChassisPowerState();
+        changed = true;
+        resource->setChassisPowerState(powerState);
+        resource->setPowerOnSettling(!poweringOff);
+
+        if (poweringOff)
+        {
+            try
+            {
+                resource->updateHealth();
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error(
+                    "Failed to update health for resource {PATH} on power-off: {ERR}",
+                    "PATH", resource->getObjectPath(), "ERR", e.what());
+            }
+        }
+    }
+
+    if (!changed)
+    {
+        return;
+    }
+
+    lg2::info(
+        "Reconciled cached chassis power state from {PREVIOUS} to {STATE}",
+        "PREVIOUS", previous, "STATE", powerState);
+
+    if (poweringOff)
+    {
+        if (powerStateRefreshTimer)
+        {
+            powerStateRefreshTimer->stop();
+        }
+    }
+    else
+    {
+        schedulePowerStateHealthRefresh();
     }
 }
 
@@ -1641,6 +1712,12 @@ bool startCentralizedPowerStateWatcher()
     lg2::info(
         "Started centralized chassis power state watcher at {CHASSIS_PATH}",
         "CHASSIS_PATH", chassisPath);
+
+    // The read at the start of publish can be stale by the time this match
+    // exists. The interfacesAdded retry creates the match here, so it reads
+    // again too.
+    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
+    reconcileChassisPowerState(dbusUtil.getHostPwrStatus());
     return true;
 }
 
