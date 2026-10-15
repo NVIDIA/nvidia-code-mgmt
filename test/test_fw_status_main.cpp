@@ -2494,4 +2494,74 @@ TEST_F(FWStatusMainTest, StartCentralizedWatcherHandlesDiscoveryFailure)
     EXPECT_EQ(chassisPowerStateMatch, nullptr);
 }
 
+/**
+ * @brief Cached Off with a live On read schedules the settle refresh.
+ *
+ * The re-read must not call updateHealth immediately. Warning stays until
+ * the settle callback runs, which then clears it.
+ */
+TEST_F(FWStatusMainTest, ReconcileOnSchedulesSettleAndClearsWarning)
+{
+    constexpr auto powerOn = "xyz.openbmc_project.State.Chassis.PowerState.On";
+
+    auto resource = std::make_unique<ThrowingResource>(
+        getBus(), "/xyz/openbmc_project/software/reconcile-on");
+    resource->setConnectedToChassis(true);
+    resource->setChassisPowerState(chassisPowerStateOff);
+    resource->health(HealthServer::HealthType::Warning);
+    resource->state(OperationalStatusServer::StateType::UnavailableOffline);
+    auto* resourcePtr = resource.get();
+    resources.push_back(std::move(resource));
+
+    test::fw_status_fake_dbus::hostPowerStatus = powerOn;
+    expectSubTreePathsReply({"/xyz/openbmc_project/state/chassis/chassis0"});
+    EXPECT_TRUE(startCentralizedPowerStateWatcher());
+
+    EXPECT_EQ(resourcePtr->getChassisPowerState(), powerOn);
+    EXPECT_TRUE(resourcePtr->isPowerOnSettling());
+    EXPECT_EQ(resourcePtr->updateCalls, 0);
+    EXPECT_EQ(resourcePtr->health(), HealthServer::HealthType::Warning);
+    ASSERT_NE(powerStateRefreshTimer, nullptr);
+    EXPECT_TRUE(powerStateRefreshTimer->isRunning());
+
+    refreshChassisPoweredResourcesHealth();
+    EXPECT_EQ(resourcePtr->updateCalls, 1);
+    EXPECT_EQ(resourcePtr->health(), HealthServer::HealthType::OK);
+    EXPECT_EQ(resourcePtr->state(),
+              OperationalStatusServer::StateType::Enabled);
+}
+
+/**
+ * @brief Cached On with a live Off read refreshes health immediately.
+ *
+ * An in-flight settle timer is stopped, matching the watcher power-off path.
+ */
+TEST_F(FWStatusMainTest, ReconcileOffRefreshesNowAndStopsSettleTimer)
+{
+    constexpr auto powerOn = "xyz.openbmc_project.State.Chassis.PowerState.On";
+
+    auto resource = std::make_unique<ThrowingResource>(
+        getBus(), "/xyz/openbmc_project/software/reconcile-off");
+    resource->setConnectedToChassis(true);
+    resource->setChassisPowerState(powerOn);
+    auto* resourcePtr = resource.get();
+    resources.push_back(std::move(resource));
+
+    schedulePowerStateHealthRefresh();
+    ASSERT_NE(powerStateRefreshTimer, nullptr);
+    EXPECT_TRUE(powerStateRefreshTimer->isRunning());
+
+    test::fw_status_fake_dbus::hostPowerStatus = chassisPowerStateOff;
+    expectSubTreePathsReply({"/xyz/openbmc_project/state/chassis/chassis0"});
+    EXPECT_TRUE(startCentralizedPowerStateWatcher());
+
+    EXPECT_EQ(resourcePtr->getChassisPowerState(), chassisPowerStateOff);
+    EXPECT_FALSE(resourcePtr->isPowerOnSettling());
+    EXPECT_EQ(resourcePtr->updateCalls, 1);
+    EXPECT_FALSE(powerStateRefreshTimer->isRunning());
+    EXPECT_EQ(resourcePtr->health(), HealthServer::HealthType::OK);
+    EXPECT_EQ(resourcePtr->state(),
+              OperationalStatusServer::StateType::Enabled);
+}
+
 } // namespace
