@@ -21,7 +21,6 @@
 #include "fsm/tray_fsm.hpp"
 #include "hal/i_device.hpp"
 #include "hal/mock_device.hpp"
-
 #include "virtual_clock.hpp"
 
 #include <chrono>
@@ -50,11 +49,11 @@ struct TransitionRecord
         Tray,
     };
 
-    Tier                     tier;
-    InstanceId               who;
-    int                      fromState;  // numeric value of the enum
-    int                      toState;
-    std::chrono::milliseconds at;        // VirtualClock::now() at the transition
+    Tier tier;
+    InstanceId who;
+    int fromState; // numeric value of the enum
+    int toState;
+    std::chrono::milliseconds at; // VirtualClock::now() at the transition
 };
 
 /** Tier A test rig. Builds the FSM hierarchy from a PlatformDescriptor,
@@ -144,13 +143,22 @@ class TestRig : public hal::SemanticEventSink
         return trace_;
     }
 
-    void clearTrace() noexcept { trace_.clear(); }
+    void clearTrace() noexcept
+    {
+        trace_.clear();
+    }
 
     /** Current virtual time. */
-    std::chrono::milliseconds now() const noexcept { return clock_.now(); }
+    std::chrono::milliseconds now() const noexcept
+    {
+        return clock_.now();
+    }
 
     /** Number of T_BOOT timers currently armed across all elements. */
-    size_t pendingTimers() const noexcept { return clock_.pendingCount(); }
+    size_t pendingTimers() const noexcept
+    {
+        return clock_.pendingCount();
+    }
 
     // ── lookup helpers (all zero-based, matching production) ────────────
     //
@@ -206,13 +214,13 @@ class TestRig : public hal::SemanticEventSink
 
     // Lookup helpers — return nullptr if not found.
     fsm::ElementFsm* findElement_(InstanceId id) const;
-    fsm::ModuleFsm*  findModule_(InstanceId id) const;
+    fsm::ModuleFsm* findModule_(InstanceId id) const;
     hal::test::MockDevice* findDevice_(InstanceId id) const;
 
     // Returns true iff `id` corresponds to an FSM the rig owns. Used by
     // inject() / requestReset() to reject typos loudly instead of
     // silently no-op'ing.
-    bool             targetExists_(InstanceId id) const;
+    bool targetExists_(InstanceId id) const;
 
     // Packed-key form of InstanceId — same trick the orchestrator uses
     // for its lookup tables.
@@ -223,25 +231,25 @@ class TestRig : public hal::SemanticEventSink
 
     // ────────────────────────────────────────────────────────────────────
 
-    VirtualClock                                  clock_;
-    std::chrono::milliseconds                     tBoot_;
+    VirtualClock clock_;
+    std::chrono::milliseconds tBoot_;
 
-    std::vector<std::unique_ptr<hal::test::MockDevice>>  devices_;
-    std::vector<std::unique_ptr<fsm::ElementFsm>>        elements_;
-    std::vector<std::unique_ptr<fsm::ModuleFsm>>         modules_;
-    std::unique_ptr<fsm::TrayFsm>                        tray_;
+    std::vector<std::unique_ptr<hal::test::MockDevice>> devices_;
+    std::vector<std::unique_ptr<fsm::ElementFsm>> elements_;
+    std::vector<std::unique_ptr<fsm::ModuleFsm>> modules_;
+    std::unique_ptr<fsm::TrayFsm> tray_;
 
-    std::unordered_map<uint64_t, fsm::ElementFsm*>       elementByInstance_;
-    std::unordered_map<uint64_t, fsm::ModuleFsm*>        moduleByInstance_;
+    std::unordered_map<uint64_t, fsm::ElementFsm*> elementByInstance_;
+    std::unordered_map<uint64_t, fsm::ModuleFsm*> moduleByInstance_;
     std::unordered_map<uint64_t, hal::test::MockDevice*> deviceByInstance_;
 
     // Element → parent Module (FPGAs have no entry; their parent is the Tray).
-    std::unordered_map<uint64_t, uint64_t>               elementToModule_;
+    std::unordered_map<uint64_t, uint64_t> elementToModule_;
 
     // Tier of each element (for state-changed event routing): true if LPU
     // (state changes go up to its Module), false if FPGA (state changes go
     // directly to the Tray).
-    std::unordered_map<uint64_t, bool>                   elementIsLpu_;
+    std::unordered_map<uint64_t, bool> elementIsLpu_;
 
     // For Module/FPGA index lookup when emitting aggregator events with
     // payload (the Tray FSM indexes into moduleStates[] / fpgaStates[]
@@ -249,10 +257,10 @@ class TestRig : public hal::SemanticEventSink
 
     // Active T_BOOT timer per element (id → VirtualClock TimerId).
     // Zero means "no timer armed".
-    std::unordered_map<uint64_t, VirtualClock::TimerId>  bootTimers_;
+    std::unordered_map<uint64_t, VirtualClock::TimerId> bootTimers_;
 
     // Transition trace (one entry per recorded state change).
-    std::vector<TransitionRecord>                        trace_;
+    std::vector<TransitionRecord> trace_;
 };
 
-}  // namespace pwrseq::test
+} // namespace pwrseq::test

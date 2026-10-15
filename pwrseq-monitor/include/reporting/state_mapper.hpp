@@ -9,24 +9,23 @@
 #pragma once
 
 #include "core/types.hpp"
-
 #include "xyz/openbmc_project/State/Decorator/Health/server.hpp"
 #include "xyz/openbmc_project/State/Decorator/OperationalStatus/server.hpp"
 
 namespace pwrseq::reporting
 {
 
-using HealthType =
-    sdbusplus::xyz::openbmc_project::State::Decorator::server::Health::HealthType;
-using StateType =
-    sdbusplus::xyz::openbmc_project::State::Decorator::server::OperationalStatus::StateType;
+using HealthType = sdbusplus::xyz::openbmc_project::State::Decorator::server::
+    Health::HealthType;
+using StateType = sdbusplus::xyz::openbmc_project::State::Decorator::server::
+    OperationalStatus::StateType;
 
 /** What gets written to D-Bus for a given FSM state. */
 struct StatusTuple
 {
     HealthType health;
-    StateType  state;
-    bool       functional;
+    StateType state;
+    bool functional;
 };
 
 /** Map an Element FSM state to its D-Bus status tuple per §6.1 truth table.
@@ -40,4 +39,4 @@ StatusTuple toStatus(ModuleState s) noexcept;
 /** Tray FSM → D-Bus status. */
 StatusTuple toStatus(TrayState s) noexcept;
 
-}  // namespace pwrseq::reporting
+} // namespace pwrseq::reporting

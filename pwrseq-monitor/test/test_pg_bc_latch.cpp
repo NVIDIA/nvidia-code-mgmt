@@ -22,12 +22,12 @@
 #include "hal/mock_device.hpp"
 #include "hal/pg_bc_latch.hpp"
 
-#include <gtest/gtest.h>
-
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 using namespace pwrseq;
 using namespace pwrseq::fsm;
@@ -45,7 +45,8 @@ constexpr InstanceId kFpga0{InstanceId::Class::Fpga, 0};
 class FsmSink : public SemanticEventSink
 {
   public:
-    explicit FsmSink(ElementFsm* fsm = nullptr) : fsm_(fsm) {}
+    explicit FsmSink(ElementFsm* fsm = nullptr) : fsm_(fsm)
+    {}
 
     void emit(const SemanticEvent& ev) override
     {
@@ -80,11 +81,11 @@ struct Harness
 {
     InstanceId id;
     ElementFsm fsm;
-    FsmSink    sink;
-    bool       bcLatched = false;
-    int        startTBootCalls = 0;
-    int        cancelTBootCalls = 0;
-    int        invalidateCalls = 0;
+    FsmSink sink;
+    bool bcLatched = false;
+    int startTBootCalls = 0;
+    int cancelTBootCalls = 0;
+    int invalidateCalls = 0;
 
     explicit Harness(InstanceId instance = kLpu0) :
         id(instance), fsm(instance), sink(&fsm)
@@ -109,8 +110,8 @@ struct Harness
     void bcEdge(bool asserted)
     {
         bcLatched = asserted;
-        sink.emit(SemanticEvent{asserted ? EventKind::BcHi : EventKind::BcLo,
-                                id});
+        sink.emit(
+            SemanticEvent{asserted ? EventKind::BcHi : EventKind::BcLo, id});
     }
 
     /** Simulate reset-assert BC cache clear (Orchestrator path). */
@@ -121,7 +122,7 @@ struct Harness
     }
 };
 
-}  // namespace
+} // namespace
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Pure emitPowerGoodEdge contract
@@ -130,7 +131,7 @@ struct Harness
 TEST(EmitPowerGoodEdge, RisingWithoutBc_EmitsOnlyPgHi)
 {
     FsmSink sink;
-    int     inv = 0;
+    int inv = 0;
     emitPowerGoodEdge(sink, kLpu0, true, false, [&] { ++inv; });
     EXPECT_EQ(inv, 0);
     EXPECT_EQ(sink.kinds(), (std::vector<EventKind>{EventKind::PgHi}));
@@ -141,7 +142,7 @@ TEST(EmitPowerGoodEdge, RisingWithoutBc_EmitsOnlyPgHi)
 TEST(EmitPowerGoodEdge, RisingWithBc_EmitsPgHiThenBcHi)
 {
     FsmSink sink;
-    int     inv = 0;
+    int inv = 0;
     emitPowerGoodEdge(sink, kLpu0, true, true, [&] { ++inv; });
     EXPECT_EQ(inv, 0);
     EXPECT_EQ(sink.kinds(),
@@ -153,14 +154,14 @@ TEST(EmitPowerGoodEdge, RisingWithBc_EmitsPgHiThenBcHi)
 TEST(EmitPowerGoodEdge, Falling_InvalidatesThenEmitsPgLo)
 {
     FsmSink sink;
-    bool    latched = true;
-    bool    clearedBeforeEmit = false;
+    bool latched = true;
+    bool clearedBeforeEmit = false;
 
     struct OrderSink : SemanticEventSink
     {
         FsmSink& inner;
-        bool&    latched;
-        bool&    flag;
+        bool& latched;
+        bool& flag;
         OrderSink(FsmSink& i, bool& l, bool& f) : inner(i), latched(l), flag(f)
         {}
         void emit(const SemanticEvent& ev) override
@@ -187,7 +188,7 @@ TEST(EmitPowerGoodEdge, Falling_IgnoresBcAlreadyAssertedFlag)
 {
     // bcAlreadyAsserted must not synthesize anything on the falling path.
     FsmSink sink;
-    int     inv = 0;
+    int inv = 0;
     emitPowerGoodEdge(sink, kLpu0, false, /*bcAlreadyAsserted=*/true,
                       [&] { ++inv; });
     EXPECT_EQ(inv, 1);
@@ -197,7 +198,7 @@ TEST(EmitPowerGoodEdge, Falling_IgnoresBcAlreadyAssertedFlag)
 TEST(EmitPowerGoodEdge, Rising_DoesNotCallInvalidate)
 {
     FsmSink sink;
-    int     inv = 0;
+    int inv = 0;
     emitPowerGoodEdge(sink, kLpu0, true, true, [&] { ++inv; });
     emitPowerGoodEdge(sink, kLpu0, true, false, [&] { ++inv; });
     EXPECT_EQ(inv, 0);
@@ -206,7 +207,7 @@ TEST(EmitPowerGoodEdge, Rising_DoesNotCallInvalidate)
 TEST(EmitPowerGoodEdge, Falling_CallsInvalidateExactlyOnce)
 {
     FsmSink sink;
-    int     inv = 0;
+    int inv = 0;
     emitPowerGoodEdge(sink, kLpu0, false, false, [&] { ++inv; });
     EXPECT_EQ(inv, 1);
 }
@@ -600,7 +601,8 @@ TEST(PowerCycle, ChassisOffOn_ThreeCycles_AllRecoverOnline)
 
         h.bcEdge(true); // OoO BC-before-PG on next power-on
         h.pgEdge(true);
-        ASSERT_EQ(h.fsm.state(), ElementState::Online) << "recover cycle " << cycle;
+        ASSERT_EQ(h.fsm.state(), ElementState::Online)
+            << "recover cycle " << cycle;
     }
 }
 
@@ -762,9 +764,8 @@ TEST(MockDeviceCache, ClearThenSample_MatchesInvalidateSemantics)
     dev.status.bootComplete = true;
     dev.clearBootCompleteCache();
     const bool bcHigh = dev.get_status().bootComplete;
-    emitPowerGoodEdge(sink, kLpu0, true, bcHigh, [&] {
-        dev.clearBootCompleteCache();
-    });
+    emitPowerGoodEdge(sink, kLpu0, true, bcHigh,
+                      [&] { dev.clearBootCompleteCache(); });
     EXPECT_EQ(sink.events.size(), 1u);
     EXPECT_EQ(sink.events[0].kind, EventKind::PgHi);
 }
@@ -776,8 +777,8 @@ TEST(MockDeviceCache, ClearThenSample_MatchesInvalidateSemantics)
 TEST(StickyBcRecover, ElectricalHighActiveHigh_RecoversAndInjects)
 {
     std::optional<bool> injected;
-    EXPECT_TRUE(tryRecoverStickyBootComplete(
-        true, /*activeLow=*/false, [&](bool e) {
+    EXPECT_TRUE(
+        tryRecoverStickyBootComplete(true, /*activeLow=*/false, [&](bool e) {
             injected = e;
             return true;
         }));
@@ -788,8 +789,8 @@ TEST(StickyBcRecover, ElectricalHighActiveHigh_RecoversAndInjects)
 TEST(StickyBcRecover, ElectricalLowActiveHigh_DoesNotRecover)
 {
     int calls = 0;
-    EXPECT_FALSE(tryRecoverStickyBootComplete(
-        false, /*activeLow=*/false, [&](bool) {
+    EXPECT_FALSE(
+        tryRecoverStickyBootComplete(false, /*activeLow=*/false, [&](bool) {
             ++calls;
             return true;
         }));
@@ -800,8 +801,8 @@ TEST(StickyBcRecover, ElectricalLowActiveLow_Recovers)
 {
     // active-low: electrical 0 → logical asserted
     std::optional<bool> injected;
-    EXPECT_TRUE(tryRecoverStickyBootComplete(
-        false, /*activeLow=*/true, [&](bool e) {
+    EXPECT_TRUE(
+        tryRecoverStickyBootComplete(false, /*activeLow=*/true, [&](bool e) {
             injected = e;
             return true;
         }));
@@ -812,18 +813,17 @@ TEST(StickyBcRecover, ElectricalLowActiveLow_Recovers)
 TEST(StickyBcRecover, MissingGpioMonRead_DoesNotRecover)
 {
     int calls = 0;
-    EXPECT_FALSE(tryRecoverStickyBootComplete(
-        std::nullopt, false, [&](bool) {
-            ++calls;
-            return true;
-        }));
+    EXPECT_FALSE(tryRecoverStickyBootComplete(std::nullopt, false, [&](bool) {
+        ++calls;
+        return true;
+    }));
     EXPECT_EQ(calls, 0);
 }
 
 TEST(StickyBcRecover, InjectFailure_DoesNotClaimRecovered)
 {
-    EXPECT_FALSE(tryRecoverStickyBootComplete(
-        true, false, [](bool) { return false; }));
+    EXPECT_FALSE(
+        tryRecoverStickyBootComplete(true, false, [](bool) { return false; }));
 }
 
 TEST(StickyBcRecover, SynthesizedBcHi_FromPowered_GoesOnline)
@@ -834,10 +834,9 @@ TEST(StickyBcRecover, SynthesizedBcHi_FromPowered_GoesOnline)
     h.pgEdge(true);
     ASSERT_EQ(h.fsm.state(), ElementState::Powered);
 
-    EXPECT_TRUE(tryRecoverStickyBootComplete(
-        true, false, [&](bool) {
-            h.bcEdge(true);
-            return true;
-        }));
+    EXPECT_TRUE(tryRecoverStickyBootComplete(true, false, [&](bool) {
+        h.bcEdge(true);
+        return true;
+    }));
     EXPECT_EQ(h.fsm.state(), ElementState::Online);
 }

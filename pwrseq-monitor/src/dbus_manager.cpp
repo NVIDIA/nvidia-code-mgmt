@@ -24,23 +24,28 @@ namespace pwrseq
 namespace
 {
 
-constexpr const char* kObjectPath  = "/com/Nvidia/PwrSeqMonitor";
-constexpr const char* kInterface   = "com.Nvidia.PwrSeqMonitor.Manager";
+constexpr const char* kObjectPath = "/com/Nvidia/PwrSeqMonitor";
+constexpr const char* kInterface = "com.Nvidia.PwrSeqMonitor.Manager";
 
 // ─── String <-> enum helpers ──────────────────────────────────────────────
 
 std::optional<hal::ResetKind> parseKind(std::string_view s) noexcept
 {
-    if (s == "Warm")       return hal::ResetKind::Warm;
-    if (s == "Cold")       return hal::ResetKind::Cold;
-    if (s == "PowerCycle") return hal::ResetKind::PowerCycle;
+    if (s == "Warm")
+        return hal::ResetKind::Warm;
+    if (s == "Cold")
+        return hal::ResetKind::Cold;
+    if (s == "PowerCycle")
+        return hal::ResetKind::PowerCycle;
     return std::nullopt;
 }
 
 std::optional<InstanceId::Class> parseElementClass(std::string_view s) noexcept
 {
-    if (s == "LPU")  return InstanceId::Class::Lpu;
-    if (s == "FPGA") return InstanceId::Class::Fpga;
+    if (s == "LPU")
+        return InstanceId::Class::Lpu;
+    if (s == "FPGA")
+        return InstanceId::Class::Fpga;
     return std::nullopt;
 }
 
@@ -54,12 +59,18 @@ const char* outcomeToString(Orchestrator::ResetOutcome o) noexcept
 {
     switch (o)
     {
-        case Orchestrator::ResetOutcome::Ok:           return "Ok";
-        case Orchestrator::ResetOutcome::Timeout:      return "Timeout";
-        case Orchestrator::ResetOutcome::NotPresent:   return "NotPresent";
-        case Orchestrator::ResetOutcome::Busy:         return "Busy";
-        case Orchestrator::ResetOutcome::NotSupported: return "NotSupported";
-        case Orchestrator::ResetOutcome::PulseFailed:  return "PulseFailed";
+        case Orchestrator::ResetOutcome::Ok:
+            return "Ok";
+        case Orchestrator::ResetOutcome::Timeout:
+            return "Timeout";
+        case Orchestrator::ResetOutcome::NotPresent:
+            return "NotPresent";
+        case Orchestrator::ResetOutcome::Busy:
+            return "Busy";
+        case Orchestrator::ResetOutcome::NotSupported:
+            return "NotSupported";
+        case Orchestrator::ResetOutcome::PulseFailed:
+            return "PulseFailed";
     }
     return "Unknown";
 }
@@ -74,13 +85,15 @@ const char* outcomeToString(Orchestrator::ResetOutcome o) noexcept
 class PendingReply
 {
   public:
-    explicit PendingReply(sd_bus_message* m) : msg_(sd_bus_message_ref(m)) {}
+    explicit PendingReply(sd_bus_message* m) : msg_(sd_bus_message_ref(m))
+    {}
     ~PendingReply()
     {
-        if (msg_) sd_bus_message_unref(msg_);
+        if (msg_)
+            sd_bus_message_unref(msg_);
     }
 
-    PendingReply(const PendingReply&)            = delete;
+    PendingReply(const PendingReply&) = delete;
     PendingReply& operator=(const PendingReply&) = delete;
 
     /** Send a single-string reply ("s" signature). Idempotent (no-op
@@ -88,7 +101,8 @@ class PendingReply
      */
     void replyString(std::string_view val) noexcept
     {
-        if (replied_.exchange(true, std::memory_order_relaxed)) return;
+        if (replied_.exchange(true, std::memory_order_relaxed))
+            return;
         sd_bus_message* reply = nullptr;
         int r = sd_bus_message_new_method_return(msg_, &reply);
         if (r < 0)
@@ -107,10 +121,12 @@ class PendingReply
     void replyStringDict(
         const std::vector<std::pair<std::string, std::string>>& kvs) noexcept
     {
-        if (replied_.exchange(true, std::memory_order_relaxed)) return;
+        if (replied_.exchange(true, std::memory_order_relaxed))
+            return;
         sd_bus_message* reply = nullptr;
         int r = sd_bus_message_new_method_return(msg_, &reply);
-        if (r < 0) return;
+        if (r < 0)
+            return;
         sd_bus_message_open_container(reply, 'a', "{ss}");
         for (const auto& [k, v] : kvs)
         {
@@ -124,7 +140,7 @@ class PendingReply
     }
 
   private:
-    sd_bus_message*  msg_     = nullptr;
+    sd_bus_message* msg_ = nullptr;
     std::atomic<bool> replied_{false};
 };
 
@@ -138,42 +154,31 @@ class PendingReply
 constexpr sd_bus_vtable kManagerVtable[] = {
     SD_BUS_VTABLE_START(0),
     SD_BUS_METHOD_WITH_NAMES(
-        "Reset", "ss",
-        SD_BUS_PARAM(target) SD_BUS_PARAM(kind),
-        "s",
-        SD_BUS_PARAM(result),
-        &DBusManager::dispatchReset, 0),
+        "Reset", "ss", SD_BUS_PARAM(target) SD_BUS_PARAM(kind), "s",
+        SD_BUS_PARAM(result), &DBusManager::dispatchReset, 0),
     SD_BUS_METHOD_WITH_NAMES(
-        "ResetAll", "ss",
-        SD_BUS_PARAM(element_class) SD_BUS_PARAM(kind),
-        "a{ss}",
-        SD_BUS_PARAM(results),
-        &DBusManager::dispatchResetAll, 0),
+        "ResetAll", "ss", SD_BUS_PARAM(element_class) SD_BUS_PARAM(kind),
+        "a{ss}", SD_BUS_PARAM(results), &DBusManager::dispatchResetAll, 0),
     SD_BUS_METHOD_WITH_NAMES("SetVrTelemetryEnabled", "sb",
                              SD_BUS_PARAM(target) SD_BUS_PARAM(enabled), "s",
                              SD_BUS_PARAM(result),
                              &DBusManager::dispatchSetVrTelemetryEnabled, 0),
     SD_BUS_METHOD_WITH_NAMES(
-        "RequestLogDrain", "ss",
-        SD_BUS_PARAM(target) SD_BUS_PARAM(reason),
-        "s",
-        SD_BUS_PARAM(result),
-        &DBusManager::dispatchRequestLogDrain, 0),
+        "RequestLogDrain", "ss", SD_BUS_PARAM(target) SD_BUS_PARAM(reason), "s",
+        SD_BUS_PARAM(result), &DBusManager::dispatchRequestLogDrain, 0),
     SD_BUS_VTABLE_END,
 };
 
-}  // namespace
+} // namespace
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────
 
 DBusManager::DBusManager(sdbusplus::bus::bus& bus, Orchestrator& orch,
-                        hal::common::SharedLineRegistry& lineRegistry)
-    : bus_(bus), orch_(orch), lineRegistry_(lineRegistry)
+                         hal::common::SharedLineRegistry& lineRegistry) :
+    bus_(bus), orch_(orch), lineRegistry_(lineRegistry)
 {
-    int r = sd_bus_add_object_vtable(
-        get_busp(bus_), &slot_,
-        kObjectPath, kInterface,
-        kManagerVtable, this);
+    int r = sd_bus_add_object_vtable(get_busp(bus_), &slot_, kObjectPath,
+                                     kInterface, kManagerVtable, this);
     if (r < 0)
     {
         // Fatal: without the object vtable, the manager interface is not
@@ -191,8 +196,8 @@ DBusManager::DBusManager(sdbusplus::bus::bus& bus, Orchestrator& orch,
         throw std::runtime_error(
             "DBusManager: sd_bus_add_object_vtable failed: " + err);
     }
-    lg2::info("DBusManager: registered {IF} on {PATH}",
-              "IF", std::string{kInterface}, "PATH", std::string{kObjectPath});
+    lg2::info("DBusManager: registered {IF} on {PATH}", "IF",
+              std::string{kInterface}, "PATH", std::string{kObjectPath});
 }
 
 DBusManager::~DBusManager()
@@ -211,11 +216,12 @@ DBusManager::~DBusManager()
         sd_event_source_unref(drainSource_);
         drainSource_ = nullptr;
     }
-    if (slot_) sd_bus_slot_unref(slot_);
+    if (slot_)
+        sd_bus_slot_unref(slot_);
 }
 
-void DBusManager::enqueueNotify_(
-    std::shared_ptr<hal::common::SharedLine> line, bool asserted)
+void DBusManager::enqueueNotify_(std::shared_ptr<hal::common::SharedLine> line,
+                                 bool asserted)
 {
     pendingQueue_.push_back(PendingNotify{std::move(line), asserted});
     scheduleDrain_();
@@ -227,17 +233,16 @@ bool DBusManager::injectLineState(const std::string& lineName, bool asserted,
     auto sl = lineRegistry_.findByName(lineName);
     if (!sl)
     {
-        lg2::warning(
-            "DBusManager.{SRC}: no SharedLine registered for '{LINE}' "
-            "(asserted={ASS}); ignoring",
-            "SRC", source == nullptr ? "injectLineState" : source,
-            "LINE", lineName, "ASS", asserted ? 1 : 0);
+        lg2::warning("DBusManager.{SRC}: no SharedLine registered for '{LINE}' "
+                     "(asserted={ASS}); ignoring",
+                     "SRC", source == nullptr ? "injectLineState" : source,
+                     "LINE", lineName, "ASS", asserted ? 1 : 0);
         return false;
     }
 
-    lg2::info("DBusManager.{SRC}: {LINE} asserted={ASS}",
-              "SRC", source == nullptr ? "injectLineState" : source,
-              "LINE", lineName, "ASS", asserted ? 1 : 0);
+    lg2::info("DBusManager.{SRC}: {LINE} asserted={ASS}", "SRC",
+              source == nullptr ? "injectLineState" : source, "LINE", lineName,
+              "ASS", asserted ? 1 : 0);
     enqueueNotify_(std::move(sl), asserted);
     return true;
 }
@@ -273,13 +278,16 @@ void DBusManager::scheduleDrain_()
         auto pending = std::move(pendingQueue_);
         for (auto& it : pending)
         {
-            try { it.line->notifyExternal(it.asserted); }
+            try
+            {
+                it.line->notifyExternal(it.asserted);
+            }
             catch (const std::exception& e)
             {
                 lg2::error("DBusManager: sync fallback notifyExternal({L},"
                            "{A}) threw: {ERR}",
-                           "L", it.line->name(),
-                           "A", it.asserted ? 1 : 0, "ERR", e.what());
+                           "L", it.line->name(), "A", it.asserted ? 1 : 0,
+                           "ERR", e.what());
             }
         }
         return;
@@ -296,8 +304,13 @@ void DBusManager::scheduleDrain_()
         auto pending = std::move(pendingQueue_);
         for (auto& it : pending)
         {
-            try { it.line->notifyExternal(it.asserted); }
-            catch (const std::exception&) { /* logged in dispatcher */ }
+            try
+            {
+                it.line->notifyExternal(it.asserted);
+            }
+            catch (const std::exception&)
+            { /* logged in dispatcher */
+            }
         }
         return;
     }
@@ -310,8 +323,8 @@ int DBusManager::drainPendingNotifies_(sd_event_source* /*s*/, void* userdata)
     // Per-drain trace (debug). Records the batch size each drain
     // processed -- under sustained burst this batches >1 items per
     // drain; in steady state it's 1.
-    lg2::debug("DBusManager.drain: fired (items={N})",
-               "N", static_cast<uint64_t>(self->pendingQueue_.size()));
+    lg2::debug("DBusManager.drain: fired (items={N})", "N",
+               static_cast<uint64_t>(self->pendingQueue_.size()));
 
     // Move the queue out before processing. Any new notifications that
     // arrive during a subscriber callback (re-entrance through D-Bus is
@@ -319,7 +332,8 @@ int DBusManager::drainPendingNotifies_(sd_event_source* /*s*/, void* userdata)
     // get appended to a FRESH pendingQueue_; scheduleDrain_ will re-arm
     // the source for the next iteration via the ONESHOT mechanic.
     auto pending = std::move(self->pendingQueue_);
-    self->pendingQueue_.clear();  // explicit; move-from leaves valid-but-unspecified
+    self->pendingQueue_
+        .clear(); // explicit; move-from leaves valid-but-unspecified
 
     for (auto& item : pending)
     {
@@ -331,9 +345,8 @@ int DBusManager::drainPendingNotifies_(sd_event_source* /*s*/, void* userdata)
         {
             lg2::error("DBusManager.drain: notifyExternal({LINE}, {ASS}) "
                        "threw: {ERR}",
-                       "LINE", item.line->name(),
-                       "ASS",  item.asserted ? 1 : 0,
-                       "ERR",  e.what());
+                       "LINE", item.line->name(), "ASS", item.asserted ? 1 : 0,
+                       "ERR", e.what());
             // Continue draining -- one bad line should not stall the rest.
         }
     }
@@ -346,7 +359,7 @@ int DBusManager::dispatchReset(sd_bus_message* m, void* userdata, sd_bus_error*)
 {
     auto* self = static_cast<DBusManager*>(userdata);
     const char* targetC = nullptr;
-    const char* kindC   = nullptr;
+    const char* kindC = nullptr;
     int r = sd_bus_message_read(m, "ss", &targetC, &kindC);
     if (r < 0)
     {
@@ -362,48 +375,49 @@ int DBusManager::dispatchReset(sd_bus_message* m, void* userdata, sd_bus_error*)
     auto kind = parseKind(kindStr);
     if (!kind)
     {
-        lg2::warning("DBusManager.Reset: invalid kind={KIND} for {TGT}",
-                     "KIND", kindStr, "TGT", target);
+        lg2::warning("DBusManager.Reset: invalid kind={KIND} for {TGT}", "KIND",
+                     kindStr, "TGT", target);
         reply->replyString("InvalidKind");
         return 1;
     }
     auto inst = self->orch_.instanceByDescriptorId(target);
     if (!inst)
     {
-        lg2::warning("DBusManager.Reset: no element for target={TGT}",
-                     "TGT", target);
-        reply->replyString(outcomeToString(
-            Orchestrator::ResetOutcome::NotPresent));
+        lg2::warning("DBusManager.Reset: no element for target={TGT}", "TGT",
+                     target);
+        reply->replyString(
+            outcomeToString(Orchestrator::ResetOutcome::NotPresent));
         return 1;
     }
 
     lg2::info("DBusManager.Reset: target={TGT} kind={KIND} -> async pulse",
               "TGT", target, "KIND", kindStr);
-    self->orch_.requestResetAsync(
-        *inst, *kind,
-        [reply](Orchestrator::ResetOutcome out) {
-            reply->replyString(outcomeToString(out));
-        });
-    return 1;  // 1 = "method handled; reply will follow asynchronously"
+    self->orch_.requestResetAsync(*inst, *kind,
+                                  [reply](Orchestrator::ResetOutcome out) {
+                                      reply->replyString(outcomeToString(out));
+                                  });
+    return 1; // 1 = "method handled; reply will follow asynchronously"
 }
 
-int DBusManager::dispatchResetAll(
-    sd_bus_message* m, void* userdata, sd_bus_error*)
+int DBusManager::dispatchResetAll(sd_bus_message* m, void* userdata,
+                                  sd_bus_error*)
 {
     auto* self = static_cast<DBusManager*>(userdata);
     const char* classC = nullptr;
-    const char* kindC  = nullptr;
+    const char* kindC = nullptr;
     int r = sd_bus_message_read(m, "ss", &classC, &kindC);
-    if (r < 0) return r;
+    if (r < 0)
+        return r;
     const std::string elementClass = classC ? classC : "";
-    const std::string kindStr      = kindC  ? kindC  : "";
+    const std::string kindStr = kindC ? kindC : "";
 
     auto reply = std::make_shared<PendingReply>(m);
 
     auto cls = parseElementClass(elementClass);
     if (!cls)
     {
-        reply->replyStringDict({{"_error", "InvalidElementClass:" + elementClass}});
+        reply->replyStringDict(
+            {{"_error", "InvalidElementClass:" + elementClass}});
         return 1;
     }
     auto kind = parseKind(kindStr);
@@ -426,8 +440,8 @@ int DBusManager::dispatchResetAll(
 
     self->orch_.requestResetAllSync(
         *cls, *kind,
-        [reply](std::vector<std::pair<std::string,
-                                      Orchestrator::ResetOutcome>> outcomes) {
+        [reply](std::vector<std::pair<std::string, Orchestrator::ResetOutcome>>
+                    outcomes) {
             std::vector<std::pair<std::string, std::string>> stringified;
             stringified.reserve(outcomes.size());
             for (auto& [id, out] : outcomes)
@@ -470,8 +484,8 @@ int DBusManager::dispatchSetVrTelemetryEnabled(sd_bus_message* m,
     return sd_bus_reply_method_return(m, "s", resultText.c_str());
 }
 
-int DBusManager::dispatchRequestLogDrain(
-    sd_bus_message* m, void* userdata, sd_bus_error*)
+int DBusManager::dispatchRequestLogDrain(sd_bus_message* m, void* userdata,
+                                         sd_bus_error*)
 {
     auto* self = static_cast<DBusManager*>(userdata);
     const char* targetC = nullptr;
@@ -509,4 +523,4 @@ int DBusManager::dispatchRequestLogDrain(
     return 1;
 }
 
-}  // namespace pwrseq
+} // namespace pwrseq

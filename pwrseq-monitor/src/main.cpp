@@ -20,10 +20,10 @@
 #include "gpio_monitor_client.hpp"
 #include "orchestrator.hpp"
 
+#include <systemd/sd-event.h>
+
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
-
-#include <systemd/sd-event.h>
 
 #include <cerrno>
 #include <csignal>
@@ -96,7 +96,7 @@ bool parseArgs(int argc, char** argv, CliOptions& opts)
     return true;
 }
 
-}  // namespace
+} // namespace
 
 int main(int argc, char** argv)
 {
@@ -107,9 +107,8 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
 
-    lg2::info("pwrseq-monitor: starting up (PID={PID}, config={CFG})",
-              "PID", static_cast<int>(getpid()),
-              "CFG", opts.configPath);
+    lg2::info("pwrseq-monitor: starting up (PID={PID}, config={CFG})", "PID",
+              static_cast<int>(getpid()), "CFG", opts.configPath);
 
     // 1. Load the platform descriptor. Bring the service down hard if the
     //    descriptor is malformed — silently mis-configuring a tray is worse
@@ -133,8 +132,8 @@ int main(int argc, char** argv)
         lg2::error("sd_event_default failed: {RC}", "RC", rc);
         return EXIT_FAILURE;
     }
-    std::unique_ptr<sd_event, decltype(&sd_event_unref)>
-        loopGuard(loop, sd_event_unref);
+    std::unique_ptr<sd_event, decltype(&sd_event_unref)> loopGuard(
+        loop, sd_event_unref);
 
     // 3. Signal handlers. If any of these steps fails the daemon ends up
     // with SIGINT/SIGTERM blocked and no graceful-shutdown path -- a
@@ -154,22 +153,22 @@ int main(int argc, char** argv)
     }
     if (sigprocmask(SIG_BLOCK, &ss, nullptr) != 0)
     {
-        lg2::error("sigprocmask(SIG_BLOCK) failed: {ERR}",
-                   "ERR", std::strerror(errno));
+        lg2::error("sigprocmask(SIG_BLOCK) failed: {ERR}", "ERR",
+                   std::strerror(errno));
         return EXIT_FAILURE;
     }
-    if (int rc = sd_event_add_signal(loop, nullptr, SIGINT,  onSigInt, loop);
+    if (int rc = sd_event_add_signal(loop, nullptr, SIGINT, onSigInt, loop);
         rc < 0)
     {
-        lg2::error("sd_event_add_signal(SIGINT) failed: {ERR}",
-                   "ERR", std::strerror(-rc));
+        lg2::error("sd_event_add_signal(SIGINT) failed: {ERR}", "ERR",
+                   std::strerror(-rc));
         return EXIT_FAILURE;
     }
     if (int rc = sd_event_add_signal(loop, nullptr, SIGTERM, onSigInt, loop);
         rc < 0)
     {
-        lg2::error("sd_event_add_signal(SIGTERM) failed: {ERR}",
-                   "ERR", std::strerror(-rc));
+        lg2::error("sd_event_add_signal(SIGTERM) failed: {ERR}", "ERR",
+                   std::strerror(-rc));
         return EXIT_FAILURE;
     }
 
@@ -195,8 +194,8 @@ int main(int argc, char** argv)
     if (int rc = sd_event_add_signal(loop, nullptr, SIGUSR1, onSigUsr1, &orch);
         rc < 0)
     {
-        lg2::error("sd_event_add_signal(SIGUSR1) failed: {ERR}",
-                   "ERR", std::strerror(-rc));
+        lg2::error("sd_event_add_signal(SIGUSR1) failed: {ERR}", "ERR",
+                   std::strerror(-rc));
         return EXIT_FAILURE;
     }
 
@@ -206,7 +205,8 @@ int main(int argc, char** argv)
     auto gpioSub = pwrseq::startGpioPropertySubscriber(bus, desc, dbus_mgr);
 
     lg2::info("pwrseq-monitor: ready; entering event loop "
-              "(platform={PLAT})", "PLAT", desc.platform);
+              "(platform={PLAT})",
+              "PLAT", desc.platform);
 
     // 6. Run
     if (int rc = sd_event_loop(loop); rc < 0)

@@ -31,35 +31,37 @@ std::span<const Row> table()
 {
     // Action helpers — function-local statics, captureless lambdas wrapped
     // in std::function. All initialized before the first table() call returns.
-    static const auto startTBoot =
-        [](ElementContext& ctx, const SemanticEvent&) {
-            if (ctx.startTBoot) ctx.startTBoot();
-        };
+    static const auto startTBoot = [](ElementContext& ctx,
+                                      const SemanticEvent&) {
+        if (ctx.startTBoot)
+            ctx.startTBoot();
+    };
 
-    static const auto cancelTBoot =
-        [](ElementContext& ctx, const SemanticEvent&) {
-            if (ctx.cancelTBoot) ctx.cancelTBoot();
-        };
+    static const auto cancelTBoot = [](ElementContext& ctx,
+                                       const SemanticEvent&) {
+        if (ctx.cancelTBoot)
+            ctx.cancelTBoot();
+    };
 
-    static const auto setFaultBootTimeout =
-        [](ElementContext& ctx, const SemanticEvent&) {
-            ctx.faultCode = FaultCode::BootTimeout;
-        };
+    static const auto setFaultBootTimeout = [](ElementContext& ctx,
+                                               const SemanticEvent&) {
+        ctx.faultCode = FaultCode::BootTimeout;
+    };
 
-    static const auto setFaultBootRegress =
-        [](ElementContext& ctx, const SemanticEvent&) {
-            ctx.faultCode = FaultCode::BootRegress;
-        };
+    static const auto setFaultBootRegress = [](ElementContext& ctx,
+                                               const SemanticEvent&) {
+        ctx.faultCode = FaultCode::BootRegress;
+    };
 
-    static const auto setFaultPgoodDrop =
-        [](ElementContext& ctx, const SemanticEvent&) {
-            ctx.faultCode = FaultCode::PgoodDrop;
-        };
+    static const auto setFaultPgoodDrop = [](ElementContext& ctx,
+                                             const SemanticEvent&) {
+        ctx.faultCode = FaultCode::PgoodDrop;
+    };
 
-    static const auto clearFault =
-        [](ElementContext& ctx, const SemanticEvent&) {
-            ctx.faultCode = FaultCode::None;
-        };
+    static const auto clearFault = [](ElementContext& ctx,
+                                      const SemanticEvent&) {
+        ctx.faultCode = FaultCode::None;
+    };
 
     // PG re-asserted after the element faulted. Must restart the boot path:
     // clear the fault and re-arm T_BOOT. Crucially, we re-enter S_POWERED
@@ -68,11 +70,12 @@ std::span<const Row> table()
     // within T_BOOT. Letting it leap straight to S_ONLINE on the subsequent
     // BcHi (the pre-fix behavior) hid second-cycle boot failures: a hung
     // re-boot would never trip T_BOOT because the timer was never re-armed.
-    static const auto clearFaultAndStartTBoot =
-        [](ElementContext& ctx, const SemanticEvent&) {
-            ctx.faultCode = FaultCode::None;
-            if (ctx.startTBoot) ctx.startTBoot();
-        };
+    static const auto clearFaultAndStartTBoot = [](ElementContext& ctx,
+                                                   const SemanticEvent&) {
+        ctx.faultCode = FaultCode::None;
+        if (ctx.startTBoot)
+            ctx.startTBoot();
+    };
 
     // Guard for the BC-driven recovery row (S_FAULT + EV_BcHi -> S_ONLINE).
     // Two operationally important cases qualify:
@@ -97,53 +100,53 @@ std::span<const Row> table()
     // would reflect a stale latched BC value rather than a real recovery.
     // PgoodDrop recovery still requires the full S_FAULT -> S_POWERED
     // -> S_ONLINE walk via EV_PgHi.
-    static const auto guardLateBootRecovery =
-        [](const ElementContext& ctx, const SemanticEvent&) -> bool {
-            return ctx.faultCode == FaultCode::BootTimeout
-                || ctx.faultCode == FaultCode::BootRegress;
-        };
+    static const auto guardLateBootRecovery = [](const ElementContext& ctx,
+                                                 const SemanticEvent&) -> bool {
+        return ctx.faultCode == FaultCode::BootTimeout ||
+               ctx.faultCode == FaultCode::BootRegress;
+    };
 
     // S_STBY anomaly: a BC event arrived without PG. The FSM keeps the
     // edge as a no-op here; LpuDriver/FpgaDriver latch the BC level in
     // SharedLine and synthesize BcHi on the subsequent PgHi when the
     // latch is still asserted (hal/pg_bc_latch.hpp — NVBUG 6559782).
-    static const auto logBcAnomaly =
-        [](ElementContext&, const SemanticEvent&) {};
+    static const auto logBcAnomaly = [](ElementContext&, const SemanticEvent&) {
+    };
 
     static const std::array<Row, 17> kTable = {{
         // ---- from S_STBY ----
-        {ElementState::Stby,      EventKind::PgHi,         nullptr,
-         ElementState::Powered,   startTBoot},
-        {ElementState::Stby,      EventKind::PgLo,         nullptr,
-         ElementState::Stby,      nullptr},
-        {ElementState::Stby,      EventKind::BcHi,         nullptr,
-         ElementState::Stby,      logBcAnomaly},
-        {ElementState::Stby,      EventKind::BcLo,         nullptr,
-         ElementState::Stby,      logBcAnomaly},
+        {ElementState::Stby, EventKind::PgHi, nullptr, ElementState::Powered,
+         startTBoot},
+        {ElementState::Stby, EventKind::PgLo, nullptr, ElementState::Stby,
+         nullptr},
+        {ElementState::Stby, EventKind::BcHi, nullptr, ElementState::Stby,
+         logBcAnomaly},
+        {ElementState::Stby, EventKind::BcLo, nullptr, ElementState::Stby,
+         logBcAnomaly},
 
         // ---- from S_POWERED ----
-        {ElementState::Powered,   EventKind::BcHi,         nullptr,
-         ElementState::Online,    cancelTBoot},
-        {ElementState::Powered,   EventKind::PgLo,         nullptr,
-         ElementState::Stby,      cancelTBoot},
-        {ElementState::Powered,   EventKind::TBootExpired, nullptr,
-         ElementState::Fault,     setFaultBootTimeout},
-        {ElementState::Powered,   EventKind::RstAsserted,  nullptr,
+        {ElementState::Powered, EventKind::BcHi, nullptr, ElementState::Online,
+         cancelTBoot},
+        {ElementState::Powered, EventKind::PgLo, nullptr, ElementState::Stby,
+         cancelTBoot},
+        {ElementState::Powered, EventKind::TBootExpired, nullptr,
+         ElementState::Fault, setFaultBootTimeout},
+        {ElementState::Powered, EventKind::RstAsserted, nullptr,
          ElementState::Resetting, cancelTBoot},
 
         // ---- from S_ONLINE ----
-        {ElementState::Online,    EventKind::BcLo,         nullptr,
-         ElementState::Fault,     setFaultBootRegress},
-        {ElementState::Online,    EventKind::PgLo,         nullptr,
-         ElementState::Fault,     setFaultPgoodDrop},
-        {ElementState::Online,    EventKind::RstAsserted,  nullptr,
+        {ElementState::Online, EventKind::BcLo, nullptr, ElementState::Fault,
+         setFaultBootRegress},
+        {ElementState::Online, EventKind::PgLo, nullptr, ElementState::Fault,
+         setFaultPgoodDrop},
+        {ElementState::Online, EventKind::RstAsserted, nullptr,
          ElementState::Resetting, nullptr},
 
         // ---- from S_RESETTING ----
-        {ElementState::Resetting, EventKind::RstReleased,  nullptr,
-         ElementState::Powered,   startTBoot},
-        {ElementState::Resetting, EventKind::PgLo,         nullptr,
-         ElementState::Stby,      nullptr},
+        {ElementState::Resetting, EventKind::RstReleased, nullptr,
+         ElementState::Powered, startTBoot},
+        {ElementState::Resetting, EventKind::PgLo, nullptr, ElementState::Stby,
+         nullptr},
 
         // ---- from S_FAULT ----
         // Power re-asserted after a fault: re-enter the boot path and
@@ -154,21 +157,21 @@ std::span<const Row> table()
         //   * Spurious PgHi while in S_FAULT(BootTimeout) -- harmless;
         //     re-arming T_BOOT is the conservative default. If PG truly
         //     never dropped, the daemon should not emit a fresh PgHi edge.
-        {ElementState::Fault,     EventKind::PgHi,         nullptr,
-         ElementState::Powered,   clearFaultAndStartTBoot},
+        {ElementState::Fault, EventKind::PgHi, nullptr, ElementState::Powered,
+         clearFaultAndStartTBoot},
         // Late-boot recovery: BC asserts after T_BOOT expired → S_ONLINE.
         // Guarded to fire ONLY on BootTimeout faults so that PgoodDrop /
         // BootRegress recoveries are forced through the full boot path
         // (S_FAULT → S_POWERED via PgHi → S_ONLINE via BcHi) rather than
         // shortcutting on a possibly stale BC level.
-        {ElementState::Fault,     EventKind::BcHi,         guardLateBootRecovery,
-         ElementState::Online,    clearFault},
+        {ElementState::Fault, EventKind::BcHi, guardLateBootRecovery,
+         ElementState::Online, clearFault},
         // Power-down clears the fault.
-        {ElementState::Fault,     EventKind::PgLo,         nullptr,
-         ElementState::Stby,      clearFault},
+        {ElementState::Fault, EventKind::PgLo, nullptr, ElementState::Stby,
+         clearFault},
         // Redfish-initiated reset on a faulted element — clear the fault
         // and start a new reset cycle (T_BOOT will re-arm on RstReleased).
-        {ElementState::Fault,     EventKind::RstAsserted,  nullptr,
+        {ElementState::Fault, EventKind::RstAsserted, nullptr,
          ElementState::Resetting, clearFault},
     }};
 
@@ -181,11 +184,14 @@ std::span<const Row> table()
     // standard reset path; we just never inject that automatically).
 }
 
-}  // namespace
+} // namespace
 
 ElementFsm::ElementFsm(InstanceId id) :
-    ctx_{.id = id, .faultCode = FaultCode::None,
-         .startTBoot = {}, .cancelTBoot = {}, .onStateChange = {}},
+    ctx_{.id = id,
+         .faultCode = FaultCode::None,
+         .startTBoot = {},
+         .cancelTBoot = {},
+         .onStateChange = {}},
     engine_(table(), ElementState::Stby)
 {}
 
@@ -213,4 +219,4 @@ std::span<const TransitionRow<ElementState, ElementContext>> elementFsmTable()
     return table();
 }
 
-}  // namespace pwrseq::fsm
+} // namespace pwrseq::fsm

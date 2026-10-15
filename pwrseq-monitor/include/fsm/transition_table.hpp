@@ -26,11 +26,11 @@ namespace pwrseq::fsm
 template <typename State, typename Context>
 struct TransitionRow
 {
-    State                                                              from;
-    EventKind                                                          event;
-    std::function<bool(const Context&, const SemanticEvent&)>          guard;
-    State                                                              to;
-    std::function<void(Context&, const SemanticEvent&)>                action;
+    State from;
+    EventKind event;
+    std::function<bool(const Context&, const SemanticEvent&)> guard;
+    State to;
+    std::function<void(Context&, const SemanticEvent&)> action;
 };
 
 /** Generic FSM engine. Walks a static transition table on every event.
@@ -49,7 +49,10 @@ class FsmEngine
         table_(table), state_(initial)
     {}
 
-    State currentState() const noexcept { return state_; }
+    State currentState() const noexcept
+    {
+        return state_;
+    }
 
     /** Apply event ev to the FSM in context ctx.
      *  Returns true iff a transition row matched and fired.
@@ -78,7 +81,7 @@ class FsmEngine
 
   private:
     std::span<const Row> table_;
-    State                state_;
+    State state_;
 };
 
-}  // namespace pwrseq::fsm
+} // namespace pwrseq::fsm

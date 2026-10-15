@@ -83,12 +83,11 @@ template <typename Inject>
 bool tryRecoverStickyBootComplete(std::optional<bool> electrical,
                                   bool activeLow, Inject&& inject)
 {
-    if (!electrical ||
-        !bootCompleteLogicallyAsserted(*electrical, activeLow))
+    if (!electrical || !bootCompleteLogicallyAsserted(*electrical, activeLow))
     {
         return false;
     }
     return static_cast<bool>(std::forward<Inject>(inject)(*electrical));
 }
 
-}  // namespace pwrseq::hal
+} // namespace pwrseq::hal

@@ -38,7 +38,7 @@ constexpr const char* kMinimal = R"JSON(
 }
 )JSON";
 
-}  // namespace
+} // namespace
 
 // ── Happy path ────────────────────────────────────────────────────────────
 
@@ -47,8 +47,8 @@ TEST(DescriptorLoader, MinimalParsesOK)
     auto d = loadFromString(kMinimal);
 
     EXPECT_EQ(d.platform, "TEST");
-    EXPECT_EQ(d.chassisId, "HGX_Chassis_0");  // default
-    EXPECT_EQ(d.tBootMs.count(), 12000);      // default
+    EXPECT_EQ(d.chassisId, "HGX_Chassis_0"); // default
+    EXPECT_EQ(d.tBootMs.count(), 12000);     // default
 
     ASSERT_EQ(d.modules.size(), 1u);
     EXPECT_EQ(d.modules[0].id, "Mod_0");
@@ -100,8 +100,8 @@ TEST(DescriptorLoader, FullStructureWithFpgas)
     )JSON";
 
     auto d = loadFromString(kFull);
-    EXPECT_EQ(d.platform,    "LP30-EB2");
-    EXPECT_EQ(d.chassisId,   "HGX_Chassis_0");
+    EXPECT_EQ(d.platform, "LP30-EB2");
+    EXPECT_EQ(d.chassisId, "HGX_Chassis_0");
     EXPECT_EQ(d.tBootMs.count(), 8000);
 
     ASSERT_EQ(d.fpgas.size(), 1u);

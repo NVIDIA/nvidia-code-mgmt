@@ -24,9 +24,9 @@ namespace pwrseq::fsm
  */
 struct ModuleContext
 {
-    InstanceId                  id;            // this Module's ID
-    std::array<InstanceId, 2>   childIds;      // the two child Element IDs
-    std::array<ElementState, 2> childStates =  // current child states
+    InstanceId id;                            // this Module's ID
+    std::array<InstanceId, 2> childIds;       // the two child Element IDs
+    std::array<ElementState, 2> childStates = // current child states
         {ElementState::Stby, ElementState::Stby};
 
     /** Notify upward (Tray FSM) that this Module's state changed. */
@@ -48,10 +48,12 @@ class ModuleFsm
      *  The order of childIds defines which payload maps to "slot 0" vs
      *  "slot 1" — symmetric per §2.2.2 so order doesn't affect outcomes.
      */
-    ModuleFsm(InstanceId moduleId,
-              InstanceId childA, InstanceId childB);
+    ModuleFsm(InstanceId moduleId, InstanceId childA, InstanceId childB);
 
-    ModuleState state() const noexcept { return engine_.currentState(); }
+    ModuleState state() const noexcept
+    {
+        return engine_.currentState();
+    }
 
     /** Dispatch a SemanticEvent. Returns true if a row matched and fired
      *  (state may or may not have changed); false if the event was
@@ -76,14 +78,17 @@ class ModuleFsm
     }
 
     /** Const read-only access to FSM context (for tests / diagnostics). */
-    const ModuleContext& ctx() const noexcept { return ctx_; }
+    const ModuleContext& ctx() const noexcept
+    {
+        return ctx_;
+    }
 
   private:
-    ModuleContext                            ctx_;
-    FsmEngine<ModuleState, ModuleContext>    engine_;
+    ModuleContext ctx_;
+    FsmEngine<ModuleState, ModuleContext> engine_;
 };
 
 /** Test/inspection access to the canonical Module FSM transition table. */
 std::span<const TransitionRow<ModuleState, ModuleContext>> moduleFsmTable();
 
-}  // namespace pwrseq::fsm
+} // namespace pwrseq::fsm

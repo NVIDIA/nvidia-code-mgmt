@@ -16,9 +16,9 @@
 #include "gpio_monitor_read.hpp"
 #include "hal/pg_bc_latch.hpp"
 
-#include <phosphor-logging/lg2.hpp>
-
 #include <unistd.h>
+
+#include <phosphor-logging/lg2.hpp>
 
 #include <algorithm>
 #include <cerrno>
@@ -64,15 +64,15 @@ constexpr InstanceId unpackInstance(uint64_t key) noexcept
 /** Translate a config::LineRef into HAL driver params
  *  (`prefix` → `prefix_line`, `prefix_active_low`). */
 void pushLineRefParams(std::vector<std::pair<std::string, std::string>>& out,
-                       const std::string& prefix,
-                       const config::LineRef& ref)
+                       const std::string& prefix, const config::LineRef& ref)
 {
-    if (ref.empty()) return;
-    out.emplace_back(prefix + "_line",       ref.line);
+    if (ref.empty())
+        return;
+    out.emplace_back(prefix + "_line", ref.line);
     out.emplace_back(prefix + "_active_low", ref.activeLow ? "1" : "0");
 }
 
-}  // namespace
+} // namespace
 
 Orchestrator::Orchestrator(sdbusplus::bus::bus& bus, sd_event* loop) :
     bus_(bus), loop_(loop)
@@ -80,10 +80,12 @@ Orchestrator::Orchestrator(sdbusplus::bus::bus& bus, sd_event* loop) :
 
 Orchestrator::~Orchestrator()
 {
-    for (auto* src : ioSources_) sd_event_source_unref(src);
+    for (auto* src : ioSources_)
+        sd_event_source_unref(src);
     for (auto& [_, t] : bootTimers_)
     {
-        if (t.source) sd_event_source_unref(t.source);
+        if (t.source)
+            sd_event_source_unref(t.source);
     }
     for (auto& [_, t] : telemetryRetryTimers_)
     {
@@ -97,7 +99,8 @@ Orchestrator::~Orchestrator()
     // timeout, which is the right behaviour on daemon shutdown.
     for (auto& [_, p] : pendingResets_)
     {
-        if (!p) continue;
+        if (!p)
+            continue;
         if (p->deadline)
         {
             sd_event_source_set_enabled(p->deadline, SD_EVENT_OFF);
@@ -108,14 +111,15 @@ Orchestrator::~Orchestrator()
 
 // ── Descriptor → DeviceConfig conversion ──────────────────────────────────
 
-hal::DeviceConfig Orchestrator::buildLpuConfig_(
-    InstanceId id, const config::ElementDescriptor& el)
+hal::DeviceConfig
+    Orchestrator::buildLpuConfig_(InstanceId id,
+                                  const config::ElementDescriptor& el)
 {
     hal::DeviceConfig cfg;
-    cfg.instanceId    = id;
+    cfg.instanceId = id;
     cfg.initTimeoutMs = tBoot_;
-    cfg.sharedLines   = &sharedLines_;
-    cfg.resetChips    = &resetChips_;
+    cfg.sharedLines = &sharedLines_;
+    cfg.resetChips = &resetChips_;
     pushLineRefParams(cfg.driverParams, "pg", el.pg);
     pushLineRefParams(cfg.driverParams, "bc", el.bc);
     pushLineRefParams(cfg.driverParams, "reset", el.resetLine);
@@ -126,14 +130,15 @@ hal::DeviceConfig Orchestrator::buildLpuConfig_(
     return cfg;
 }
 
-hal::DeviceConfig Orchestrator::buildFpgaConfig_(
-    InstanceId id, const config::FpgaDescriptor& f)
+hal::DeviceConfig
+    Orchestrator::buildFpgaConfig_(InstanceId id,
+                                   const config::FpgaDescriptor& f)
 {
     hal::DeviceConfig cfg;
-    cfg.instanceId    = id;
+    cfg.instanceId = id;
     cfg.initTimeoutMs = tBoot_;
-    cfg.sharedLines   = &sharedLines_;
-    cfg.resetChips    = &resetChips_;
+    cfg.sharedLines = &sharedLines_;
+    cfg.resetChips = &resetChips_;
     pushLineRefParams(cfg.driverParams, "pg", f.pg);
     pushLineRefParams(cfg.driverParams, "bc", f.bc);
     pushLineRefParams(cfg.driverParams, "reset", f.resetLine);
@@ -142,8 +147,8 @@ hal::DeviceConfig Orchestrator::buildFpgaConfig_(
 
 // ── Redfish path helpers (descriptor IDs are authoritative) ───────────────
 
-std::string Orchestrator::elementRedfishPath_(
-    const config::ElementDescriptor& e)
+std::string
+    Orchestrator::elementRedfishPath_(const config::ElementDescriptor& e)
 {
     if (e.kind == config::ElementDescriptor::Kind::Lpu)
     {
@@ -184,18 +189,18 @@ std::string Orchestrator::trayRedfishPath_(const std::string& chassisId)
 
 // ── Main entry point ──────────────────────────────────────────────────────
 
-hal::Result Orchestrator::initFromDescriptor(
-    const config::PlatformDescriptor& desc)
+hal::Result
+    Orchestrator::initFromDescriptor(const config::PlatformDescriptor& desc)
 {
     tBoot_ = desc.tBootMs;
     platform_ = desc.platform;
 
     lg2::info("pwrseq-monitor: initialising from descriptor "
               "(platform={PLAT}, modules={NM}, fpgas={NF}, t_boot_ms={TB})",
-              "PLAT", desc.platform,
-              "NM", static_cast<int>(desc.modules.size()),
-              "NF", static_cast<int>(desc.fpgas.size()),
-              "TB", static_cast<int>(desc.tBootMs.count()));
+              "PLAT", desc.platform, "NM",
+              static_cast<int>(desc.modules.size()), "NF",
+              static_cast<int>(desc.fpgas.size()), "TB",
+              static_cast<int>(desc.tBootMs.count()));
 
     // Tally elements/FPGAs that were declared in the descriptor but could
     // not be instantiated (driver init failed, unsupported kind, etc.).
@@ -203,14 +208,14 @@ hal::Result Orchestrator::initFromDescriptor(
     // end so main() can log/alert that the daemon is running in a degraded
     // (partially-wired) state instead of treating it as fully healthy.
     std::size_t declaredCount = 0;
-    std::size_t failedCount   = 0;
+    std::size_t failedCount = 0;
 
     // ── 1. Tray FSM + reporter ──────────────────────────────────────────
     constexpr InstanceId kTrayId{InstanceId::Class::Tray, 0};
     trayFsm_ = std::make_unique<fsm::TrayFsm>(
         kTrayId,
         /*numModules=*/static_cast<uint16_t>(desc.modules.size()),
-        /*numFpgas=*/  static_cast<uint16_t>(desc.fpgas.size()));
+        /*numFpgas=*/static_cast<uint16_t>(desc.fpgas.size()));
     reporters_.push_back(std::make_unique<reporting::Reporter>(
         bus_, trayRedfishPath_(desc.chassisId)));
     instanceByDescId_[desc.chassisId] = packInstance(kTrayId);
@@ -245,8 +250,8 @@ hal::Result Orchestrator::initFromDescriptor(
         }
         if (childCount < 1)
         {
-            lg2::warning("Module {MID} has zero elements; skipping",
-                         "MID", m.id);
+            lg2::warning("Module {MID} has zero elements; skipping", "MID",
+                         m.id);
             continue;
         }
 
@@ -261,8 +266,8 @@ hal::Result Orchestrator::initFromDescriptor(
         }
 
         auto modFsm = std::make_unique<fsm::ModuleFsm>(modId, childA, childB);
-        reporters_.push_back(std::make_unique<reporting::Reporter>(
-            bus_, moduleRedfishPath_(m)));
+        reporters_.push_back(
+            std::make_unique<reporting::Reporter>(bus_, moduleRedfishPath_(m)));
         wireModuleFsm_(*modFsm, *reporters_.back());
         moduleByInstance_[packInstance(modId)] = modFsm.get();
         instanceByDescId_[m.id] = packInstance(modId);
@@ -286,8 +291,7 @@ hal::Result Orchestrator::initFromDescriptor(
                 case config::ElementDescriptor::Kind::Gpu:
                     lg2::error("Element kind {KIND} not yet supported "
                                "(id={EID}); slot left absent",
-                               "KIND", static_cast<int>(el.kind),
-                               "EID", el.id);
+                               "KIND", static_cast<int>(el.kind), "EID", el.id);
                     ++failedCount;
                     continue;
             }
@@ -295,13 +299,15 @@ hal::Result Orchestrator::initFromDescriptor(
             const auto ir = driver->init(*this, buildLpuConfig_(elemId, el));
             if (ir == hal::Result::Absent)
             {
-                lg2::info("LPU element {EID} absent (module not populated), skipping",
-                          "EID", el.id);
+                lg2::info(
+                    "LPU element {EID} absent (module not populated), skipping",
+                    "EID", el.id);
                 continue;
             }
             if (ir != hal::Result::Ok)
             {
-                lg2::error("Driver init failed for element {EID}", "EID", el.id);
+                lg2::error("Driver init failed for element {EID}", "EID",
+                           el.id);
                 ++failedCount;
                 continue;
             }
@@ -313,10 +319,10 @@ hal::Result Orchestrator::initFromDescriptor(
             registerDeviceFds_(*driver);
 
             elementByInstance_[packInstance(elemId)] = fsmObj.get();
-            deviceByInstance_[packInstance(elemId)]  = driver.get();
-            elementToModule_[packInstance(elemId)]   = packInstance(modId);
-            instanceByDescId_[el.id]                 = packInstance(elemId);
-            descIdByInstance_[packInstance(elemId)]  = el.id;
+            deviceByInstance_[packInstance(elemId)] = driver.get();
+            elementToModule_[packInstance(elemId)] = packInstance(modId);
+            instanceByDescId_[el.id] = packInstance(elemId);
+            descIdByInstance_[packInstance(elemId)] = el.id;
 
             // FSM seeding: Gpio.Monitor.Line PropertiesChanged / ObjectManager
             // snapshot injects each PG/BC Bound Value once the subscriber
@@ -335,13 +341,13 @@ hal::Result Orchestrator::initFromDescriptor(
         ++declaredCount;
 
         auto fpgaFsm = std::make_unique<fsm::ElementFsm>(fpgaId);
-        auto driver  = std::make_unique<hal::FpgaDriver>(fpgaId);
+        auto driver = std::make_unique<hal::FpgaDriver>(fpgaId);
 
         const auto fr = driver->init(*this, buildFpgaConfig_(fpgaId, f));
         if (fr == hal::Result::Absent)
         {
-            lg2::info("FPGA {FID} absent (not populated), skipping",
-                      "FID", f.id);
+            lg2::info("FPGA {FID} absent (not populated), skipping", "FID",
+                      f.id);
             continue;
         }
         if (fr != hal::Result::Ok)
@@ -351,16 +357,16 @@ hal::Result Orchestrator::initFromDescriptor(
             continue;
         }
 
-        reporters_.push_back(std::make_unique<reporting::Reporter>(
-            bus_, fpgaRedfishPath_(f)));
+        reporters_.push_back(
+            std::make_unique<reporting::Reporter>(bus_, fpgaRedfishPath_(f)));
         wireElementFsm_(*fpgaFsm, *driver, *reporters_.back(),
                         /*isLpu=*/false);
         registerDeviceFds_(*driver);
 
         elementByInstance_[packInstance(fpgaId)] = fpgaFsm.get();
-        deviceByInstance_[packInstance(fpgaId)]  = driver.get();
-        instanceByDescId_[f.id]                  = packInstance(fpgaId);
-        descIdByInstance_[packInstance(fpgaId)]  = f.id;
+        deviceByInstance_[packInstance(fpgaId)] = driver.get();
+        instanceByDescId_[f.id] = packInstance(fpgaId);
+        descIdByInstance_[packInstance(fpgaId)] = f.id;
 
         devices_.push_back(std::move(driver));
         elementFsms_.push_back(std::move(fpgaFsm));
@@ -377,9 +383,9 @@ hal::Result Orchestrator::initFromDescriptor(
                    "instantiated (driver init failure or unsupported kind). "
                    "Daemon will run but partial reset/telemetry surfaces are "
                    "missing for the failed entries.",
-                   "OK",    static_cast<int>(declaredCount - failedCount),
-                   "TOTAL", static_cast<int>(declaredCount),
-                   "BAD",   static_cast<int>(failedCount));
+                   "OK", static_cast<int>(declaredCount - failedCount), "TOTAL",
+                   static_cast<int>(declaredCount), "BAD",
+                   static_cast<int>(failedCount));
         return hal::Result::InitFailed;
     }
     return hal::Result::Ok;
@@ -392,78 +398,78 @@ void Orchestrator::wireElementFsm_(fsm::ElementFsm& fsm, hal::IDevice& dev,
 {
     const InstanceId id = fsm.ctx().id;
 
-    fsm.setStartTBoot ([this, id]() { startBootTimer_(id); });
+    fsm.setStartTBoot([this, id]() { startBootTimer_(id); });
     fsm.setCancelTBoot([this, id]() { cancelBootTimer_(id); });
 
-    fsm.setOnStateChange(
-        [this, id, &fsm, &dev, &rep, isLpu](ElementState old, ElementState neu) {
-            // Always-on transition trace. Field debug + off-target test rig
-            // both consume these lines via `journalctl -u lpu-pwrseq-monitord`.
-            // Format is stable: `FSM: element <id> <from> -> <to> [fault=<fc>]`.
-            if (neu == ElementState::Fault)
-            {
-                lg2::info("FSM: element {ID} {FROM} -> {TO} fault={FAULT}",
-                          "ID",    to_string(id),
-                          "FROM",  std::string(to_string(old)),
-                          "TO",    std::string(to_string(neu)),
-                          "FAULT", std::string(to_string(fsm.faultCode())));
-            }
-            else
-            {
-                lg2::info("FSM: element {ID} {FROM} -> {TO}",
-                          "ID",   to_string(id),
-                          "FROM", std::string(to_string(old)),
-                          "TO",   std::string(to_string(neu)));
-            }
+    fsm.setOnStateChange([this, id, &fsm, &dev, &rep, isLpu](ElementState old,
+                                                             ElementState neu) {
+        // Always-on transition trace. Field debug + off-target test rig
+        // both consume these lines via `journalctl -u lpu-pwrseq-monitord`.
+        // Format is stable: `FSM: element <id> <from> -> <to> [fault=<fc>]`.
+        if (neu == ElementState::Fault)
+        {
+            lg2::info("FSM: element {ID} {FROM} -> {TO} fault={FAULT}", "ID",
+                      to_string(id), "FROM", std::string(to_string(old)), "TO",
+                      std::string(to_string(neu)), "FAULT",
+                      std::string(to_string(fsm.faultCode())));
+        }
+        else
+        {
+            lg2::info("FSM: element {ID} {FROM} -> {TO}", "ID", to_string(id),
+                      "FROM", std::string(to_string(old)), "TO",
+                      std::string(to_string(neu)));
+        }
 
-            rep.applyStatus(neu, /*present=*/true);
+        rep.applyStatus(neu, /*present=*/true);
 
-            if (isLpu && (old == ElementState::Online
-                          || neu == ElementState::Online))
+        if (isLpu &&
+            (old == ElementState::Online || neu == ElementState::Online))
+        {
+            cancelTelemetryRetry_(id);
+            const bool enable = neu == ElementState::Online;
+            const auto pr = dev.setTelemetryPolling(enable);
+            if (enable && pr == hal::Result::NotReady)
             {
-                cancelTelemetryRetry_(id);
-                const bool enable = neu == ElementState::Online;
-                const auto pr = dev.setTelemetryPolling(enable);
-                if (enable && pr == hal::Result::NotReady)
-                {
-                    scheduleTelemetryRetry_(id, 1);
-                }
-                else if (pr != hal::Result::Ok
-                         && pr != hal::Result::NotSupported)
-                {
-                    lg2::warning("FSM: element {ID} telemetry polling "
-                                 "ioctl failed ({RC}) on {FROM} -> {TO}",
-                                 "ID",   to_string(id),
-                                 "RC",   std::string(hal::to_string(pr)),
-                                 "FROM", std::string(to_string(old)),
-                                 "TO",   std::string(to_string(neu)));
-                }
+                scheduleTelemetryRetry_(id, 1);
             }
-
-            if (isLpu)
+            else if (pr != hal::Result::Ok && pr != hal::Result::NotSupported)
             {
-                auto pit = elementToModule_.find(packInstance(id));
-                if (pit == elementToModule_.end()) return;
-                auto mit = moduleByInstance_.find(pit->second);
-                if (mit == moduleByInstance_.end()) return;
-
-                InstanceId modId{
-                    static_cast<InstanceId::Class>(pit->second >> 16),
-                    static_cast<uint16_t>(pit->second & 0xFFFF)};
-
-                mit->second->dispatch(SemanticEvent{
-                    EventKind::LpuStateChanged, modId,
-                    ChildElementPayload{id, neu},
-                });
+                lg2::warning("FSM: element {ID} telemetry polling "
+                             "ioctl failed ({RC}) on {FROM} -> {TO}",
+                             "ID", to_string(id), "RC",
+                             std::string(hal::to_string(pr)), "FROM",
+                             std::string(to_string(old)), "TO",
+                             std::string(to_string(neu)));
             }
-            else if (trayFsm_)
-            {
-                trayFsm_->dispatch(SemanticEvent{
-                    EventKind::FpgaStateChanged, trayFsm_->ctx().id,
-                    ChildElementPayload{id, neu},
-                });
-            }
-        });
+        }
+
+        if (isLpu)
+        {
+            auto pit = elementToModule_.find(packInstance(id));
+            if (pit == elementToModule_.end())
+                return;
+            auto mit = moduleByInstance_.find(pit->second);
+            if (mit == moduleByInstance_.end())
+                return;
+
+            InstanceId modId{static_cast<InstanceId::Class>(pit->second >> 16),
+                             static_cast<uint16_t>(pit->second & 0xFFFF)};
+
+            mit->second->dispatch(SemanticEvent{
+                EventKind::LpuStateChanged,
+                modId,
+                ChildElementPayload{id, neu},
+            });
+        }
+        else if (trayFsm_)
+        {
+            trayFsm_->dispatch(SemanticEvent{
+                EventKind::FpgaStateChanged,
+                trayFsm_->ctx().id,
+                ChildElementPayload{id, neu},
+            });
+        }
+    });
 
     // GPIO seeding can report deasserted PG/BC while the FSM is already in
     // Stby.  Those are valid self-transitions, so onStateChange is not called.
@@ -472,26 +478,24 @@ void Orchestrator::wireElementFsm_(fsm::ElementFsm& fsm, hal::IDevice& dev,
     rep.applyStatus(fsm.state(), /*present=*/true);
 }
 
-void Orchestrator::wireModuleFsm_(fsm::ModuleFsm& fsm,
-                                  reporting::Reporter& rep)
+void Orchestrator::wireModuleFsm_(fsm::ModuleFsm& fsm, reporting::Reporter& rep)
 {
     const InstanceId id = fsm.ctx().id;
-    fsm.setOnStateChange(
-        [this, id, &rep](ModuleState old, ModuleState neu) {
-            lg2::info("FSM: module {ID} {FROM} -> {TO}",
-                      "ID",   to_string(id),
-                      "FROM", std::string(to_string(old)),
-                      "TO",   std::string(to_string(neu)));
+    fsm.setOnStateChange([this, id, &rep](ModuleState old, ModuleState neu) {
+        lg2::info("FSM: module {ID} {FROM} -> {TO}", "ID", to_string(id),
+                  "FROM", std::string(to_string(old)), "TO",
+                  std::string(to_string(neu)));
 
-            rep.applyStatus(neu);
-            if (trayFsm_)
-            {
-                trayFsm_->dispatch(SemanticEvent{
-                    EventKind::ModuleStateChanged, trayFsm_->ctx().id,
-                    ChildModulePayload{id, neu},
-                });
-            }
-        });
+        rep.applyStatus(neu);
+        if (trayFsm_)
+        {
+            trayFsm_->dispatch(SemanticEvent{
+                EventKind::ModuleStateChanged,
+                trayFsm_->ctx().id,
+                ChildModulePayload{id, neu},
+            });
+        }
+    });
 
     rep.applyStatus(fsm.state());
 }
@@ -499,15 +503,13 @@ void Orchestrator::wireModuleFsm_(fsm::ModuleFsm& fsm,
 void Orchestrator::wireTrayFsm_(fsm::TrayFsm& fsm, reporting::Reporter& rep)
 {
     const InstanceId id = fsm.ctx().id;
-    fsm.setOnStateChange(
-        [id, &rep](TrayState old, TrayState neu) {
-            lg2::info("FSM: tray {ID} {FROM} -> {TO}",
-                      "ID",   to_string(id),
-                      "FROM", std::string(to_string(old)),
-                      "TO",   std::string(to_string(neu)));
+    fsm.setOnStateChange([id, &rep](TrayState old, TrayState neu) {
+        lg2::info("FSM: tray {ID} {FROM} -> {TO}", "ID", to_string(id), "FROM",
+                  std::string(to_string(old)), "TO",
+                  std::string(to_string(neu)));
 
-            rep.applyStatus(neu);
-        });
+        rep.applyStatus(neu);
+    });
 
     rep.applyStatus(fsm.state());
 }
@@ -541,21 +543,22 @@ void Orchestrator::registerDeviceFds_(hal::IDevice& dev)
 
         sd_event_source* src = nullptr;
         auto* devPtr = &dev;
-        struct CtxCallback {
+        struct CtxCallback
+        {
             hal::IDevice* device;
-            int           fd;
+            int fd;
             Orchestrator* self;
         };
         auto* ctx = new CtxCallback{devPtr, fd, this};
 
-        sd_event_add_io(loop_, &src, fd, EPOLLIN,
-                        [](sd_event_source*, int /*fd*/, uint32_t,
-                           void* userdata) -> int {
-                            auto* c = static_cast<CtxCallback*>(userdata);
-                            c->self->onDeviceReadable_(c->device, c->fd);
-                            return 0;
-                        },
-                        ctx);
+        sd_event_add_io(
+            loop_, &src, fd, EPOLLIN,
+            [](sd_event_source*, int /*fd*/, uint32_t, void* userdata) -> int {
+                auto* c = static_cast<CtxCallback*>(userdata);
+                c->self->onDeviceReadable_(c->device, c->fd);
+                return 0;
+            },
+            ctx);
         ioSources_.push_back(src);
     }
 }
@@ -596,7 +599,8 @@ void Orchestrator::emit(const SemanticEvent& ev)
 hal::Result Orchestrator::requestReset(InstanceId target, hal::ResetKind kind)
 {
     auto devIt = deviceByInstance_.find(packInstance(target));
-    if (devIt == deviceByInstance_.end()) return hal::Result::NotPresent;
+    if (devIt == deviceByInstance_.end())
+        return hal::Result::NotPresent;
     auto* dev = devIt->second;
 
     // One-shot reset: dispatch RstAsserted, trigger the device's reset
@@ -659,7 +663,8 @@ hal::Result Orchestrator::requestLogDrain(InstanceId target,
 void Orchestrator::completePending_(uint64_t key, ResetOutcome outcome)
 {
     auto it = pendingResets_.find(key);
-    if (it == pendingResets_.end()) return;
+    if (it == pendingResets_.end())
+        return;
 
     // Move out + erase BEFORE invoking the callback so re-entrant callers
     // (e.g. callback that fires another requestResetAsync for the same
@@ -679,10 +684,8 @@ void Orchestrator::completePending_(uint64_t key, ResetOutcome outcome)
     }
 }
 
-void Orchestrator::requestResetAsync(
-    InstanceId target,
-    hal::ResetKind kind,
-    std::function<void(ResetOutcome)> callback)
+void Orchestrator::requestResetAsync(InstanceId target, hal::ResetKind kind,
+                                     std::function<void(ResetOutcome)> callback)
 {
     const uint64_t key = packInstance(target);
 
@@ -694,7 +697,8 @@ void Orchestrator::requestResetAsync(
         lg2::warning("requestResetAsync: reset for {ID} already in flight; "
                      "rejecting concurrent request",
                      "ID", to_string(target));
-        if (callback) callback(ResetOutcome::Busy);
+        if (callback)
+            callback(ResetOutcome::Busy);
         return;
     }
 
@@ -702,7 +706,8 @@ void Orchestrator::requestResetAsync(
     auto devIt = deviceByInstance_.find(key);
     if (devIt == deviceByInstance_.end())
     {
-        if (callback) callback(ResetOutcome::NotPresent);
+        if (callback)
+            callback(ResetOutcome::NotPresent);
         return;
     }
     if (!resetEligible_(target))
@@ -710,7 +715,8 @@ void Orchestrator::requestResetAsync(
         lg2::info("requestResetAsync: {ID} never powered (no PgHi yet); "
                   "rejecting reset",
                   "ID", to_string(target));
-        if (callback) callback(ResetOutcome::NotPresent);
+        if (callback)
+            callback(ResetOutcome::NotPresent);
         return;
     }
     auto* dev = devIt->second;
@@ -726,7 +732,8 @@ void Orchestrator::requestResetAsync(
 
     // Trigger reset synchronously (in-process libgpiod assert on reset_line).
     // Daemon waits for post-reset BcHi via gpio-mon below.
-    auto pulseR = requestReset(target, kind);  // dispatches Rst{Asserted,Released}
+    auto pulseR =
+        requestReset(target, kind); // dispatches Rst{Asserted,Released}
     if (pulseR == hal::Result::NotSupported)
     {
         completePending_(key, ResetOutcome::NotSupported);
@@ -745,8 +752,7 @@ void Orchestrator::requestResetAsync(
 }
 
 bool Orchestrator::armResetCompletionWait_(
-    InstanceId target,
-    hal::IDevice* /*dev*/,
+    InstanceId target, hal::IDevice* /*dev*/,
     std::function<void(ResetOutcome)> callback)
 {
     const uint64_t key = packInstance(target);
@@ -756,20 +762,21 @@ bool Orchestrator::armResetCompletionWait_(
     // CONF_DONE/CVP can stay high through an N_CONFIG pulse. If the edge
     // never arrives, tryRecoverStickyBc_ on timeout re-reads gpio-mon and
     // may still complete Ok when the pin is still asserted.
-    auto pending           = std::make_unique<PendingReset>();
-    pending->target        = target;
-    pending->callback      = std::move(callback);
+    auto pending = std::make_unique<PendingReset>();
+    pending->target = target;
+    pending->callback = std::move(callback);
 
     // Reset-completion budget is deliberately independent of the FSM boot
     // deadline (tBoot_): tBoot_ governs fault detection after a re-arm,
     // whereas this deadline bounds how long the Reset/ResetAll D-Bus call
     // blocks before returning Timeout (which bmcweb maps to HTTP 503).
     // TEMPORARY (TS1): see kResetCompletionTimeout; revert after TS1.
-    const auto deadlineMs  = kResetCompletionTimeout;
+    const auto deadlineMs = kResetCompletionTimeout;
     uint64_t now = 0;
     sd_event_now(loop_, CLOCK_MONOTONIC, &now);
-    const uint64_t at = now + std::chrono::duration_cast<
-        std::chrono::microseconds>(deadlineMs).count();
+    const uint64_t at =
+        now + std::chrono::duration_cast<std::chrono::microseconds>(deadlineMs)
+                  .count();
 
     // Capture target only (not `this`) for the C callback -- the userdata
     // pointer carries Orchestrator + key together. The ctx lifetime is
@@ -781,8 +788,8 @@ bool Orchestrator::armResetCompletionWait_(
     struct TimerCtx
     {
         Orchestrator* self;
-        uint64_t      key;
-        InstanceId    target;
+        uint64_t key;
+        InstanceId target;
     };
     auto* ctx = new TimerCtx{this, key, target};
 
@@ -803,7 +810,7 @@ bool Orchestrator::armResetCompletionWait_(
                 return 0;
             }
             c->self->completePending_(c->key, ResetOutcome::Timeout);
-            return 0;  // destroy_callback frees ctx
+            return 0; // destroy_callback frees ctx
         },
         ctx);
     if (rc < 0)
@@ -812,32 +819,32 @@ bool Orchestrator::armResetCompletionWait_(
         lg2::error("armResetCompletionWait_: sd_event_add_time failed for "
                    "{ID}; completing PulseFailed",
                    "ID", to_string(target));
-        if (pending->callback) pending->callback(ResetOutcome::PulseFailed);
+        if (pending->callback)
+            pending->callback(ResetOutcome::PulseFailed);
         return false;
     }
-    sd_event_source_set_destroy_callback(src, +[](void* userdata) {
-        delete static_cast<TimerCtx*>(userdata);
-    });
+    sd_event_source_set_destroy_callback(
+        src, +[](void* userdata) { delete static_cast<TimerCtx*>(userdata); });
     pending->deadline = src;
     pendingResets_.emplace(key, std::move(pending));
 
     lg2::info("armResetCompletionWait_: armed for {ID}; waiting up to "
               "{MS}ms for BcHi via gpio-mon",
-              "ID", to_string(target),
-              "MS", static_cast<int>(deadlineMs.count()));
+              "ID", to_string(target), "MS",
+              static_cast<int>(deadlineMs.count()));
     return true;
 }
 
 void Orchestrator::requestResetAllSync(
-    InstanceId::Class cls,
-    hal::ResetKind kind,
+    InstanceId::Class cls, hal::ResetKind kind,
     std::function<void(std::vector<std::pair<std::string, ResetOutcome>>)>
         callback)
 {
     auto present = presentInstances(cls);
     if (present.empty())
     {
-        if (callback) callback({});
+        if (callback)
+            callback({});
         return;
     }
 
@@ -862,7 +869,8 @@ void Orchestrator::requestResetAllSync(
     present = std::move(eligible);
     if (present.empty())
     {
-        if (callback) callback({});
+        if (callback)
+            callback({});
         return;
     }
 
@@ -870,14 +878,15 @@ void Orchestrator::requestResetAllSync(
     // whole set so we don't half-arm: either the entire batch goes or
     // we surface Busy for the conflicting elements and proceed with the
     // rest. (Operator can re-issue per-element via requestResetAsync.)
-    std::vector<InstanceId>            okToReset;
+    std::vector<InstanceId> okToReset;
     std::vector<std::pair<std::string, ResetOutcome>> earlyResults;
     okToReset.reserve(present.size());
     earlyResults.reserve(present.size());
     for (auto inst : present)
     {
         std::string descId = descriptorIdByInstance(inst);
-        if (descId.empty()) descId = to_string(inst);
+        if (descId.empty())
+            descId = to_string(inst);
         if (pendingResets_.contains(packInstance(inst)))
         {
             lg2::warning("requestResetAllSync: {ID} already mid-reset; "
@@ -896,11 +905,11 @@ void Orchestrator::requestResetAllSync(
     // dropped from the completion-wait phase.
     struct PulseStep
     {
-        InstanceId    target;
-        std::string   descId;
+        InstanceId target;
+        std::string descId;
         hal::IDevice* dev;
-        bool          waitArmed = false;
-        hal::Result   assertResult;
+        bool waitArmed = false;
+        hal::Result assertResult;
     };
     std::vector<PulseStep> steps;
     steps.reserve(okToReset.size());
@@ -909,10 +918,10 @@ void Orchestrator::requestResetAllSync(
     {
         auto* dev = deviceByInstance_[packInstance(inst)];
         std::string descId = descriptorIdByInstance(inst);
-        if (descId.empty()) descId = to_string(inst);
-        steps.push_back(
-            {inst, std::move(descId), dev, /*waitArmed=*/false,
-             hal::Result::Ok});
+        if (descId.empty())
+            descId = to_string(inst);
+        steps.push_back({inst, std::move(descId), dev, /*waitArmed=*/false,
+                         hal::Result::Ok});
     }
 
     struct Tracker
@@ -934,7 +943,7 @@ void Orchestrator::requestResetAllSync(
     };
     auto tracker = std::make_shared<Tracker>();
     tracker->callback = std::move(callback);
-    tracker->results  = std::move(earlyResults);
+    tracker->results = std::move(earlyResults);
     tracker->expected = tracker->results.size() + steps.size();
 
     if (tracker->results.size() >= tracker->expected)
@@ -953,8 +962,8 @@ void Orchestrator::requestResetAllSync(
         std::string descIdCopy = s.descId;
         if (!armResetCompletionWait_(
                 s.target, s.dev,
-                [tracker, descIdCopy = std::move(descIdCopy)](ResetOutcome out)
-                    mutable {
+                [tracker,
+                 descIdCopy = std::move(descIdCopy)](ResetOutcome out) mutable {
                     tracker->add(std::move(descIdCopy), out);
                 }))
         {
@@ -1015,8 +1024,8 @@ void Orchestrator::requestResetAllSync(
 
     lg2::info("requestResetAllSync: triggered reset on {N} element(s) of "
               "class={CLS}; now waiting per-element for BcHi",
-              "N", static_cast<int>(steps.size()),
-              "CLS", static_cast<int>(cls));
+              "N", static_cast<int>(steps.size()), "CLS",
+              static_cast<int>(cls));
 }
 
 bool Orchestrator::dumpState(const std::string& path) const
@@ -1086,8 +1095,8 @@ bool Orchestrator::dumpState(const std::string& path) const
         row.fault = el->faultCode();
         row.seenPgHi = el->hasSeenPgHi();
         const auto timerIt = bootTimers_.find(key);
-        row.bootTimerArmed = timerIt != bootTimers_.end() &&
-                             timerIt->second.source != nullptr;
+        row.bootTimerArmed =
+            timerIt != bootTimers_.end() && timerIt->second.source != nullptr;
         row.resetPending = pendingResets_.contains(key);
         snap.elements.push_back(std::move(row));
     }
@@ -1119,10 +1128,9 @@ bool Orchestrator::dumpState(const std::string& path) const
     {
         lg2::info("pwrseq-monitor: wrote FSM snapshot to {PATH} "
                   "(elements={N}, modules={M}, lines={L})",
-                  "PATH", path,
-                  "N", static_cast<int>(snap.elements.size()),
-                  "M", static_cast<int>(snap.modules.size()),
-                  "L", static_cast<int>(snap.lines.size()));
+                  "PATH", path, "N", static_cast<int>(snap.elements.size()),
+                  "M", static_cast<int>(snap.modules.size()), "L",
+                  static_cast<int>(snap.lines.size()));
     }
     else
     {
@@ -1132,23 +1140,25 @@ bool Orchestrator::dumpState(const std::string& path) const
     return ok;
 }
 
-std::optional<InstanceId> Orchestrator::instanceByDescriptorId(
-    const std::string& id) const
+std::optional<InstanceId>
+    Orchestrator::instanceByDescriptorId(const std::string& id) const
 {
     auto it = instanceByDescId_.find(id);
-    if (it == instanceByDescId_.end()) return std::nullopt;
+    if (it == instanceByDescId_.end())
+        return std::nullopt;
     return unpackInstance(it->second);
 }
 
 std::string Orchestrator::descriptorIdByInstance(InstanceId id) const
 {
     auto it = descIdByInstance_.find(packInstance(id));
-    if (it == descIdByInstance_.end()) return {};
+    if (it == descIdByInstance_.end())
+        return {};
     return it->second;
 }
 
-std::vector<InstanceId> Orchestrator::presentInstances(
-    InstanceId::Class cls) const
+std::vector<InstanceId>
+    Orchestrator::presentInstances(InstanceId::Class cls) const
 {
     // deviceByInstance_ contains exactly the elements whose driver init
     // returned Ok (sparse modules / failed init are absent). That's the
@@ -1159,7 +1169,8 @@ std::vector<InstanceId> Orchestrator::presentInstances(
     for (const auto& [key, _dev] : deviceByInstance_)
     {
         auto id = unpackInstance(key);
-        if (id.cls == cls) out.push_back(id);
+        if (id.cls == cls)
+            out.push_back(id);
     }
     // Sort by index for stable iteration order; tests + log readability.
     std::sort(out.begin(), out.end(),
@@ -1222,8 +1233,9 @@ void Orchestrator::startBootTimer_(InstanceId id)
     sd_event_source* src = nullptr;
     uint64_t now = 0;
     sd_event_now(loop_, CLOCK_MONOTONIC, &now);
-    uint64_t at = now + std::chrono::duration_cast<std::chrono::microseconds>(
-                            tBoot_).count();
+    uint64_t at =
+        now +
+        std::chrono::duration_cast<std::chrono::microseconds>(tBoot_).count();
 
     // ctx lifetime is tied to the sd_event_source via destroy_callback so it
     // is freed regardless of which path tears the source down:
@@ -1233,30 +1245,33 @@ void Orchestrator::startBootTimer_(InstanceId id)
     // Previously only the expiry path freed ctx, leaking one allocation per
     // arm/cancel cycle whenever the FSM walked S_POWERED -> S_ONLINE before
     // T_BOOT expired (the common case on a healthy boot).
-    struct TimerCtx { Orchestrator* self; InstanceId id; };
+    struct TimerCtx
+    {
+        Orchestrator* self;
+        InstanceId id;
+    };
     auto* ctx = new TimerCtx{this, id};
 
-    int rc = sd_event_add_time(loop_, &src, CLOCK_MONOTONIC, at, 0,
-                      [](sd_event_source* /*s*/, uint64_t,
-                         void* userdata) -> int {
-                          auto* c = static_cast<TimerCtx*>(userdata);
-                          auto it = c->self->elementByInstance_.find(
-                              packInstance(c->id));
-                          if (it != c->self->elementByInstance_.end())
-                          {
-                              // Sticky BC (FPGA CONF_DONE across N_CONFIG):
-                              // no rising edge — re-read gpio-mon before
-                              // BOOT_TIMEOUT. Inject → BcHi → S_ONLINE.
-                              if (!c->self->tryRecoverStickyBc_(c->id))
-                              {
-                                  it->second->dispatch(SemanticEvent{
-                                      EventKind::TBootExpired, c->id});
-                              }
-                          }
-                          c->self->bootTimers_.erase(packInstance(c->id));
-                          return 0;  // destroy_callback frees ctx
-                      },
-                      ctx);
+    int rc = sd_event_add_time(
+        loop_, &src, CLOCK_MONOTONIC, at, 0,
+        [](sd_event_source* /*s*/, uint64_t, void* userdata) -> int {
+            auto* c = static_cast<TimerCtx*>(userdata);
+            auto it = c->self->elementByInstance_.find(packInstance(c->id));
+            if (it != c->self->elementByInstance_.end())
+            {
+                // Sticky BC (FPGA CONF_DONE across N_CONFIG):
+                // no rising edge — re-read gpio-mon before
+                // BOOT_TIMEOUT. Inject → BcHi → S_ONLINE.
+                if (!c->self->tryRecoverStickyBc_(c->id))
+                {
+                    it->second->dispatch(
+                        SemanticEvent{EventKind::TBootExpired, c->id});
+                }
+            }
+            c->self->bootTimers_.erase(packInstance(c->id));
+            return 0; // destroy_callback frees ctx
+        },
+        ctx);
     if (rc < 0)
     {
         delete ctx;
@@ -1264,16 +1279,16 @@ void Orchestrator::startBootTimer_(InstanceId id)
                    "ID", to_string(id), "ERR", std::strerror(-rc));
         return;
     }
-    sd_event_source_set_destroy_callback(src, +[](void* userdata) {
-        delete static_cast<TimerCtx*>(userdata);
-    });
+    sd_event_source_set_destroy_callback(
+        src, +[](void* userdata) { delete static_cast<TimerCtx*>(userdata); });
     bootTimers_[packInstance(id)] = BootTimer{src, id};
 }
 
 void Orchestrator::cancelBootTimer_(InstanceId id)
 {
     auto it = bootTimers_.find(packInstance(id));
-    if (it == bootTimers_.end()) return;
+    if (it == bootTimers_.end())
+        return;
     if (it->second.source)
     {
         sd_event_source_set_enabled(it->second.source, SD_EVENT_OFF);
@@ -1404,9 +1419,7 @@ bool Orchestrator::tryRecoverStickyBc_(InstanceId id)
 
     const bool recovered = hal::tryRecoverStickyBootComplete(
         electrical, dev->bootCompleteActiveLow(),
-        [dev](bool elec) {
-            return dev->injectBootCompleteElectrical(elec);
-        });
+        [dev](bool elec) { return dev->injectBootCompleteElectrical(elec); });
 
     if (recovered)
     {
@@ -1419,4 +1432,4 @@ bool Orchestrator::tryRecoverStickyBc_(InstanceId id)
     return recovered;
 }
 
-}  // namespace pwrseq
+} // namespace pwrseq

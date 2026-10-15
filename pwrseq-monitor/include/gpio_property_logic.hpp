@@ -36,7 +36,8 @@ struct CachedLine
     std::string lineName;
     bool bound = false;
     bool hasValue = false;
-    /** Electrical level; same semantics as ReadGpio / SharedLine::notifyExternal. */
+    /** Electrical level; same semantics as ReadGpio /
+     * SharedLine::notifyExternal. */
     bool value = false;
 };
 
@@ -61,9 +62,9 @@ inline bool isInteresting(const std::string& lineName,
 }
 
 /** Decide whether a fully-known cache entry should be injected. */
-inline Decision decideInject(
-    const CachedLine& cache,
-    const std::unordered_set<std::string>& interesting) noexcept
+inline Decision
+    decideInject(const CachedLine& cache,
+                 const std::unordered_set<std::string>& interesting) noexcept
 {
     if (!cache.bound || !cache.hasValue ||
         !isInteresting(cache.lineName, interesting))
@@ -79,12 +80,12 @@ inline Decision decideInject(
  *  Returns an Inject decision only when Bound && Value are known and the
  *  LineName is in the interesting set. Unbound / unknown lines yield None.
  */
-inline Decision applyPropertyUpdate(
-    CachedLine& cache,
-    const std::optional<std::string>& lineNameUpdate,
-    const std::optional<bool>& boundUpdate,
-    const std::optional<bool>& valueUpdate,
-    const std::unordered_set<std::string>& interesting)
+inline Decision
+    applyPropertyUpdate(CachedLine& cache,
+                        const std::optional<std::string>& lineNameUpdate,
+                        const std::optional<bool>& boundUpdate,
+                        const std::optional<bool>& valueUpdate,
+                        const std::unordered_set<std::string>& interesting)
 {
     if (lineNameUpdate && !lineNameUpdate->empty())
     {
@@ -106,12 +107,12 @@ inline Decision applyPropertyUpdate(
 /** Apply a GetManagedObjects row; suppress no-op injects when cache already
  *  matches (signals may have seeded the line before the async reply).
  */
-inline Decision applySnapshotUpdate(
-    CachedLine& cache,
-    const std::optional<std::string>& lineNameUpdate,
-    const std::optional<bool>& boundUpdate,
-    const std::optional<bool>& valueUpdate,
-    const std::unordered_set<std::string>& interesting)
+inline Decision
+    applySnapshotUpdate(CachedLine& cache,
+                        const std::optional<std::string>& lineNameUpdate,
+                        const std::optional<bool>& boundUpdate,
+                        const std::optional<bool>& valueUpdate,
+                        const std::unordered_set<std::string>& interesting)
 {
     const bool prevHas = cache.hasValue;
     const bool prevBound = cache.bound;
@@ -134,19 +135,19 @@ inline Decision applySnapshotUpdate(
 
 enum class SnapshotPhase
 {
-    Idle,          // need (re)start
-    InFlight,      // async GetManagedObjects outstanding
-    Ready,         // at least one successful snapshot
-    RetryWait,     // transient failure; timer armed
+    Idle,      // need (re)start
+    InFlight,  // async GetManagedObjects outstanding
+    Ready,     // at least one successful snapshot
+    RetryWait, // transient failure; timer armed
 };
 
 enum class SnapshotEvent
 {
-    StartRequested,         // ctor / explicit resnapshot
-    CallDispatched,         // async call slot created
+    StartRequested, // ctor / explicit resnapshot
+    CallDispatched, // async call slot created
     CallSucceeded,
-    CallFailedMissing,      // service not on bus
-    CallFailedTransient,    // timeout / other; name may still be owned
+    CallFailedMissing,   // service not on bus
+    CallFailedTransient, // timeout / other; name may still be owned
     RetryTimerFired,
     ServiceAppeared,
     ServiceDeparted,
@@ -209,8 +210,8 @@ struct SnapshotMachine
             case SnapshotEvent::CallFailedTransient:
                 if (attempts >= maxAttempts)
                 {
-                    phase = everReady ? SnapshotPhase::Ready
-                                      : SnapshotPhase::Idle;
+                    phase =
+                        everReady ? SnapshotPhase::Ready : SnapshotPhase::Idle;
                     a.cancelRetryTimer = true;
                     break;
                 }

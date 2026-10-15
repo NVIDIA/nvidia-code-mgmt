@@ -35,9 +35,12 @@ static const char* tierName(TransitionRecord::Tier t)
 {
     switch (t)
     {
-        case TransitionRecord::Tier::Element: return "ELEM";
-        case TransitionRecord::Tier::Module:  return "MOD ";
-        case TransitionRecord::Tier::Tray:    return "TRAY";
+        case TransitionRecord::Tier::Element:
+            return "ELEM";
+        case TransitionRecord::Tier::Module:
+            return "MOD ";
+        case TransitionRecord::Tier::Tray:
+            return "TRAY";
     }
     return "?   ";
 }
@@ -59,9 +62,12 @@ static const char* (*stateNameFor(TransitionRecord::Tier t))(int)
 {
     switch (t)
     {
-        case TransitionRecord::Tier::Element: return stateNameElement;
-        case TransitionRecord::Tier::Module:  return stateNameModule;
-        case TransitionRecord::Tier::Tray:    return stateNameTray;
+        case TransitionRecord::Tier::Element:
+            return stateNameElement;
+        case TransitionRecord::Tier::Module:
+            return stateNameModule;
+        case TransitionRecord::Tier::Tray:
+            return stateNameTray;
     }
     return stateNameElement;
 }
@@ -72,12 +78,11 @@ static void dumpNewTransitions(const std::vector<TransitionRecord>& trace,
     for (; cursor < trace.size(); ++cursor)
     {
         const auto& r = trace[cursor];
-        auto* nameFn  = stateNameFor(r.tier);
+        auto* nameFn = stateNameFor(r.tier);
         std::printf("    t=%6lldms  %s  %-22s  %s -> %s\n",
-                    static_cast<long long>(r.at.count()),
-                    tierName(r.tier),
-                    to_string(r.who).c_str(),
-                    nameFn(r.fromState), nameFn(r.toState));
+                    static_cast<long long>(r.at.count()), tierName(r.tier),
+                    to_string(r.who).c_str(), nameFn(r.fromState),
+                    nameFn(r.toState));
     }
 }
 
@@ -96,9 +101,9 @@ static void banner(const char* title)
 static config::PlatformDescriptor makeLp30Descriptor()
 {
     config::PlatformDescriptor d;
-    d.platform   = "LP30-EB2 (test rig)";
-    d.chassisId  = "HGX_Chassis_0";
-    d.tBootMs    = milliseconds(12'000);
+    d.platform = "LP30-EB2 (test rig)";
+    d.chassisId = "HGX_Chassis_0";
+    d.tBootMs = milliseconds(12'000);
 
     // 8 modules, each with 2 LPUs.
     for (int m = 0; m < 8; ++m)
@@ -109,13 +114,12 @@ static config::PlatformDescriptor makeLp30Descriptor()
         {
             config::ElementDescriptor e;
             e.kind = config::ElementDescriptor::Kind::Lpu;
-            e.id   = "HGX_LPU_" + std::to_string(m * 2 + k);
-            e.pg.line       = "LPU" + std::to_string(m * 2 + k + 1) +
-                              "_MODULE_PGOOD_R-I";
-            e.bc.line       = "LPU" + std::to_string(m * 2 + k + 1) +
-                              "_GPIO61-I";
-            e.resetLine.line = "LPU" + std::to_string(m * 2 + k + 1) +
-                               "_SW_RESET_N-O";
+            e.id = "HGX_LPU_" + std::to_string(m * 2 + k);
+            e.pg.line =
+                "LPU" + std::to_string(m * 2 + k + 1) + "_MODULE_PGOOD_R-I";
+            e.bc.line = "LPU" + std::to_string(m * 2 + k + 1) + "_GPIO61-I";
+            e.resetLine.line =
+                "LPU" + std::to_string(m * 2 + k + 1) + "_SW_RESET_N-O";
             mod.elements.push_back(std::move(e));
         }
         d.modules.push_back(std::move(mod));
@@ -124,17 +128,17 @@ static config::PlatformDescriptor makeLp30Descriptor()
     // 2 FPGAs.
     {
         config::FpgaDescriptor f;
-        f.id          = "HGX_FPGA_W";
-        f.pg.line     = "FPGA_PWR_GD";
-        f.bc.line     = "BB_FPGA_0_INIT_DONE_R";
+        f.id = "HGX_FPGA_W";
+        f.pg.line = "FPGA_PWR_GD";
+        f.bc.line = "BB_FPGA_0_INIT_DONE_R";
         f.resetLine.line = "BB_FPGA_0_RESET_3V3-O";
         d.fpgas.push_back(std::move(f));
     }
     {
         config::FpgaDescriptor f;
-        f.id          = "HGX_FPGA_E";
-        f.pg.line     = "FPGA_PWR_GD";
-        f.bc.line     = "BB_FPGA_1_INIT_DONE_R";
+        f.id = "HGX_FPGA_E";
+        f.pg.line = "FPGA_PWR_GD";
+        f.bc.line = "BB_FPGA_1_INIT_DONE_R";
         f.resetLine.line = "BB_FPGA_1_RESET_3V3-O";
         d.fpgas.push_back(std::move(f));
     }
@@ -145,7 +149,7 @@ static config::PlatformDescriptor makeLp30Descriptor()
 // ─── assertion helpers (we don't drag in gtest here) ───────────────────────
 
 static int g_failures = 0;
-static int g_checks   = 0;
+static int g_checks = 0;
 
 #define EXPECT_EQ_INT(actual, expected, label)                                 \
     do                                                                         \
@@ -174,8 +178,8 @@ static int g_checks   = 0;
                   static_cast<int>(st), label)
 
 #define EXPECT_TRAY(rig, st, label)                                            \
-    EXPECT_EQ_INT(static_cast<int>((rig).trayState()),                         \
-                  static_cast<int>(st), label)
+    EXPECT_EQ_INT(static_cast<int>((rig).trayState()), static_cast<int>(st),   \
+                  label)
 
 #define EXPECT_FAULT(rig, id, fc, label)                                       \
     EXPECT_EQ_INT(static_cast<int>((rig).elementFault(id)),                    \
@@ -198,8 +202,10 @@ static void sc1_happy_cold_boot(TestRig& rig)
     dumpNewTransitions(rig.trace(), cursor);
 
     EXPECT_TRAY(rig, TrayState::Booting, "tray=Booting after PG on all");
-    EXPECT_ELEMENT(rig, TestRig::lpuId(1),  ElementState::Powered, "LPU1=Powered");
-    EXPECT_MODULE(rig,  TestRig::moduleId(0), ModuleState::Powered, "Module0=Powered");
+    EXPECT_ELEMENT(rig, TestRig::lpuId(1), ElementState::Powered,
+                   "LPU1=Powered");
+    EXPECT_MODULE(rig, TestRig::moduleId(0), ModuleState::Powered,
+                  "Module0=Powered");
     EXPECT_EQ_INT(rig.pendingTimers(), 18u, "18 T_BOOT timers armed");
 
     // Phase 2 — BC asserted on every element. Each Element → Online,
@@ -210,9 +216,11 @@ static void sc1_happy_cold_boot(TestRig& rig)
     dumpNewTransitions(rig.trace(), cursor);
 
     EXPECT_TRAY(rig, TrayState::Online, "tray=Online after BC on all");
-    EXPECT_ELEMENT(rig, TestRig::lpuId(7),  ElementState::Online, "LPU7=Online");
-    EXPECT_ELEMENT(rig, TestRig::fpgaId(0), ElementState::Online, "FPGA-W=Online");
-    EXPECT_MODULE(rig,  TestRig::moduleId(3), ModuleState::Online, "Module3=Online");
+    EXPECT_ELEMENT(rig, TestRig::lpuId(7), ElementState::Online, "LPU7=Online");
+    EXPECT_ELEMENT(rig, TestRig::fpgaId(0), ElementState::Online,
+                   "FPGA-W=Online");
+    EXPECT_MODULE(rig, TestRig::moduleId(3), ModuleState::Online,
+                  "Module3=Online");
     EXPECT_EQ_INT(rig.pendingTimers(), 0u, "all T_BOOT timers cancelled");
 }
 
@@ -229,7 +237,8 @@ static void sc2_lpu5_boot_timeout(TestRig& rig)
     rig.injectAllFpgas(EventKind::PgHi);
     for (int i = 1; i <= 16; ++i)
     {
-        if (i == 5) continue;
+        if (i == 5)
+            continue;
         rig.inject(TestRig::lpuId(i), EventKind::BcHi);
     }
     rig.injectAllFpgas(EventKind::BcHi);
@@ -309,7 +318,8 @@ static void sc5_reset_on_faulted_lpu()
     rig.injectAllLpus(EventKind::PgHi);
     rig.injectAllFpgas(EventKind::PgHi);
     for (int i = 1; i <= 16; ++i)
-        if (i != 5) rig.inject(TestRig::lpuId(i), EventKind::BcHi);
+        if (i != 5)
+            rig.inject(TestRig::lpuId(i), EventKind::BcHi);
     rig.injectAllFpgas(EventKind::BcHi);
     rig.tick(milliseconds(12'000));
     cursor = rig.trace().size();
@@ -341,7 +351,7 @@ static void sc10_reset_cancels_tboot()
     TestRig rig(makeLp30Descriptor());
     auto lpu5 = TestRig::lpuId(5);
 
-    rig.inject(lpu5, EventKind::PgHi);  // → Powered, T_BOOT armed
+    rig.inject(lpu5, EventKind::PgHi); // → Powered, T_BOOT armed
     EXPECT_ELEMENT(rig, lpu5, ElementState::Powered, "post-PG: Powered");
     EXPECT_EQ_INT(rig.pendingTimers(), 1u, "1 T_BOOT timer armed");
 
@@ -358,7 +368,8 @@ static void sc10_reset_cancels_tboot()
     std::printf("  → +6000ms (would have been original T_BOOT deadline)\n");
     int fired = rig.tick(milliseconds(6'000));
     EXPECT_EQ_INT(fired, 0, "original T_BOOT did NOT fire");
-    EXPECT_ELEMENT(rig, lpu5, ElementState::Powered, "still Powered (no fault)");
+    EXPECT_ELEMENT(rig, lpu5, ElementState::Powered,
+                   "still Powered (no fault)");
 
     std::printf("  → +6000ms more (now past the *new* T_BOOT)\n");
     fired = rig.tick(milliseconds(6'000));

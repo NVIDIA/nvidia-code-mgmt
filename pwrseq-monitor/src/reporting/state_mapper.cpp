@@ -36,13 +36,13 @@ StatusTuple toStatus(ModuleState s) noexcept
     switch (s)
     {
         case ModuleState::Stby:
-            return {HealthType::OK,       StateType::StandbyOffline,     false};
+            return {HealthType::OK, StateType::StandbyOffline, false};
         case ModuleState::Powered:
-            return {HealthType::OK,       StateType::Starting,           false};
+            return {HealthType::OK, StateType::Starting, false};
         case ModuleState::Online:
-            return {HealthType::OK,       StateType::Enabled,            true};
+            return {HealthType::OK, StateType::Enabled, true};
         case ModuleState::Resetting:
-            return {HealthType::OK,       StateType::StandbyOffline,     false};
+            return {HealthType::OK, StateType::StandbyOffline, false};
         case ModuleState::Fault:
             return {HealthType::Critical, StateType::UnavailableOffline, false};
     }
@@ -54,17 +54,17 @@ StatusTuple toStatus(TrayState s) noexcept
     switch (s)
     {
         case TrayState::Stby:
-            return {HealthType::OK,       StateType::StandbyOffline,     false};
+            return {HealthType::OK, StateType::StandbyOffline, false};
         case TrayState::Booting:
-            return {HealthType::OK,       StateType::Starting,           false};
+            return {HealthType::OK, StateType::Starting, false};
         case TrayState::Online:
-            return {HealthType::OK,       StateType::Enabled,            true};
+            return {HealthType::OK, StateType::Enabled, true};
         case TrayState::Fault:
             return {HealthType::Critical, StateType::UnavailableOffline, false};
         case TrayState::Maintenance:
-            return {HealthType::OK,       StateType::StandbyOffline,     false};
+            return {HealthType::OK, StateType::StandbyOffline, false};
     }
     return {HealthType::Critical, StateType::UnavailableOffline, false};
 }
 
-}  // namespace pwrseq::reporting
+} // namespace pwrseq::reporting

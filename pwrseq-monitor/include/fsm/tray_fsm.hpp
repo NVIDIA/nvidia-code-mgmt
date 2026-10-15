@@ -23,12 +23,11 @@ namespace pwrseq::fsm
  */
 struct TrayContext
 {
-    InstanceId                  id;
-    std::vector<ModuleState>    moduleStates;   // indexed by module 0..N-1
-    std::vector<ElementState>   fpgaStates;     // indexed by FPGA 0..M-1
+    InstanceId id;
+    std::vector<ModuleState> moduleStates; // indexed by module 0..N-1
+    std::vector<ElementState> fpgaStates;  // indexed by FPGA 0..M-1
 
-    std::function<void(TrayState oldState, TrayState newState)>
-        onStateChange;
+    std::function<void(TrayState oldState, TrayState newState)> onStateChange;
 };
 
 /** Tray FSM — one instance per chassis (×1 on LP30).
@@ -46,7 +45,10 @@ class TrayFsm
      */
     TrayFsm(InstanceId trayId, size_t numModules, size_t numFpgas);
 
-    TrayState state() const noexcept { return engine_.currentState(); }
+    TrayState state() const noexcept
+    {
+        return engine_.currentState();
+    }
 
     /** Dispatch a SemanticEvent. Returns true if a row matched and fired
      *  (state may or may not have changed); false if the event was
@@ -70,14 +72,17 @@ class TrayFsm
     }
 
     /** Const read-only access to FSM context (for tests / diagnostics). */
-    const TrayContext& ctx() const noexcept { return ctx_; }
+    const TrayContext& ctx() const noexcept
+    {
+        return ctx_;
+    }
 
   private:
-    TrayContext                            ctx_;
-    FsmEngine<TrayState, TrayContext>      engine_;
+    TrayContext ctx_;
+    FsmEngine<TrayState, TrayContext> engine_;
 };
 
 /** Test/inspection access to the canonical Tray FSM transition table. */
 std::span<const TransitionRow<TrayState, TrayContext>> trayFsmTable();
 
-}  // namespace pwrseq::fsm
+} // namespace pwrseq::fsm

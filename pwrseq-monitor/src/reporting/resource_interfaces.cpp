@@ -23,4 +23,4 @@ void Reporter::applyStatus(TrayState s)
     writeTuple_(toStatus(s));
 }
 
-}  // namespace pwrseq::reporting
+} // namespace pwrseq::reporting

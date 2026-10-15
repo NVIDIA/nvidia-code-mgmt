@@ -23,9 +23,8 @@
 #include "hal/i_device.hpp"
 #include "hal/subscriber_list.hpp"
 
-#include <sdbusplus/bus.hpp>
-
 #include <gpiod.hpp>
+#include <sdbusplus/bus.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -43,7 +42,7 @@ namespace pwrseq::hal::common
 struct GpioLine
 {
     std::string name;
-    bool        activeLow = false;
+    bool activeLow = false;
 };
 
 /** Scan /dev/gpiochip* for a chip exposing a line with the given name. */
@@ -53,23 +52,36 @@ std::string findChipForLine(const std::string& lineName);
 class DbusLineSource
 {
   public:
-    DbusLineSource(std::string lineName,
-                   bool activeLow,
-                   bool initialAsserted) noexcept
-        : name_(std::move(lineName)),
-          activeLow_(activeLow),
-          cached_(initialAsserted)
+    DbusLineSource(std::string lineName, bool activeLow,
+                   bool initialAsserted) noexcept :
+        name_(std::move(lineName)), activeLow_(activeLow),
+        cached_(initialAsserted)
     {}
 
-    int fd() const noexcept { return -1; }
+    int fd() const noexcept
+    {
+        return -1;
+    }
 
-    const std::string& name() const noexcept { return name_; }
+    const std::string& name() const noexcept
+    {
+        return name_;
+    }
 
-    bool read() const noexcept { return cached_; }
+    bool read() const noexcept
+    {
+        return cached_;
+    }
 
-    bool hasValue() const noexcept { return hasValue_; }
+    bool hasValue() const noexcept
+    {
+        return hasValue_;
+    }
 
-    bool activeLow() const noexcept { return activeLow_; }
+    bool activeLow() const noexcept
+    {
+        return activeLow_;
+    }
 
     void setCached(bool asserted) noexcept
     {
@@ -79,25 +91,30 @@ class DbusLineSource
 
   private:
     std::string name_;
-    bool        activeLow_ = false;
-    bool        cached_    = false;
-    bool        hasValue_  = false;
+    bool activeLow_ = false;
+    bool cached_ = false;
+    bool hasValue_ = false;
 };
 
 /** RAII handle for a single OUTPUT GPIO line (reset). */
 class OutputLine
 {
   public:
-    OutputLine(const std::string& chip_path,
-               const GpioLine& line,
+    OutputLine(const std::string& chip_path, const GpioLine& line,
                const std::string& consumer);
 
     void assert_();
     void release();
     void trigger();
 
-    bool isAsserted() const noexcept { return asserted_; }
-    const std::string& name() const noexcept { return name_; }
+    bool isAsserted() const noexcept
+    {
+        return asserted_;
+    }
+    const std::string& name() const noexcept
+    {
+        return name_;
+    }
 
   private:
     int electricalValueForAssert_() const noexcept
@@ -111,17 +128,17 @@ class OutputLine
 
     ::gpiod::chip chip_;
     ::gpiod::line line_;
-    std::string   name_;
-    bool          active_low_ = false;
-    bool          asserted_   = false;
+    std::string name_;
+    bool active_low_ = false;
+    bool asserted_ = false;
 };
 
 /** How to drive a reset output during a short-lived acquire. */
 enum class ResetLineOp : uint8_t
 {
-    Trigger,            // assert only (LSTP warm-reset pulse)
-    AssertOnly,         // assert and hold until OutputLine is destroyed
-    ReleaseElectrical,  // drive release value before dropping the request
+    Trigger,           // assert only (LSTP warm-reset pulse)
+    AssertOnly,        // assert and hold until OutputLine is destroyed
+    ReleaseElectrical, // drive release value before dropping the request
 };
 
 /** Resolve (scan only, no line request) which gpiochip hosts a line name. */
@@ -146,7 +163,10 @@ class ResetChipRegistry
     /** Drop every entry pointing at a stale chip path (USB hotplug). */
     void invalidateChip(const std::string& chipPath);
 
-    std::size_t size() const noexcept { return lines_.size(); }
+    std::size_t size() const noexcept
+    {
+        return lines_.size();
+    }
 
   private:
     std::unordered_map<std::string, std::string> lines_;
@@ -170,15 +190,19 @@ class Subscription
 {
   public:
     Subscription() noexcept = default;
-    Subscription(std::weak_ptr<SharedLine> line, std::uint64_t slot) noexcept
-        : line_(std::move(line)), slot_(slot), valid_(true) {}
-    ~Subscription() { reset(); }
+    Subscription(std::weak_ptr<SharedLine> line, std::uint64_t slot) noexcept :
+        line_(std::move(line)), slot_(slot), valid_(true)
+    {}
+    ~Subscription()
+    {
+        reset();
+    }
 
-    Subscription(const Subscription&)            = delete;
+    Subscription(const Subscription&) = delete;
     Subscription& operator=(const Subscription&) = delete;
 
-    Subscription(Subscription&& o) noexcept
-        : line_(std::move(o.line_)), slot_(o.slot_), valid_(o.valid_)
+    Subscription(Subscription&& o) noexcept :
+        line_(std::move(o.line_)), slot_(o.slot_), valid_(o.valid_)
     {
         o.valid_ = false;
     }
@@ -188,8 +212,8 @@ class Subscription
         if (this != &o)
         {
             reset();
-            line_  = std::move(o.line_);
-            slot_  = o.slot_;
+            line_ = std::move(o.line_);
+            slot_ = o.slot_;
             valid_ = o.valid_;
             o.valid_ = false;
         }
@@ -198,29 +222,36 @@ class Subscription
 
     void reset() noexcept;
 
-    bool valid() const noexcept { return valid_; }
+    bool valid() const noexcept
+    {
+        return valid_;
+    }
 
   private:
     std::weak_ptr<SharedLine> line_;
-    std::uint64_t             slot_  = 0;
-    bool                      valid_ = false;
+    std::uint64_t slot_ = 0;
+    bool valid_ = false;
 };
 
 /** Refcounted input line fed by phosphor-multi-gpio-monitor edges. */
 class SharedLine : public std::enable_shared_from_this<SharedLine>
 {
   private:
-    struct PrivateTag {};
+    struct PrivateTag
+    {};
 
   public:
     SharedLine(PrivateTag, const GpioLine& gl, bool initialAsserted,
                const std::string& consumer);
 
-    int                fd() const noexcept { return -1; }
-    bool               read() const;
-    bool               hasValue() const noexcept;
+    int fd() const noexcept
+    {
+        return -1;
+    }
+    bool read() const;
+    bool hasValue() const noexcept;
     const std::string& name() const noexcept;
-    bool               activeLow() const noexcept;
+    bool activeLow() const noexcept;
     const std::string& consumer() const noexcept;
 
     /** Feed a raw electrical GPIO level; descriptor polarity is applied
@@ -236,7 +267,10 @@ class SharedLine : public std::enable_shared_from_this<SharedLine>
 
     Subscription subscribe(LineSubscriber cb);
 
-    std::size_t subscriber_count() const noexcept { return subs_.size(); }
+    std::size_t subscriber_count() const noexcept
+    {
+        return subs_.size();
+    }
 
   private:
     friend class SharedLineRegistry;
@@ -245,7 +279,7 @@ class SharedLine : public std::enable_shared_from_this<SharedLine>
     void unsubscribe(std::uint64_t slot) noexcept;
 
     DbusLineSource source_;
-    std::string    consumer_;
+    std::string consumer_;
     SubscriberList subs_;
 };
 
@@ -265,7 +299,8 @@ class SharedLineRegistry
     {
         for (const auto& [_, w] : lines_)
         {
-            if (auto sp = w.lock()) fn(*sp);
+            if (auto sp = w.lock())
+                fn(*sp);
         }
     }
 
@@ -287,4 +322,4 @@ class SharedLineRegistry
     std::unordered_map<Key, std::weak_ptr<SharedLine>, KeyHash> lines_;
 };
 
-}  // namespace pwrseq::hal::common
+} // namespace pwrseq::hal::common

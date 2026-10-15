@@ -25,7 +25,7 @@ namespace pwrseq::fsm
 struct ElementContext
 {
     InstanceId id;
-    FaultCode  faultCode = FaultCode::None;
+    FaultCode faultCode = FaultCode::None;
 
     /** Start this element's boot-deadline timer (T_BOOT, default 12 s on LP30
      *  but configurable per element class via the descriptor's
@@ -82,17 +82,26 @@ class ElementFsm
     explicit ElementFsm(InstanceId id);
 
     /** Current FSM state. */
-    ElementState state() const noexcept { return engine_.currentState(); }
+    ElementState state() const noexcept
+    {
+        return engine_.currentState();
+    }
 
     /** Last fault code set on entry to S_FAULT (cleared on recovery).
      *  Meaningful only when state() == ElementState::Fault.
      */
-    FaultCode faultCode() const noexcept { return ctx_.faultCode; }
+    FaultCode faultCode() const noexcept
+    {
+        return ctx_.faultCode;
+    }
 
     /** True after the first handled EV_PG_HI (rails seen good at least once).
      *  Used at reset dispatch time to skip never-powered elements (empty module
      *  bays that still wired up at init). */
-    bool hasSeenPgHi() const noexcept { return seenPgHi_; }
+    bool hasSeenPgHi() const noexcept
+    {
+        return seenPgHi_;
+    }
 
     /** Dispatch a SemanticEvent. Returns true if a transition row matched
      *  AND fired (state may or may not have changed -- self-transitions
@@ -123,19 +132,21 @@ class ElementFsm
     {
         ctx_.cancelTBoot = std::move(cb);
     }
-    void setOnStateChange(
-        std::function<void(ElementState, ElementState)> cb)
+    void setOnStateChange(std::function<void(ElementState, ElementState)> cb)
     {
         ctx_.onStateChange = std::move(cb);
     }
 
     /** Const read-only access to FSM context (for tests / diagnostics). */
-    const ElementContext& ctx() const noexcept { return ctx_; }
+    const ElementContext& ctx() const noexcept
+    {
+        return ctx_;
+    }
 
   private:
-    ElementContext                              ctx_;
-    FsmEngine<ElementState, ElementContext>     engine_;
-    bool                                        seenPgHi_ = false;
+    ElementContext ctx_;
+    FsmEngine<ElementState, ElementContext> engine_;
+    bool seenPgHi_ = false;
 };
 
 /** Test/inspection access to the canonical Element FSM transition table.
@@ -143,4 +154,4 @@ class ElementFsm
  */
 std::span<const TransitionRow<ElementState, ElementContext>> elementFsmTable();
 
-}  // namespace pwrseq::fsm
+} // namespace pwrseq::fsm

@@ -21,21 +21,20 @@ namespace common
 {
 class ResetChipRegistry;
 class SharedLineRegistry;
-}
-
+} // namespace common
 
 /** Return code for HAL operations. */
 enum class Result : int
 {
     Ok = 0,
-    NotPresent,          // probe() — device isn't here
-    Absent,              // init() -- GPIO chip not found; module not populated
+    NotPresent, // probe() — device isn't here
+    Absent,     // init() -- GPIO chip not found; module not populated
     AlreadyInitialized,
     InitFailed,
     NotReady, // transient state; caller may retry the operation
     HwError,
     BadArgument,
-    NotSupported,        // capability not advertised
+    NotSupported, // capability not advertised
 };
 
 std::string_view to_string(Result r) noexcept;
@@ -43,9 +42,9 @@ std::string_view to_string(Result r) noexcept;
 /** Kind of reset to perform. */
 enum class ResetKind : uint8_t
 {
-    Warm,        // LSTP reset trigger (assert only; MCU clears the net)
-    Cold,        // hard power off + on (RESET_3V3 on FPGA, etc.)
-    PowerCycle,  // alias for Cold in most cases
+    Warm,       // LSTP reset trigger (assert only; MCU clears the net)
+    Cold,       // hard power off + on (RESET_3V3 on FPGA, etc.)
+    PowerCycle, // alias for Cold in most cases
 };
 
 /** Capabilities a HAL driver advertises to the FSM Engine.
@@ -54,14 +53,14 @@ enum class ResetKind : uint8_t
  */
 struct Capabilities
 {
-    bool powerGood       = false;  // EV_PG_HI/LO available
-    bool bootComplete    = false;  // EV_BC_HI/LO available
-    bool warmReset       = false;  // reset(Warm) supported
-    bool coldReset       = false;  // reset(Cold) supported
-    bool powerCycle      = false;  // reset(PowerCycle) supported
-    bool perRailHealth   = false;  // multiple per-rail PGs aggregated
-    bool presenceDetect  = false;  // PRSNT line readable
-    bool pmbusAlert      = false;  // PMB_ALERT line readable
+    bool powerGood = false;      // EV_PG_HI/LO available
+    bool bootComplete = false;   // EV_BC_HI/LO available
+    bool warmReset = false;      // reset(Warm) supported
+    bool coldReset = false;      // reset(Cold) supported
+    bool powerCycle = false;     // reset(PowerCycle) supported
+    bool perRailHealth = false;  // multiple per-rail PGs aggregated
+    bool presenceDetect = false; // PRSNT line readable
+    bool pmbusAlert = false;     // PMB_ALERT line readable
 };
 
 /** Snapshot of a device's current observable state. Read at daemon startup
@@ -69,9 +68,9 @@ struct Capabilities
  */
 struct DeviceStatus
 {
-    bool present       = false;
-    bool powerGood     = false;
-    bool bootComplete  = false;
+    bool present = false;
+    bool powerGood = false;
+    bool bootComplete = false;
     // Raw boot-state register value (LPU/FPGA), 0xFF if not readable.
     uint8_t bootStateRegister = 0xFF;
 };
@@ -81,8 +80,8 @@ struct DeviceStatus
  */
 struct DeviceConfig
 {
-    InstanceId                instanceId;
-    std::chrono::milliseconds initTimeoutMs{12'000};  // T_BOOT default 12s
+    InstanceId instanceId;
+    std::chrono::milliseconds initTimeoutMs{12'000}; // T_BOOT default 12s
 
     /** Driver-specific signal-map / line-name strings. Format is up to the
      *  driver (e.g. an LpuDriver expects keys like "pg_line", "bc_line",
@@ -181,7 +180,8 @@ class IDevice
 
     /** Drop cached boot-complete before a reset pulse so async reset
      *  completion waits for a fresh BcHi edge, not a pre-reset level. */
-    virtual void clearBootCompleteCache() {}
+    virtual void clearBootCompleteCache()
+    {}
 
     /** gpio-mon LineName for boot-complete (empty if the device has none). */
     virtual std::string_view bootCompleteLineName() const noexcept
@@ -190,7 +190,10 @@ class IDevice
     }
 
     /** Descriptor polarity for bootCompleteLineName(). */
-    virtual bool bootCompleteActiveLow() const noexcept { return false; }
+    virtual bool bootCompleteActiveLow() const noexcept
+    {
+        return false;
+    }
 
     /** Inject a raw electrical gpio-mon level into the BC SharedLine
      *  (applies polarity, notifies subscribers → BcHi/BcLo).
@@ -200,9 +203,9 @@ class IDevice
         return false;
     }
     // ── inspection ─────────────────────────────────────────────────────────
-    virtual DeviceStatus  get_status() const = 0;
-    virtual Capabilities  capabilities() const = 0;
-    virtual InstanceId    id() const = 0;
+    virtual DeviceStatus get_status() const = 0;
+    virtual Capabilities capabilities() const = 0;
+    virtual InstanceId id() const = 0;
 
     // ── event-loop integration ─────────────────────────────────────────────
     /** File descriptors the driver wants polled for input. PG/BC drivers
@@ -239,4 +242,4 @@ class IDevice
     }
 };
 
-}  // namespace pwrseq::hal
+} // namespace pwrseq::hal

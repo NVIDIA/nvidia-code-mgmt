@@ -5,15 +5,15 @@
 
 #include "fsm/state_dump.hpp"
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <ctime>
 #include <fstream>
 #include <string>
-
-#include <sys/stat.h>
-#include <unistd.h>
 
 namespace pwrseq
 {
@@ -122,4 +122,4 @@ bool writeFsmSnapshotFile(const std::string& path, const FsmSnapshot& snap)
     return true;
 }
 
-}  // namespace pwrseq
+} // namespace pwrseq

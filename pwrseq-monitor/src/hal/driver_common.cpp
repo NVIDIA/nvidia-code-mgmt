@@ -68,34 +68,38 @@ std::string findChipForLine(const std::string& lineName)
         }
     }
 
-    if (matches.empty()) return {};
-    if (matches.size() == 1) return matches.front();
+    if (matches.empty())
+        return {};
+    if (matches.size() == 1)
+        return matches.front();
 
     std::string joined;
     for (const auto& m : matches)
     {
-        if (!joined.empty()) joined += ", ";
+        if (!joined.empty())
+            joined += ", ";
         joined += m;
     }
     throw std::runtime_error(
-        "findChipForLine: line name '" + lineName + "' is ambiguous; "
-        "matches on " + std::to_string(matches.size()) + " chips: [" +
-        joined + "]. Descriptor must disambiguate (rename the line on "
+        "findChipForLine: line name '" + lineName +
+        "' is ambiguous; "
+        "matches on " +
+        std::to_string(matches.size()) + " chips: [" + joined +
+        "]. Descriptor must disambiguate (rename the line on "
         "one of the chips, or pin the chip path in platform.json).");
 }
 
 // ── OutputLine ────────────────────────────────────────────────────────────
 
-OutputLine::OutputLine(const std::string& chip_path,
-                       const GpioLine& gl,
-                       const std::string& consumer)
-    : chip_(chip_path), name_(gl.name), active_low_(gl.activeLow)
+OutputLine::OutputLine(const std::string& chip_path, const GpioLine& gl,
+                       const std::string& consumer) :
+    chip_(chip_path), name_(gl.name), active_low_(gl.activeLow)
 {
     line_ = chip_.find_line(gl.name);
     if (!line_)
     {
-        throw std::runtime_error(
-            "OutputLine: line '" + gl.name + "' not found on " + chip_path);
+        throw std::runtime_error("OutputLine: line '" + gl.name +
+                                 "' not found on " + chip_path);
     }
 
     // libgpiodcxx 1.x: request_output() takes consumer name + initial value.
@@ -104,13 +108,13 @@ OutputLine::OutputLine(const std::string& chip_path,
     // driver in this process) has already requested the line -- that's a
     // configuration error worth surfacing as InitFailed in the caller.
     ::gpiod::line_request req;
-    req.consumer     = consumer;
+    req.consumer = consumer;
     req.request_type = ::gpiod::line_request::DIRECTION_OUTPUT;
     // Intentionally do NOT set FLAG_ACTIVE_LOW. We track polarity in this
     // class so reads/writes via gpioget(1) from outside (debug) match what
     // the daemon is doing on the wire.
     line_.request(req, electricalValueForRelease_());
-    asserted_ = false;  // matches the initial drive value above
+    asserted_ = false; // matches the initial drive value above
 }
 
 void OutputLine::assert_()
@@ -140,7 +144,8 @@ std::string probeChipForLine(const std::string& lineName)
 std::string ResetChipRegistry::get(const std::string& lineName) const
 {
     const auto it = lines_.find(lineName);
-    if (it == lines_.end()) return {};
+    if (it == lines_.end())
+        return {};
     return it->second;
 }
 
@@ -217,7 +222,7 @@ hal::Result actuateOnChip(const std::string& chip, const GpioLine& gl,
     return hal::Result::Ok;
 }
 
-}  // namespace
+} // namespace
 
 Result actuateResetOutputLine(const std::string& lineName, bool activeLow,
                               const std::string& consumer, ResetLineOp op,
@@ -266,10 +271,9 @@ Result actuateResetOutputLine(const std::string& lineName, bool activeLow,
         }
         if (!staleChip.empty())
         {
-            lg2::info(
-                "actuateResetOutputLine: rescan for {LINE} found {CHIP} "
-                "(was {STALE}); cache updated and pulse succeeded",
-                "LINE", lineName, "CHIP", chip, "STALE", staleChip);
+            lg2::info("actuateResetOutputLine: rescan for {LINE} found {CHIP} "
+                      "(was {STALE}); cache updated and pulse succeeded",
+                      "LINE", lineName, "CHIP", chip, "STALE", staleChip);
         }
         return result;
     }
@@ -284,9 +288,8 @@ Result actuateResetOutputLine(const std::string& lineName, bool activeLow,
 // ── SharedLine ────────────────────────────────────────────────────────────
 
 SharedLine::SharedLine(PrivateTag, const GpioLine& gl, bool initialAsserted,
-                       const std::string& consumer)
-    : source_(gl.name, gl.activeLow, initialAsserted),
-      consumer_(consumer)
+                       const std::string& consumer) :
+    source_(gl.name, gl.activeLow, initialAsserted), consumer_(consumer)
 {}
 
 bool SharedLine::read() const
@@ -336,7 +339,8 @@ void SharedLine::unsubscribe(std::uint64_t slot) noexcept
 
 void Subscription::reset() noexcept
 {
-    if (!valid_) return;
+    if (!valid_)
+        return;
     valid_ = false;
     if (auto sp = line_.lock())
     {
@@ -350,15 +354,14 @@ void Subscription::reset() noexcept
 namespace
 {
 
-void warnIfDescriptorMismatch(const SharedLine& existing,
-                              const GpioLine& gl,
+void warnIfDescriptorMismatch(const SharedLine& existing, const GpioLine& gl,
                               const std::string& consumer)
 {
     if (existing.activeLow() != gl.activeLow)
     {
         throw std::runtime_error(
-            "SharedLineRegistry::acquire: descriptor mismatch for '" +
-            gl.name + "' -- existing registration has active_low=" +
+            "SharedLineRegistry::acquire: descriptor mismatch for '" + gl.name +
+            "' -- existing registration has active_low=" +
             (existing.activeLow() ? "true" : "false") +
             " but caller requested active_low=" +
             (gl.activeLow ? "true" : "false") +
@@ -376,11 +379,10 @@ void warnIfDescriptorMismatch(const SharedLine& existing,
     }
 }
 
-}  // namespace
+} // namespace
 
-std::shared_ptr<SharedLine> SharedLineRegistry::acquire(
-    const GpioLine& gl,
-    const std::string& consumer)
+std::shared_ptr<SharedLine>
+    SharedLineRegistry::acquire(const GpioLine& gl, const std::string& consumer)
 {
     const Key k{gl.name};
     auto it = lines_.find(k);
@@ -397,14 +399,14 @@ std::shared_ptr<SharedLine> SharedLineRegistry::acquire(
     // binds the line and publishes Value (PropertiesChanged / snapshot).
     constexpr bool initialAsserted = false;
 
-    auto sp = std::make_shared<SharedLine>(
-        SharedLine::PrivateTag{}, gl, initialAsserted, consumer);
+    auto sp = std::make_shared<SharedLine>(SharedLine::PrivateTag{}, gl,
+                                           initialAsserted, consumer);
     lines_[k] = sp;
     return sp;
 }
 
-std::shared_ptr<SharedLine> SharedLineRegistry::findByName(
-    const std::string& lineName) const
+std::shared_ptr<SharedLine>
+    SharedLineRegistry::findByName(const std::string& lineName) const
 {
     // Walk the map -- N is small (~30) and this is called on the
     // property-inject path. If profiling ever shows this dominating,
@@ -414,7 +416,8 @@ std::shared_ptr<SharedLine> SharedLineRegistry::findByName(
     {
         if (auto sp = w.lock())
         {
-            if (sp->name() == lineName) return sp;
+            if (sp->name() == lineName)
+                return sp;
         }
     }
     return nullptr;
@@ -425,9 +428,10 @@ std::size_t SharedLineRegistry::live_count() const
     std::size_t n = 0;
     for (const auto& [_, w] : lines_)
     {
-        if (!w.expired()) ++n;
+        if (!w.expired())
+            ++n;
     }
     return n;
 }
 
-}  // namespace pwrseq::hal::common
+} // namespace pwrseq::hal::common

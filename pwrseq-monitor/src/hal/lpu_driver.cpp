@@ -7,16 +7,16 @@
 
 #include "hal/pg_bc_latch.hpp"
 
+#include <fcntl.h>
 #include <lpu850/lpu850-uapi.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include <phosphor-logging/lg2.hpp>
 
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <string>
-#include <sys/ioctl.h>
-#include <unistd.h>
 
 namespace pwrseq::hal
 {
@@ -32,7 +32,7 @@ bool paramFlag(const DeviceConfig& cfg, std::string_view key)
     auto v = cfg.param(key);
     return v == "1" || v == "true";
 }
-}  // namespace
+} // namespace
 
 Result LpuDriver::probe()
 {
@@ -49,8 +49,8 @@ Result LpuDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
         return Result::BadArgument;
     }
 
-    const std::string pgLineName    = cfg.param("pg_line");
-    const std::string bcLineName    = cfg.param("bc_line");
+    const std::string pgLineName = cfg.param("pg_line");
+    const std::string bcLineName = cfg.param("bc_line");
     const std::string resetLineName = cfg.param("reset_line");
 
     vrTelemetryConfigured_ = false;
@@ -58,8 +58,8 @@ Result LpuDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
 
     if (pgLineName.empty() || bcLineName.empty() || resetLineName.empty())
     {
-        lg2::error("LpuDriver[{ID}]: missing required driverParams",
-                   "ID", to_string(id_));
+        lg2::error("LpuDriver[{ID}]: missing required driverParams", "ID",
+                   to_string(id_));
         return Result::BadArgument;
     }
 
@@ -84,8 +84,8 @@ Result LpuDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
 
     std::shared_ptr<common::SharedLine> newPgLine;
     std::shared_ptr<common::SharedLine> newBcLine;
-    common::Subscription                newPgSub;
-    common::Subscription                newBcSub;
+    common::Subscription newPgSub;
+    common::Subscription newBcSub;
 
     try
     {
@@ -96,46 +96,44 @@ Result LpuDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
         // PG rising samples the BC latch (OOO BC-before-PG / seed); PG
         // falling invalidates BC so the next rise cannot see a stale
         // BOOT_COMPLETE from the previous power cycle (NVBUG 6559782).
-        newPgSub = newPgLine->subscribe(
-            [this, myId](bool asserted) {
-                if (!sink_)
-                {
-                    return;
-                }
-                const bool bcHigh =
-                    bcLine_ && bcLine_->hasValue() && bcLine_->read();
-                emitPowerGoodEdge(*sink_, myId, asserted, bcHigh, [this] {
-                    clearBootCompleteCache();
-                });
-            });
-        newBcSub = newBcLine->subscribe(
-            [this, myId](bool asserted) {
-                if (sink_) sink_->emit(SemanticEvent{
+        newPgSub = newPgLine->subscribe([this, myId](bool asserted) {
+            if (!sink_)
+            {
+                return;
+            }
+            const bool bcHigh =
+                bcLine_ && bcLine_->hasValue() && bcLine_->read();
+            emitPowerGoodEdge(*sink_, myId, asserted, bcHigh,
+                              [this] { clearBootCompleteCache(); });
+        });
+        newBcSub = newBcLine->subscribe([this, myId](bool asserted) {
+            if (sink_)
+                sink_->emit(SemanticEvent{
                     asserted ? EventKind::BcHi : EventKind::BcLo, myId});
-            });
+        });
     }
     catch (const std::exception& e)
     {
-        lg2::error("LpuDriver[{ID}] init failed: {ERR}",
-                   "ID", to_string(id_), "ERR", e.what());
+        lg2::error("LpuDriver[{ID}] init failed: {ERR}", "ID", to_string(id_),
+                   "ERR", e.what());
         return Result::InitFailed;
     }
 
-    sink_           = &sink;
-    cfg_            = cfg;
-    pgLineName_     = pgLineName;
-    bcLineName_     = bcLineName;
-    resetLineName_  = resetLineName;
+    sink_ = &sink;
+    cfg_ = cfg;
+    pgLineName_ = pgLineName;
+    bcLineName_ = bcLineName;
+    resetLineName_ = resetLineName;
     resetActiveLow_ = paramFlag(cfg, "reset_active_low");
-    pgLine_         = std::move(newPgLine);
-    bcLine_         = std::move(newBcLine);
-    pgSub_          = std::move(newPgSub);
-    bcSub_          = std::move(newBcSub);
+    pgLine_ = std::move(newPgLine);
+    bcLine_ = std::move(newBcLine);
+    pgSub_ = std::move(newPgSub);
+    bcSub_ = std::move(newBcSub);
 
-    caps_.powerGood    = true;
+    caps_.powerGood = true;
     caps_.bootComplete = true;
-    caps_.warmReset    = true;
-    caps_.powerCycle   = false;
+    caps_.warmReset = true;
+    caps_.powerCycle = false;
 
     const auto resetChipPath = cfg.resetChips->probeOrStore(resetLineName_);
     if (resetChipPath.empty())
@@ -160,8 +158,8 @@ Result LpuDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
         {
             lg2::info("LpuDriver[{ID}]: log_dev {DEV} not available ({ERR}); "
                       "telemetry polling control disabled",
-                      "ID", to_string(id_), "DEV", logDev,
-                      "ERR", std::strerror(errno));
+                      "ID", to_string(id_), "DEV", logDev, "ERR",
+                      std::strerror(errno));
         }
         else
         {
@@ -187,12 +185,11 @@ Result LpuDriver::reset(ResetKind kind)
         return Result::NotSupported;
     }
 
-    lg2::info("LpuDriver[{ID}]: warm-reset trigger on {LINE}",
-              "ID", to_string(id_), "LINE", resetLineName_);
-    return common::actuateResetOutputLine(resetLineName_, resetActiveLow_,
-                                          "pwrseq-monitor",
-                                          common::ResetLineOp::Trigger,
-                                          cfg_.resetChips);
+    lg2::info("LpuDriver[{ID}]: warm-reset trigger on {LINE}", "ID",
+              to_string(id_), "LINE", resetLineName_);
+    return common::actuateResetOutputLine(
+        resetLineName_, resetActiveLow_, "pwrseq-monitor",
+        common::ResetLineOp::Trigger, cfg_.resetChips);
 }
 
 Result LpuDriver::resetAssert(ResetKind kind)
@@ -208,10 +205,9 @@ Result LpuDriver::resetAssert(ResetKind kind)
 
     lg2::info("LpuDriver[{ID}]: warm-reset assert on {LINE} (LSTP trigger)",
               "ID", to_string(id_), "LINE", resetLineName_);
-    return common::actuateResetOutputLine(resetLineName_, resetActiveLow_,
-                                          "pwrseq-monitor",
-                                          common::ResetLineOp::AssertOnly,
-                                          cfg_.resetChips);
+    return common::actuateResetOutputLine(
+        resetLineName_, resetActiveLow_, "pwrseq-monitor",
+        common::ResetLineOp::AssertOnly, cfg_.resetChips);
 }
 
 Result LpuDriver::resetRelease()
@@ -254,10 +250,9 @@ LpuDriver::VrPollingDecision LpuDriver::selectLpuVrPolling()
         return VrPollingDecision::Retry;
     }
 
-    const bool firmwareSupported =
-        version.major > minVrFirmwareMajor ||
-        (version.major == minVrFirmwareMajor &&
-         version.minor >= minVrFirmwareMinor);
+    const bool firmwareSupported = version.major > minVrFirmwareMajor ||
+                                   (version.major == minVrFirmwareMajor &&
+                                    version.minor >= minVrFirmwareMinor);
     if (!firmwareSupported)
     {
         lg2::info(
@@ -293,10 +288,9 @@ Result LpuDriver::applyTelemetryPolling(bool enable)
         return Result::HwError;
     }
 
-    lg2::info("LpuDriver[{ID}]: telemetry polling {STATE} (mask={MASK})",
-              "ID", to_string(id_),
-              "STATE", enable ? "enabled" : "disabled",
-              "MASK", static_cast<int>(mask));
+    lg2::info("LpuDriver[{ID}]: telemetry polling {STATE} (mask={MASK})", "ID",
+              to_string(id_), "STATE", enable ? "enabled" : "disabled", "MASK",
+              static_cast<int>(mask));
     return Result::Ok;
 }
 
@@ -310,8 +304,8 @@ Result LpuDriver::requestLogDrain(std::string_view reason)
     {
         lg2::warning("LpuDriver[{ID}]: event log drain failed reason={REASON} "
                      "error={ERR}",
-                     "ID", to_string(id_), "REASON", std::string(reason),
-                     "ERR", std::strerror(errno));
+                     "ID", to_string(id_), "REASON", std::string(reason), "ERR",
+                     std::strerror(errno));
         return Result::HwError;
     }
     lg2::info("LpuDriver[{ID}]: event log drain requested reason={REASON}",
@@ -404,10 +398,13 @@ DeviceStatus LpuDriver::get_status() const
     DeviceStatus s{};
     try
     {
-        if (pgLine_) s.powerGood    = pgLine_->read();
-        if (bcLine_) s.bootComplete = bcLine_->read();
+        if (pgLine_)
+            s.powerGood = pgLine_->read();
+        if (bcLine_)
+            s.bootComplete = bcLine_->read();
     }
-    catch (...) {}
+    catch (...)
+    {}
     s.present = (pgLine_ != nullptr && bcLine_ != nullptr);
     return s;
 }
@@ -418,12 +415,14 @@ std::vector<int> LpuDriver::fds() const
     if (pgLine_)
     {
         const int fd = pgLine_->fd();
-        if (fd >= 0) out.push_back(fd);
+        if (fd >= 0)
+            out.push_back(fd);
     }
     if (bcLine_)
     {
         const int fd = bcLine_->fd();
-        if (fd >= 0) out.push_back(fd);
+        if (fd >= 0)
+            out.push_back(fd);
     }
     return out;
 }
@@ -434,4 +433,4 @@ void LpuDriver::onReadable(int /*fd*/)
     // kernel fds are held.
 }
 
-}  // namespace pwrseq::hal
+} // namespace pwrseq::hal

@@ -29,7 +29,8 @@ namespace pwrseq::reporting
 
 using ResourceInterfacesInherit = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::State::Decorator::server::Health,
-    sdbusplus::xyz::openbmc_project::State::Decorator::server::OperationalStatus>;
+    sdbusplus::xyz::openbmc_project::State::Decorator::server::
+        OperationalStatus>;
 
 /** Wraps an sdbusplus object exposing Health + OperationalStatus on one
  *  D-Bus path. Direct port of the fw-status idiom.
@@ -59,7 +60,8 @@ class Reporter
         bus_(bus), path_(std::move(objPath))
     {}
 
-    /** Element-state writer. `present` distinguishes Stby-but-here vs Absent. */
+    /** Element-state writer. `present` distinguishes Stby-but-here vs Absent.
+     */
     void applyStatus(ElementState s, bool present);
 
     /** Module-state writer. */
@@ -68,7 +70,10 @@ class Reporter
     /** Tray-state writer. */
     void applyStatus(TrayState s);
 
-    const std::string& path() const noexcept { return path_; }
+    const std::string& path() const noexcept
+    {
+        return path_;
+    }
 
   private:
     void ensureCreated_()
@@ -86,9 +91,9 @@ class Reporter
         resource_->functional(t.functional);
     }
 
-    sdbusplus::bus::bus&                bus_;
-    std::string                         path_;
+    sdbusplus::bus::bus& bus_;
+    std::string path_;
     std::unique_ptr<ResourceInterfaces> resource_;
 };
 
-}  // namespace pwrseq::reporting
+} // namespace pwrseq::reporting

@@ -13,8 +13,7 @@ namespace pwrseq::test
 
 // ─── construction ──────────────────────────────────────────────────────────
 
-TestRig::TestRig(const config::PlatformDescriptor& desc) :
-    tBoot_(desc.tBootMs)
+TestRig::TestRig(const config::PlatformDescriptor& desc) : tBoot_(desc.tBootMs)
 {
     // ── allocate LPU element FSMs + MockDevices, one per element ──────────
     // InstanceId::index is zero-based in production (see
@@ -45,14 +44,14 @@ TestRig::TestRig(const config::PlatformDescriptor& desc) :
             // DeviceConfig is empty — the rig doesn't read it. We only
             // care that the sink wiring works.
             hal::DeviceConfig cfg{};
-            cfg.instanceId    = elInst;
+            cfg.instanceId = elInst;
             cfg.initTimeoutMs = tBoot_;
             (void)dev->init(*this, cfg);
 
-            deviceByInstance_[key_(elInst)]  = dev.get();
+            deviceByInstance_[key_(elInst)] = dev.get();
             elementByInstance_[key_(elInst)] = elFsm.get();
-            elementToModule_[key_(elInst)]   = key_(modInst);
-            elementIsLpu_[key_(elInst)]      = true;
+            elementToModule_[key_(elInst)] = key_(modInst);
+            elementIsLpu_[key_(elInst)] = true;
 
             devices_.push_back(std::move(dev));
             elements_.push_back(std::move(elFsm));
@@ -63,10 +62,9 @@ TestRig::TestRig(const config::PlatformDescriptor& desc) :
             // The Module FSM hardcodes a 2-element child array (matches
             // LP30's design where each module is exactly 2 LPUs). Until we
             // generalise the FSM, fail fast here.
-            throw std::runtime_error(
-                "TestRig: module \"" + mod.id +
-                "\" has " + std::to_string(children.size()) +
-                " elements; ModuleFsm requires exactly 2");
+            throw std::runtime_error("TestRig: module \"" + mod.id + "\" has " +
+                                     std::to_string(children.size()) +
+                                     " elements; ModuleFsm requires exactly 2");
         }
 
         auto modFsm =
@@ -84,22 +82,21 @@ TestRig::TestRig(const config::PlatformDescriptor& desc) :
         auto elFsm = std::make_unique<fsm::ElementFsm>(elInst);
 
         hal::DeviceConfig cfg{};
-        cfg.instanceId    = elInst;
+        cfg.instanceId = elInst;
         cfg.initTimeoutMs = tBoot_;
         (void)dev->init(*this, cfg);
 
-        deviceByInstance_[key_(elInst)]  = dev.get();
+        deviceByInstance_[key_(elInst)] = dev.get();
         elementByInstance_[key_(elInst)] = elFsm.get();
-        elementIsLpu_[key_(elInst)]      = false;
+        elementIsLpu_[key_(elInst)] = false;
 
         devices_.push_back(std::move(dev));
         elements_.push_back(std::move(elFsm));
     }
 
     // ── tray FSM (sizes itself based on N modules + M FPGAs) ──────────────
-    tray_ = std::make_unique<fsm::TrayFsm>(trayId(),
-                                            desc.modules.size(),
-                                            desc.fpgas.size());
+    tray_ = std::make_unique<fsm::TrayFsm>(trayId(), desc.modules.size(),
+                                           desc.fpgas.size());
 
     // ── wire everything ──────────────────────────────────────────────────
     // Modules first, so element hooks (which forward to a parent module)
@@ -114,10 +111,10 @@ TestRig::TestRig(const config::PlatformDescriptor& desc) :
         if (elementIsLpu_[key_(id)])
         {
             // LPU: its state changes propagate to its parent module.
-            wireElement_(*e, InstanceId{InstanceId::Class::Module,
-                                        static_cast<uint16_t>(
-                                            elementToModule_[key_(id)] &
-                                            0xFFFFu)});
+            wireElement_(*e,
+                         InstanceId{InstanceId::Class::Module,
+                                    static_cast<uint16_t>(
+                                        elementToModule_[key_(id)] & 0xFFFFu)});
         }
         else
         {
@@ -147,12 +144,10 @@ void TestRig::wireElement_(fsm::ElementFsm& fsm,
 
         // Schedule a new T_BOOT timer. When it fires, dispatch
         // EV_T_BOOT_EXPIRED to this element's FSM.
-        VirtualClock::TimerId tid =
-            clock_.schedule(tBoot_, [this, selfId]() {
-                bootTimers_[key_(selfId)] = 0;
-                dispatchInternal_(
-                    SemanticEvent{EventKind::TBootExpired, selfId});
-            });
+        VirtualClock::TimerId tid = clock_.schedule(tBoot_, [this, selfId]() {
+            bootTimers_[key_(selfId)] = 0;
+            dispatchInternal_(SemanticEvent{EventKind::TBootExpired, selfId});
+        });
         bootTimers_[key_(selfId)] = tid;
     });
 
@@ -165,39 +160,38 @@ void TestRig::wireElement_(fsm::ElementFsm& fsm,
         }
     });
 
-    fsm.setOnStateChange([this, selfId, parentModule](
-                                  ElementState oldS, ElementState newS) {
-        trace_.push_back({TransitionRecord::Tier::Element, selfId,
-                          static_cast<int>(oldS), static_cast<int>(newS),
-                          clock_.now()});
+    fsm.setOnStateChange(
+        [this, selfId, parentModule](ElementState oldS, ElementState newS) {
+            trace_.push_back({TransitionRecord::Tier::Element, selfId,
+                              static_cast<int>(oldS), static_cast<int>(newS),
+                              clock_.now()});
 
-        if (parentModule.has_value())
-        {
-            // LPU: tell the parent module.
-            dispatchInternal_(SemanticEvent{
-                EventKind::LpuStateChanged,
-                *parentModule,
-                ChildElementPayload{selfId, newS},
-            });
-        }
-        else
-        {
-            // FPGA: tell the tray directly.
-            dispatchInternal_(SemanticEvent{
-                EventKind::FpgaStateChanged,
-                trayId(),
-                ChildElementPayload{selfId, newS},
-            });
-        }
-    });
+            if (parentModule.has_value())
+            {
+                // LPU: tell the parent module.
+                dispatchInternal_(SemanticEvent{
+                    EventKind::LpuStateChanged,
+                    *parentModule,
+                    ChildElementPayload{selfId, newS},
+                });
+            }
+            else
+            {
+                // FPGA: tell the tray directly.
+                dispatchInternal_(SemanticEvent{
+                    EventKind::FpgaStateChanged,
+                    trayId(),
+                    ChildElementPayload{selfId, newS},
+                });
+            }
+        });
 }
 
 void TestRig::wireModule_(fsm::ModuleFsm& fsm)
 {
     InstanceId selfId = fsm.ctx().id;
 
-    fsm.setOnStateChange([this, selfId](
-                                  ModuleState oldS, ModuleState newS) {
+    fsm.setOnStateChange([this, selfId](ModuleState oldS, ModuleState newS) {
         trace_.push_back({TransitionRecord::Tier::Module, selfId,
                           static_cast<int>(oldS), static_cast<int>(newS),
                           clock_.now()});
@@ -228,8 +222,8 @@ void TestRig::inject(InstanceId target, EventKind kind)
     // a buggy test pass without ever exercising the FSM under test.
     if (!targetExists_(target))
     {
-        throw std::runtime_error(
-            "TestRig::inject: unknown target " + to_string(target));
+        throw std::runtime_error("TestRig::inject: unknown target " +
+                                 to_string(target));
     }
     dispatchInternal_(SemanticEvent{kind, target});
 }
@@ -270,8 +264,8 @@ void TestRig::requestReset(InstanceId target, hal::ResetKind kind)
     // device->reset() call.
     if (!targetExists_(target))
     {
-        throw std::runtime_error(
-            "TestRig::requestReset: unknown target " + to_string(target));
+        throw std::runtime_error("TestRig::requestReset: unknown target " +
+                                 to_string(target));
     }
     // Mirror Orchestrator::requestReset(): invalidate BC latch, assert
     // reset, drive the device, release. The device's reset() only records
@@ -413,4 +407,4 @@ hal::test::MockDevice* TestRig::findDevice_(InstanceId id) const
     return it == deviceByInstance_.end() ? nullptr : it->second;
 }
 
-}  // namespace pwrseq::test
+} // namespace pwrseq::test

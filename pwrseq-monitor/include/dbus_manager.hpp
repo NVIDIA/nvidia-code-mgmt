@@ -62,9 +62,10 @@
 #include "hal/driver_common.hpp"
 #include "orchestrator.hpp"
 
-#include <sdbusplus/bus.hpp>
 #include <systemd/sd-bus.h>
 #include <systemd/sd-event.h>
+
+#include <sdbusplus/bus.hpp>
 
 #include <deque>
 #include <memory>
@@ -87,7 +88,7 @@ class DBusManager : private sdbusplus::bus::details::bus_friend
                 hal::common::SharedLineRegistry& lineRegistry);
     ~DBusManager();
 
-    DBusManager(const DBusManager&)            = delete;
+    DBusManager(const DBusManager&) = delete;
     DBusManager& operator=(const DBusManager&) = delete;
 
     // sd-bus method dispatchers (must match sd_bus_message_handler_t).
@@ -126,7 +127,7 @@ class DBusManager : private sdbusplus::bus::details::bus_friend
     struct PendingNotify
     {
         std::shared_ptr<hal::common::SharedLine> line;
-        bool                                     asserted;
+        bool asserted;
     };
 
     /** Push an edge onto the drain queue and arm the drain source if
@@ -148,12 +149,12 @@ class DBusManager : private sdbusplus::bus::details::bus_friend
      */
     static int drainPendingNotifies_(sd_event_source* s, void* userdata);
 
-    sdbusplus::bus::bus&             bus_;
-    Orchestrator&                    orch_;
+    sdbusplus::bus::bus& bus_;
+    Orchestrator& orch_;
     hal::common::SharedLineRegistry& lineRegistry_;
-    sd_bus_slot*                     slot_         = nullptr;
-    std::deque<PendingNotify>        pendingQueue_;
-    sd_event_source*                 drainSource_  = nullptr;
+    sd_bus_slot* slot_ = nullptr;
+    std::deque<PendingNotify> pendingQueue_;
+    sd_event_source* drainSource_ = nullptr;
 };
 
-}  // namespace pwrseq
+} // namespace pwrseq

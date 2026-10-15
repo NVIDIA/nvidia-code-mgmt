@@ -7,6 +7,9 @@
 
 #include "gpio_property_logic.hpp"
 
+#include <systemd/sd-bus.h>
+#include <systemd/sd-event.h>
+
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus/match.hpp>
 #include <sdbusplus/exception.hpp>
@@ -14,11 +17,8 @@
 #include <sdbusplus/message/native_types.hpp>
 #include <sdbusplus/slot.hpp>
 
-#include <systemd/sd-bus.h>
-#include <systemd/sd-event.h>
-
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <optional>
 #include <string>
@@ -46,8 +46,7 @@ using PropValue =
                  uint64_t, double, std::string, std::vector<uint8_t>>;
 using PropertyMap = std::map<std::string, PropValue>;
 using InterfaceMap = std::map<std::string, PropertyMap>;
-using ObjectValueTree =
-    std::map<sdbusplus::message::object_path, InterfaceMap>;
+using ObjectValueTree = std::map<sdbusplus::message::object_path, InterfaceMap>;
 
 void addUniqueLine(std::unordered_set<std::string>& lines,
                    const config::LineRef& ref)
@@ -227,9 +226,9 @@ struct GpioPropertySubscriber::Impl
     {
         try
         {
-            auto method = bus_.new_method_call(
-                kGpioService, kGpioRootPath, kObjectManagerIface,
-                "GetManagedObjects");
+            auto method =
+                bus_.new_method_call(kGpioService, kGpioRootPath,
+                                     kObjectManagerIface, "GetManagedObjects");
             // Keep the slot so the async call stays alive until the reply.
             snapshotSlot_ = method.call_async(
                 [this](sdbusplus::message_t reply) { onSnapshotReply(reply); });
@@ -277,9 +276,9 @@ struct GpioPropertySubscriber::Impl
             const sd_bus_error* err = reply.get_error();
             const char* errName =
                 (err != nullptr && err->name != nullptr) ? err->name : "";
-            const char* errMsg =
-                (err != nullptr && err->message != nullptr) ? err->message
-                                                             : "method error";
+            const char* errMsg = (err != nullptr && err->message != nullptr)
+                                     ? err->message
+                                     : "method error";
             if (gpio_props::isServiceMissingError(errName))
             {
                 lg2::info("GpioPropertySubscriber: GetManagedObjects "
@@ -424,8 +423,8 @@ struct GpioPropertySubscriber::Impl
             }
             if (newOwner.empty())
             {
-                lg2::info("GpioPropertySubscriber: {SVC} left the bus",
-                          "SVC", std::string{kGpioService});
+                lg2::info("GpioPropertySubscriber: {SVC} left the bus", "SVC",
+                          std::string{kGpioService});
                 snapshotSlot_ = sdbusplus::slot_t{};
                 applyMachine(gpio_props::SnapshotEvent::ServiceDeparted);
             }

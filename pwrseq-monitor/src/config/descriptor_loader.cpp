@@ -68,7 +68,8 @@ uint64_t optionalUint(const json& obj, const char* key, uint64_t dflt,
                       const std::string& path)
 {
     auto it = obj.find(key);
-    if (it == obj.end() || it->is_null()) return dflt;
+    if (it == obj.end() || it->is_null())
+        return dflt;
     if (!it->is_number_unsigned())
     {
         fail(path + "." + key, "expected non-negative integer");
@@ -77,11 +78,11 @@ uint64_t optionalUint(const json& obj, const char* key, uint64_t dflt,
 }
 
 std::string optionalString(const json& obj, const char* key,
-                           const std::string& dflt,
-                           const std::string& path)
+                           const std::string& dflt, const std::string& path)
 {
     auto it = obj.find(key);
-    if (it == obj.end() || it->is_null()) return dflt;
+    if (it == obj.end() || it->is_null())
+        return dflt;
     if (!it->is_string())
     {
         fail(path + "." + key, "expected string");
@@ -93,7 +94,8 @@ bool optionalBool(const json& obj, const char* key, bool dflt,
                   const std::string& path)
 {
     auto it = obj.find(key);
-    if (it == obj.end() || it->is_null()) return dflt;
+    if (it == obj.end() || it->is_null())
+        return dflt;
     if (!it->is_boolean())
     {
         fail(path + "." + key, "expected boolean");
@@ -116,28 +118,36 @@ bool optionalBool(const json& obj, const char* key, bool dflt,
 void rejectUnknownKeys(const json& obj, const std::string& path,
                        std::initializer_list<const char*> allowed)
 {
-    if (!obj.is_object()) return;
+    if (!obj.is_object())
+        return;
     for (auto it = obj.begin(); it != obj.end(); ++it)
     {
         const std::string& k = it.key();
-        if (!k.empty() && k[0] == '_') continue;
+        if (!k.empty() && k[0] == '_')
+            continue;
         bool ok = false;
         for (const char* a : allowed)
         {
-            if (k == a) { ok = true; break; }
+            if (k == a)
+            {
+                ok = true;
+                break;
+            }
         }
         if (!ok)
         {
             std::string joined;
             for (const char* a : allowed)
             {
-                if (!joined.empty()) joined += ", ";
+                if (!joined.empty())
+                    joined += ", ";
                 joined += a;
             }
             fail(path + "." + k,
-                 "unknown key (allowed: " + joined + "). The descriptor "
-                 "loader is strict: typos on optional keys would otherwise "
-                 "silently fall through to defaults.");
+                 "unknown key (allowed: " + joined +
+                     "). The descriptor "
+                     "loader is strict: typos on optional keys would otherwise "
+                     "silently fall through to defaults.");
         }
     }
 }
@@ -161,7 +171,7 @@ LineRef parseLineRef(const json& obj, const std::string& path)
              "(Gpio.Monitor.Line PropertiesChanged → lpu-pwrseq-monitord)");
     }
     LineRef ref;
-    ref.line      = requireString(obj, "line", path);
+    ref.line = requireString(obj, "line", path);
     ref.activeLow = optionalBool(obj, "active_low", false, path);
     if (ref.line.empty())
     {
@@ -191,11 +201,15 @@ BootStatusDescriptor parseBootStatus(const json& obj, const std::string& path)
 
 ElementDescriptor::Kind parseKind(const std::string& s, const std::string& path)
 {
-    if (s == "LPU") return ElementDescriptor::Kind::Lpu;
-    if (s == "MCU") return ElementDescriptor::Kind::Mcu;
-    if (s == "GPU") return ElementDescriptor::Kind::Gpu;
-    fail(path + ".kind", "unrecognised element kind \"" + s + "\" "
-                          "(expected one of: LPU, MCU, GPU)");
+    if (s == "LPU")
+        return ElementDescriptor::Kind::Lpu;
+    if (s == "MCU")
+        return ElementDescriptor::Kind::Mcu;
+    if (s == "GPU")
+        return ElementDescriptor::Kind::Gpu;
+    fail(path + ".kind", "unrecognised element kind \"" + s +
+                             "\" "
+                             "(expected one of: LPU, MCU, GPU)");
 }
 
 // ── Nested parsers ─────────────────────────────────────────────────────────
@@ -207,13 +221,13 @@ ElementDescriptor parseElement(const json& obj, const std::string& path)
                        "boot_status_bits"});
     ElementDescriptor el;
     el.kind = parseKind(requireString(obj, "kind", path), path);
-    el.id   = requireString(obj, "id",   path);
+    el.id = requireString(obj, "id", path);
     if (el.id.empty())
     {
         fail(path + ".id", "must be non-empty");
     }
-    el.pg   = parseLineRef(requireField(obj, "pg", path), path + ".pg");
-    el.bc   = parseLineRef(requireField(obj, "bc", path), path + ".bc");
+    el.pg = parseLineRef(requireField(obj, "pg", path), path + ".pg");
+    el.bc = parseLineRef(requireField(obj, "bc", path), path + ".bc");
     el.resetLine = parseLineRef(requireField(obj, "reset_line", path),
                                 path + ".reset_line");
     auto telIt = obj.find("telemetry");
@@ -224,8 +238,8 @@ ElementDescriptor parseElement(const json& obj, const std::string& path)
             fail(path + ".telemetry", "expected object or null");
         }
         rejectUnknownKeys(*telIt, path + ".telemetry", {"log_dev"});
-        el.telemetry.logDev = optionalString(*telIt, "log_dev", "",
-                                             path + ".telemetry");
+        el.telemetry.logDev =
+            optionalString(*telIt, "log_dev", "", path + ".telemetry");
     }
     auto bootIt = obj.find("boot_status_bits");
     if (bootIt != obj.end() && !bootIt->is_null())
@@ -262,25 +276,21 @@ ModuleDescriptor parseModule(const json& obj, const std::string& path)
 FpgaDescriptor parseFpga(const json& obj, const std::string& path)
 {
     rejectUnknownKeys(obj, path,
-                      {"id", "pg", "bc", "reset_line",
-                       "boot_status_bits"});
+                      {"id", "pg", "bc", "reset_line", "boot_status_bits"});
     FpgaDescriptor fpga;
-    fpga.id        = requireString(obj, "id", path);
+    fpga.id = requireString(obj, "id", path);
     if (fpga.id.empty())
     {
         fail(path + ".id", "must be non-empty");
     }
-    fpga.pg        = parseLineRef(requireField(obj, "pg", path),
-                                  path + ".pg");
-    fpga.bc        = parseLineRef(requireField(obj, "bc", path),
-                                  path + ".bc");
+    fpga.pg = parseLineRef(requireField(obj, "pg", path), path + ".pg");
+    fpga.bc = parseLineRef(requireField(obj, "bc", path), path + ".bc");
     fpga.resetLine = parseLineRef(requireField(obj, "reset_line", path),
-                                   path + ".reset_line");
+                                  path + ".reset_line");
     auto bootIt = obj.find("boot_status_bits");
     if (bootIt != obj.end() && !bootIt->is_null())
     {
-        fpga.bootStatus = parseBootStatus(*bootIt,
-                                          path + ".boot_status_bits");
+        fpga.bootStatus = parseBootStatus(*bootIt, path + ".boot_status_bits");
     }
     return fpga;
 }
@@ -310,14 +320,14 @@ void validateConsistency(const PlatformDescriptor& d)
 
         if (!moduleIds.insert(m.id).second)
         {
-            throw DescriptorError(mPath + ".id: duplicate module ID \"" +
-                                  m.id + "\"");
+            throw DescriptorError(mPath + ".id: duplicate module ID \"" + m.id +
+                                  "\"");
         }
         for (size_t ei = 0; ei < m.elements.size(); ++ei)
         {
             const auto& e = m.elements[ei];
-            const std::string ePath = mPath + ".elements[" +
-                                      std::to_string(ei) + "]";
+            const std::string ePath =
+                mPath + ".elements[" + std::to_string(ei) + "]";
             if (!elementIds.insert(e.id).second)
             {
                 throw DescriptorError(ePath + ".id: duplicate element ID \"" +
@@ -333,8 +343,8 @@ void validateConsistency(const PlatformDescriptor& d)
         const std::string fPath = "fpgas[" + std::to_string(fi) + "]";
         if (!fpgaIds.insert(f.id).second)
         {
-            throw DescriptorError(fPath + ".id: duplicate FPGA ID \"" +
-                                  f.id + "\"");
+            throw DescriptorError(fPath + ".id: duplicate FPGA ID \"" + f.id +
+                                  "\"");
         }
     }
 }
@@ -345,21 +355,19 @@ PlatformDescriptor parseRoot(const json& root)
     {
         fail("$", "top-level value must be a JSON object");
     }
-    rejectUnknownKeys(root, "$",
-                      {"platform", "chassis_id", "t_boot_ms",
-                       "modules", "fpgas"});
+    rejectUnknownKeys(
+        root, "$", {"platform", "chassis_id", "t_boot_ms", "modules", "fpgas"});
     PlatformDescriptor d;
-    d.platform  = requireString(root, "platform", "$");
+    d.platform = requireString(root, "platform", "$");
     d.chassisId = optionalString(root, "chassis_id", d.chassisId, "$");
     {
         const uint64_t raw = optionalUint(
-            root, "t_boot_ms",
-            static_cast<uint64_t>(d.tBootMs.count()), "$");
+            root, "t_boot_ms", static_cast<uint64_t>(d.tBootMs.count()), "$");
         // std::chrono::milliseconds is signed 64-bit. Reject values that
         // would wrap on construction, AND reject obviously-unreasonable
         // values (the daemon's deadline budget is per-element T_BOOT +
         // 3 s slack; any boot deadline beyond ~1 hour is misconfiguration).
-        constexpr uint64_t kMaxBootMs = 60ULL * 60ULL * 1000ULL;  // 1 h
+        constexpr uint64_t kMaxBootMs = 60ULL * 60ULL * 1000ULL; // 1 h
         if (raw == 0)
         {
             fail("$.t_boot_ms", "must be > 0");
@@ -368,9 +376,9 @@ PlatformDescriptor parseRoot(const json& root)
         {
             fail("$.t_boot_ms",
                  "value " + std::to_string(raw) +
-                 " ms exceeds the upper bound (3600000 ms = 1 h); "
-                 "rejecting to avoid integer overflow / runaway "
-                 "boot deadlines");
+                     " ms exceeds the upper bound (3600000 ms = 1 h); "
+                     "rejecting to avoid integer overflow / runaway "
+                     "boot deadlines");
         }
         d.tBootMs = std::chrono::milliseconds(static_cast<int64_t>(raw));
     }
@@ -383,8 +391,8 @@ PlatformDescriptor parseRoot(const json& root)
     d.modules.reserve(modules.size());
     for (size_t i = 0; i < modules.size(); ++i)
     {
-        d.modules.push_back(parseModule(
-            modules[i], "$.modules[" + std::to_string(i) + "]"));
+        d.modules.push_back(
+            parseModule(modules[i], "$.modules[" + std::to_string(i) + "]"));
     }
 
     // FPGAs are optional — a board variant could have none.
@@ -398,8 +406,8 @@ PlatformDescriptor parseRoot(const json& root)
         d.fpgas.reserve(fIt->size());
         for (size_t i = 0; i < fIt->size(); ++i)
         {
-            d.fpgas.push_back(parseFpga(
-                (*fIt)[i], "$.fpgas[" + std::to_string(i) + "]"));
+            d.fpgas.push_back(
+                parseFpga((*fIt)[i], "$.fpgas[" + std::to_string(i) + "]"));
         }
     }
 
@@ -407,7 +415,7 @@ PlatformDescriptor parseRoot(const json& root)
     return d;
 }
 
-}  // namespace
+} // namespace
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -446,4 +454,4 @@ PlatformDescriptor loadFromString(const std::string& jsonText)
     return parseRoot(root);
 }
 
-}  // namespace pwrseq::config
+} // namespace pwrseq::config

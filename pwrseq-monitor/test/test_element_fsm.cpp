@@ -12,10 +12,10 @@
 
 #include "fsm/element_fsm.hpp"
 
-#include <gtest/gtest.h>
-
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 using namespace pwrseq;
 using namespace pwrseq::fsm;
@@ -30,18 +30,17 @@ struct Harness
 {
     ElementFsm fsm{kLpu1};
 
-    int startTBootCalls  = 0;
+    int startTBootCalls = 0;
     int cancelTBootCalls = 0;
     std::vector<std::pair<ElementState, ElementState>> transitions;
 
     Harness()
     {
-        fsm.setStartTBoot ([this]() { ++startTBootCalls; });
+        fsm.setStartTBoot([this]() { ++startTBootCalls; });
         fsm.setCancelTBoot([this]() { ++cancelTBootCalls; });
-        fsm.setOnStateChange(
-            [this](ElementState a, ElementState b) {
-                transitions.emplace_back(a, b);
-            });
+        fsm.setOnStateChange([this](ElementState a, ElementState b) {
+            transitions.emplace_back(a, b);
+        });
     }
 
     void send(EventKind k)
@@ -50,7 +49,7 @@ struct Harness
     }
 };
 
-}  // namespace
+} // namespace
 
 // ─── per-row tests (one per row in design-doc §2.1.2) ───────────────────────
 
@@ -92,11 +91,11 @@ TEST(ElementFsm, PgHi_SetsSeenPgHiLatch)
 TEST(ElementFsm, Stby_BcEvents_StayStbyAndLogAnomaly)
 {
     Harness h;
-    h.send(EventKind::BcHi);  // anomaly: BC without PG
+    h.send(EventKind::BcHi); // anomaly: BC without PG
     EXPECT_EQ(h.fsm.state(), ElementState::Stby);
     h.send(EventKind::BcLo);
     EXPECT_EQ(h.fsm.state(), ElementState::Stby);
-    EXPECT_TRUE(h.transitions.empty());  // self-transitions don't notify
+    EXPECT_TRUE(h.transitions.empty()); // self-transitions don't notify
 }
 
 TEST(ElementFsm, Powered_BcHi_GoesOnlineAndCancelsTBoot)
@@ -167,12 +166,12 @@ TEST(ElementFsm, Online_RstAsserted_GoesResetting)
 TEST(ElementFsm, Resetting_RstReleased_GoesPoweredAndRestartsTBoot)
 {
     Harness h;
-    h.send(EventKind::PgHi);    // → Powered, startTBoot=1
-    h.send(EventKind::BcHi);    // → Online, cancelTBoot=1
-    h.send(EventKind::RstAsserted);  // → Resetting
+    h.send(EventKind::PgHi);        // → Powered, startTBoot=1
+    h.send(EventKind::BcHi);        // → Online, cancelTBoot=1
+    h.send(EventKind::RstAsserted); // → Resetting
     h.send(EventKind::RstReleased);
     EXPECT_EQ(h.fsm.state(), ElementState::Powered);
-    EXPECT_EQ(h.startTBootCalls, 2);   // restarted after reset release
+    EXPECT_EQ(h.startTBootCalls, 2); // restarted after reset release
 }
 
 TEST(ElementFsm, Resetting_PgLo_GoesStby)
@@ -191,7 +190,7 @@ TEST(ElementFsm, Fault_BcHi_LateBootRecoveryGoesOnlineAndClearsFault)
     // power, BC just arrived late). Guarded in element_fsm.cpp.
     Harness h;
     h.send(EventKind::PgHi);
-    h.send(EventKind::TBootExpired);  // → Fault (BootTimeout)
+    h.send(EventKind::TBootExpired); // → Fault (BootTimeout)
     ASSERT_EQ(h.fsm.faultCode(), FaultCode::BootTimeout);
     h.send(EventKind::BcHi);
     EXPECT_EQ(h.fsm.state(), ElementState::Online);
@@ -207,12 +206,12 @@ TEST(ElementFsm, Fault_BcHi_FromPgoodDrop_DoesNotShortcutToOnline)
     // so T_BOOT is re-armed and a hung second boot is detected.
     Harness h;
     h.send(EventKind::PgHi);
-    h.send(EventKind::BcHi);                       // → Online
+    h.send(EventKind::BcHi); // → Online
     ASSERT_EQ(h.fsm.state(), ElementState::Online);
-    h.send(EventKind::PgLo);                       // → Fault (PgoodDrop)
+    h.send(EventKind::PgLo); // → Fault (PgoodDrop)
     ASSERT_EQ(h.fsm.faultCode(), FaultCode::PgoodDrop);
 
-    h.send(EventKind::BcHi);                       // must be ignored
+    h.send(EventKind::BcHi); // must be ignored
     EXPECT_EQ(h.fsm.state(), ElementState::Fault);
     EXPECT_EQ(h.fsm.faultCode(), FaultCode::PgoodDrop);
 }
@@ -224,8 +223,8 @@ TEST(ElementFsm, Fault_BcHi_FromBootRegress_RecoversOnline)
     // S_ONLINE without requiring a PG cycle (unlike PgoodDrop).
     Harness h;
     h.send(EventKind::PgHi);
-    h.send(EventKind::BcHi);                       // → Online
-    h.send(EventKind::BcLo);                       // → Fault (BootRegress)
+    h.send(EventKind::BcHi); // → Online
+    h.send(EventKind::BcLo); // → Fault (BootRegress)
     ASSERT_EQ(h.fsm.faultCode(), FaultCode::BootRegress);
 
     h.send(EventKind::BcHi);
@@ -240,11 +239,11 @@ TEST(ElementFsm, Fault_PgHi_FromPgoodDrop_GoesPoweredAndRestartsTBoot)
     Harness h;
     h.send(EventKind::PgHi);
     h.send(EventKind::BcHi);
-    h.send(EventKind::PgLo);                       // → Fault (PgoodDrop)
+    h.send(EventKind::PgLo); // → Fault (PgoodDrop)
     ASSERT_EQ(h.fsm.state(), ElementState::Fault);
     int startsBefore = h.startTBootCalls;
 
-    h.send(EventKind::PgHi);                       // recovery edge
+    h.send(EventKind::PgHi); // recovery edge
     EXPECT_EQ(h.fsm.state(), ElementState::Powered);
     EXPECT_EQ(h.fsm.faultCode(), FaultCode::None);
     EXPECT_EQ(h.startTBootCalls, startsBefore + 1);
@@ -264,13 +263,13 @@ TEST(ElementFsm, Fault_RstAsserted_GoesResettingAndClearsFault)
 {
     Harness h;
     h.send(EventKind::PgHi);
-    h.send(EventKind::TBootExpired);             // → Fault (BootTimeout)
+    h.send(EventKind::TBootExpired); // → Fault (BootTimeout)
     ASSERT_EQ(h.fsm.state(), ElementState::Fault);
     ASSERT_EQ(h.fsm.faultCode(), FaultCode::BootTimeout);
-    h.send(EventKind::RstAsserted);              // Redfish reset on faulted
+    h.send(EventKind::RstAsserted); // Redfish reset on faulted
     EXPECT_EQ(h.fsm.state(), ElementState::Resetting);
     EXPECT_EQ(h.fsm.faultCode(), FaultCode::None);
-    h.send(EventKind::RstReleased);              // back to Powered with T_BOOT
+    h.send(EventKind::RstReleased); // back to Powered with T_BOOT
     EXPECT_EQ(h.fsm.state(), ElementState::Powered);
 }
 
@@ -284,15 +283,15 @@ TEST(ElementFsm, ColdBoot_HappyPath_StbyToOnlineWithOneStartOneCancel)
     EXPECT_EQ(h.fsm.state(), ElementState::Online);
     EXPECT_EQ(h.startTBootCalls, 1);
     EXPECT_EQ(h.cancelTBootCalls, 1);
-    EXPECT_EQ(h.transitions.size(), 2u);  // Stby→Powered, Powered→Online
+    EXPECT_EQ(h.transitions.size(), 2u); // Stby→Powered, Powered→Online
 }
 
 TEST(ElementFsm, ColdBoot_BcAfterTimeout_LateBootRecoveryStillEndsOnline)
 {
     Harness h;
     h.send(EventKind::PgHi);
-    h.send(EventKind::TBootExpired);   // → Fault
-    h.send(EventKind::BcHi);           // → Online (late-boot recovery)
+    h.send(EventKind::TBootExpired); // → Fault
+    h.send(EventKind::BcHi);         // → Online (late-boot recovery)
     EXPECT_EQ(h.fsm.state(), ElementState::Online);
     EXPECT_EQ(h.fsm.faultCode(), FaultCode::None);
 }
@@ -304,17 +303,17 @@ TEST(ElementFsm, PowerCycle_FullRoundTrip_ReWalksPoweredAndReArmsTBoot)
     // Powered (re-arming T_BOOT) before reaching Online again.
     Harness h;
     h.send(EventKind::PgHi);
-    h.send(EventKind::BcHi);                        // Online
+    h.send(EventKind::BcHi); // Online
     int startsBeforeCycle = h.startTBootCalls;
 
-    h.send(EventKind::PgLo);                        // → Fault (PgoodDrop)
+    h.send(EventKind::PgLo); // → Fault (PgoodDrop)
     ASSERT_EQ(h.fsm.faultCode(), FaultCode::PgoodDrop);
 
-    h.send(EventKind::PgHi);                        // → Powered, T_BOOT armed
+    h.send(EventKind::PgHi); // → Powered, T_BOOT armed
     EXPECT_EQ(h.fsm.state(), ElementState::Powered);
     EXPECT_EQ(h.startTBootCalls, startsBeforeCycle + 1);
 
-    h.send(EventKind::BcHi);                        // → Online
+    h.send(EventKind::BcHi); // → Online
     EXPECT_EQ(h.fsm.state(), ElementState::Online);
 
     // Three trace entries from the cycle alone:
@@ -322,9 +321,9 @@ TEST(ElementFsm, PowerCycle_FullRoundTrip_ReWalksPoweredAndReArmsTBoot)
     auto cycleTrace = h.transitions;
     ASSERT_GE(cycleTrace.size(), 5u);
     EXPECT_EQ(cycleTrace[cycleTrace.size() - 3],
-              std::make_pair(ElementState::Online,  ElementState::Fault));
+              std::make_pair(ElementState::Online, ElementState::Fault));
     EXPECT_EQ(cycleTrace[cycleTrace.size() - 2],
-              std::make_pair(ElementState::Fault,   ElementState::Powered));
+              std::make_pair(ElementState::Fault, ElementState::Powered));
     EXPECT_EQ(cycleTrace[cycleTrace.size() - 1],
               std::make_pair(ElementState::Powered, ElementState::Online));
 }
@@ -337,9 +336,9 @@ TEST(ElementFsm, PowerCycle_HungSecondBoot_FaultsViaTBootExpired)
     // any timer was armed, so this scenario silently passed as healthy.
     Harness h;
     h.send(EventKind::PgHi);
-    h.send(EventKind::BcHi);                        // Online
-    h.send(EventKind::PgLo);                        // → Fault (PgoodDrop)
-    h.send(EventKind::PgHi);                        // → Powered, T_BOOT armed
+    h.send(EventKind::BcHi); // Online
+    h.send(EventKind::PgLo); // → Fault (PgoodDrop)
+    h.send(EventKind::PgHi); // → Powered, T_BOOT armed
     ASSERT_EQ(h.fsm.state(), ElementState::Powered);
 
     // Second boot hangs: timer expires with no BC.
@@ -352,12 +351,12 @@ TEST(ElementFsm, RuntimeReset_RoundTrip_BackToOnlineWithFreshTimer)
 {
     Harness h;
     h.send(EventKind::PgHi);
-    h.send(EventKind::BcHi);             // Online
+    h.send(EventKind::BcHi); // Online
     int startsBefore = h.startTBootCalls;
-    h.send(EventKind::RstAsserted);      // Resetting
-    h.send(EventKind::RstReleased);      // Powered (timer restarted)
+    h.send(EventKind::RstAsserted); // Resetting
+    h.send(EventKind::RstReleased); // Powered (timer restarted)
     EXPECT_EQ(h.startTBootCalls, startsBefore + 1);
-    h.send(EventKind::BcHi);             // Online again
+    h.send(EventKind::BcHi); // Online again
     EXPECT_EQ(h.fsm.state(), ElementState::Online);
 }
 
@@ -367,8 +366,8 @@ TEST(ElementFsm, ResetThenTimeout_LandsInFault)
     h.send(EventKind::PgHi);
     h.send(EventKind::BcHi);
     h.send(EventKind::RstAsserted);
-    h.send(EventKind::RstReleased);     // Powered with restarted T_BOOT
-    h.send(EventKind::TBootExpired);    // Fault
+    h.send(EventKind::RstReleased);  // Powered with restarted T_BOOT
+    h.send(EventKind::TBootExpired); // Fault
     EXPECT_EQ(h.fsm.state(), ElementState::Fault);
     EXPECT_EQ(h.fsm.faultCode(), FaultCode::BootTimeout);
 }
@@ -403,9 +402,10 @@ TEST(ElementFsmTable, NoDuplicateFromEventPairs)
     {
         for (size_t j = i + 1; j < rows.size(); ++j)
         {
-            const bool sameFromEvent = (rows[i].from == rows[j].from)
-                                    && (rows[i].event == rows[j].event);
-            if (!sameFromEvent) continue;
+            const bool sameFromEvent = (rows[i].from == rows[j].from) &&
+                                       (rows[i].event == rows[j].event);
+            if (!sameFromEvent)
+                continue;
 
             // Earlier row (i) must be guarded -- otherwise it shadows j
             // unconditionally and j is dead code.
@@ -418,8 +418,8 @@ TEST(ElementFsmTable, NoDuplicateFromEventPairs)
             // Later row (j) must also be guarded -- two unguarded rows
             // would simply be the same row twice.
             EXPECT_TRUE(rows[j].guard != nullptr)
-                << "Duplicate (from, event) pair at rows " << i << " and "
-                << j << ": later row is unguarded. Either the rows are "
+                << "Duplicate (from, event) pair at rows " << i << " and " << j
+                << ": later row is unguarded. Either the rows are "
                 << "redundant or the later one needs a guard.";
         }
     }

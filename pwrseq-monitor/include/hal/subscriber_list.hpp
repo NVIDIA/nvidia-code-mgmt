@@ -86,13 +86,23 @@ class SubscriberList
         }
     }
 
-    std::size_t size()  const noexcept { return subs_.size(); }
-    bool        empty() const noexcept { return subs_.empty(); }
+    std::size_t size() const noexcept
+    {
+        return subs_.size();
+    }
+    bool empty() const noexcept
+    {
+        return subs_.empty();
+    }
 
   private:
-    struct Slot { std::uint64_t id; LineSubscriber cb; };
+    struct Slot
+    {
+        std::uint64_t id;
+        LineSubscriber cb;
+    };
     std::vector<Slot> subs_;
-    std::uint64_t     nextSlot_ = 1;
+    std::uint64_t nextSlot_ = 1;
 };
 
-}  // namespace pwrseq::hal::common
+} // namespace pwrseq::hal::common

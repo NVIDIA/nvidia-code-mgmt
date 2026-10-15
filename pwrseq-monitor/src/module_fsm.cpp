@@ -76,22 +76,22 @@ std::span<const Row> table()
     static const std::array<Row, 12> kTable = {{
         // ---- from M_STBY ----
         // Any child reached S_POWERED → Module is now powering up.
-        {ModuleState::Stby,      EventKind::LpuStateChanged, eventChildPowered,
-         ModuleState::Powered,   nullptr},
+        {ModuleState::Stby, EventKind::LpuStateChanged, eventChildPowered,
+         ModuleState::Powered, nullptr},
 
         // ---- from M_POWERED ----
         // Any-fault wins over all-online (more specific).
-        {ModuleState::Powered,   EventKind::LpuStateChanged, eventChildFault,
-         ModuleState::Fault,     nullptr},
-        {ModuleState::Powered,   EventKind::LpuStateChanged, allOnline,
-         ModuleState::Online,    nullptr},
+        {ModuleState::Powered, EventKind::LpuStateChanged, eventChildFault,
+         ModuleState::Fault, nullptr},
+        {ModuleState::Powered, EventKind::LpuStateChanged, allOnline,
+         ModuleState::Online, nullptr},
 
         // ---- from M_ONLINE ----
         // Any child went to fault.
-        {ModuleState::Online,    EventKind::LpuStateChanged, eventChildFault,
-         ModuleState::Fault,     nullptr},
+        {ModuleState::Online, EventKind::LpuStateChanged, eventChildFault,
+         ModuleState::Fault, nullptr},
         // Mass-reset: both children entered S_RESETTING in parallel.
-        {ModuleState::Online,    EventKind::LpuStateChanged, allResetting,
+        {ModuleState::Online, EventKind::LpuStateChanged, allResetting,
          ModuleState::Resetting, nullptr},
         // Per-element warm reset on a 2-child module: one child returns to
         // S_POWERED while the other stays S_ONLINE. The aggregate is no
@@ -99,38 +99,38 @@ std::span<const Row> table()
         // complete observer sees the change. This is the "Online +
         // Powered" combo that previously left the module wedged in
         // Online with stale child-state {Online, Powered}.
-        {ModuleState::Online,    EventKind::LpuStateChanged, eventChildPowered,
-         ModuleState::Powered,   nullptr},
+        {ModuleState::Online, EventKind::LpuStateChanged, eventChildPowered,
+         ModuleState::Powered, nullptr},
 
         // ---- from M_RESETTING ----
         // Any-fault first.
         {ModuleState::Resetting, EventKind::LpuStateChanged, eventChildFault,
-         ModuleState::Fault,     nullptr},
+         ModuleState::Fault, nullptr},
         // At least one child came back from reset.
         {ModuleState::Resetting, EventKind::LpuStateChanged, eventChildPowered,
-         ModuleState::Powered,   nullptr},
+         ModuleState::Powered, nullptr},
         // Both went to S_STBY (e.g. power down during reset).
         {ModuleState::Resetting, EventKind::LpuStateChanged, allStby,
-         ModuleState::Stby,      nullptr},
+         ModuleState::Stby, nullptr},
 
         // ---- from M_FAULT ----
         // Late-boot recovery: all children eventually online.
-        {ModuleState::Fault,     EventKind::LpuStateChanged, allOnline,
-         ModuleState::Online,    nullptr},
+        {ModuleState::Fault, EventKind::LpuStateChanged, allOnline,
+         ModuleState::Online, nullptr},
         // Operator reset: the just-updated child reached Powered.
-        {ModuleState::Fault,     EventKind::LpuStateChanged, eventChildPowered,
-         ModuleState::Powered,   nullptr},
+        {ModuleState::Fault, EventKind::LpuStateChanged, eventChildPowered,
+         ModuleState::Powered, nullptr},
         // Both powered down.
-        {ModuleState::Fault,     EventKind::LpuStateChanged, allStby,
-         ModuleState::Stby,      nullptr},
+        {ModuleState::Fault, EventKind::LpuStateChanged, allStby,
+         ModuleState::Stby, nullptr},
     }};
     return std::span<const Row>(kTable);
 }
 
-}  // namespace
+} // namespace
 
-ModuleFsm::ModuleFsm(InstanceId moduleId,
-                     InstanceId childA, InstanceId childB) :
+ModuleFsm::ModuleFsm(InstanceId moduleId, InstanceId childA,
+                     InstanceId childB) :
     ctx_{.id = moduleId,
          .childIds = {childA, childB},
          .childStates = {ElementState::Stby, ElementState::Stby},
@@ -148,7 +148,7 @@ bool ModuleFsm::dispatch(const SemanticEvent& ev)
     const auto* payload = std::get_if<ChildElementPayload>(&ev.payload);
     if (!payload)
     {
-        return false;  // mis-typed payload; silently drop
+        return false; // mis-typed payload; silently drop
     }
 
     // Locate the slot this child corresponds to and update its state BEFORE
@@ -164,7 +164,7 @@ bool ModuleFsm::dispatch(const SemanticEvent& ev)
     }
     if (slot < 0)
     {
-        return false;  // unknown child; not ours
+        return false; // unknown child; not ours
     }
     ctx_.childStates[static_cast<size_t>(slot)] = payload->newState;
 
@@ -186,4 +186,4 @@ std::span<const TransitionRow<ModuleState, ModuleContext>> moduleFsmTable()
     return table();
 }
 
-}  // namespace pwrseq::fsm
+} // namespace pwrseq::fsm

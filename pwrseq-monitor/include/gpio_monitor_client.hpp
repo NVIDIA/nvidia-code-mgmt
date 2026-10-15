@@ -3,7 +3,8 @@
  * AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0
  *
  * Subscribe to xyz.openbmc_project.Gpio.Monitor.Line property updates and
- * seed/live-feed PG/BC/boot-status SharedLines via DBusManager::injectLineState.
+ * seed/live-feed PG/BC/boot-status SharedLines via
+ * DBusManager::injectLineState.
  */
 
 #pragma once
@@ -51,9 +52,10 @@ class GpioPropertySubscriber
  *  injectLineState (polarity/FSM unchanged). Non-power-sequence and
  *  unbound lines are ignored. ListGpios/ReadGpio remain for boot-status.
  */
-inline GpioPropertySubscriber startGpioPropertySubscriber(
-    sdbusplus::bus::bus& bus, const config::PlatformDescriptor& desc,
-    DBusManager& manager)
+inline GpioPropertySubscriber
+    startGpioPropertySubscriber(sdbusplus::bus::bus& bus,
+                                const config::PlatformDescriptor& desc,
+                                DBusManager& manager)
 {
     return GpioPropertySubscriber(bus, desc, manager);
 }

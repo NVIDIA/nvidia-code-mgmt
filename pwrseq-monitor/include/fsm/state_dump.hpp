@@ -22,44 +22,44 @@ inline constexpr const char* kFsmDumpPath = "/tmp/pwrseq_monitor_dump.json";
 
 struct ElementSnapshot
 {
-    std::string  id;
-    std::string  className;
+    std::string id;
+    std::string className;
     ElementState state = ElementState::Stby;
-    FaultCode    fault = FaultCode::None;
-    bool         seenPgHi = false;
-    bool         bootTimerArmed = false;
-    bool         resetPending = false;
+    FaultCode fault = FaultCode::None;
+    bool seenPgHi = false;
+    bool bootTimerArmed = false;
+    bool resetPending = false;
 };
 
 struct ModuleSnapshot
 {
-    std::string              id;
-    ModuleState              state = ModuleState::Stby;
+    std::string id;
+    ModuleState state = ModuleState::Stby;
     std::vector<std::string> children;
 };
 
 struct TraySnapshot
 {
     std::string id;
-    TrayState   state = TrayState::Stby;
+    TrayState state = TrayState::Stby;
 };
 
 struct LineSnapshot
 {
     std::string name;
-    bool        hasValue = false;
-    bool        asserted = false;
-    bool        activeLow = false;
+    bool hasValue = false;
+    bool asserted = false;
+    bool activeLow = false;
 };
 
 struct FsmSnapshot
 {
-    std::string                  timestamp;
-    std::string                  platform;
-    TraySnapshot                 tray;
-    std::vector<ModuleSnapshot>  modules;
+    std::string timestamp;
+    std::string platform;
+    TraySnapshot tray;
+    std::vector<ModuleSnapshot> modules;
     std::vector<ElementSnapshot> elements;
-    std::vector<LineSnapshot>    lines;
+    std::vector<LineSnapshot> lines;
 };
 
 /** UTC ISO-8601 timestamp (`YYYY-MM-DDTHH:MM:SSZ`). */
@@ -72,4 +72,4 @@ std::string serializeFsmSnapshot(const FsmSnapshot& snap);
  *  failure; the previous file (if any) is left untouched. */
 bool writeFsmSnapshotFile(const std::string& path, const FsmSnapshot& snap);
 
-}  // namespace pwrseq
+} // namespace pwrseq

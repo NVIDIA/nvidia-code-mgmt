@@ -39,9 +39,13 @@ class RecordingSink : public SemanticEventSink
 class MockDevice : public IDevice
 {
   public:
-    explicit MockDevice(InstanceId id) : instanceId_(id) {}
+    explicit MockDevice(InstanceId id) : instanceId_(id)
+    {}
 
-    Result probe() override { return probeResult; }
+    Result probe() override
+    {
+        return probeResult;
+    }
 
     Result init(SemanticEventSink& sink, const DeviceConfig& cfg) override
     {
@@ -67,41 +71,56 @@ class MockDevice : public IDevice
         status.bootComplete = false;
     }
 
-    DeviceStatus get_status() const override { return status; }
-    Capabilities capabilities() const override { return caps; }
-    InstanceId   id() const override { return instanceId_; }
-    std::vector<int> fds() const override { return {}; }
-    void onReadable(int) override {}
+    DeviceStatus get_status() const override
+    {
+        return status;
+    }
+    Capabilities capabilities() const override
+    {
+        return caps;
+    }
+    InstanceId id() const override
+    {
+        return instanceId_;
+    }
+    std::vector<int> fds() const override
+    {
+        return {};
+    }
+    void onReadable(int) override
+    {}
 
     /** Test helper: emit a SemanticEvent through the sink as if observed
      *  from hardware. No-op if init() hasn't been called yet.
      */
     void emit(EventKind k)
     {
-        if (sink_) sink_->emit(SemanticEvent{k, instanceId_});
+        if (sink_)
+            sink_->emit(SemanticEvent{k, instanceId_});
     }
     void emit(const SemanticEvent& ev)
     {
-        if (sink_) sink_->emit(ev);
+        if (sink_)
+            sink_->emit(ev);
     }
 
     // Tunables — set before exercising
     Result probeResult = Result::Ok;
-    Result initResult  = Result::Ok;
+    Result initResult = Result::Ok;
     Result resetResult = Result::Ok;
     DeviceStatus status{};
     Capabilities caps{};
 
     // Recorded calls
     std::vector<ResetKind> resetCalls;
-    int                    shutdownCalls = 0;
+    int shutdownCalls = 0;
 
     // Captured at init
     SemanticEventSink* sink_ = nullptr;
-    DeviceConfig       config_{};
+    DeviceConfig config_{};
 
   private:
     InstanceId instanceId_;
 };
 
-}  // namespace pwrseq::hal::test
+} // namespace pwrseq::hal::test

@@ -20,8 +20,9 @@
 #include "hal/lpu_driver.hpp"
 #include "reporting/resource_interfaces.hpp"
 
-#include <sdbusplus/bus.hpp>
 #include <systemd/sd-event.h>
+
+#include <sdbusplus/bus.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -88,12 +89,12 @@ class Orchestrator : public hal::SemanticEventSink
     /** Result of an asynchronous reset request, delivered to the callback. */
     enum class ResetOutcome : uint8_t
     {
-        Ok,             // BC re-asserted within the deadline
-        Timeout,        // Reset trigger OK but BC did not re-assert in time
-        NotPresent,     // No driver / FSM for that target
-        Busy,           // A reset for this target is already in flight
-        NotSupported,   // Driver returned NotSupported
-        PulseFailed,    // Driver's reset() returned non-Ok
+        Ok,           // BC re-asserted within the deadline
+        Timeout,      // Reset trigger OK but BC did not re-assert in time
+        NotPresent,   // No driver / FSM for that target
+        Busy,         // A reset for this target is already in flight
+        NotSupported, // Driver returned NotSupported
+        PulseFailed,  // Driver's reset() returned non-Ok
     };
 
     /** Async variant: triggers reset + waits for BcHi (or the
@@ -118,10 +119,8 @@ class Orchestrator : public hal::SemanticEventSink
      *  owns the orchestrator. Safe to invoke further requestResetAsync
      *  calls from inside it.
      */
-    void requestResetAsync(
-        InstanceId target,
-        hal::ResetKind kind,
-        std::function<void(ResetOutcome)> callback);
+    void requestResetAsync(InstanceId target, hal::ResetKind kind,
+                           std::function<void(ResetOutcome)> callback);
 
     /** Batched class-wide reset: trigger every present element of `cls`
      *  near-simultaneously and wait for each to reach BcHi in parallel.
@@ -148,8 +147,7 @@ class Orchestrator : public hal::SemanticEventSink
      *  The outcome map still gets populated correctly.
      */
     void requestResetAllSync(
-        InstanceId::Class cls,
-        hal::ResetKind kind,
+        InstanceId::Class cls, hal::ResetKind kind,
         std::function<void(std::vector<std::pair<std::string, ResetOutcome>>)>
             callback);
 
@@ -158,7 +156,10 @@ class Orchestrator : public hal::SemanticEventSink
      *  SharedLine's subscriber list. Reference outlives DBusManager
      *  (both owned by main() with the orchestrator constructed first
      *  and destructed last). */
-    hal::common::SharedLineRegistry& lines() noexcept { return sharedLines_; }
+    hal::common::SharedLineRegistry& lines() noexcept
+    {
+        return sharedLines_;
+    }
 
     /** Resolve a user-facing descriptor id (e.g. "HGX_LPU_3",
      *  "HGX_FPGA_0") to its internal InstanceId. Returns std::nullopt
@@ -166,8 +167,8 @@ class Orchestrator : public hal::SemanticEventSink
      *  hot-add). Case-sensitive: bmcweb passes the descriptor.id
      *  verbatim, and the descriptor's id is authoritative.
      */
-    std::optional<InstanceId> instanceByDescriptorId(
-        const std::string& id) const;
+    std::optional<InstanceId>
+        instanceByDescriptorId(const std::string& id) const;
 
     /** Reverse of instanceByDescriptorId(): looks up the user-facing
      *  descriptor id for an internal InstanceId. Returns empty string
@@ -192,7 +193,8 @@ class Orchestrator : public hal::SemanticEventSink
     bool dumpState(const std::string& path) const;
 
   private:
-    /** Reset dispatch gate: wired element that has handled at least one PgHi. */
+    /** Reset dispatch gate: wired element that has handled at least one PgHi.
+     */
     bool resetEligible_(InstanceId id) const;
     // FSM wiring ────────────────────────────────────────────────────────────
     void wireElementFsm_(fsm::ElementFsm& fsm, hal::IDevice& dev,
@@ -228,46 +230,46 @@ class Orchestrator : public hal::SemanticEventSink
     static std::string fpgaRedfishPath_(const config::FpgaDescriptor& f);
     static std::string trayRedfishPath_(const std::string& chassisId);
 
-    sdbusplus::bus::bus&                  bus_;
-    sd_event*                             loop_;
+    sdbusplus::bus::bus& bus_;
+    sd_event* loop_;
 
     // Per-descriptor runtime config (copied at init).
-    std::chrono::milliseconds             tBoot_{12'000};
-    std::string                           platform_;
+    std::chrono::milliseconds tBoot_{12'000};
+    std::string platform_;
 
     // Owning containers — pointers held in lookup tables below.
-    std::vector<std::unique_ptr<hal::IDevice>>           devices_;
-    std::vector<std::unique_ptr<fsm::ElementFsm>>        elementFsms_;
-    std::vector<std::unique_ptr<fsm::ModuleFsm>>         moduleFsms_;
-    std::unique_ptr<fsm::TrayFsm>                        trayFsm_;
-    std::vector<std::unique_ptr<reporting::Reporter>>    reporters_;
+    std::vector<std::unique_ptr<hal::IDevice>> devices_;
+    std::vector<std::unique_ptr<fsm::ElementFsm>> elementFsms_;
+    std::vector<std::unique_ptr<fsm::ModuleFsm>> moduleFsms_;
+    std::unique_ptr<fsm::TrayFsm> trayFsm_;
+    std::vector<std::unique_ptr<reporting::Reporter>> reporters_;
 
     // Lookup: target instance → ElementFsm / ModuleFsm / Device.
     // Key is packed InstanceId (class | index).
-    std::unordered_map<uint64_t, fsm::ElementFsm*>       elementByInstance_;
-    std::unordered_map<uint64_t, fsm::ModuleFsm*>        moduleByInstance_;
-    std::unordered_map<uint64_t, hal::IDevice*>          deviceByInstance_;
+    std::unordered_map<uint64_t, fsm::ElementFsm*> elementByInstance_;
+    std::unordered_map<uint64_t, fsm::ModuleFsm*> moduleByInstance_;
+    std::unordered_map<uint64_t, hal::IDevice*> deviceByInstance_;
 
     // Element → parent Module (descriptor tells us which module each
     // LPU/MCU/GPU belongs to).
-    std::unordered_map<uint64_t, uint64_t>               elementToModule_;
+    std::unordered_map<uint64_t, uint64_t> elementToModule_;
 
     // Forward + reverse maps between user-facing descriptor.id strings
     // ("HGX_LPU_3", "HGX_FPGA_0") and packed internal InstanceIds.
     // Populated during initFromDescriptor in walk order; lets the D-Bus
     // layer translate in either direction without re-parsing the
     // descriptor.
-    std::unordered_map<std::string, uint64_t>            instanceByDescId_;
-    std::unordered_map<uint64_t, std::string>            descIdByInstance_;
+    std::unordered_map<std::string, uint64_t> instanceByDescId_;
+    std::unordered_map<uint64_t, std::string> descIdByInstance_;
 
     // Boot timers (timerfd-backed). One per Element instance; armed by the
     // Element FSM's startTBoot hook, cancelled by cancelTBoot.
     struct BootTimer
     {
         sd_event_source* source = nullptr;
-        InstanceId       owner{};
+        InstanceId owner{};
     };
-    std::unordered_map<uint64_t, BootTimer>              bootTimers_;
+    std::unordered_map<uint64_t, BootTimer> bootTimers_;
 
     struct TelemetryRetryTimer
     {
@@ -284,7 +286,7 @@ class Orchestrator : public hal::SemanticEventSink
     struct PendingReset
     {
         sd_event_source* deadline = nullptr;
-        InstanceId       target{};
+        InstanceId target{};
         std::function<void(ResetOutcome)> callback;
     };
     std::unordered_map<uint64_t, std::unique_ptr<PendingReset>> pendingResets_;
@@ -299,27 +301,25 @@ class Orchestrator : public hal::SemanticEventSink
     // element path) and requestResetAllSync (batched mass-reset path).
     // Returns true when the wait timer is armed (callback later); false
     // when timer install fails (callback invoked with PulseFailed).
-    bool armResetCompletionWait_(
-        InstanceId target,
-        hal::IDevice* dev,
-        std::function<void(ResetOutcome)> callback);
+    bool armResetCompletionWait_(InstanceId target, hal::IDevice* dev,
+                                 std::function<void(ResetOutcome)> callback);
 
     // sd-event io sources for each driver fd we've registered.
-    std::vector<sd_event_source*>                        ioSources_;
+    std::vector<sd_event_source*> ioSources_;
 
     // Process-wide refcounted GPIO line cache. Injected into every
     // DeviceConfig the orchestrator builds; drivers acquire SharedLines
     // through it instead of opening GPIO chardevs directly. This is what
     // makes shared module-level signals (LP30 EB1 + C00: one MODULE_PGOOD_R
     // for two LPUs) work without EBUSY.
-    hal::common::SharedLineRegistry                      sharedLines_;
-    hal::common::ResetChipRegistry                       resetChips_;
+    hal::common::SharedLineRegistry sharedLines_;
+    hal::common::ResetChipRegistry resetChips_;
 
     // Already-registered fds. Multiple drivers can return the same fd from
     // IDevice::fds() when they share a SharedLine; we register each unique
     // fd once with sd-event and rely on SharedLine::dispatch to fan events
     // out to every subscriber.
-    std::unordered_set<int>                              registeredFds_;
+    std::unordered_set<int> registeredFds_;
 };
 
-}  // namespace pwrseq
+} // namespace pwrseq

@@ -8,10 +8,10 @@
 
 #include "fsm/tray_fsm.hpp"
 
-#include <gtest/gtest.h>
-
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 using namespace pwrseq;
 using namespace pwrseq::fsm;
@@ -24,7 +24,7 @@ constexpr InstanceId kTray{InstanceId::Class::Tray, 0};
 // Use a small tray (2 modules, 1 FPGA) for tests so cold-boot scenarios are
 // tractable. The FSM logic is identical regardless of count.
 constexpr size_t kNumModules = 2;
-constexpr size_t kNumFpgas   = 1;
+constexpr size_t kNumFpgas = 1;
 
 struct Harness
 {
@@ -33,23 +33,24 @@ struct Harness
 
     Harness()
     {
-        fsm.setOnStateChange(
-            [this](TrayState a, TrayState b) {
-                transitions.emplace_back(a, b);
-            });
+        fsm.setOnStateChange([this](TrayState a, TrayState b) {
+            transitions.emplace_back(a, b);
+        });
     }
 
     void mod(uint16_t idx, ModuleState s)
     {
         fsm.dispatch(SemanticEvent{
-            EventKind::ModuleStateChanged, kTray,
+            EventKind::ModuleStateChanged,
+            kTray,
             ChildModulePayload{InstanceId{InstanceId::Class::Module, idx}, s},
         });
     }
     void fpga(uint16_t idx, ElementState s)
     {
         fsm.dispatch(SemanticEvent{
-            EventKind::FpgaStateChanged, kTray,
+            EventKind::FpgaStateChanged,
+            kTray,
             ChildElementPayload{InstanceId{InstanceId::Class::Fpga, idx}, s},
         });
     }
@@ -59,7 +60,7 @@ struct Harness
     }
 };
 
-}  // namespace
+} // namespace
 
 TEST(TrayFsm, InitialStateIsStby)
 {
@@ -91,7 +92,7 @@ TEST(TrayFsm, Booting_AllChildrenOnline_GoesOnline)
 
     h.mod(0, ModuleState::Online);
     h.mod(1, ModuleState::Online);
-    EXPECT_EQ(h.fsm.state(), TrayState::Booting);  // FPGA still booting
+    EXPECT_EQ(h.fsm.state(), TrayState::Booting); // FPGA still booting
 
     h.fpga(0, ElementState::Online);
     EXPECT_EQ(h.fsm.state(), TrayState::Online);
@@ -153,11 +154,11 @@ TEST(TrayFsm, Fault_AllChildrenOnline_LateRecovery_GoesOnline)
     Harness h;
     h.mod(0, ModuleState::Powered);
     h.fpga(0, ElementState::Powered);
-    h.mod(1, ModuleState::Fault);            // → Fault
+    h.mod(1, ModuleState::Fault); // → Fault
     ASSERT_EQ(h.fsm.state(), TrayState::Fault);
 
     h.mod(0, ModuleState::Online);
-    h.mod(1, ModuleState::Online);           // late recovery on the faulted module
+    h.mod(1, ModuleState::Online); // late recovery on the faulted module
     h.fpga(0, ElementState::Online);
     EXPECT_EQ(h.fsm.state(), TrayState::Online);
 }
@@ -167,22 +168,22 @@ TEST(TrayFsm, Fault_AnyChildPowered_OperatorFullReset_GoesBooting)
     Harness h;
     h.mod(0, ModuleState::Powered);
     h.fpga(0, ElementState::Powered);
-    h.mod(1, ModuleState::Fault);            // → Fault
+    h.mod(1, ModuleState::Fault); // → Fault
     ASSERT_EQ(h.fsm.state(), TrayState::Fault);
 
     // Operator triggered a full reset on module 1; it cycles through reset
     // back to Powered.
-    h.mod(1, ModuleState::Resetting);        // intermediate, stays Fault
-    h.mod(1, ModuleState::Powered);          // back to Powered → Booting
+    h.mod(1, ModuleState::Resetting); // intermediate, stays Fault
+    h.mod(1, ModuleState::Powered);   // back to Powered → Booting
     EXPECT_EQ(h.fsm.state(), TrayState::Booting);
 }
 
 TEST(TrayFsm, IgnoresOutOfRangeChildIndex)
 {
     Harness h;
-    h.mod(99, ModuleState::Powered);    // beyond numModules
+    h.mod(99, ModuleState::Powered); // beyond numModules
     EXPECT_EQ(h.fsm.state(), TrayState::Stby);
-    h.fpga(7, ElementState::Powered);   // beyond numFpgas
+    h.fpga(7, ElementState::Powered); // beyond numFpgas
     EXPECT_EQ(h.fsm.state(), TrayState::Stby);
 }
 

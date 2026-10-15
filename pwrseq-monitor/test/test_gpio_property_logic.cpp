@@ -8,12 +8,12 @@
 
 #include "gpio_property_logic.hpp"
 
-#include <gtest/gtest.h>
-
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 using namespace pwrseq::gpio_props;
 
@@ -142,8 +142,8 @@ TEST(GpioPropertyLogic, ElectricalSemanticsPreservedForActiveLowPath)
 TEST(GpioPropertyLogic, EmptyLineNameNeverInjects)
 {
     CachedLine cache;
-    auto d = applyPropertyUpdate(cache, std::string{""}, true, true,
-                                 interesting);
+    auto d =
+        applyPropertyUpdate(cache, std::string{""}, true, true, interesting);
     EXPECT_EQ(d.action, Action::None);
 }
 
@@ -332,8 +332,8 @@ TEST(SnapshotMachine, InFlightStartDoesNotDoubleDispatch)
 
 TEST(SnapshotMachine, IsServiceMissingError)
 {
-    EXPECT_TRUE(isServiceMissingError(
-        "org.freedesktop.DBus.Error.ServiceUnknown"));
+    EXPECT_TRUE(
+        isServiceMissingError("org.freedesktop.DBus.Error.ServiceUnknown"));
     EXPECT_TRUE(
         isServiceMissingError("org.freedesktop.DBus.Error.NameHasNoOwner"));
     EXPECT_FALSE(isServiceMissingError("org.freedesktop.DBus.Error.Timeout"));

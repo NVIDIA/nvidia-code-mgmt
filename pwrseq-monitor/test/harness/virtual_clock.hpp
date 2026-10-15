@@ -26,14 +26,16 @@ class VirtualClock
   public:
     using TimerId = uint64_t;
 
-    std::chrono::milliseconds now() const noexcept { return now_; }
+    std::chrono::milliseconds now() const noexcept
+    {
+        return now_;
+    }
 
     /** Schedule a one-shot callback `delay` ms from now(). Returns a stable
      *  id usable with cancel(). Ids are monotonically increasing and never
      *  reused for the lifetime of this VirtualClock.
      */
-    TimerId schedule(std::chrono::milliseconds delay,
-                     std::function<void()> cb)
+    TimerId schedule(std::chrono::milliseconds delay, std::function<void()> cb)
     {
         TimerId id = nextId_++;
         pending_.push_back({id, now_ + delay, std::move(cb), false});
@@ -75,9 +77,10 @@ class VirtualClock
         // the lifetime of the VirtualClock and lookup is O(N) per
         // dispatched timer, which is fine for the small N (<~10) the
         // FSM tests actually use.
-        struct DueEntry {
+        struct DueEntry
+        {
             std::chrono::milliseconds firesAt;
-            TimerId                   id;
+            TimerId id;
         };
         std::vector<DueEntry> due;
         due.reserve(pending_.size());
@@ -101,11 +104,11 @@ class VirtualClock
             // callback. If the entry is gone (couldn't happen with the
             // current API but harmless to guard) or has been cancelled
             // by another callback, skip.
-            auto it = std::find_if(pending_.begin(), pending_.end(),
-                                   [id = entry.id](const Pending& p) {
-                                       return p.id == id;
-                                   });
-            if (it == pending_.end() || it->cancelled) continue;
+            auto it = std::find_if(
+                pending_.begin(), pending_.end(),
+                [id = entry.id](const Pending& p) { return p.id == id; });
+            if (it == pending_.end() || it->cancelled)
+                continue;
             // Mark cancelled BEFORE invoking so the cb can safely re-arm
             // by scheduling a new timer; the slot we just fired will be
             // reaped below. Move the callback out first so re-entrant
@@ -143,15 +146,15 @@ class VirtualClock
   private:
     struct Pending
     {
-        TimerId                   id;
+        TimerId id;
         std::chrono::milliseconds firesAt;
-        std::function<void()>     cb;
-        bool                      cancelled;
+        std::function<void()> cb;
+        bool cancelled;
     };
 
-    std::vector<Pending>      pending_;
+    std::vector<Pending> pending_;
     std::chrono::milliseconds now_{};
-    TimerId                   nextId_ = 1;
+    TimerId nextId_ = 1;
 };
 
-}  // namespace pwrseq::test
+} // namespace pwrseq::test

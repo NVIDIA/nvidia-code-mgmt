@@ -78,17 +78,23 @@ namespace pwrseq::config
 struct LineRef
 {
     std::string line;
-    bool        activeLow = false;
+    bool activeLow = false;
 
-    bool empty() const noexcept { return line.empty(); }
+    bool empty() const noexcept
+    {
+        return line.empty();
+    }
 };
 
 /** Optional lpu850 chardev path for boot-gated telemetry/log polling. */
 struct TelemetryDescriptor
 {
-    std::string logDev;   // e.g. "/dev/lpu15_log"
+    std::string logDev; // e.g. "/dev/lpu15_log"
 
-    bool empty() const noexcept { return logDev.empty(); }
+    bool empty() const noexcept
+    {
+        return logDev.empty();
+    }
 };
 
 /** Optional four-bit firmware boot-stage bus. When present, the daemon
@@ -97,7 +103,7 @@ struct TelemetryDescriptor
 struct BootStatusDescriptor
 {
     std::array<LineRef, 4> bits;
-    bool                   enabled = false;
+    bool enabled = false;
 };
 
 /** One element living inside a module. Elements within a module aggregate
@@ -108,17 +114,17 @@ struct ElementDescriptor
     enum class Kind : uint8_t
     {
         Lpu,
-        Mcu,    // future — placeholder for heterogeneous modules
-        Gpu,    // future
+        Mcu, // future — placeholder for heterogeneous modules
+        Gpu, // future
     };
 
-    Kind        kind = Kind::Lpu;
-    std::string id;               // human / Redfish ID, e.g. "HGX_LPU_3"
+    Kind kind = Kind::Lpu;
+    std::string id; // human / Redfish ID, e.g. "HGX_LPU_3"
 
-    LineRef              pg;
-    LineRef              bc;
-    LineRef              resetLine;   // LSTP reset output (assert only).
-    TelemetryDescriptor  telemetry;
+    LineRef pg;
+    LineRef bc;
+    LineRef resetLine; // LSTP reset output (assert only).
+    TelemetryDescriptor telemetry;
     BootStatusDescriptor bootStatus;
 };
 
@@ -126,31 +132,31 @@ struct ElementDescriptor
  *  element states. */
 struct ModuleDescriptor
 {
-    std::string                     id;          // "HGX_LPU_Module_0" ...
-    std::vector<ElementDescriptor>  elements;
+    std::string id; // "HGX_LPU_Module_0" ...
+    std::vector<ElementDescriptor> elements;
 };
 
 /** Per-FPGA descriptor. FPGAs run an Element FSM (same state machine as LPUs)
  *  and live directly under the Tray — no fault propagation to modules. */
 struct FpgaDescriptor
 {
-    std::string id;                                 // "HGX_FPGA_W" / "_E"
+    std::string id; // "HGX_FPGA_W" / "_E"
 
-    LineRef     pg;
-    LineRef     bc;
-    LineRef     resetLine;
+    LineRef pg;
+    LineRef bc;
+    LineRef resetLine;
     BootStatusDescriptor bootStatus;
 };
 
 /** Root document — the whole `platform.json` parses into one of these. */
 struct PlatformDescriptor
 {
-    std::string                    platform;        // "LP30-EB2"
-    std::string                    chassisId{"HGX_Chassis_0"};
-    std::chrono::milliseconds      tBootMs{12'000};
+    std::string platform; // "LP30-EB2"
+    std::string chassisId{"HGX_Chassis_0"};
+    std::chrono::milliseconds tBootMs{12'000};
 
-    std::vector<ModuleDescriptor>  modules;
-    std::vector<FpgaDescriptor>    fpgas;
+    std::vector<ModuleDescriptor> modules;
+    std::vector<FpgaDescriptor> fpgas;
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -179,4 +185,4 @@ PlatformDescriptor loadFromFile(const std::string& path);
  *  unit tests. */
 PlatformDescriptor loadFromString(const std::string& jsonText);
 
-}  // namespace pwrseq::config
+} // namespace pwrseq::config

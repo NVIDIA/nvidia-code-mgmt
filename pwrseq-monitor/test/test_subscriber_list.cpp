@@ -15,11 +15,11 @@
 
 #include "hal/subscriber_list.hpp"
 
-#include <gtest/gtest.h>
-
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 using pwrseq::hal::common::SubscriberList;
 
@@ -64,10 +64,10 @@ TEST(SubscriberList, RemoveByIdSkipsThatSubscriber)
     // driver shuts down (Subscription dtor calls remove()); LPU0 must still
     // receive subsequent events.
     SubscriberList sl;
-    int            a_count = 0;
-    int            b_count = 0;
-    const auto     a_slot  = sl.add([&](bool) { ++a_count; });
-    const auto     b_slot  = sl.add([&](bool) { ++b_count; });
+    int a_count = 0;
+    int b_count = 0;
+    const auto a_slot = sl.add([&](bool) { ++a_count; });
+    const auto b_slot = sl.add([&](bool) { ++b_count; });
 
     sl.notify(true);
     EXPECT_EQ(a_count, 1);
@@ -77,7 +77,7 @@ TEST(SubscriberList, RemoveByIdSkipsThatSubscriber)
     EXPECT_EQ(sl.size(), 1u);
 
     sl.notify(true);
-    EXPECT_EQ(a_count, 1);  // unchanged — removed
+    EXPECT_EQ(a_count, 1); // unchanged — removed
     EXPECT_EQ(b_count, 2);
 
     sl.remove(b_slot);
@@ -87,8 +87,8 @@ TEST(SubscriberList, RemoveByIdSkipsThatSubscriber)
 TEST(SubscriberList, RemoveOfUnknownSlotIsIdempotent)
 {
     SubscriberList sl;
-    int            count = 0;
-    const auto     slot  = sl.add([&](bool) { ++count; });
+    int count = 0;
+    const auto slot = sl.add([&](bool) { ++count; });
 
     sl.remove(/*nonexistent*/ 9999);
     EXPECT_EQ(sl.size(), 1u);
@@ -96,16 +96,16 @@ TEST(SubscriberList, RemoveOfUnknownSlotIsIdempotent)
     EXPECT_EQ(count, 1);
 
     sl.remove(slot);
-    sl.remove(slot);  // double-remove — should be a no-op, not a crash
+    sl.remove(slot); // double-remove — should be a no-op, not a crash
     EXPECT_TRUE(sl.empty());
 }
 
 TEST(SubscriberList, SlotIdsAreUniqueAndStable)
 {
     SubscriberList sl;
-    const auto     s1 = sl.add([](bool) {});
-    const auto     s2 = sl.add([](bool) {});
-    const auto     s3 = sl.add([](bool) {});
+    const auto s1 = sl.add([](bool) {});
+    const auto s2 = sl.add([](bool) {});
+    const auto s3 = sl.add([](bool) {});
     EXPECT_NE(s1, s2);
     EXPECT_NE(s2, s3);
     EXPECT_NE(s1, s3);
@@ -125,15 +125,15 @@ TEST(SubscriberList, SubscriberExceptionDoesNotBreakChain)
     // would unwind through libgpiod and the sd-event loop. Make sure
     // siblings still run and the iteration completes.
     SubscriberList sl;
-    int            before = 0;
-    int            after  = 0;
+    int before = 0;
+    int after = 0;
     sl.add([&](bool) { ++before; });
     sl.add([&](bool) { throw std::runtime_error("subscriber blew up"); });
     sl.add([&](bool) { ++after; });
 
     sl.notify(true);
     EXPECT_EQ(before, 1);
-    EXPECT_EQ(after,  1);
+    EXPECT_EQ(after, 1);
 
     // Non-std exceptions are caught too.
     sl.add([&](bool) { throw 42; });
@@ -141,7 +141,7 @@ TEST(SubscriberList, SubscriberExceptionDoesNotBreakChain)
 
     sl.notify(false);
     EXPECT_EQ(before, 2);
-    EXPECT_EQ(after,  3);
+    EXPECT_EQ(after, 3);
 }
 
 TEST(SubscriberList, AddDuringNotifyDoesNotAffectThisRound)
@@ -150,16 +150,14 @@ TEST(SubscriberList, AddDuringNotifyDoesNotAffectThisRound)
     // a new subscriber mid-flight should not see it called this round.
     // (It WILL be called on subsequent notify()s.)
     SubscriberList sl;
-    int            late = 0;
-    sl.add([&](bool) {
-        sl.add([&](bool) { ++late; });
-    });
+    int late = 0;
+    sl.add([&](bool) { sl.add([&](bool) { ++late; }); });
 
     sl.notify(true);
-    EXPECT_EQ(late, 0);  // newly-added subscriber didn't fire this round
+    EXPECT_EQ(late, 0); // newly-added subscriber didn't fire this round
 
     sl.notify(true);
-    EXPECT_EQ(late, 1);  // now it does
+    EXPECT_EQ(late, 1); // now it does
 }
 
 TEST(SubscriberList, RemoveDuringNotifyIsSafe)
@@ -169,20 +167,18 @@ TEST(SubscriberList, RemoveDuringNotifyIsSafe)
     // snapshot. Behaviour: the not-yet-iterated subscriber DOES fire this
     // round (we're iterating the snapshot, not subs_).
     SubscriberList sl;
-    int            tail_count = 0;
-    std::uint64_t  tail_slot  = 0;
+    int tail_count = 0;
+    std::uint64_t tail_slot = 0;
 
-    sl.add([&](bool) {
-        sl.remove(tail_slot);
-    });
+    sl.add([&](bool) { sl.remove(tail_slot); });
     tail_slot = sl.add([&](bool) { ++tail_count; });
 
     sl.notify(true);
-    EXPECT_EQ(tail_count, 1);  // fired from the snapshot
-    EXPECT_EQ(sl.size(), 1u);  // tail removed from live list
+    EXPECT_EQ(tail_count, 1); // fired from the snapshot
+    EXPECT_EQ(sl.size(), 1u); // tail removed from live list
 
     sl.notify(true);
-    EXPECT_EQ(tail_count, 1);  // gone for good now
+    EXPECT_EQ(tail_count, 1); // gone for good now
 }
 
-}  // namespace
+} // namespace

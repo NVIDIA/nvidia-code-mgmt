@@ -21,9 +21,12 @@ bool paramFlag(const DeviceConfig& cfg, std::string_view key)
     auto v = cfg.param(key);
     return v == "1" || v == "true";
 }
-}  // namespace
+} // namespace
 
-Result FpgaDriver::probe() { return Result::Ok; }
+Result FpgaDriver::probe()
+{
+    return Result::Ok;
+}
 
 Result FpgaDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
 {
@@ -35,14 +38,14 @@ Result FpgaDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
         return Result::BadArgument;
     }
 
-    pgLineName_    = cfg.param("pg_line");
-    bcLineName_    = cfg.param("bc_line");
+    pgLineName_ = cfg.param("pg_line");
+    bcLineName_ = cfg.param("bc_line");
     resetLineName_ = cfg.param("reset_line");
 
     if (pgLineName_.empty() || bcLineName_.empty() || resetLineName_.empty())
     {
-        lg2::error("FpgaDriver[{ID}]: missing required driverParams",
-                   "ID", to_string(id_));
+        lg2::error("FpgaDriver[{ID}]: missing required driverParams", "ID",
+                   to_string(id_));
         return Result::BadArgument;
     }
 
@@ -67,8 +70,8 @@ Result FpgaDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
 
     std::shared_ptr<common::SharedLine> newPgLine;
     std::shared_ptr<common::SharedLine> newBcLine;
-    common::Subscription                newPgSub;
-    common::Subscription                newBcSub;
+    common::Subscription newPgSub;
+    common::Subscription newBcSub;
     try
     {
         newPgLine = cfg.sharedLines->acquire(pg, "pwrseq-monitor");
@@ -78,44 +81,42 @@ Result FpgaDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
         // PG rising samples the BC latch (OOO BC-before-PG / seed); PG
         // falling invalidates BC so the next rise cannot see a stale
         // BOOT_COMPLETE from the previous power cycle (NVBUG 6559782).
-        newPgSub = newPgLine->subscribe(
-            [this, myId](bool asserted) {
-                if (!sink_)
-                {
-                    return;
-                }
-                const bool bcHigh =
-                    bcLine_ && bcLine_->hasValue() && bcLine_->read();
-                emitPowerGoodEdge(*sink_, myId, asserted, bcHigh, [this] {
-                    clearBootCompleteCache();
-                });
-            });
-        newBcSub = newBcLine->subscribe(
-            [this, myId](bool asserted) {
-                if (sink_) sink_->emit(SemanticEvent{
+        newPgSub = newPgLine->subscribe([this, myId](bool asserted) {
+            if (!sink_)
+            {
+                return;
+            }
+            const bool bcHigh =
+                bcLine_ && bcLine_->hasValue() && bcLine_->read();
+            emitPowerGoodEdge(*sink_, myId, asserted, bcHigh,
+                              [this] { clearBootCompleteCache(); });
+        });
+        newBcSub = newBcLine->subscribe([this, myId](bool asserted) {
+            if (sink_)
+                sink_->emit(SemanticEvent{
                     asserted ? EventKind::BcHi : EventKind::BcLo, myId});
-            });
+        });
     }
     catch (const std::exception& e)
     {
-        lg2::error("FpgaDriver[{ID}] init failed: {ERR}",
-                   "ID", to_string(id_), "ERR", e.what());
+        lg2::error("FpgaDriver[{ID}] init failed: {ERR}", "ID", to_string(id_),
+                   "ERR", e.what());
         return Result::InitFailed;
     }
 
-    sink_           = &sink;
-    cfg_            = cfg;
+    sink_ = &sink;
+    cfg_ = cfg;
     resetActiveLow_ = paramFlag(cfg, "reset_active_low");
-    pgLine_         = std::move(newPgLine);
-    bcLine_         = std::move(newBcLine);
-    pgSub_          = std::move(newPgSub);
-    bcSub_          = std::move(newBcSub);
+    pgLine_ = std::move(newPgLine);
+    bcLine_ = std::move(newBcLine);
+    pgSub_ = std::move(newPgSub);
+    bcSub_ = std::move(newBcSub);
 
-    caps_.powerGood    = true;
+    caps_.powerGood = true;
     caps_.bootComplete = true;
-    caps_.warmReset    = true;
-    caps_.coldReset    = true;
-    caps_.powerCycle   = true;
+    caps_.warmReset = true;
+    caps_.coldReset = true;
+    caps_.powerCycle = true;
     caps_.perRailHealth = false;
 
     const auto resetChipPath = cfg.resetChips->probeOrStore(resetLineName_);
@@ -138,8 +139,8 @@ Result FpgaDriver::init(SemanticEventSink& sink, const DeviceConfig& cfg)
 
 Result FpgaDriver::reset(ResetKind kind)
 {
-    if (kind != ResetKind::Warm && kind != ResetKind::Cold
-        && kind != ResetKind::PowerCycle)
+    if (kind != ResetKind::Warm && kind != ResetKind::Cold &&
+        kind != ResetKind::PowerCycle)
     {
         return Result::NotSupported;
     }
@@ -150,19 +151,17 @@ Result FpgaDriver::reset(ResetKind kind)
     }
 
     lg2::info("FpgaDriver[{ID}]: warm-reset trigger on {LINE} (kind={KIND})",
-              "ID",   to_string(id_),
-              "LINE", resetLineName_,
-              "KIND", static_cast<int>(kind));
-    return common::actuateResetOutputLine(resetLineName_, resetActiveLow_,
-                                          "pwrseq-monitor",
-                                          common::ResetLineOp::Trigger,
-                                          cfg_.resetChips);
+              "ID", to_string(id_), "LINE", resetLineName_, "KIND",
+              static_cast<int>(kind));
+    return common::actuateResetOutputLine(
+        resetLineName_, resetActiveLow_, "pwrseq-monitor",
+        common::ResetLineOp::Trigger, cfg_.resetChips);
 }
 
 Result FpgaDriver::resetAssert(ResetKind kind)
 {
-    if (kind != ResetKind::Warm && kind != ResetKind::Cold
-        && kind != ResetKind::PowerCycle)
+    if (kind != ResetKind::Warm && kind != ResetKind::Cold &&
+        kind != ResetKind::PowerCycle)
     {
         return Result::NotSupported;
     }
@@ -173,12 +172,11 @@ Result FpgaDriver::resetAssert(ResetKind kind)
 
     lg2::info("FpgaDriver[{ID}]: warm-reset assert on {LINE} "
               "(LSTP trigger, kind={KIND})",
-              "ID", to_string(id_), "LINE", resetLineName_,
-              "KIND", static_cast<int>(kind));
-    return common::actuateResetOutputLine(resetLineName_, resetActiveLow_,
-                                          "pwrseq-monitor",
-                                          common::ResetLineOp::AssertOnly,
-                                          cfg_.resetChips);
+              "ID", to_string(id_), "LINE", resetLineName_, "KIND",
+              static_cast<int>(kind));
+    return common::actuateResetOutputLine(
+        resetLineName_, resetActiveLow_, "pwrseq-monitor",
+        common::ResetLineOp::AssertOnly, cfg_.resetChips);
 }
 
 Result FpgaDriver::resetRelease()
@@ -235,10 +233,13 @@ DeviceStatus FpgaDriver::get_status() const
     DeviceStatus s{};
     try
     {
-        if (pgLine_) s.powerGood    = pgLine_->read();
-        if (bcLine_) s.bootComplete = bcLine_->read();
+        if (pgLine_)
+            s.powerGood = pgLine_->read();
+        if (bcLine_)
+            s.bootComplete = bcLine_->read();
     }
-    catch (...) {}
+    catch (...)
+    {}
     s.present = (pgLine_ != nullptr && bcLine_ != nullptr);
     return s;
 }
@@ -249,12 +250,14 @@ std::vector<int> FpgaDriver::fds() const
     if (pgLine_)
     {
         const int fd = pgLine_->fd();
-        if (fd >= 0) out.push_back(fd);
+        if (fd >= 0)
+            out.push_back(fd);
     }
     if (bcLine_)
     {
         const int fd = bcLine_->fd();
-        if (fd >= 0) out.push_back(fd);
+        if (fd >= 0)
+            out.push_back(fd);
     }
     return out;
 }
@@ -265,4 +268,4 @@ void FpgaDriver::onReadable(int /*fd*/)
     // kernel fds are held.
 }
 
-}  // namespace pwrseq::hal
+} // namespace pwrseq::hal

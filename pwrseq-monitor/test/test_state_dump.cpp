@@ -7,14 +7,15 @@
 
 #include "fsm/state_dump.hpp"
 
-#include <nlohmann/json.hpp>
+#include <unistd.h>
 
-#include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <unistd.h>
+
+#include <gtest/gtest.h>
 
 using nlohmann::json;
 using namespace pwrseq;
@@ -62,15 +63,15 @@ FsmSnapshot sampleSnapshot()
 
 std::filesystem::path tempDumpPath()
 {
-    auto path = std::filesystem::temp_directory_path() /
-                ("pwrseq_state_dump_test." + std::to_string(::getpid()) +
-                 ".json");
+    auto path =
+        std::filesystem::temp_directory_path() /
+        ("pwrseq_state_dump_test." + std::to_string(::getpid()) + ".json");
     std::filesystem::remove(path);
     std::filesystem::remove(path.string() + ".tmp");
     return path;
 }
 
-}  // namespace
+} // namespace
 
 TEST(StateDump, SerializesFsmAndLineCache)
 {

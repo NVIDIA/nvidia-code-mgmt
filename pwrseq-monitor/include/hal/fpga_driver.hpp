@@ -28,39 +28,45 @@ namespace pwrseq::hal
 class FpgaDriver : public IDevice
 {
   public:
-    explicit FpgaDriver(InstanceId id) noexcept : id_(id) {}
+    explicit FpgaDriver(InstanceId id) noexcept : id_(id)
+    {}
 
-    Result        probe() override;
-    Result        init(SemanticEventSink& sink,
-                       const DeviceConfig& cfg) override;
-    Result        reset(ResetKind kind) override;
-    Result        resetAssert(ResetKind kind) override;
-    Result        resetRelease() override;
-    Result        shutdown() override;
-    void          clearBootCompleteCache() override;
+    Result probe() override;
+    Result init(SemanticEventSink& sink, const DeviceConfig& cfg) override;
+    Result reset(ResetKind kind) override;
+    Result resetAssert(ResetKind kind) override;
+    Result resetRelease() override;
+    Result shutdown() override;
+    void clearBootCompleteCache() override;
     std::string_view bootCompleteLineName() const noexcept override;
-    bool          bootCompleteActiveLow() const noexcept override;
-    bool          injectBootCompleteElectrical(bool electricalAsserted) override;
-    DeviceStatus  get_status() const override;
-    Capabilities  capabilities() const override { return caps_; }
-    InstanceId    id() const override { return id_; }
+    bool bootCompleteActiveLow() const noexcept override;
+    bool injectBootCompleteElectrical(bool electricalAsserted) override;
+    DeviceStatus get_status() const override;
+    Capabilities capabilities() const override
+    {
+        return caps_;
+    }
+    InstanceId id() const override
+    {
+        return id_;
+    }
     std::vector<int> fds() const override;
-    void          onReadable(int fd) override;
+    void onReadable(int fd) override;
 
   private:
-    InstanceId                          id_;
-    SemanticEventSink*                  sink_ = nullptr;
-    DeviceConfig                        cfg_{};
-    Capabilities                        caps_{};
+    InstanceId id_;
+    SemanticEventSink* sink_ = nullptr;
+    DeviceConfig cfg_{};
+    Capabilities caps_{};
 
     std::shared_ptr<common::SharedLine> pgLine_;
     std::shared_ptr<common::SharedLine> bcLine_;
-    common::Subscription                pgSub_;
-    common::Subscription                bcSub_;
-    std::string                         pgLineName_;
-    std::string                         bcLineName_;
-    std::string                         resetLineName_;
-    bool                                resetActiveLow_ = false;
+    common::Subscription pgSub_;
+    common::Subscription bcSub_;
+    std::string pgLineName_;
+    std::string bcLineName_;
+    std::string resetLineName_;
+    bool resetActiveLow_ = false;
 };
 
-}  // namespace pwrseq::hal
+} // namespace pwrseq::hal

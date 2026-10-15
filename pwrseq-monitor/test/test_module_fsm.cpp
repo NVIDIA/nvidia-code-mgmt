@@ -8,10 +8,10 @@
 
 #include "fsm/module_fsm.hpp"
 
-#include <gtest/gtest.h>
-
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 using namespace pwrseq;
 using namespace pwrseq::fsm;
@@ -30,10 +30,9 @@ struct Harness
 
     Harness()
     {
-        fsm.setOnStateChange(
-            [this](ModuleState a, ModuleState b) {
-                transitions.emplace_back(a, b);
-            });
+        fsm.setOnStateChange([this](ModuleState a, ModuleState b) {
+            transitions.emplace_back(a, b);
+        });
     }
 
     void childA(ElementState s)
@@ -54,7 +53,7 @@ struct Harness
     }
 };
 
-}  // namespace
+} // namespace
 
 // ─── per-row tests ─────────────────────────────────────────────────────────
 
@@ -78,7 +77,7 @@ TEST(ModuleFsm, Powered_BothOnline_GoesOnline)
     h.childB(ElementState::Powered);
     EXPECT_EQ(h.fsm.state(), ModuleState::Powered);
     h.childA(ElementState::Online);
-    EXPECT_EQ(h.fsm.state(), ModuleState::Powered);  // only one online
+    EXPECT_EQ(h.fsm.state(), ModuleState::Powered); // only one online
     h.childB(ElementState::Online);
     EXPECT_EQ(h.fsm.state(), ModuleState::Online);
 }
@@ -125,7 +124,7 @@ TEST(ModuleFsm, Resetting_AnyChildPoweredAgain_GoesPowered)
     h.childB(ElementState::Online);
     h.childA(ElementState::Resetting);
     h.childB(ElementState::Resetting);
-    h.childA(ElementState::Powered);  // came back from reset
+    h.childA(ElementState::Powered); // came back from reset
     EXPECT_EQ(h.fsm.state(), ModuleState::Powered);
 }
 
@@ -163,7 +162,7 @@ TEST(ModuleFsm, Fault_AllChildrenOnline_LateRecovery_GoesOnline)
     h.childB(ElementState::Powered);
     h.childA(ElementState::Fault);
     ASSERT_EQ(h.fsm.state(), ModuleState::Fault);
-    h.childA(ElementState::Online);   // late recovery
+    h.childA(ElementState::Online); // late recovery
     h.childB(ElementState::Online);
     EXPECT_EQ(h.fsm.state(), ModuleState::Online);
 }
@@ -174,8 +173,8 @@ TEST(ModuleFsm, Fault_OperatorReset_ChildPowered_GoesPowered)
     h.childA(ElementState::Powered);
     h.childB(ElementState::Powered);
     h.childA(ElementState::Fault);
-    h.childA(ElementState::Resetting);  // operator started a reset
-    h.childA(ElementState::Powered);    // reset released
+    h.childA(ElementState::Resetting); // operator started a reset
+    h.childA(ElementState::Powered);   // reset released
     EXPECT_EQ(h.fsm.state(), ModuleState::Powered);
 }
 
@@ -260,7 +259,8 @@ TEST(ModuleFsm, IgnoresEventsForUnknownChild)
     Harness h;
     constexpr InstanceId notOurs{InstanceId::Class::Lpu, 99};
     h.fsm.dispatch(SemanticEvent{
-        EventKind::LpuStateChanged, kModule0,
+        EventKind::LpuStateChanged,
+        kModule0,
         ChildElementPayload{notOurs, ElementState::Powered},
     });
     EXPECT_EQ(h.fsm.state(), ModuleState::Stby);
@@ -269,7 +269,7 @@ TEST(ModuleFsm, IgnoresEventsForUnknownChild)
 TEST(ModuleFsm, IgnoresIrrelevantEventKinds)
 {
     Harness h;
-    h.fsm.dispatch(SemanticEvent{EventKind::PgHi, kModule0});  // wrong kind
+    h.fsm.dispatch(SemanticEvent{EventKind::PgHi, kModule0}); // wrong kind
     EXPECT_EQ(h.fsm.state(), ModuleState::Stby);
 }
 
