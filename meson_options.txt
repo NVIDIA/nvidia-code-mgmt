@@ -560,3 +560,8 @@ option('PREBOOTDIAG_SUPPORT',
        type: 'feature',
        value: 'disabled',
        description: 'Enables pre-boot diagnostic service')
+
+option('PWRSEQ_MONITOR_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables LPU/FPGA power-sequence monitor (lpu-pwrseq-monitord). Platform descriptor JSON and the systemd unit stay in the image layer.')
