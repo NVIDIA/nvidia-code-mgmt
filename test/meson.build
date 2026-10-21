@@ -1137,6 +1137,9 @@ test(
         'test_mcu_recovery',
         'test_mcu_recovery.cpp',
         implicit_include_directories: false,
+        # This test covers the default USB paths, so build it without
+        # USB_RECOVERY_COMPAT_NO_UDEV whatever the option says.
+        cpp_args: ['-UUSB_RECOVERY_COMPAT_NO_UDEV'],
         link_args: [
             '-Wl,--wrap=open',
             '-Wl,--wrap=open64',
