@@ -88,25 +88,6 @@ std::function<void()> g_onSleep;
 /// the sleep itself is a no-op.
 std::vector<long> g_sleepSecs;
 
-/// Sum of g_sleepSecs.
-long totalSlept()
-{
-    long total = 0;
-    for (long s : g_sleepSecs)
-        total += s;
-    return total;
-}
-
-/// How many intercepted sleeps requested exactly `secs` seconds.
-std::size_t countSleeps(long secs)
-{
-    std::size_t n = 0;
-    for (long s : g_sleepSecs)
-        if (s == secs)
-            ++n;
-    return n;
-}
-
 } // namespace
 
 extern "C" pid_t __wrap_fork()
@@ -282,7 +263,6 @@ class UsbDfuRecoveryTest : public ::testing::Test
         // Do not wait for recovery U-Boot's DFU targets unless a test asks
         cfg.uBootDfuTimeoutSecs = 0;
         cfg.uBootDfuPollSecs = 1;
-        cfg.postFlashSettleSecs = 0;
         // 1 s / 500 ms -> polls at 0, 0.5 and 1 s (three attempts)
         cfg.dfuEnumerationTimeoutSecs = 1;
         cfg.dfuEnumerationPollMs = 500;
@@ -972,6 +952,32 @@ TEST_F(UsbDfuRecoveryTest, PrepareFlashImage_TruncatesLongImage)
     EXPECT_FALSE(std::filesystem::exists(stagedPath));
 }
 
+TEST_F(UsbDfuRecoveryTest, PrepareFlashImage_StagesThePrefixNotTheTail)
+{
+    // The staged file is written a chunk at a time rather than copied whole
+    // and truncated back, so assert it really is the leading bytes: a tail
+    // that reached the HMC would overwrite the persistent region.
+    auto fwPath = tmpDir_ / "fw.bin";
+    {
+        std::ofstream f(fwPath, std::ios::trunc | std::ios::binary);
+        std::string head(1000, '\x11');
+        std::string tail(1000, '\x22');
+        f.write(head.data(), static_cast<std::streamsize>(head.size()));
+        f.write(tail.data(), static_cast<std::streamsize>(tail.size()));
+    }
+
+    UsbDfuRecovery::StagedImage staged;
+    nlohmann::json out;
+    ASSERT_TRUE(
+        UsbDfuRecovery::prepareFlashImage(fwPath.string(), 1000, staged, out));
+    ASSERT_EQ(staged.sizeBytes, 1000u);
+
+    std::ifstream in(staged.path, std::ios::binary);
+    std::string got((std::istreambuf_iterator<char>(in)),
+                    std::istreambuf_iterator<char>());
+    EXPECT_EQ(got, std::string(1000, '\x11'));
+}
+
 // ============================================================================
 // flashFirmware tests
 // ============================================================================
@@ -1072,78 +1078,6 @@ TEST_F(UsbDfuRecoveryTest, FlashFirmware_DetachFailureIsFlashFailure)
     EXPECT_FALSE(dut.flashFirmware(fwPath.string(), out));
     EXPECT_EQ(out["Status"].get<std::string>(), "Failed");
     EXPECT_EQ(out["ErrorCode"].get<uint8_t>(), kFirmwareFlashFailed);
-}
-
-TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_RunsToCeiling)
-{
-    auto cfg = makeConfig();
-    cfg.postFlashSettleSecs = 100;
-    cfg.postFlashPollSecs = 10;
-    UsbDfuRecovery dut(cfg);
-
-    dut.waitForProgrammingComplete();
-
-    // isProgrammingComplete() has no signal to read yet, so the poll runs the
-    // full ceiling.  Wiring a signal in should turn this into an early return.
-    EXPECT_FALSE(dut.isProgrammingComplete());
-    EXPECT_EQ(g_sleepSecs.size(), 10u);
-    EXPECT_EQ(totalSlept(), 100);
-}
-
-TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_DoublesForBothChips)
-{
-    auto cfg = makeConfig();
-    cfg.dfuAltSetting = "recovery_both";
-    cfg.postFlashSettleSecs = 100;
-    cfg.postFlashPollSecs = 10;
-    UsbDfuRecovery dut(cfg);
-
-    dut.waitForProgrammingComplete();
-
-    // recovery_both writes the image twice, so a per-chip ceiling that was
-    // not doubled would reset the HMC while the second chip is still being
-    // written.
-    EXPECT_EQ(totalSlept(), 200);
-}
-
-TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_ClampsFinalPoll)
-{
-    auto cfg = makeConfig();
-    cfg.postFlashSettleSecs = 95; // not a multiple of the poll interval
-    cfg.postFlashPollSecs = 10;
-    UsbDfuRecovery dut(cfg);
-
-    dut.waitForProgrammingComplete();
-
-    // An attempt count of 95/10 would truncate to 9 and return 5 s early.
-    ASSERT_EQ(g_sleepSecs.size(), 10u);
-    EXPECT_EQ(g_sleepSecs.back(), 5);
-    EXPECT_EQ(totalSlept(), 95);
-}
-
-TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_CeilingBelowPollInterval)
-{
-    auto cfg = makeConfig();
-    cfg.postFlashSettleSecs = 5;
-    cfg.postFlashPollSecs = 10;
-    UsbDfuRecovery dut(cfg);
-
-    dut.waitForProgrammingComplete();
-
-    // A single unclamped poll would sleep 10 s and overshoot the ceiling.
-    ASSERT_EQ(g_sleepSecs.size(), 1u);
-    EXPECT_EQ(totalSlept(), 5);
-}
-
-TEST_F(UsbDfuRecoveryTest, WaitForProgrammingComplete_ZeroCeilingDoesNotWait)
-{
-    auto cfg = makeConfig();
-    cfg.postFlashSettleSecs = 0;
-    UsbDfuRecovery dut(cfg);
-
-    dut.waitForProgrammingComplete();
-
-    EXPECT_TRUE(g_sleepSecs.empty());
 }
 
 TEST_F(UsbDfuRecoveryTest, FlashFirmware_TruncatesAndCleansUp)
@@ -1399,7 +1333,7 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_Success)
     EXPECT_FALSE(static_cast<bool>(dut.session_));
 }
 
-TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_NoDetachSkipsProgrammingWait)
+TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_NoDetachSkipsTheDetach)
 {
     makeRecoveryReady();
     touchFile(tmpDir_ / "bundle.bin");
@@ -1408,20 +1342,13 @@ TEST_F(UsbDfuRecoveryTest, PerformFullRecovery_NoDetachSkipsProgrammingWait)
 
     auto cfg = makeConfig();
     cfg.detachAfterFlash = false;
-    cfg.postFlashSettleSecs = 2400;
     UsbDfuRecovery dut(cfg);
     nlohmann::json out;
     EXPECT_TRUE(dut.performFullRecovery(fwPath.string(),
                                         {tmpDir_ / "bundle.bin"}, out));
 
     // --no-detach leaves the DFU session open, so recovery U-Boot never starts
-    // programming.  Waiting out the settle ceiling would add 40 minutes to a
-    // run that has nothing to wait for.  The strap settle and the two reset
-    // pulses still sleep 1 s each, so assert no poll-interval sleep happened
-    // rather than no sleep at all.
-    EXPECT_EQ(countSleeps(cfg.postFlashPollSecs), 0u);
-    EXPECT_LT(totalSlept(), cfg.postFlashPollSecs);
-    // bundle + flash, no detach
+    // programming: bundle and flash run, and no detach follows.
     EXPECT_EQ(g_waitpidCallCount, 2u);
 }
 

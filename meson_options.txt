@@ -544,21 +544,20 @@ option('USBDFU_RECOVERY_CONFIG_PATH',
                   + 'and strap polarities from, so a lab run uses the same wiring description as the '
                   + 'usb-dfu-recovery worker. Override with --json.')
 
-option('USBDFU_RECOVERY_POST_FLASH_SETTLE',
+option('USBDFU_RECOVERY_FLASH_TIMEOUT',
        type: 'integer',
-       value: 1200,
-       description: 'Seconds to wait after the DFU transfer for recovery U-Boot to authenticate and program '
-                  + 'SPI before the HMC is reset.  It is an upper bound, not a fixed sleep, but there is no '
-                  + 'completion signal to observe today so a run costs the whole of it.  Measured on P4102 at '
-                  + '901 s for one chip-select and 1695 s for both; must stay inside USBDFU_RECOVERY_TIMEOUT, '
-                  + 'which also has to cover the bundle, the transfer and the deassert.')
+       value: 600,
+       description: 'Seconds for the final dfu-util transfer, which recovery U-Boot holds while it '
+                  + 'authenticates, programs SPI and verifies readback; doubled for recovery_both.  Err '
+                  + 'long: a short value resets the HMC mid-program, since killing dfu-util does not '
+                  + 'stop the write.')
 
 option('USBDFU_RECOVERY_TIMEOUT',
        type: 'integer',
-       value: 5400,
+       value: 3600,
        description: 'Upper bound in seconds for the whole USB DFU recovery task (strap -> bundle -> flash -> deassert). '
-                  + 'Programming runs at ~75-85 KB/s, measured on P4102 at 901 s + 794 s for recovery_both, and the '
-                  + 'post-flash settle waits up to 2400 s for it, so a full run is roughly 45 min; see '
+                  + 'Recovery U-Boot programs in 64 KiB blocks and reports completion through dfu-util, so '
+                  + 'this leaves generous headroom over a full run; see '
                   + 'recovery_tool/usbdfu_recovery_tool/README.md "Timing and timeouts".')
 
 option('DOT_KEYD_SUPPORT',

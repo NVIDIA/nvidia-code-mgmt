@@ -175,12 +175,6 @@ int main(int argc, char* argv[])
         performCmd->add_flag("--no-detach", noDetach,
                              "Do not detach the DFU session after the final "
                              "transfer; recovery U-Boot will NOT program SPI");
-        performCmd->add_option(
-            "--post-flash-settle", cfg.postFlashSettleSecs,
-            "Seconds to wait after the DFU transfer for recovery U-Boot to "
-            "authenticate and program SPI before deasserting recovery "
-            "(default: " +
-                std::to_string(USBDFU_RECOVERY_POST_FLASH_SETTLE) + ")");
         addConfigOptions(performCmd, configPath, deviceName);
         addEnumerationOptions(performCmd, cfg);
         addVerboseFlag(performCmd, verbose);

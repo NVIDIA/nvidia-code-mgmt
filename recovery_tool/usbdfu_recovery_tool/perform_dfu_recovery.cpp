@@ -182,9 +182,24 @@ bool UsbDfuRecovery::runDfuUtil(const std::vector<std::string>& dfuUtilArgs,
     // capture it and keep the tail for the journal and the JSON result.
     int exitCode = -1;
     auto output = usbdfu::process::capture(argv, timeoutSecs, &exitCode);
-    if (output && exitCode == 0)
+    // dfu-util can exit zero after printing dfuERROR, so the status alone is
+    // not a result: a failed manifestation would be reported as success.
+    // Only the final state counts -- dfu-util prints one "DFU state(...)"
+    // line per poll, and an earlier dfuERROR it then cleared is not a
+    // failure.
+    const auto lastState =
+        output ? output->rfind("DFU state(") : std::string::npos;
+    const bool reportedDfuError =
+        lastState != std::string::npos &&
+        output->find("dfuERROR", lastState) != std::string::npos;
+    if (output && exitCode == 0 && !reportedDfuError)
     {
         return true;
+    }
+    if (reportedDfuError)
+    {
+        lg2::error("dfu-util reported dfuERROR despite exit code {E}", "E",
+                   exitCode);
     }
 
     std::string tail;
@@ -223,8 +238,12 @@ UsbDfuRecovery::DfuTransferParams
         case DfuTransfer::FirmwareImage:
         {
             std::vector<std::string> args = {"-a", config_.dfuAltSetting};
+            // recovery_both writes each chip in turn, so it needs twice the
+            // ceiling.
+            const int chipSelects =
+                config_.dfuAltSetting == usbdfu::bothChipSelectsAlt ? 2 : 1;
             return {"Firmware image", std::move(args),
-                    config_.flashTimeoutSecs};
+                    config_.flashTimeoutSecs * chipSelects};
         }
         case DfuTransfer::BundleStage:
         default:
@@ -334,40 +353,6 @@ bool UsbDfuRecovery::waitForDfuEnumeration(nlohmann::json& out)
     return false;
 }
 
-bool UsbDfuRecovery::isProgrammingComplete() const
-{
-    // No observable signal today: recovery U-Boot detaches its DFU gadget
-    // before programming and returns to its prompt afterwards without
-    // re-enumerating, and the HMC console is not routed to the BMC on this
-    // platform.  Returning false makes waitForProgrammingComplete() run to
-    // its ceiling, which is the current (correct but slow) behavior.
-    return false;
-}
-
-void UsbDfuRecovery::waitForProgrammingComplete()
-{
-    // The ceiling is per chip-select: recovery_both programs the image twice,
-    // so it needs twice the wait.  Getting this wrong resets the HMC while it
-    // is still writing, which is the failure this settle exists to prevent.
-    const int chipSelects =
-        config_.dfuAltSetting == usbdfu::bothChipSelectsAlt ? 2 : 1;
-    const int settleSecs =
-        std::max(0, config_.postFlashSettleSecs) * chipSelects;
-    const int pollSecs = std::max(1, config_.postFlashPollSecs);
-
-    lg2::info("Waiting up to {T}s for recovery U-Boot to authenticate and "
-              "program SPI on {N} chip-select(s) (polling every {P}s)",
-              "T", settleSecs, "N", chipSelects, "P", pollSecs);
-
-    if (pollUntil(settleSecs * 1000, pollSecs * 1000,
-                  [this] { return isProgrammingComplete(); }))
-    {
-        lg2::info("Recovery U-Boot reported programming complete");
-        return;
-    }
-    lg2::info("Post-flash settle ceiling of {T}s reached", "T", settleSecs);
-}
-
 bool UsbDfuRecovery::assertRecoveryMode(nlohmann::json& out)
 {
     out.clear();
@@ -472,26 +457,37 @@ bool UsbDfuRecovery::prepareFlashImage(const std::string& imagePath,
         return true;
     }
 
-    // dfu-util has no download-length option, so stage a truncated copy next
-    // to the image (same filesystem as the PLDM upload directory).
+    // dfu-util has no download-length option and the DFU target is exactly the
+    // protected prefix.  Packages already ship at that size and return above,
+    // so only a full-flash image gets here; write the prefix directly.
     std::filesystem::path tmp = src;
     tmp += ".dfu";
-    std::filesystem::copy_file(
-        src, tmp, std::filesystem::copy_options::overwrite_existing, ec);
-    if (ec)
     {
-        return setFailure(out, "Failed to stage truncated firmware image " +
-                                   tmp.string() + ": " + ec.message());
+        std::ifstream in(src, std::ios::binary);
+        std::ofstream outFile(tmp, std::ios::binary | std::ios::trunc);
+        if (!in || !outFile)
+        {
+            return setFailure(out, "Failed to stage truncated firmware image " +
+                                       tmp.string());
+        }
+        std::vector<char> buf(1U << 20);
+        std::uintmax_t remaining = lengthBytes;
+        while (remaining > 0)
+        {
+            const std::streamsize chunk = static_cast<std::streamsize>(
+                std::min<std::uintmax_t>(remaining, buf.size()));
+            if (!in.read(buf.data(), chunk) ||
+                !outFile.write(buf.data(), chunk))
+            {
+                return setFailure(out,
+                                  "Failed to stage truncated firmware image " +
+                                      tmp.string());
+            }
+            remaining -= static_cast<std::uintmax_t>(chunk);
+        }
     }
     staged.path = tmp;
     staged.temporary = true;
-
-    std::filesystem::resize_file(tmp, lengthBytes, ec);
-    if (ec)
-    {
-        return setFailure(out, "Failed to truncate staged firmware image " +
-                                   tmp.string() + ": " + ec.message());
-    }
     staged.sizeBytes = lengthBytes;
 
     lg2::info("Staged truncated firmware image {PATH}: sending {SENT} of "
@@ -537,7 +533,7 @@ bool UsbDfuRecovery::flashFirmware(const std::string& imagePath,
     // setting is always passed.
     if (config_.detachAfterFlash)
     {
-        lg2::info("Detaching DFU session so recovery U-Boot programs SPI");
+        lg2::info("Closing the DFU session");
         nlohmann::json detach;
         if (!runDfuUtil({"-a", config_.dfuAltSetting, "-e"},
                         config_.dfuListTimeoutSecs, detach))
@@ -823,14 +819,7 @@ UsbDfuRecovery::Outcome UsbDfuRecovery::performRecovery(
         out["FlashedBytes"] = s.value("FlashedBytes", std::uintmax_t{0});
     }
 
-    // flashFirmware() only detaches -- and so only starts programming --
-    // when detachAfterFlash is set.  On the --no-detach path recovery U-Boot
-    // is still sitting in its DFU session, so there is nothing to wait for.
-    if (config_.detachAfterFlash)
-    {
-        waitForProgrammingComplete();
-    }
-
+    // Programming finished inside the transfer, so reset straight away.
     {
         nlohmann::json s;
         if (!deassertRecoveryMode(s))
@@ -1029,7 +1018,7 @@ bool resolvePackageComponents(const std::filesystem::path& packageDir,
         }
         if (file.empty() && component.optional)
         {
-            lg2::info("Optional package component 0x{ID} {NAME} not "
+            lg2::info("Optional package component {ID} {NAME} not "
                       "present; stage skipped",
                       "ID", lg2::hex, component.id, "NAME", component.name);
             continue;
@@ -1044,7 +1033,7 @@ bool resolvePackageComponents(const std::filesystem::path& packageDir,
                             componentDir.string()),
                 USBDFURecoveryErrorCode::PackageIncomplete);
         }
-        lg2::debug("Package component 0x{ID} {NAME}: {FILE}", "ID", lg2::hex,
+        lg2::debug("Package component {ID} {NAME}: {FILE}", "ID", lg2::hex,
                    component.id, "NAME", component.name, "FILE", file.string());
         if (component.role == usbdfu::ComponentRole::FirmwareImage)
         {

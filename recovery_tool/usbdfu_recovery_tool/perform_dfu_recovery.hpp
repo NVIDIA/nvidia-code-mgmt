@@ -34,7 +34,7 @@ constexpr const char* defaultUsbSysfsRoot = "/sys/bus/usb/devices";
  *  recovery_both writes both chips from one authenticated transfer. */
 constexpr const char* defaultDfuAltSetting = "recovery_cs0";
 
-/** Alt setting that programs both chips, and so needs twice the settle. */
+/** Alt setting that writes both chips, so it needs twice the flash timeout. */
 constexpr const char* bothChipSelectsAlt = "recovery_both";
 
 /** Anything but the canonical values returns nullopt, so the caller rejects
@@ -71,7 +71,7 @@ constexpr int gpioInactive(bool activeLow)
 constexpr std::uintmax_t defaultFlashLengthBytes = 0x03F30000;
 
 /**
- * Timing constants.  Upper bounds and conservative settle times taken from
+ * Timing constants.  Conservative upper bounds taken from
  * the lab recovery script, the recovery runbook and bench measurements; they
  * are not spec minimums.
  */
@@ -87,17 +87,11 @@ constexpr int bundleStepTimeoutSecs = 120; // per dfu-util -D of one blob
 // only then enumerates its DFU targets, so it is polled for, not slept for.
 constexpr int uBootDfuTimeoutSecs = 180;
 constexpr int uBootDfuPollSecs = 5;
-// dfu-util -D only streams the image into DRAM and returns within seconds;
-// recovery U-Boot authenticates and programs SPI after the session ends, so
-// this bounds the transfer alone, whichever chip-selects are written.
-constexpr int flashTimeoutSecs = 300;
-// Upper bound per chip-select, not an unconditional sleep:
-// waitForProgrammingComplete() polls and returns as soon as programming is
-// reported done, and doubles this for recovery_both.  No signal is observable
-// today, so the poll runs to the ceiling; wire one into
-// isProgrammingComplete() when one exists.
-constexpr int postFlashSettleSecs = 1200;
-constexpr int postFlashPollSecs = 10;
+// Bounds the whole operation, not just the transfer: recovery U-Boot programs
+// and verifies inside the DFU manifestation, so dfu-util -D returns only once
+// that is done.  Doubled for recovery_both.  Err long -- killing dfu-util does
+// not stop the write, so a short value resets the HMC mid-program.
+constexpr int flashTimeoutSecs = 600;
 // After the final reset the BootROM DFU device must disappear; the HMC needs
 // a few seconds to leave DFU and start booting the recovered image.
 constexpr int postRecoveryVerifyTimeoutSecs = 60;
@@ -194,8 +188,6 @@ class UsbDfuRecovery
         int uBootDfuTimeoutSecs{usbdfu::timing::uBootDfuTimeoutSecs};
         int uBootDfuPollSecs{usbdfu::timing::uBootDfuPollSecs};
         int flashTimeoutSecs{usbdfu::timing::flashTimeoutSecs};
-        int postFlashSettleSecs{usbdfu::timing::postFlashSettleSecs};
-        int postFlashPollSecs{usbdfu::timing::postFlashPollSecs};
         /**
          * USB identity of a normally booted HMC on the recovery link
          * (Entity Manager FunctionalUsbId).  Unset: a healthy HMC cannot be
@@ -307,13 +299,6 @@ class UsbDfuRecovery
 
     /** 0 = return immediately. */
     bool waitForRecoveryUBoot(nlohmann::json& out);
-
-    /** dfu-util returning only means the image reached DRAM.  No signal is
-     *  observable while U-Boot programs SPI, so this returns false and the
-     *  caller runs to its ceiling. */
-    bool isProgrammingComplete() const;
-
-    void waitForProgrammingComplete();
 
     const std::string& lastCommand() const
     {

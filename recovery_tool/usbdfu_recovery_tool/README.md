@@ -104,14 +104,14 @@ meson install -C build
 
 Build options (all under `USBDFU_*` in `meson_options.txt`):
 
-| Option                              | Default                 | Meaning                                                     |
-| ----------------------------------- | ----------------------- | ----------------------------------------------------------- |
-| `USBDFU_UTIL_PATH`                  | `/usr/bin/dfu-util`     | dfu-util binary                                             |
-| `USBDFU_RECOVERY_DFU_ALT`           | `recovery_cs0`          | Chip-select written; `recovery_both` writes both            |
-| `USBDFU_RECOVERY_FLASH_LENGTH`      | `66256896` (0x03F30000) | Image bytes sent to DFU; `0` sends the whole file           |
-| `USBDFU_RECOVERY_CONFIG_PATH`       | Entity Manager config   | Recovery configuration the CLI reads (`--json`)             |
-| `USBDFU_RECOVERY_POST_FLASH_SETTLE` | `1200`                  | Programming wait per chip-select, in seconds                |
-| `USBDFU_RECOVERY_TIMEOUT`           | `5400`                  | Redfish task timeout in seconds (see "Timing and timeouts") |
+| Option                          | Default                 | Meaning                                                     |
+| ------------------------------- | ----------------------- | ----------------------------------------------------------- |
+| `USBDFU_UTIL_PATH`              | `/usr/bin/dfu-util`     | dfu-util binary                                             |
+| `USBDFU_RECOVERY_DFU_ALT`       | `recovery_cs0`          | Chip-select written; `recovery_both` writes both            |
+| `USBDFU_RECOVERY_FLASH_LENGTH`  | `66256896` (0x03F30000) | Image bytes sent to DFU; `0` sends the whole file           |
+| `USBDFU_RECOVERY_CONFIG_PATH`   | Entity Manager config   | Recovery configuration the CLI reads (`--json`)             |
+| `USBDFU_RECOVERY_FLASH_TIMEOUT` | `600`                   | Final transfer ceiling, doubled for `recovery_both`         |
+| `USBDFU_RECOVERY_TIMEOUT`       | `3600`                  | Redfish task timeout in seconds (see "Timing and timeouts") |
 
 Build dependencies: `libgpiodcxx`, `nlohmann_json`, `CLI11`, `phosphor-logging`
 (CLI); additionally `sdbusplus` and `phosphor-dbus-interfaces` (worker).
@@ -134,7 +134,7 @@ usbdfu-recovery-tool PerformRecovery \
     [--dfu-alt recovery_cs0|recovery_cs1|recovery_both] \
     [--flash-length <bytes>] \
     [--bundle-step-delay <secs>] \
-    [--no-detach] [--post-flash-settle <secs>] \
+    [--no-detach] \
     [--json <config.json>] [--device <name>] \
     [--enum-timeout <secs>] \
     [-v|--verbose]
@@ -216,14 +216,12 @@ usbdfu-recovery-tool PerformRecovery \
    `RecoveryUBootDfuTimeout` and releases the straps.
 7. Transfers the firmware SPI image via `dfu-util -a <alt> -D <image>`, sending
    only the first `--flash-length` bytes (see "Firmware image handling"), then
-   ends the DFU session with `dfu-util -a <alt> -e`. The transfer only places
-   the image in the HMC's DRAM; ending the session is what makes recovery U-Boot
-   authenticate the manifests and program SPI.
-8. Waits for programming to finish (default ceiling 1200 s per chip-select, so
-   2400 s for `recovery_both`, `--post-flash-settle`). Recovery U-Boot gives the
-   BMC no completion signal today, so the tool waits the full ceiling. Measured:
-   901 s for CS0 and 794 s for CS1. Resetting the HMC earlier aborts programming
-   and leaves the flash partly written.
+   ends the DFU session with `dfu-util -a <alt> -e`. Recovery U-Boot holds the
+   transfer in the DFU manifestation phase while it authenticates the manifests,
+   programs SPI and verifies readback, so `dfu-util -D` returns only once that
+   work has finished and its output carries the result.
+8. Nothing is waited for: programming is already complete and verified when the
+   transfer returns.
 9. Deasserts `HMC_RECOVERY_R-O=0` and pulses reset so the HMC boots normally.
 10. Verifies the BootROM DFU device (`2245:2700`) has left the USB bus (default
     60 s, `--verify-timeout`; `--no-verify` skips), failing with
@@ -494,28 +492,25 @@ usbdfu-recovery-tool PerformRecovery \
 All values are conservative upper bounds taken from the P4102 lab material and
 from bench measurements on P4102 (Sep 2026), not specification minimums:
 
-| Constant                        | Value              | Source                                                                                              |
-| ------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------- |
-| Strap settle / reset pulse      | 1 s / 1 s          | HMC USB DFU recovery runbook                                                                        |
-| DFU enumeration timeout         | 15 s (poll 500 ms) | runbook shows ~2 s until `lsusb` lists `2245:2700`; 5x margin                                       |
-| Delay between bundle stages     | 10 s               | lab recovery script (`sleep 10`); `--bundle-step-delay` overrides                                   |
-| Per-stage dfu-util timeout      | 120 s              | bundle blobs are < 2 MB each                                                                        |
-| Wait for recovery U-Boot DFU    | 180 s (poll 5 s)   | bench: U-Boot erases both chips' debug-token/PDS slots first; `sleep 10` is too short               |
-| Final transfer dfu-util timeout | 300 s              | bounds only the DRAM transfer (seconds in practice)                                                 |
-| Post-flash programming wait     | 1200 s (poll 10 s) | bench: U-Boot programs SPI after the session ends, 901 s for CS0; ceiling, no completion signal yet |
-| Post-recovery verification      | 60 s (poll 1 s)    | time for the HMC to leave DFU and start booting the recovered image                                 |
+| Constant                        | Value              | Source                                                                                |
+| ------------------------------- | ------------------ | ------------------------------------------------------------------------------------- |
+| Strap settle / reset pulse      | 1 s / 1 s          | HMC USB DFU recovery runbook                                                          |
+| DFU enumeration timeout         | 15 s (poll 500 ms) | runbook shows ~2 s until `lsusb` lists `2245:2700`; 5x margin                         |
+| Delay between bundle stages     | 10 s               | lab recovery script (`sleep 10`); `--bundle-step-delay` overrides                     |
+| Per-stage dfu-util timeout      | 120 s              | bundle blobs are < 2 MB each                                                          |
+| Wait for recovery U-Boot DFU    | 180 s (poll 5 s)   | bench: U-Boot erases both chips' debug-token/PDS slots first; `sleep 10` is too short |
+| Final transfer dfu-util timeout | 600 s              | bounds the whole operation: authenticate, program, verify; x2 for recovery_both       |
+| Post-recovery verification      | 60 s (poll 1 s)    | time for the HMC to leave DFU and start booting the recovered image                   |
 
 End-to-end estimate: strap + enumeration 5-20 s, bundle 9-11 x (~2 s transfer
-plus 10 s delay) = ~2-2.5 min, recovery U-Boot erase and enumeration up to 3
-min, image transfer ~12 s, programming wait 1200 s per chip-select (the fixed
-ceiling; measured ~15 min for one chip-select), deassert ~5 s and verification a
-few seconds, i.e. **roughly 27 minutes** for `recovery_cs0` and 47 for
-`recovery_both`, until recovery U-Boot can signal completion. The
-`USBDFU_RECOVERY_TIMEOUT` build option (default 5400 s) bounds the whole Redfish
-task; if it expires the item-updater stops the worker unit, which terminates the
-running `dfu-util`, and the task fails with a timeout message. The per-step
-`dfu-util` timeouts only protect against a hung transfer and are not
-individually bounded by the task timeout.
+plus 10 s delay) = ~2-2.5 min, recovery U-Boot boot and enumeration up to 3 min,
+then a single `dfu-util -D` that returns only once recovery U-Boot has
+authenticated, programmed and verified readback -- about 5 min for one
+chip-select and 10 min for both -- deassert ~5 s and verification a few seconds.
+A `recovery_cs0` run is therefore roughly 10 minutes. The
+`USBDFU_RECOVERY_TIMEOUT` build option (default 3600 s) bounds the whole Redfish
+task. If the task timeout expires the item-updater stops the worker unit, which
+terminates the running `dfu-util`, and the task fails with a timeout message.
 
 ## Troubleshooting
 

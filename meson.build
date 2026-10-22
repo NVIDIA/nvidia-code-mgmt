@@ -596,8 +596,8 @@ if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
         get_option('USBDFU_RECOVERY_CONFIG_PATH'),
     )
     cdata.set(
-        'USBDFU_RECOVERY_POST_FLASH_SETTLE',
-        get_option('USBDFU_RECOVERY_POST_FLASH_SETTLE'),
+        'USBDFU_RECOVERY_FLASH_TIMEOUT',
+        get_option('USBDFU_RECOVERY_FLASH_TIMEOUT'),
     )
 
     # USBDFURecovery item-updater (code-manager -u USBDFURecovery)
