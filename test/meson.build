@@ -73,6 +73,30 @@ test(
     workdir: meson.current_source_dir(),
 )
 
+# The vHMC sources only exist when the feature is enabled.
+if get_option('VHMC_FLASH_SUPPORT').enabled()
+    test(
+        'test_vhmc_firmware_inventory',
+        executable(
+            'test_vhmc_firmware_inventory',
+            'test_vhmc_firmware_inventory.cpp',
+            implicit_include_directories: false,
+            cpp_args: compiler_args,
+            dependencies: [
+                test_dep,
+                sdbusplus,
+                phosphor_dbus_interfaces,
+                phosphor_logging,
+                fmt,
+                ssl,
+                version_test_src,
+            ],
+            include_directories: src_inc,
+        ),
+        workdir: meson.current_source_dir(),
+    )
+endif
+
 test(
     'test_cpu_recovery_convergence',
     executable(

@@ -16,6 +16,7 @@
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/Slot/server.hpp>
 #include <xyz/openbmc_project/Software/State/server.hpp>
+#include <xyz/openbmc_project/Software/Version/server.hpp>
 #include <xyz/openbmc_project/Software/VersionComparison/server.hpp>
 
 #include <memory>
@@ -51,6 +52,34 @@ class VHMCFirmwareSlot : public softwareSlotInherit
     VHMCFirmwareSlot(sdbusplus::bus::bus& bus, const std::string& objPath) :
         softwareSlotInherit(bus, objPath.c_str(), action::emit_interface_added)
     {}
+};
+
+using firmwareInventoryInherit = sdbusplus::server::object::object<
+    sdbusplus::xyz::openbmc_project::Software::server::Version,
+    sdbusplus::xyz::openbmc_project::Association::server::Definitions>;
+
+/**
+ * @brief The vHMC firmware inventory object on D-Bus.
+ *
+ * Not the shared SoftwareVersion, whose CPLD, PSU, MTD and switchtec users
+ * must not pick up the updateable association.
+ */
+class VHMCFirmwareInventory : public firmwareInventoryInherit
+{
+  public:
+    /** @brief Constructor
+     *
+     *  @param[in] bus - Bus to attach to
+     *  @param[in] objPath - D-Bus object path
+     */
+    VHMCFirmwareInventory(sdbusplus::bus::bus& bus,
+                          const std::string& objPath) :
+        firmwareInventoryInherit(bus, objPath.c_str(),
+                                 action::emit_interface_added)
+    {
+        purpose(sdbusplus::xyz::openbmc_project::Software::server::Version::
+                    VersionPurpose::Other);
+    }
 };
 
 class VHMCItemUpdater : public BaseItemUpdater
@@ -202,7 +231,7 @@ class VHMCItemUpdater : public BaseItemUpdater
     std::string slotWorkDir;
 
     /** @brief Firmware inventory object representing the vHMC. */
-    std::unique_ptr<SoftwareVersion> fwInventory;
+    std::unique_ptr<VHMCFirmwareInventory> fwInventory;
 
     /** @brief Slot holding the image the vHMC is running from. */
     std::unique_ptr<VHMCFirmwareSlot> activeSlot;

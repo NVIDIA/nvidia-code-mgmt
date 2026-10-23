@@ -110,7 +110,10 @@ void VHMCItemUpdater::publishFirmwareInventory(sdbusplus::bus::bus& bus)
     std::string objPath = firmwareInventoryPath();
     try
     {
-        fwInventory = std::make_unique<SoftwareVersion>(bus, objPath);
+        fwInventory = std::make_unique<VHMCFirmwareInventory>(bus, objPath);
+        // The mapper turns this into SOFTWARE_OBJPATH/updateable for Redfish.
+        fwInventory->associations({{"software_version", "updateable",
+                                    VHMC_FIRMWARE_INVENTORY_OBJPATH}});
     }
     catch (const std::exception& e)
     {
