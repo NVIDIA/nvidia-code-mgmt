@@ -195,7 +195,8 @@ TEST_F(EmRecoveryConfigTest, GpioErotNamesComeFromTheRecoveryObject)
 
 TEST_F(EmRecoveryConfigTest, ForceRecoveryRecordFromPlatformPolicy)
 {
-    objects[policy][rec::platformIface]["TopChassis"] = std::string("Chassis_0");
+    objects[policy][rec::platformIface]["TopChassis"] =
+        std::string("Chassis_0");
     objects[policy][rec::platformIface].merge(
         PropertyMap{{"CpuRecoveryConfig", std::string("c2")},
                     {"CpuRecoveryChassis", std::string("BMC_0")}});
@@ -246,4 +247,54 @@ TEST(EmRecoveryConfigSignal, TriggersOnTopologyObjectsOnly)
     EXPECT_TRUE(rec::isConfigObject(implicit));
     InterfaceMap platformObj{{rec::platformIface, {}}};
     EXPECT_TRUE(rec::isConfigObject(platformObj));
+}
+
+namespace
+{
+constexpr auto spiPath =
+    "/xyz/openbmc_project/inventory/system/module/BootFlash_0/BootSPI_0";
+
+InterfaceMap spiRecord()
+{
+    return {{rec::spiIface,
+             {{"Name", std::string("BootSPI_0")},
+              {"Type", std::string("SPI")},
+              {"Device", std::string("SMA_0")},
+              {"MuxGpio", std::string("MUX0")},
+              {"ChipSelect", uint64_t{0}}}}};
+}
+} // namespace
+
+TEST_F(EmRecoveryConfigTest, SpiIsTranslatedWithoutThePolicyRecord)
+{
+    objects.erase(policy);
+    device("SMA_0", "cx_sma", 60,
+           {{"Medium", std::string("usb")},
+            {"Port", std::string("1.1.1.1")},
+            {"RootHubPath", std::string("/hub")}},
+           {}, false);
+    objects[spiPath] = spiRecord();
+    rec::expand(objects);
+    const auto& spi = objects[spiPath];
+    ASSERT_TRUE(spi.contains(rec::spiIface));
+    EXPECT_EQ(std::get<std::string>(spi.at(rec::spiIface).at("USBPort")),
+              "1-1.1.1.1");
+    EXPECT_EQ(std::get<std::string>(spi.at(rec::spiIface).at("Programmer")),
+              "nv_sma_spi");
+    EXPECT_TRUE(spi.contains(std::string(rec::spiIface) + ".Gpio0"));
+}
+
+TEST_F(EmRecoveryConfigTest, SpiIsWithheldUntilItsDeviceIsPublished)
+{
+    objects[spiPath] = spiRecord();
+    objects[spiPath][std::string(rec::spiIface) + ".Gpio0"] = {};
+    rec::expand(objects);
+    EXPECT_FALSE(objects[spiPath].contains(rec::spiIface));
+    EXPECT_FALSE(
+        objects[spiPath].contains(std::string(rec::spiIface) + ".Gpio0"));
+    // The device without its transport is still not enough.
+    device("SMA_0", "cx_sma", 60, {}, {}, false);
+    objects[spiPath] = spiRecord();
+    rec::expand(objects);
+    EXPECT_FALSE(objects[spiPath].contains(rec::spiIface));
 }

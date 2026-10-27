@@ -493,6 +493,43 @@ inline void expand(ObjectValueTree& objects)
             devices[str(prop(ifaces, nvDeviceIface, "Name"))] = &ifaces;
         }
     }
+    // SPI records name their device (Device, MuxGpio); the readers want the
+    // USB port, programmer and inventory path. They create their object from
+    // the first snapshot that has the record and never revisit it, so a record
+    // whose device is not published yet is withheld, not half translated. The
+    // device or its transport arriving is a later interfacesAdded.
+    for (auto& [path, ifaces] : objects)
+    {
+        auto it = ifaces.find(spiIface);
+        if (it == ifaces.end() || it->second.contains("USBPort") ||
+            !it->second.contains("Device"))
+        {
+            continue;
+        }
+        auto dev = devices.find(str(prop(ifaces, spiIface, "Device")));
+        if (dev == devices.end() || !dev->second->contains(transportIface))
+        {
+            ifaces.erase(std::string(spiIface) + ".Gpio0");
+            ifaces.erase(it);
+            continue;
+        }
+        it->second["USBPort"] =
+            usbBusResolver(
+                str(prop(*dev->second, transportIface, "RootHubPath"))) +
+            "-" + str(prop(*dev->second, transportIface, "Port"));
+        it->second.try_emplace("Programmer", std::string("nv_sma_spi"));
+        it->second.try_emplace(
+            "InventoryObjPath",
+            std::string("/xyz/openbmc_project/inventory/system"));
+        if (auto gpio = prop(ifaces, spiIface, "MuxGpio"))
+        {
+            ifaces[std::string(spiIface) + ".Gpio0"] = {
+                {"GpioLine", *gpio},
+                {"ActiveValue", std::string("high")},
+                {"DeactiveValue", std::string("low")}};
+        }
+    }
+
     if (!haveTopology)
     {
         return;
@@ -509,30 +546,6 @@ inline void expand(ObjectValueTree& objects)
                                    std::string("ActiveLow"));
             ifaces.try_emplace(recoveryMarkerIface);
         }
-        if (auto it = ifaces.find(spiIface);
-            it != ifaces.end() && !it->second.contains("USBPort"))
-        {
-            auto dev = devices.find(str(prop(ifaces, spiIface, "Device")));
-            if (dev != devices.end())
-            {
-                it->second["USBPort"] =
-                    usbBusResolver(str(
-                        prop(*dev->second, transportIface, "RootHubPath"))) +
-                    "-" + str(prop(*dev->second, transportIface, "Port"));
-            }
-            it->second.try_emplace("Programmer", std::string("nv_sma_spi"));
-            it->second.try_emplace(
-                "InventoryObjPath",
-                std::string("/xyz/openbmc_project/inventory/system"));
-            if (auto gpio = prop(ifaces, spiIface, "MuxGpio"))
-            {
-                ifaces[std::string(spiIface) + ".Gpio0"] = {
-                    {"GpioLine", *gpio},
-                    {"ActiveValue", std::string("high")},
-                    {"DeactiveValue", std::string("low")}};
-            }
-        }
-
         if (!ifaces.contains(nvDeviceIface))
         {
             continue;
