@@ -306,3 +306,23 @@ TEST(EmRecoveryConfigSpiTrigger, TransportCompletesAWithheldSpiRecord)
     InterfaceMap other{{rec::nvDeviceIface, {}}};
     EXPECT_FALSE(rec::completesSpi(other));
 }
+
+TEST_F(EmRecoveryConfigTest, McuChassisNameFollowsThePlatformPolicy)
+{
+    device(
+        "IO_Board_SMA_0", "cx_sma", 60,
+        {{"Medium", std::string("usb")},
+         {"Port", std::string("1.2.1.4.1")},
+         {"RootHubPath", std::string("/hub")}},
+        {{"RecoveryGpio", std::string("R")}, {"ResetGpio", std::string("S")}});
+    auto* r = record("MCURecovery", "FW_IO_Board_SMA_0");
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(std::get<std::string>(r->at("ChassisName")), "IO_Board_SMA_0");
+
+    objects[policy][rec::platformIface]["McuChassisName"] = false;
+    objects.erase(std::string(plat) + "/FW_IO_Board_SMA_0");
+    rec::derivedRecords().clear();
+    r = record("MCURecovery", "FW_IO_Board_SMA_0");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FALSE(r->contains("ChassisName"));
+}

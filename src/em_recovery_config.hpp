@@ -292,6 +292,7 @@ struct Platform
     bool connectXForceOnIRoT = true;
     bool ocpInfoRom = true;
     bool ocpSmaEid = true;
+    bool mcuChassisName = true;
 };
 
 using DeviceMap = std::map<std::string, const InterfaceMap*>;
@@ -404,6 +405,12 @@ inline std::optional<PropertyMap>
     {
         legacyType = "MCURecovery";
         r["ForceRecoveryChassisObject"] = name;
+        if (platform.mcuChassisName)
+        {
+            // Read by the MCU tool's --chassis filter; the vr-nvl HMC
+            // platforms never had it.
+            r["ChassisName"] = name;
+        }
         r["hasChassisPowerSource"] = false;
         r["RecoveryGpioName"] =
             str(prop(dev, deviceRecoveryIface, "RecoveryGpio"));
@@ -495,6 +502,8 @@ inline void expand(ObjectValueTree& objects)
                 flag(prop(ifaces, platformIface, "OcpInfoRom"), true);
             platform.ocpSmaEid =
                 flag(prop(ifaces, platformIface, "OcpSmaEid"), true);
+            platform.mcuChassisName =
+                flag(prop(ifaces, platformIface, "McuChassisName"), true);
             haveTopology = true;
         }
         if (ifaces.contains(nvDeviceIface))
