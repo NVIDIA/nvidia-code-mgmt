@@ -1581,6 +1581,26 @@ test(
     workdir: meson.current_source_dir(),
 )
 
+test(
+    'test_em_recovery_config',
+    executable(
+        'test_em_recovery_config',
+        'test_em_recovery_config.cpp',
+        implicit_include_directories: false,
+        dependencies: [
+            test_dep,
+            sdbusplus,
+            phosphor_dbus_interfaces,
+            phosphor_logging,
+            fmt,
+            ssl,
+            dbusutils_test_src,
+        ],
+        include_directories: src_inc,
+    ),
+    workdir: meson.current_source_dir(),
+)
+
 dbusutils_realbus_exe = executable(
     'test_dbusutils_realbus',
     'test_dbusutils_realbus.cpp',

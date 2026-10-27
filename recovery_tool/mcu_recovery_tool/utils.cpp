@@ -41,24 +41,24 @@ static auto& getBus()
     return bus;
 }
 
+/*
+ * The MCU records come from a GetManagedObjects snapshot rather than a mapper
+ * GetSubTree, so the records derived from the platform topology are found too.
+ */
 static nvidia::software::updater::GetSubTreeResponse getMCURecoverySubTree()
 {
     nvidia::software::updater::GetSubTreeResponse getSubTreeResponse{};
-    const nvidia::software::updater::Interfaces ifaceList{
-        mcuRecoveryObjInterface};
-    try
+    nvidia::software::updater::DBUSUtils dbusUtil(getBus());
+    const auto objects = dbusUtil.getManagedObjects(entityManagerService,
+                                                    entityManagerObjManager);
+    for (const auto& [path, interfaces] : objects)
     {
-        auto& bus = getBus();
-        auto method = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
-                                          MAPPER_INTERFACE, "GetSubTree");
-        method.append(entityManagerObjManager, 0, ifaceList);
-        auto reply = bus.call(method);
-        reply.read(getSubTreeResponse);
-    }
-    catch (const sdbusplus::exception::SdBusError& e)
-    {
-        lg2::error("D-Bus error calling GetSubTree on ObjectMapper: {ERROR}",
-                   "ERROR", e.what());
+        if (interfaces.contains(mcuRecoveryObjInterface))
+        {
+            getSubTreeResponse.push_back(
+                {path.str,
+                 {{entityManagerService, {mcuRecoveryObjInterface}}}});
+        }
     }
     return getSubTreeResponse;
 }

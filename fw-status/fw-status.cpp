@@ -21,6 +21,7 @@
 #include "connectx_resource.hpp"
 #include "cpld_resource.hpp"
 #include "dbusutils.hpp"
+#include "em_recovery_config.hpp"
 #include "erot_resource.hpp"
 #include "gpio_resource.hpp"
 #include "gpu_resource.hpp"
@@ -1973,6 +1974,12 @@ void armCentralizedPowerStateWatcherRetry()
 bool isRecoveryConfigObject(const InterfaceMap& interfaces)
 {
     if (interfaces.contains(recoveryConfigIntfName))
+    {
+        return true;
+    }
+
+    // Platform topology configs: the recovery records are derived from them.
+    if (nvidia::software::updater::em_recovery::isConfigObject(interfaces))
     {
         return true;
     }

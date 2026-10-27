@@ -16,6 +16,7 @@
  */
 
 #include "base_item_updater.hpp"
+#include "em_recovery_config.hpp"
 #include "watch.hpp"
 
 #include <openssl/sha.h>
@@ -35,6 +36,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace nvidia
 {
@@ -103,6 +105,15 @@ any DBUSUtils::getPropertyImpl(const char* service, const char* path,
                                const char* interface,
                                const char* propertyName) const
 {
+    if (std::string_view(service) == "xyz.openbmc_project.EntityManager")
+    {
+        // Records derived from the platform topology are not on D-Bus.
+        if (auto value =
+                em_recovery::derivedProperty(path, interface, propertyName))
+        {
+            return any(*value);
+        }
+    }
     auto method = bus.new_method_call(service, path,
                                       "org.freedesktop.DBus.Properties", "Get");
     method.append(interface, propertyName);
@@ -220,6 +231,11 @@ ObjectValueTree
         auto reply = bus.call(method);
         reply.read(tmpObjects);
         managedObjects.insert(tmpObjects.begin(), tmpObjects.end());
+        if (std::string_view(service) == "xyz.openbmc_project.EntityManager")
+        {
+            // Platform-topology configs: add the per-type recovery records.
+            em_recovery::expand(managedObjects);
+        }
     }
     catch (const std::exception& e)
     {
