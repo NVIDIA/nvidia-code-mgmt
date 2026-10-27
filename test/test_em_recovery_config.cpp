@@ -298,3 +298,11 @@ TEST_F(EmRecoveryConfigTest, SpiIsWithheldUntilItsDeviceIsPublished)
     rec::expand(objects);
     EXPECT_FALSE(objects[spiPath].contains(rec::spiIface));
 }
+
+TEST(EmRecoveryConfigSpiTrigger, TransportCompletesAWithheldSpiRecord)
+{
+    InterfaceMap transport{{rec::transportIface, {}}};
+    EXPECT_TRUE(rec::completesSpi(transport));
+    InterfaceMap other{{rec::nvDeviceIface, {}}};
+    EXPECT_FALSE(rec::completesSpi(other));
+}

@@ -186,6 +186,15 @@ inline std::function<std::string(const std::string&)> usbBusResolver =
  * counts once its Recovery interface is there (or at once for a Kind that has
  * none, see implicitKinds).
  */
+/**
+ * @brief Whether the interfaces of one object are the Transport of a device,
+ *        which an SPI record that expand() withheld may have been waiting for.
+ */
+inline bool completesSpi(const InterfaceMap& ifaces)
+{
+    return ifaces.contains(transportIface);
+}
+
 inline bool isConfigObject(const InterfaceMap& ifaces)
 {
     if (ifaces.contains(platformIface) || ifaces.contains(usbDfuIface))

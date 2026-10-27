@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include "dbusutils.hpp"
+#include "em_recovery_config.hpp"
 #include "spi.hpp"
 
 #include <dirent.h>
@@ -1136,7 +1137,11 @@ void tryPopulateSpiObjects()
             std::map<std::string, std::map<std::string, Value>> interfaces;
             msg.read(objPath, interfaces);
 
-            if (interfaces.contains(spiObjectInterfaces))
+            // An SPI record that names its device is withheld until the
+            // device's transport is published (see em_recovery::expand).
+            if (interfaces.contains(spiObjectInterfaces) ||
+                nvidia::software::updater::em_recovery::completesSpi(
+                    interfaces))
             {
                 populateSpiObjects();
             }
