@@ -1,0 +1,13 @@
+[Unit]
+Description=NVIDIA BIOS ERoT SPI service
+Wants=mctpd.service
+After=xyz.openbmc_project.EntityManager.service mctpd.service
+
+[Service]
+Type=dbus
+BusName=com.Nvidia.BiosEroTSpi
+ExecStart=/usr/libexec/code-mgmt/bios-erot-spi
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

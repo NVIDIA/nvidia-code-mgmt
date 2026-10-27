@@ -722,6 +722,10 @@ if get_option('FLASHROM_WRAPPER_SUPPORT').enabled()
     endif
 endif
 
+if get_option('BIOS_EROT_SPI_SUPPORT').enabled()
+    subdir('bios-erot-spi')
+endif
+
 if get_option('USBRCM_RECOVERY_SUPPORT').enabled()
     subdir('recovery_tool/usbrcm_recovery_tool')
 endif
