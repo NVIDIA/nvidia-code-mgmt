@@ -4,6 +4,10 @@ if get_option('FWSTATUS_SUPPORT').enabled()
     unit_files = unit_files + ['com.Nvidia.FWStatus.service']
 endif
 
+if get_option('BIOS_EROT_SPI_SUPPORT').enabled()
+    unit_files = unit_files + ['com.Nvidia.BiosEroTSpi.service']
+endif
+
 if get_option('DOT_KEYD_SUPPORT').enabled()
     unit_files = unit_files + ['dot-keyd.service']
 endif

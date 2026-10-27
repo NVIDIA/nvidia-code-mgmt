@@ -114,6 +114,11 @@ option('FLASHROM_WRAPPER_SUPPORT',
        value: 'disabled',
        description: 'Enables flashrom-wrapper support')
 
+option('BIOS_EROT_SPI_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables BIOS ERoT SPI NVRAM clear support')
+
 option('FLASHROM_WRITE_SKIP_VERIFY',
        type: 'feature',
        value: 'disabled',
