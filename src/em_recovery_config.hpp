@@ -15,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <variant>
 
 namespace nvidia
@@ -119,6 +120,39 @@ inline std::optional<Value> derivedProperty(const std::string& path,
         return std::nullopt;
     }
     return prop(obj->second, iface, key);
+}
+
+/** @brief "key=value;..." of a record's properties, for the derivation log. */
+inline std::string describe(const PropertyMap& props)
+{
+    std::string out;
+    for (const auto& [key, value] : props)
+    {
+        out += key + "=";
+        std::visit(
+            [&out](const auto& v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, std::string>)
+                {
+                    out += "\"" + v + "\"";
+                }
+                else if constexpr (std::is_same_v<T, bool>)
+                {
+                    out += v ? "true" : "false";
+                }
+                else if constexpr (std::is_arithmetic_v<T>)
+                {
+                    out += std::to_string(v);
+                }
+                else
+                {
+                    out += "<bytes>";
+                }
+            },
+            value);
+        out += ";";
+    }
+    return out;
 }
 
 /** @brief Resolves the usb bus number of a root hub path (test hook). */
@@ -561,6 +595,20 @@ inline void expand(ObjectValueTree& objects)
 
     for (const auto& [path, ifaces] : added)
     {
+        // Once per record: what was derived, to compare with a develop image.
+        if (!derivedRecords().contains(path.str))
+        {
+            for (const auto& [iface, props] : ifaces)
+            {
+                if (iface.starts_with(cfgPrefix))
+                {
+                    lg2::info("em_recovery derived {PATH} {IFACE} {PROPS}",
+                              "PATH", path.str, "IFACE",
+                              iface.substr(std::string_view(cfgPrefix).size()),
+                              "PROPS", describe(props));
+                }
+            }
+        }
         derivedRecords()[path.str] = ifaces;
     }
     objects.merge(added);
