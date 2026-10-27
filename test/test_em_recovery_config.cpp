@@ -8,6 +8,8 @@ namespace rec = nvidia::software::updater::em_recovery;
 namespace
 {
 constexpr auto plat = "/xyz/openbmc_project/inventory/system/platform/P";
+constexpr auto policy =
+    "/xyz/openbmc_project/inventory/system/platform/P/RecoveryPolicy";
 const std::string nv = rec::nvDeviceIface;
 const std::string tr = rec::transportIface;
 const std::string rc = rec::deviceRecoveryIface;
@@ -18,7 +20,7 @@ class EmRecoveryConfigTest : public ::testing::Test
     void SetUp() override
     {
         rec::usbBusResolver = [](const std::string&) { return "1"; };
-        objects[plat] = {
+        objects[policy] = {
             {rec::platformIface, {{"NamePrefix", std::string("")}}}};
     }
 
@@ -125,8 +127,8 @@ TEST_F(EmRecoveryConfigTest, ConnectXForcesTheIRoTUnlessThePlatformSaysNot)
 
 TEST_F(EmRecoveryConfigTest, PlatformPolicyAndPrefix)
 {
-    objects[plat][rec::platformIface]["NamePrefix"] = std::string("HGX_");
-    objects[plat][rec::platformIface].merge(
+    objects[policy][rec::platformIface]["NamePrefix"] = std::string("HGX_");
+    objects[policy][rec::platformIface].merge(
         PropertyMap{{"ConnectXForceRecoveryOnIRoT", false},
                     {"OcpInfoRom", false},
                     {"OcpSmaEid", false}});
@@ -193,8 +195,8 @@ TEST_F(EmRecoveryConfigTest, GpioErotNamesComeFromTheRecoveryObject)
 
 TEST_F(EmRecoveryConfigTest, ForceRecoveryRecordFromPlatformPolicy)
 {
-    objects[plat][rec::platformIface]["TopChassis"] = std::string("Chassis_0");
-    objects[plat][rec::platformIface].merge(
+    objects[policy][rec::platformIface]["TopChassis"] = std::string("Chassis_0");
+    objects[policy][rec::platformIface].merge(
         PropertyMap{{"CpuRecoveryConfig", std::string("c2")},
                     {"CpuRecoveryChassis", std::string("BMC_0")}});
     auto* r = record("USBRCMForceRecovery", "Chassis_0_CPU_Recovery");

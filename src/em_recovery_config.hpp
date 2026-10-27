@@ -47,7 +47,11 @@ constexpr auto transportIface =
     "xyz.openbmc_project.Configuration.NvDevice.Transport";
 constexpr auto deviceRecoveryIface =
     "xyz.openbmc_project.Configuration.NvDevice.Recovery";
-constexpr auto platformIface = "xyz.openbmc_project.Configuration.Platform";
+/** entity-manager only publishes the Name, Probe and Type of the Platform
+ *  record itself, so the values NCM needs (name prefix, top chassis, policy
+ *  flags) are carried by one RecoveryPolicy record in PlatformExposes. */
+constexpr auto platformIface =
+    "xyz.openbmc_project.Configuration.RecoveryPolicy";
 constexpr auto recoveryMarkerIface =
     "xyz.openbmc_project.Inventory.Item.Recovery_Config";
 constexpr auto usbDfuIface = "xyz.openbmc_project.Configuration.USBDFURecovery";
@@ -433,7 +437,7 @@ inline void expand(ObjectValueTree& objects)
     {
         if (ifaces.contains(platformIface))
         {
-            platform.path = path.str;
+            platform.path = path.str.substr(0, path.str.rfind('/'));
             platform.prefix = str(prop(ifaces, platformIface, "NamePrefix"));
             platform.topChassis =
                 str(prop(ifaces, platformIface, "TopChassis"));
