@@ -683,3 +683,10 @@ endif
 if get_option('NVSWITCH_CONFIG_SUPPORT').enabled()
     subdir('nvswitch-config')
 endif
+
+if get_option('PWRSEQ_MONITOR_SUPPORT').enabled()
+    # No add_project_arguments() — meson forbids project-wide arguments
+    # after earlier subdir() calls have declared executables. The daemon
+    # is self-contained; the feature gate alone decides whether it builds.
+    subdir('pwrseq-monitor')
+endif

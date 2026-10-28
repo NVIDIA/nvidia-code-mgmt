@@ -498,3 +498,8 @@ option('NVSWITCH_CONFIG_SUPPORT',
        type: 'feature',
        value: 'disabled',
        description: 'Enables NVSwitch OOB configuration manager')
+
+option('PWRSEQ_MONITOR_SUPPORT',
+       type: 'feature',
+       value: 'disabled',
+       description: 'Enables LPU/FPGA power-sequence monitor (lpu-pwrseq-monitord). Platform descriptor JSON and the systemd unit stay in the image layer.')
