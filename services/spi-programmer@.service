@@ -1,5 +1,7 @@
 [Unit]
 Description=SPI Programmer Utility
+Wants=com.Nvidia.FlashromWrapper.service
+After=com.Nvidia.FlashromWrapper.service
 
 [Service]
 Type=oneshot
