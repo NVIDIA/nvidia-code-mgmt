@@ -2,8 +2,6 @@
 Description=MCU Recovery Updater Starter Service
 Wants=pldmd.service
 After=pldmd.service
-Wants=obmc-mapper.target
-After=obmc-mapper.target
 
 [Service]
 Type=oneshot

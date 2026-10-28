@@ -2,8 +2,6 @@
 Description=Fuse switchtec pcie switch
 Wants=pldmd.service
 After=pldmd.service
-Wants=obmc-mapper.target
-After=obmc-mapper.target
 Wants=xyz.openbmc_project.EntityManager.service
 After=xyz.openbmc_project.EntityManager.service
 After=mapper-wait@-xyz-openbmc_project-inventory-system-bmc-BMC_0-MUX_2.service

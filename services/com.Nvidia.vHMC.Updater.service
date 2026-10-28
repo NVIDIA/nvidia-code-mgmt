@@ -2,8 +2,6 @@
 Description=vHMC FW Upgrade Manager
 Wants=pldmd.service
 After=pldmd.service
-Wants=obmc-mapper.target
-After=obmc-mapper.target
 
 [Service]
 ExecStart=/usr/bin/code-manager -u VHMC

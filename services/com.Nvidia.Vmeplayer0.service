@@ -2,8 +2,6 @@
 Description=VMEPlayer CPLD_0 update over JTAG
 Wants=pldmd.service
 After=pldmd.service
-Wants=obmc-mapper.target
-After=obmc-mapper.target
 
 [Service]
 ExecStart=/usr/bin/code-manager -u VMEPLAYER -i vme0 -m CPLD0_MODEL

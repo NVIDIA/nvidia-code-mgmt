@@ -2,8 +2,6 @@
 Description=OpenBMC pciechip MTD Code Manager
 Wants=pldmd.service
 After=pldmd.service
-Wants=obmc-mapper.target
-After=obmc-mapper.target
 
 [Service]
 ExecStart=/usr/bin/code-manager -u MTD -i pciechip -m PCIECHIP_MODEL 

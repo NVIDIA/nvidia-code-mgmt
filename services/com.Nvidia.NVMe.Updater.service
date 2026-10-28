@@ -2,8 +2,6 @@
 Description=OpenBMC NVMe Code Manager
 Wants=pldmd.service
 After=pldmd.service
-Wants=obmc-mapper.target
-After=obmc-mapper.target
 
 [Service]
 EnvironmentFile=/etc/nvme/nvmemodels.env

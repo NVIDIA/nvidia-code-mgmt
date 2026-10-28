@@ -4,8 +4,6 @@ After=nvidia-fpga-ready.target
 Conflicts=nvidia-fpga-notready.target
 Wants=pldmd.service
 After=pldmd.service
-Wants=obmc-mapper.target
-After=obmc-mapper.target
 
 [Service]
 ExecStart=/usr/bin/code-manager -u Retimer
