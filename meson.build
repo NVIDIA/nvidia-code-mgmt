@@ -738,6 +738,14 @@ if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
     subdir('recovery_tool/spi_programmer_tool')
 endif
 
+if (
+    get_option('CONNECTX_RECOVERY_SUPPORT').enabled()
+    or get_option('NVSWITCH_RECOVERY_SUPPORT').enabled()
+    or get_option('NVLINKMANAGEMENTNIC_RECOVERY_SUPPORT').enabled()
+)
+    subdir('recovery_tool/mst_recovery_tool')
+endif
+
 if get_option('DOT_KEYD_SUPPORT').enabled()
     subdir('dot-keyd')
 endif

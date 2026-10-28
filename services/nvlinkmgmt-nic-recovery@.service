@@ -1,8 +1,13 @@
 [Unit]
 Description=NVLink Management NIC Recovery Utility
+Wants=xyz.openbmc_project.ObjectMapper.service
+After=xyz.openbmc_project.ObjectMapper.service
+Wants=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=/usr/bin/nvlinkmgmt-nic-recovery.sh $ARGS
+SyslogIdentifier=nvlinkmgmt-nic-recovery.sh
+ExecStart=/usr/bin/mst-recovery --device-type NVLinkManagementNIC $ARGS

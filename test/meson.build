@@ -1210,6 +1210,22 @@ test(
     workdir: meson.current_source_dir(),
 )
 
+test(
+    'test_mst_recovery',
+    executable(
+        'test_mst_recovery',
+        'test_mst_recovery.cpp',
+        '../recovery_tool/mst_recovery_tool/mst_policy.cpp',
+        '../recovery_tool/mst_recovery_tool/mst_recovery.cpp',
+        implicit_include_directories: false,
+        dependencies: [test_dep],
+        include_directories: include_directories(
+            '../recovery_tool/mst_recovery_tool',
+        ),
+    ),
+    workdir: meson.current_source_dir(),
+)
+
 fw_status_fake_inc = include_directories('fw_status_fakes')
 test(
     'test_fw_status_misc',
