@@ -6,20 +6,7 @@ After=pldmd.service
 [Service]
 Type=oneshot
 EnvironmentFile=/etc/mcurecovery/mcurecovery.env
-ExecStart=/bin/sh -c '\
-    if [ -z "$INSTANCE_COUNT" ]; then \
-        echo "Error: INSTANCE_COUNT not set"; \
-        exit 1; \
-    fi; \
-    for i in $(seq 0 $((INSTANCE_COUNT-1))); do \
-        TARGET_VAR=$(eval "echo \\$TARGET_NAME_$i"); \
-        if [ -z "$TARGET_VAR" ]; then \
-          echo "Error: TARGET_NAME_$i not set"; \
-          exit 1; \
-        fi; \
-        echo "Starting com.Nvidia.MCURecovery.Updater@$TARGET_VAR.service"; \
-        systemctl --no-block start "com.Nvidia.MCURecovery.Updater@$TARGET_VAR.service" || exit 1; \
-    done'
+ExecStart=/usr/bin/code-manager -u MCURecoveryStarter
 
 [Install]
 WantedBy=multi-user.target

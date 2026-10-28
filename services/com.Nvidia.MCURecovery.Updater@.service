@@ -1,17 +1,17 @@
 [Unit]
 Description=OpenBMC MCU Recovery Updater
+Wants=xyz.openbmc_project.ObjectMapper.service
+After=xyz.openbmc_project.ObjectMapper.service
 Wants=pldmd.service
 After=pldmd.service
+Wants=xyz.openbmc_project.FruDevice.service
+After=xyz.openbmc_project.FruDevice.service
 
 [Service]
 EnvironmentFile=/etc/mcurecovery/mcurecovery.env
-ExecStart=/bin/sh -c '\
-  MODEL_VAR=$(eval "echo \\$%i_MODEL"); \
-  if [ -z "$MODEL_VAR" ]; then \
-    echo "Error: %i_MODEL not set in environment file"; \
-    exit 1; \
-  fi; \
-  exec /usr/bin/code-manager -u MCURecovery -i %i -m "$MODEL_VAR"'
+ExecStart=/usr/bin/code-manager -u MCURecovery -i %i
 Restart=always
 Type=dbus
+# FRU variant detection waits up to 300 s before the bus name is claimed
+TimeoutStartSec=330
 BusName=com.Nvidia.Software.MCURecovery.Updater.%i

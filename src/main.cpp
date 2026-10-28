@@ -75,6 +75,7 @@
 #endif
 #ifdef MCU_RECOVERY_SUPPORT
 #include "mcu_recovery.hpp"
+#include "mcu_recovery_dbus.hpp"
 #endif
 #ifdef CONNECTX_RECOVERY_SUPPORT
 #include "connectx_recovery.hpp"
@@ -105,6 +106,8 @@
 
 #include <cstdlib>
 #include <exception>
+#include <fstream>
+#include <thread>
 
 using namespace phosphor::logging;
 
@@ -155,6 +158,37 @@ try
 
     using namespace nvidia::software::updater;
     auto bus = sdbusplus::bus::new_default();
+
+#if MCU_RECOVERY_SUPPORT
+    if (updater == "MCURecoveryStarter" ||
+        (updater == "MCURecovery" && modelName.empty()))
+    {
+        mcu::JournalBuf errBuf(true);
+        mcu::JournalBuf outBuf(false);
+        std::ostream err(&errBuf);
+        std::ostream out(&outBuf);
+        std::ifstream envStream(mcu::envFile);
+        if (!envStream)
+        {
+            err << "Error: cannot read " << mcu::envFile << "\n";
+            return 1;
+        }
+        auto env = mcu::parseEnv(envStream);
+        if (updater == "MCURecoveryStarter")
+        {
+            return mcu::startUpdaters(env, mcu::dbusStartUnit(bus), out);
+        }
+        auto model = mcu::resolveModel(
+            env, targetName, mcu::dbusFruLookup(bus),
+            [](std::chrono::seconds s) { std::this_thread::sleep_for(s); },
+            err);
+        if (!model)
+        {
+            return 1;
+        }
+        modelName = *model;
+    }
+#endif
 
     sd_event* loop = nullptr;
     sd_event_default(&loop);

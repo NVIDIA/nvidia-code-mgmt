@@ -1099,6 +1099,17 @@ test(
     workdir: meson.current_source_dir(),
 )
 
+test(
+    'test_mcu_recovery_model',
+    executable(
+        'test_mcu_recovery_model',
+        'test_mcu_recovery_model.cpp',
+        '../src/mcu_recovery_model.cpp',
+        dependencies: [gtest],
+        include_directories: include_directories('../src'),
+    ),
+)
+
 mcu_recovery_fake_inc = include_directories('mcu_fakes')
 mcu_recovery_test_src = declare_dependency(
     sources: [

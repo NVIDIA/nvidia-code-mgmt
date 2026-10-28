@@ -43,7 +43,7 @@ BreakConstructorInitializers: AfterColon
 BreakInheritanceList: AfterColon
 BreakStringLiterals: false
 ColumnLimit:     80
-CommentPragmas:  '^ IWYU pragma:'
+CommentPragmas:  '^ IWYU pragma:|^ SPDX-'
 CompactNamespaces: false
 ConstructorInitializerAllOnOneLineOrOnePerLine: false
 ConstructorInitializerIndentWidth: 4

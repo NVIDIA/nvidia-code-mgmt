@@ -87,6 +87,8 @@ endif
 
 if get_option('MCU_RECOVERY_SUPPORT').enabled()
     source_files += 'mcu_recovery.cpp'
+    source_files += 'mcu_recovery_model.cpp'
+    source_files += 'mcu_recovery_dbus.cpp'
 endif
 
 if get_option('CONNECTX_RECOVERY_SUPPORT').enabled()
