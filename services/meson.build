@@ -15,7 +15,6 @@ endif
 if get_option('PREBOOTDIAG_SUPPORT').enabled()
     unit_files = unit_files + [
         'com.nvidia.PreBootDiag.service',
-        'com.nvidia.PreBootDiag.PostCodeCallback@.service',
     ]
 endif
 

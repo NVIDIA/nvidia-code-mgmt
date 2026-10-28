@@ -33,10 +33,4 @@ executable(
     install: true,
 )
 
-install_data(
-    'scripts/prebootdiag-postcode-callback.sh',
-    install_dir: get_option('bindir'),
-    install_mode: 'rwxr-xr-x',
-)
-
 subdir('test')
