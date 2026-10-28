@@ -734,6 +734,10 @@ if get_option('USBDFU_RECOVERY_SUPPORT').enabled()
     subdir('recovery_tool/usbdfu_recovery_tool')
 endif
 
+if get_option('SPI_PROGRAMMER_SUPPORT').enabled()
+    subdir('recovery_tool/spi_programmer_tool')
+endif
+
 if get_option('DOT_KEYD_SUPPORT').enabled()
     subdir('dot-keyd')
 endif

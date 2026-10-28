@@ -7,4 +7,4 @@ After=com.Nvidia.FlashromWrapper.service
 Type=oneshot
 RemainAfterExit=no
 Environment="ARGS=%I"
-ExecStart=/usr/bin/spi-programmer.sh $ARGS
+ExecStart=/usr/bin/spi-programmer $ARGS

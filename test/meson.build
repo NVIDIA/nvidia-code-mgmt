@@ -1195,6 +1195,21 @@ test(
     workdir: meson.current_source_dir(),
 )
 
+test(
+    'test_spi_programmer_tool',
+    executable(
+        'test_spi_programmer_tool',
+        'test_spi_programmer_tool.cpp',
+        '../recovery_tool/spi_programmer_tool/spi_programmer_worker.cpp',
+        implicit_include_directories: false,
+        dependencies: [test_dep],
+        include_directories: include_directories(
+            '../recovery_tool/spi_programmer_tool',
+        ),
+    ),
+    workdir: meson.current_source_dir(),
+)
+
 fw_status_fake_inc = include_directories('fw_status_fakes')
 test(
     'test_fw_status_misc',
