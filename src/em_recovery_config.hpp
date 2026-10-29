@@ -13,7 +13,6 @@
 #include <functional>
 #include <map>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -67,26 +66,6 @@ constexpr uint64_t mcuProductId = 0xCF11;
 constexpr uint64_t mcuVendorId = 0x0955;
 constexpr uint64_t mcuRecoveryI2cAddress = 0x10;
 constexpr uint64_t gpioPollingIntervalMs = 1000;
-
-/**
- * @brief Recovery method of a device class, by NvDevice Kind.
- *
- * NvDevice.Recovery.Method overrides it. A Kind in this table with a Recovery
- * object is a recovery device; the Kinds in implicitKinds are recovery
- * devices without one (nothing in their record varies).
- */
-inline const std::map<std::string, std::string, std::less<>> kindMethod = {
-    {"cx_sma", "MCU"},         {"bluefield_sma", "MCU"},
-    {"gpu_sma", "MCU"},        {"hmc_hpm_sma", "MCU"},
-    {"bmc_hpm_sma", "MCU"},    {"nvswitch_sma", "MCU"},
-    {"cx9_io", "ConnectX"},    {"gpu", "OCP"},
-    {"nvswitch", "NVSwitch"},  {"nvlink_mgmt_nic", "NVLinkManagementNIC"},
-    {"erot", "GlacierCrisis"}, {"cpu_erot", "GlacierCrisis"},
-    {"cpu", "USBRCM"},
-};
-
-inline const std::set<std::string, std::less<>> implicitKinds = {
-    "erot", "cpu_erot", "cpu"};
 
 /** @brief The mcu-recovery -t group of an MCU Kind, unless the topology says.
  */
@@ -186,8 +165,7 @@ inline std::function<std::string(const std::string&)> usbBusResolver =
  *
  * entity-manager publishes the nested objects of a record (Transport,
  * Recovery) as interfaces of their own, possibly in later signals, so a device
- * counts once its Recovery interface is there (or at once for a Kind that has
- * none, see implicitKinds).
+ * counts once its Recovery interface is there.
  */
 /**
  * @brief Whether the interfaces of one object are the Transport of a device,
@@ -204,22 +182,8 @@ inline bool isConfigObject(const InterfaceMap& ifaces)
     {
         return true;
     }
-    auto dev = ifaces.find(nvDeviceIface);
-    if (dev == ifaces.end())
-    {
-        return false;
-    }
-    if (ifaces.contains(deviceRecoveryIface))
-    {
-        return true;
-    }
-    auto kind = dev->second.find("Kind");
-    if (kind == dev->second.end())
-    {
-        return false;
-    }
-    const auto* name = std::get_if<std::string>(&kind->second);
-    return name != nullptr && implicitKinds.contains(*name);
+    return ifaces.contains(nvDeviceIface) &&
+           ifaces.contains(deviceRecoveryIface);
 }
 
 inline std::optional<Value> prop(const InterfaceMap& ifaces,
@@ -453,8 +417,8 @@ inline std::optional<PropertyMap>
     }
     else
     {
-        lg2::error("Unknown recovery method {METHOD} for {NAME}", "METHOD",
-                   method, "NAME", name);
+        lg2::error("Unknown RecoveryType {METHOD} for {NAME}", "METHOD", method,
+                   "NAME", name);
         return std::nullopt;
     }
 
@@ -640,20 +604,13 @@ inline void expand(ObjectValueTree& objects)
         }
         const std::string name = str(prop(ifaces, nvDeviceIface, "Name"));
         const std::string kind = str(prop(ifaces, nvDeviceIface, "Kind"));
-        std::string method = str(prop(ifaces, deviceRecoveryIface, "Method"));
+        // The device says how it is recovered; without a RecoveryType it is
+        // not a recovery device.
+        const std::string method =
+            str(prop(ifaces, deviceRecoveryIface, "RecoveryType"));
         if (method.empty())
         {
-            if (!ifaces.contains(deviceRecoveryIface) &&
-                !implicitKinds.contains(kind))
-            {
-                continue;
-            }
-            auto m = kindMethod.find(kind);
-            if (m == kindMethod.end())
-            {
-                continue;
-            }
-            method = m->second;
+            continue;
         }
         // A record that reads the transport waits until its interface is
         // published, so a snapshot never yields a half-described device.

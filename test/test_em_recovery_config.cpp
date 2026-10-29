@@ -63,12 +63,13 @@ class EmRecoveryConfigTest : public ::testing::Test
 
 TEST_F(EmRecoveryConfigTest, McuUsbDerivesFromKindAndTransport)
 {
-    device(
-        "IO_Board_SMA_0", "cx_sma", 60,
-        {{"Medium", std::string("usb")},
-         {"Port", std::string("1.2.1.4.1")},
-         {"RootHubPath", std::string("/hub")}},
-        {{"RecoveryGpio", std::string("R")}, {"ResetGpio", std::string("S")}});
+    device("IO_Board_SMA_0", "cx_sma", 60,
+           {{"Medium", std::string("usb")},
+            {"Port", std::string("1.2.1.4.1")},
+            {"RootHubPath", std::string("/hub")}},
+           {{"RecoveryType", std::string("MCU")},
+            {"RecoveryGpio", std::string("R")},
+            {"ResetGpio", std::string("S")}});
     auto* r = record("MCURecovery", "FW_IO_Board_SMA_0");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("Target")), "CX9");
@@ -83,7 +84,8 @@ TEST_F(EmRecoveryConfigTest, McuTargetAndPolarityOverrides)
 {
     device("MGX_NVSwitch_SMA_0", "nvswitch_sma", 72,
            {{"Medium", std::string("usb")}, {"Port", std::string("1.4.1")}},
-           {{"RecoveryGpio", std::string("R")},
+           {{"RecoveryType", std::string("MCU")},
+            {"RecoveryGpio", std::string("R")},
             {"ResetGpio", std::string("S")},
             {"Target", std::string("QM4")},
             {"ResetGpioPolarity", std::string("ActiveHigh")}});
@@ -95,12 +97,13 @@ TEST_F(EmRecoveryConfigTest, McuTargetAndPolarityOverrides)
 
 TEST_F(EmRecoveryConfigTest, McuI2cUsesTransportBusAndAddress)
 {
-    device(
-        "HPM_SMA_0", "hmc_hpm_sma", 80,
-        {{"Medium", std::string("i2c")},
-         {"Bus", uint64_t(3)},
-         {"Address", uint64_t(82)}},
-        {{"RecoveryGpio", std::string("R")}, {"ResetGpio", std::string("S")}});
+    device("HPM_SMA_0", "hmc_hpm_sma", 80,
+           {{"Medium", std::string("i2c")},
+            {"Bus", uint64_t(3)},
+            {"Address", uint64_t(82)}},
+           {{"RecoveryType", std::string("MCU")},
+            {"RecoveryGpio", std::string("R")},
+            {"ResetGpio", std::string("S")}});
     auto* r = record("MCURecovery", "FW_HPM_SMA_0");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("Interface")), "I2C");
@@ -114,7 +117,9 @@ TEST_F(EmRecoveryConfigTest, ConnectXForcesTheIRoTUnlessThePlatformSaysNot)
 {
     device("CX_0", "cx9_io", 61,
            {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(60)}},
-           {{"I2CBus", uint64_t(78)}, {"I2CAddress", uint64_t(72)}});
+           {{"RecoveryType", std::string("ConnectX")},
+            {"I2CBus", uint64_t(78)},
+            {"I2CAddress", uint64_t(72)}});
     auto* r = record("ConnectXRecovery", "FW_CX_0");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("ChassisName")), "IRoT_CX_0");
@@ -132,15 +137,17 @@ TEST_F(EmRecoveryConfigTest, PlatformPolicyAndPrefix)
         PropertyMap{{"ConnectXForceRecoveryOnIRoT", false},
                     {"OcpInfoRom", false},
                     {"OcpSmaEid", false}});
-    device("HGX_ConnectX_0", "cx9_io", 17,
-           {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(16)}},
-           {{"I2CBus", uint64_t(110)}});
+    device(
+        "HGX_ConnectX_0", "cx9_io", 17,
+        {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(16)}},
+        {{"RecoveryType", std::string("ConnectX")}, {"I2CBus", uint64_t(110)}});
     device("HGX_GPU_0", "gpu", 49,
            {{"Medium", std::string("bridge")},
             {"Bridge", std::string("HGX_SXM_SMA_0")},
             {"BridgeEID", uint64_t(48)},
             {"BridgePort", std::string("1.2.1")}},
-           {{"OcpRecoveryI2cAddress", uint64_t(105)}});
+           {{"RecoveryType", std::string("OCP")},
+            {"OcpRecoveryI2cAddress", uint64_t(105)}});
     auto* cx = record("ConnectXRecovery", "HGX_FW_ConnectX_0");
     ASSERT_NE(cx, nullptr);
     EXPECT_EQ(std::get<std::string>(cx->at("ChassisName")),
@@ -154,12 +161,13 @@ TEST_F(EmRecoveryConfigTest, PlatformPolicyAndPrefix)
     EXPECT_EQ(std::get<std::string>(gpu->at("USBPort")), "1-1.2.1");
 }
 
-TEST_F(EmRecoveryConfigTest, ImplicitKindsNeedNoRecoveryObject)
+TEST_F(EmRecoveryConfigTest, RecoveryTypeAloneMakesARecoveryDevice)
 {
-    device("ERoT_BMC_0", "erot", 50, {}, {}, false);
+    device("ERoT_BMC_0", "erot", 50, {},
+           {{"RecoveryType", std::string("GlacierCrisis")}});
     device("HGX_CPU_0", "cpu", 14,
            {{"Medium", std::string("usb")}, {"Port", std::string("1.1.1.2")}},
-           {}, false, 1);
+           {{"RecoveryType", std::string("USBRCM")}}, true, 1);
     auto* e = record("GlacierCrisisRecovery", "FW_ERoT_BMC_0");
     ASSERT_NE(e, nullptr);
     EXPECT_FALSE(std::get<bool>(e->at("isRecoverable")));
@@ -171,13 +179,23 @@ TEST_F(EmRecoveryConfigTest, ImplicitKindsNeedNoRecoveryObject)
 TEST_F(EmRecoveryConfigTest, KindWithoutRecoveryObjectIsNotARecoveryDevice)
 {
     device("NVSwitch_0", "nvswitch", 79, {}, {}, false);
+    device("ERoT_BMC_0", "erot", 50, {}, {}, false);
+    EXPECT_EQ(record("NVSwitchRecovery", "FW_NVSwitch_0"), nullptr);
+    EXPECT_EQ(record("GlacierCrisisRecovery", "FW_ERoT_BMC_0"), nullptr);
+}
+
+TEST_F(EmRecoveryConfigTest, RecoveryObjectWithoutRecoveryTypeIsNotARecovery)
+{
+    device("NVSwitch_0", "nvswitch", 79,
+           {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(78)}},
+           {{"I2CBus", uint64_t(5)}});
     EXPECT_EQ(record("NVSwitchRecovery", "FW_NVSwitch_0"), nullptr);
 }
 
 TEST_F(EmRecoveryConfigTest, GpioErotNamesComeFromTheRecoveryObject)
 {
     device("HMC_ERoT_BMC_0", "hmc_erot", 51, {},
-           {{"Method", std::string("GPIOERoT")},
+           {{"RecoveryType", std::string("GPIOERoT")},
             {"SoftwareName", std::string("FW_RECOVERY_HGX_FW_ERoT_BMC_0")},
             {"ApName", std::string("FW_RECOVERY_HGX_FW_BMC_0")},
             {"FatalErrorGpio", std::string("G")},
@@ -262,7 +280,8 @@ TEST_F(EmRecoveryConfigTest,
     rec::expand(legacy);
     EXPECT_EQ(legacy, copy);
 
-    device("ERoT_BMC_0", "erot", 50, {}, {}, false);
+    device("ERoT_BMC_0", "erot", 50, {},
+           {{"RecoveryType", std::string("GlacierCrisis")}});
     rec::expand(objects);
     const auto size = objects.size();
     rec::expand(objects);
@@ -272,9 +291,10 @@ TEST_F(EmRecoveryConfigTest,
 TEST_F(EmRecoveryConfigTest, WaitsForTheTransportInterface)
 {
     // The Transport interface is published after the NvDevice and Recovery ones
-    device(
-        "IO_Board_SMA_0", "cx_sma", 60, {},
-        {{"RecoveryGpio", std::string("R")}, {"ResetGpio", std::string("S")}});
+    device("IO_Board_SMA_0", "cx_sma", 60, {},
+           {{"RecoveryType", std::string("MCU")},
+            {"RecoveryGpio", std::string("R")},
+            {"ResetGpio", std::string("S")}});
     EXPECT_EQ(record("MCURecovery", "FW_IO_Board_SMA_0"), nullptr);
     objects[std::string(plat) + "/IO_Board_SMA_0"][tr] = {
         {"Medium", std::string("usb")}, {"Port", std::string("1.2")}};
@@ -288,8 +308,8 @@ TEST(EmRecoveryConfigSignal, TriggersOnTopologyObjectsOnly)
     InterfaceMap withRecovery{{nv, {{"Kind", std::string("cx_sma")}}},
                               {rc, {}}};
     EXPECT_TRUE(rec::isConfigObject(withRecovery));
-    InterfaceMap implicit{{nv, {{"Kind", std::string("erot")}}}};
-    EXPECT_TRUE(rec::isConfigObject(implicit));
+    InterfaceMap erotOnly{{nv, {{"Kind", std::string("erot")}}}};
+    EXPECT_FALSE(rec::isConfigObject(erotOnly));
     InterfaceMap platformObj{{rec::platformIface, {}}};
     EXPECT_TRUE(rec::isConfigObject(platformObj));
 }
@@ -354,12 +374,13 @@ TEST(EmRecoveryConfigSpiTrigger, TransportCompletesAWithheldSpiRecord)
 
 TEST_F(EmRecoveryConfigTest, McuRecordCarriesChassisName)
 {
-    device(
-        "IO_Board_SMA_0", "cx_sma", 60,
-        {{"Medium", std::string("usb")},
-         {"Port", std::string("1.2.1.4.1")},
-         {"RootHubPath", std::string("/hub")}},
-        {{"RecoveryGpio", std::string("R")}, {"ResetGpio", std::string("S")}});
+    device("IO_Board_SMA_0", "cx_sma", 60,
+           {{"Medium", std::string("usb")},
+            {"Port", std::string("1.2.1.4.1")},
+            {"RootHubPath", std::string("/hub")}},
+           {{"RecoveryType", std::string("MCU")},
+            {"RecoveryGpio", std::string("R")},
+            {"ResetGpio", std::string("S")}});
     auto* r = record("MCURecovery", "FW_IO_Board_SMA_0");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("ChassisName")), "IO_Board_SMA_0");
