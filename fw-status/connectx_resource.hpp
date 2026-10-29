@@ -97,6 +97,8 @@ class ConnectXResource : public MCTPDiscoveryResource
 
     static constexpr uint32_t resetActiveUs = 500000;
     static constexpr unsigned int resetDelaySec = 3;
+    static constexpr unsigned int forceRecoveryAttempts = 3;
+    static constexpr unsigned int forceRecoveryRetryDelaySec = 2;
 
     /**@brief Creates the SetRecoveryMode D-Bus interface on the chassis path
      *
@@ -533,25 +535,38 @@ class ConnectXResource : public MCTPDiscoveryResource
                            "FlashNotPresentGPIO)"};
         }
 
-        if (!initGpioLines())
+        // The lines sit on an I2C expander that shares its bus with the NIC
+        // and the SMA, so a write can time out under bus traffic. Retry.
+        std::string error =
+            "Failed to initialize GPIO lines for force recovery";
+        for (unsigned int attempt = 1; attempt <= forceRecoveryAttempts;
+             ++attempt)
         {
-            return {false,
-                    "Failed to initialize GPIO lines for force recovery"};
-        }
-
-        try
-        {
-            enterRecoveryMode();
-        }
-        catch (const std::exception& e)
-        {
+            if (initGpioLines())
+            {
+                try
+                {
+                    enterRecoveryMode();
+                    releaseGpioLines();
+                    return {true, "Successfully set force recovery mode"};
+                }
+                catch (const std::exception& e)
+                {
+                    error = "Failed to set GPIO for force recovery: " +
+                            std::string(e.what());
+                }
+            }
             releaseGpioLines();
-            return {false, "Failed to set GPIO for force recovery: " +
-                               std::string(e.what())};
+            lg2::warning(
+                "ConnectX force recovery attempt {N}/{MAX} failed for {PATH}: {ERR}",
+                "N", attempt, "MAX", forceRecoveryAttempts, "PATH",
+                path.c_str(), "ERR", error);
+            if (attempt < forceRecoveryAttempts)
+            {
+                sleep(forceRecoveryRetryDelaySec);
+            }
         }
-
-        releaseGpioLines();
-        return {true, "Successfully set force recovery mode"};
+        return {false, error};
     }
 
   protected:
