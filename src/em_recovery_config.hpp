@@ -288,7 +288,7 @@ struct Platform
     std::string prefix;
     std::string topChassis;
     std::string cpuGpioStraps;
-    std::string cpuChassis;
+    std::string cpuActionChassis;
     bool connectXForceOnIRoT = true;
     bool ocpInfoRom = true;
     bool ocpSmaEid = true;
@@ -493,8 +493,8 @@ inline void expand(ObjectValueTree& objects)
                 str(prop(ifaces, platformIface, "TopChassis"));
             platform.cpuGpioStraps =
                 str(prop(ifaces, platformIface, "CpuRecoveryGPIOStraps"));
-            platform.cpuChassis =
-                str(prop(ifaces, platformIface, "CpuRecoveryChassis"));
+            platform.cpuActionChassis = str(
+                prop(ifaces, platformIface, "CpuRecoveryActionRedfishChassis"));
             platform.connectXForceOnIRoT =
                 flag(prop(ifaces, platformIface, "ConnectXForceRecoveryOnIRoT"),
                      true);
@@ -609,10 +609,10 @@ inline void expand(ObjectValueTree& objects)
             {recoveryMarkerIface, {}}};
     }
 
-    if (!platform.cpuGpioStraps.empty() && !platform.cpuChassis.empty())
+    if (!platform.cpuGpioStraps.empty() && !platform.cpuActionChassis.empty())
     {
         const std::string name =
-            (platform.topChassis.empty() ? platform.cpuChassis
+            (platform.topChassis.empty() ? platform.cpuActionChassis
                                          : platform.topChassis) +
             "_CPU_Recovery";
         added[sdbusplus::object_path(platform.path + "/" + pathSegment(name))] =
@@ -620,7 +620,7 @@ inline void expand(ObjectValueTree& objects)
               {{"Name", name},
                {"Type", std::string("USBRCMForceRecovery")},
                {"ConfigType", platform.cpuGpioStraps},
-               {"ForceRecoveryChassisObject", platform.cpuChassis}}},
+               {"ForceRecoveryChassisObject", platform.cpuActionChassis}}},
              {recoveryMarkerIface, {}}};
     }
 

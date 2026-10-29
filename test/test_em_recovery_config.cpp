@@ -199,7 +199,7 @@ TEST_F(EmRecoveryConfigTest, ForceRecoveryRecordFromPlatformPolicy)
         std::string("Chassis_0");
     objects[policy][rec::platformIface].merge(
         PropertyMap{{"CpuRecoveryGPIOStraps", std::string("c2")},
-                    {"CpuRecoveryChassis", std::string("BMC_0")}});
+                    {"CpuRecoveryActionRedfishChassis", std::string("BMC_0")}});
     auto* r = record("USBRCMForceRecovery", "Chassis_0_CPU_Recovery");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("ConfigType")), "c2");
