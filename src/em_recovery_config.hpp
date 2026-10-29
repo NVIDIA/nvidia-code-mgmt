@@ -287,7 +287,7 @@ struct Platform
     std::string path;
     std::string prefix;
     std::string topChassis;
-    std::string cpuConfig;
+    std::string cpuGpioStraps;
     std::string cpuChassis;
     bool connectXForceOnIRoT = true;
     bool ocpInfoRom = true;
@@ -491,8 +491,8 @@ inline void expand(ObjectValueTree& objects)
             platform.prefix = str(prop(ifaces, platformIface, "NamePrefix"));
             platform.topChassis =
                 str(prop(ifaces, platformIface, "TopChassis"));
-            platform.cpuConfig =
-                str(prop(ifaces, platformIface, "CpuRecoveryConfig"));
+            platform.cpuGpioStraps =
+                str(prop(ifaces, platformIface, "CpuRecoveryGPIOStraps"));
             platform.cpuChassis =
                 str(prop(ifaces, platformIface, "CpuRecoveryChassis"));
             platform.connectXForceOnIRoT =
@@ -609,7 +609,7 @@ inline void expand(ObjectValueTree& objects)
             {recoveryMarkerIface, {}}};
     }
 
-    if (!platform.cpuConfig.empty() && !platform.cpuChassis.empty())
+    if (!platform.cpuGpioStraps.empty() && !platform.cpuChassis.empty())
     {
         const std::string name =
             (platform.topChassis.empty() ? platform.cpuChassis
@@ -619,7 +619,7 @@ inline void expand(ObjectValueTree& objects)
             {{std::string(cfgPrefix) + "USBRCMForceRecovery",
               {{"Name", name},
                {"Type", std::string("USBRCMForceRecovery")},
-               {"ConfigType", platform.cpuConfig},
+               {"ConfigType", platform.cpuGpioStraps},
                {"ForceRecoveryChassisObject", platform.cpuChassis}}},
              {recoveryMarkerIface, {}}};
     }

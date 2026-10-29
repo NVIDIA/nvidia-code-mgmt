@@ -198,7 +198,7 @@ TEST_F(EmRecoveryConfigTest, ForceRecoveryRecordFromPlatformPolicy)
     objects[policy][rec::platformIface]["TopChassis"] =
         std::string("Chassis_0");
     objects[policy][rec::platformIface].merge(
-        PropertyMap{{"CpuRecoveryConfig", std::string("c2")},
+        PropertyMap{{"CpuRecoveryGPIOStraps", std::string("c2")},
                     {"CpuRecoveryChassis", std::string("BMC_0")}});
     auto* r = record("USBRCMForceRecovery", "Chassis_0_CPU_Recovery");
     ASSERT_NE(r, nullptr);
