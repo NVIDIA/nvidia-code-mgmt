@@ -9,7 +9,7 @@ namespace
 {
 constexpr auto plat = "/xyz/openbmc_project/inventory/system/platform/P";
 constexpr auto policy =
-    "/xyz/openbmc_project/inventory/system/platform/P/RecoveryPolicy";
+    "/xyz/openbmc_project/inventory/system/platform/P/GlobalRecoveryConfig";
 const std::string nv = rec::nvDeviceIface;
 const std::string tr = rec::transportIface;
 const std::string rc = rec::deviceRecoveryIface;
@@ -193,18 +193,63 @@ TEST_F(EmRecoveryConfigTest, GpioErotNamesComeFromTheRecoveryObject)
     EXPECT_TRUE(std::get<bool>(r->at("HideWhenHealthy")));
 }
 
-TEST_F(EmRecoveryConfigTest, ForceRecoveryRecordFromPlatformPolicy)
+PropertyMap cpuStraps(const std::string& board, const std::string& chassis)
 {
-    objects[policy][rec::platformIface]["TopChassis"] =
-        std::string("Chassis_0");
-    objects[policy][rec::platformIface].merge(
-        PropertyMap{{"CpuRecoveryGPIOStraps", std::string("c2")},
-                    {"CpuRecoveryActionRedfishChassis", std::string("BMC_0")}});
-    auto* r = record("USBRCMForceRecovery", "Chassis_0_CPU_Recovery");
+    return {{"ActionRedfishChassis", chassis},
+            {"SystemResetGpio", board + "_IST_SYS_RST_L-O"},
+            {"ForcedRecoveryGpio", board + "_CPU_FORCED_RECOVERY_L-O"},
+            {"BootDevSel0Gpio", board + "_CPU_BOOT_DEV_SEL0-O"},
+            {"BootDevSel1Gpio", board + "_CPU_BOOT_DEV_SEL1-O"},
+            {"BootDevSel2Gpio", board + "_CPU_BOOT_DEV_SEL2-O"},
+            {"RecoveryType0Gpio", board + "_CPU_RECOVERY_TYPE0-O"},
+            {"RecoveryType1Gpio", board + "_CPU_RECOVERY_TYPE1-O"}};
+}
+
+TEST_F(EmRecoveryConfigTest, ForceRecoveryRecordListsEveryBoardOfAChassis)
+{
+    device("HGX_CPU_0", "cpu", 14, {}, cpuStraps("BRD0", "HGX_Chassis_0"));
+    device("HGX_CPU_1", "cpu", 24, {}, cpuStraps("BRD1", "HGX_Chassis_0"), true,
+           1);
+    auto* r = record("USBRCMForceRecovery", "HGX_Chassis_0_CPU_Recovery");
     ASSERT_NE(r, nullptr);
-    EXPECT_EQ(std::get<std::string>(r->at("ConfigType")), "c2");
     EXPECT_EQ(std::get<std::string>(r->at("ForceRecoveryChassisObject")),
-              "BMC_0");
+              "HGX_Chassis_0");
+    const std::vector<std::string> resets{"BRD0_IST_SYS_RST_L-O",
+                                          "BRD1_IST_SYS_RST_L-O"};
+    EXPECT_EQ(std::get<std::vector<std::string>>(r->at("ResetPins")), resets);
+    const auto straps = std::get<std::vector<std::string>>(r->at("StrapPins"));
+    ASSERT_EQ(straps.size(), 12U);
+    EXPECT_EQ(straps[0], "BRD0_CPU_FORCED_RECOVERY_L-O");
+    EXPECT_EQ(straps[5], "BRD0_CPU_RECOVERY_TYPE1-O");
+    EXPECT_EQ(straps[6], "BRD1_CPU_FORCED_RECOVERY_L-O");
+    const std::vector<double> active{0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1};
+    const std::vector<double> normal{1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1};
+    EXPECT_EQ(std::get<std::vector<double>>(r->at("StrapActiveValues")),
+              active);
+    EXPECT_EQ(std::get<std::vector<double>>(r->at("StrapDefaultValues")),
+              normal);
+    EXPECT_FALSE(r->contains("ConfigType"));
+    EXPECT_FALSE(r->contains("ActionRedfishChassis"));
+}
+
+TEST_F(EmRecoveryConfigTest, CpusOfOneBoardAreListedOnce)
+{
+    device("CPU_0", "cpu", 16, {}, cpuStraps("B0_M1", "BMC_0"));
+    device("CPU_1", "cpu", 17, {}, cpuStraps("B0_M1", "BMC_0"), true, 1);
+    auto* r = record("USBRCMForceRecovery", "BMC_0_CPU_Recovery");
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(std::get<std::vector<std::string>>(r->at("ResetPins")).size(),
+              1U);
+    EXPECT_EQ(std::get<std::vector<std::string>>(r->at("StrapPins")).size(),
+              6U);
+}
+
+TEST_F(EmRecoveryConfigTest, CpuWithoutActionChassisHasNoForceRecovery)
+{
+    device("HGX_CPU_0", "cpu", 14, {}, cpuStraps("BRD0", ""));
+    EXPECT_EQ(record("USBRCMForceRecovery", "_CPU_Recovery"), nullptr);
+    EXPECT_EQ(record("USBRCMForceRecovery", "HGX_Chassis_0_CPU_Recovery"),
+              nullptr);
 }
 
 TEST_F(EmRecoveryConfigTest,
@@ -307,7 +352,7 @@ TEST(EmRecoveryConfigSpiTrigger, TransportCompletesAWithheldSpiRecord)
     EXPECT_FALSE(rec::completesSpi(other));
 }
 
-TEST_F(EmRecoveryConfigTest, McuChassisNameFollowsThePlatformPolicy)
+TEST_F(EmRecoveryConfigTest, McuRecordCarriesChassisName)
 {
     device(
         "IO_Board_SMA_0", "cx_sma", 60,
@@ -318,11 +363,4 @@ TEST_F(EmRecoveryConfigTest, McuChassisNameFollowsThePlatformPolicy)
     auto* r = record("MCURecovery", "FW_IO_Board_SMA_0");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("ChassisName")), "IO_Board_SMA_0");
-
-    objects[policy][rec::platformIface]["McuChassisName"] = false;
-    objects.erase(std::string(plat) + "/FW_IO_Board_SMA_0");
-    rec::derivedRecords().clear();
-    r = record("MCURecovery", "FW_IO_Board_SMA_0");
-    ASSERT_NE(r, nullptr);
-    EXPECT_FALSE(r->contains("ChassisName"));
 }

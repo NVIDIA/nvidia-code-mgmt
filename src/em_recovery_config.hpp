@@ -4,6 +4,8 @@
 
 #include <phosphor-logging/lg2.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
@@ -17,6 +19,7 @@
 #include <system_error>
 #include <type_traits>
 #include <variant>
+#include <vector>
 
 namespace nvidia
 {
@@ -49,10 +52,10 @@ constexpr auto transportIface =
 constexpr auto deviceRecoveryIface =
     "xyz.openbmc_project.Configuration.NvDevice.Recovery";
 /** entity-manager only publishes the Name, Probe and Type of the Platform
- *  record itself, so the values NCM needs (name prefix, top chassis, policy
- *  flags) are carried by one RecoveryPolicy record in PlatformExposes. */
+ *  record itself, so the values NCM needs (name prefix, platform flags) are
+ *  carried by one GlobalRecoveryConfig record in PlatformExposes. */
 constexpr auto platformIface =
-    "xyz.openbmc_project.Configuration.RecoveryPolicy";
+    "xyz.openbmc_project.Configuration.GlobalRecoveryConfig";
 constexpr auto recoveryMarkerIface =
     "xyz.openbmc_project.Inventory.Item.Recovery_Config";
 constexpr auto usbDfuIface = "xyz.openbmc_project.Configuration.USBDFURecovery";
@@ -286,13 +289,9 @@ struct Platform
 {
     std::string path;
     std::string prefix;
-    std::string topChassis;
-    std::string cpuGpioStraps;
-    std::string cpuActionChassis;
     bool connectXForceOnIRoT = true;
     bool ocpInfoRom = true;
     bool ocpSmaEid = true;
-    bool mcuChassisName = true;
 };
 
 using DeviceMap = std::map<std::string, const InterfaceMap*>;
@@ -405,12 +404,8 @@ inline std::optional<PropertyMap>
     {
         legacyType = "MCURecovery";
         r["ForceRecoveryChassisObject"] = name;
-        if (platform.mcuChassisName)
-        {
-            // Read by the MCU tool's --chassis filter; the vr-nvl HMC
-            // platforms never had it.
-            r["ChassisName"] = name;
-        }
+        // Read by the MCU tool's --chassis filter.
+        r["ChassisName"] = name;
         r["hasChassisPowerSource"] = false;
         r["RecoveryGpioName"] =
             str(prop(dev, deviceRecoveryIface, "RecoveryGpio"));
@@ -472,6 +467,89 @@ inline std::optional<PropertyMap>
     return r;
 }
 
+/** The strap lines a CPU board drives, in the order of its StrapPins. */
+constexpr std::array<const char*, 6> cpuStrapKeys = {
+    "ForcedRecoveryGpio", "BootDevSel0Gpio",   "BootDevSel1Gpio",
+    "BootDevSel2Gpio",    "RecoveryType0Gpio", "RecoveryType1Gpio"};
+/** Strap levels that put a CPU into USB RCM recovery (forced recovery low,
+ *  boot device 0b000, recovery type 0b10) and its normal-boot levels. */
+constexpr std::array<double, 6> cpuStrapActive = {0, 0, 0, 0, 0, 1};
+constexpr std::array<double, 6> cpuStrapDefault = {1, 0, 0, 0, 0, 1};
+
+/** The lines of the boards that one chassis resets and straps together. */
+struct CpuBoards
+{
+    std::vector<std::string> resets;
+    std::vector<std::string> straps;
+};
+
+/**
+ * One USBRCMForceRecovery record per chassis that carries the Redfish action,
+ * in the shape a develop record has: every board's reset line in ResetPins and
+ * its six strap lines in StrapPins. CPUs of one board name the same lines, so
+ * a board is listed once.
+ */
+inline void deriveCpuForceRecovery(const ObjectValueTree& objects,
+                                   ObjectValueTree& added)
+{
+    std::map<std::string, CpuBoards> chassisBoards;
+    std::map<std::string, std::string> chassisDir;
+    for (const auto& [path, ifaces] : objects)
+    {
+        const std::string chassis =
+            str(prop(ifaces, deviceRecoveryIface, "ActionRedfishChassis"));
+        const std::string reset =
+            str(prop(ifaces, deviceRecoveryIface, "SystemResetGpio"));
+        if (chassis.empty() || reset.empty() ||
+            str(prop(ifaces, nvDeviceIface, "Kind")) != "cpu")
+        {
+            continue;
+        }
+        std::vector<std::string> straps;
+        for (const char* key : cpuStrapKeys)
+        {
+            straps.push_back(str(prop(ifaces, deviceRecoveryIface, key)));
+        }
+        if (std::ranges::find(straps, std::string()) != straps.end())
+        {
+            continue;
+        }
+        auto& boards = chassisBoards[chassis];
+        if (std::ranges::find(boards.resets, reset) != boards.resets.end())
+        {
+            continue;
+        }
+        boards.resets.push_back(reset);
+        boards.straps.insert(boards.straps.end(), straps.begin(), straps.end());
+        chassisDir.emplace(chassis, path.parent_path().str);
+    }
+
+    for (const auto& [chassis, boards] : chassisBoards)
+    {
+        std::vector<double> active;
+        std::vector<double> defaults;
+        for (size_t i = 0; i < boards.resets.size(); ++i)
+        {
+            active.insert(active.end(), cpuStrapActive.begin(),
+                          cpuStrapActive.end());
+            defaults.insert(defaults.end(), cpuStrapDefault.begin(),
+                            cpuStrapDefault.end());
+        }
+        const std::string name = chassis + "_CPU_Recovery";
+        PropertyMap record{{"Name", name},
+                           {"Type", std::string("USBRCMForceRecovery")},
+                           {"ForceRecoveryChassisObject", chassis},
+                           {"ResetPins", boards.resets},
+                           {"StrapPins", boards.straps},
+                           {"StrapActiveValues", active},
+                           {"StrapDefaultValues", defaults}};
+        added[sdbusplus::object_path(chassisDir.at(chassis) + "/" +
+                                     pathSegment(name))] = {
+            {std::string(cfgPrefix) + "USBRCMForceRecovery", std::move(record)},
+            {recoveryMarkerIface, {}}};
+    }
+}
+
 /**
  * @brief Adds the records a platform topology implies to a snapshot of
  *        entity-manager's objects.
@@ -489,12 +567,6 @@ inline void expand(ObjectValueTree& objects)
         {
             platform.path = path.str.substr(0, path.str.rfind('/'));
             platform.prefix = str(prop(ifaces, platformIface, "NamePrefix"));
-            platform.topChassis =
-                str(prop(ifaces, platformIface, "TopChassis"));
-            platform.cpuGpioStraps =
-                str(prop(ifaces, platformIface, "CpuRecoveryGPIOStraps"));
-            platform.cpuActionChassis = str(
-                prop(ifaces, platformIface, "CpuRecoveryActionRedfishChassis"));
             platform.connectXForceOnIRoT =
                 flag(prop(ifaces, platformIface, "ConnectXForceRecoveryOnIRoT"),
                      true);
@@ -502,8 +574,6 @@ inline void expand(ObjectValueTree& objects)
                 flag(prop(ifaces, platformIface, "OcpInfoRom"), true);
             platform.ocpSmaEid =
                 flag(prop(ifaces, platformIface, "OcpSmaEid"), true);
-            platform.mcuChassisName =
-                flag(prop(ifaces, platformIface, "McuChassisName"), true);
             haveTopology = true;
         }
         if (ifaces.contains(nvDeviceIface))
@@ -609,20 +679,7 @@ inline void expand(ObjectValueTree& objects)
             {recoveryMarkerIface, {}}};
     }
 
-    if (!platform.cpuGpioStraps.empty() && !platform.cpuActionChassis.empty())
-    {
-        const std::string name =
-            (platform.topChassis.empty() ? platform.cpuActionChassis
-                                         : platform.topChassis) +
-            "_CPU_Recovery";
-        added[sdbusplus::object_path(platform.path + "/" + pathSegment(name))] =
-            {{std::string(cfgPrefix) + "USBRCMForceRecovery",
-              {{"Name", name},
-               {"Type", std::string("USBRCMForceRecovery")},
-               {"ConfigType", platform.cpuGpioStraps},
-               {"ForceRecoveryChassisObject", platform.cpuActionChassis}}},
-             {recoveryMarkerIface, {}}};
-    }
+    deriveCpuForceRecovery(objects, added);
 
     for (const auto& [path, ifaces] : added)
     {
