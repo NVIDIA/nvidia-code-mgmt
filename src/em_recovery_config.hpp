@@ -12,7 +12,6 @@
 #include <fstream>
 #include <functional>
 #include <map>
-#include <set>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -588,22 +587,6 @@ inline void expand(ObjectValueTree& objects)
         return;
     }
 
-    // A ConnectX record that EM publishes itself (the recovery script reads
-    // it from D-Bus) wins over the one derived from the topology.
-    const std::string connectxIface =
-        std::string(cfgPrefix) + "ConnectXRecovery";
-    std::set<std::string> publishedConnectX;
-    for (const auto& [path, ifaces] : objects)
-    {
-        if (!ifaces.contains(recoveryMarkerIface))
-        {
-            if (auto n = str(prop(ifaces, connectxIface, "Name")); !n.empty())
-            {
-                publishedConnectX.insert(n);
-            }
-        }
-    }
-
     ObjectValueTree added;
     for (auto& [path, ifaces] : objects)
     {
@@ -642,12 +625,6 @@ inline void expand(ObjectValueTree& objects)
         auto record = makeRecord(method, name, kind, ifaces, devices, platform,
                                  legacyType);
         if (!record)
-        {
-            continue;
-        }
-        if (legacyType == "ConnectXRecovery" &&
-            publishedConnectX.contains(
-                std::get<std::string>((*record)["Name"])))
         {
             continue;
         }
