@@ -253,7 +253,6 @@ struct Platform
 {
     std::string path;
     std::string prefix;
-    bool connectXForceOnIRoT = true;
     bool ocpInfoRom = true;
     bool ocpSmaEid = true;
 };
@@ -343,8 +342,11 @@ inline std::optional<PropertyMap>
     {
         legacyType =
             method == "ConnectX" ? "ConnectXRecovery" : method + "Recovery";
+        // The force action sits on the NIC's own chassis unless the device
+        // asks for its IRoT chassis.
         const bool onIRoT =
-            method == "ConnectX" && platform.connectXForceOnIRoT;
+            method == "ConnectX" &&
+            flag(prop(dev, deviceRecoveryIface, "ForceRecoveryOnIRoT"), false);
         r["ChassisName"] = p + "IRoT_" + base;
         r["ForceRecoveryChassisObject"] = onIRoT ? p + "IRoT_" + base : name;
         r["hasChassisPowerSource"] = true;
@@ -531,9 +533,6 @@ inline void expand(ObjectValueTree& objects)
         {
             platform.path = path.str.substr(0, path.str.rfind('/'));
             platform.prefix = str(prop(ifaces, platformIface, "NamePrefix"));
-            platform.connectXForceOnIRoT =
-                flag(prop(ifaces, platformIface, "ConnectXForceRecoveryOnIRoT"),
-                     true);
             platform.ocpInfoRom =
                 flag(prop(ifaces, platformIface, "OcpInfoRom"), true);
             platform.ocpSmaEid =

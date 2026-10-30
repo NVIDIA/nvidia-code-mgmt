@@ -113,30 +113,38 @@ TEST_F(EmRecoveryConfigTest, McuI2cUsesTransportBusAndAddress)
     EXPECT_EQ(std::get<std::string>(r->at("Target")), "HPM");
 }
 
-TEST_F(EmRecoveryConfigTest, ConnectXForcesTheIRoTUnlessThePlatformSaysNot)
+TEST_F(EmRecoveryConfigTest, ConnectXForcesTheDeviceUnlessItNamesTheIRoT)
 {
     device("CX_0", "cx9_io", 61,
            {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(60)}},
            {{"RecoveryType", std::string("ConnectX")},
             {"I2CBus", uint64_t(78)},
             {"I2CAddress", uint64_t(72)}});
+    device("CX_1", "cx9_io", 63,
+           {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(60)}},
+           {{"RecoveryType", std::string("ConnectX")},
+            {"ForceRecoveryOnIRoT", true},
+            {"I2CBus", uint64_t(78)},
+            {"I2CAddress", uint64_t(74)}});
     auto* r = record("ConnectXRecovery", "FW_CX_0");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("ChassisName")), "IRoT_CX_0");
     EXPECT_EQ(std::get<std::string>(r->at("ForceRecoveryChassisObject")),
-              "IRoT_CX_0");
+              "CX_0");
     EXPECT_EQ(std::get<uint64_t>(r->at("SMAEID")), 60U);
     EXPECT_EQ(std::get<uint64_t>(r->at("EID")), 61U);
     EXPECT_TRUE(std::get<bool>(r->at("hasChassisPowerSource")));
+    auto* irot = record("ConnectXRecovery", "FW_CX_1");
+    ASSERT_NE(irot, nullptr);
+    EXPECT_EQ(std::get<std::string>(irot->at("ForceRecoveryChassisObject")),
+              "IRoT_CX_1");
 }
 
 TEST_F(EmRecoveryConfigTest, PlatformPolicyAndPrefix)
 {
     objects[policy][rec::platformIface]["NamePrefix"] = std::string("HGX_");
     objects[policy][rec::platformIface].merge(
-        PropertyMap{{"ConnectXForceRecoveryOnIRoT", false},
-                    {"OcpInfoRom", false},
-                    {"OcpSmaEid", false}});
+        PropertyMap{{"OcpInfoRom", false}, {"OcpSmaEid", false}});
     device(
         "HGX_ConnectX_0", "cx9_io", 17,
         {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(16)}},
