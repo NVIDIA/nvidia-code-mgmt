@@ -1131,6 +1131,38 @@ mcu_recovery_test_src = declare_dependency(
         '../recovery_tool/mcu_recovery_tool/utils.cpp',
     ],
 )
+mcu_recovery_test_link_args = [
+    '-Wl,--wrap=open',
+    '-Wl,--wrap=open64',
+    '-Wl,--wrap=close',
+    '-Wl,--wrap=ioctl',
+    '-Wl,--wrap=popen',
+    '-Wl,--wrap=pclose',
+    '-Wl,--wrap=sleep',
+    '-Wl,--wrap=usleep',
+    '-Wl,--wrap=libusb_init',
+    '-Wl,--wrap=libusb_exit',
+    '-Wl,--wrap=libusb_get_port_numbers',
+    '-Wl,--wrap=libusb_get_bus_number',
+    '-Wl,--wrap=libusb_get_device_address',
+    '-Wl,--wrap=libusb_get_device_list',
+    '-Wl,--wrap=libusb_free_device_list',
+    '-Wl,--wrap=libusb_get_device_descriptor',
+    '-Wl,--wrap=libusb_get_active_config_descriptor',
+    '-Wl,--wrap=libusb_free_config_descriptor',
+    '-Wl,--wrap=libusb_error_name',
+]
+mcu_recovery_test_deps = [
+    test_dep,
+    phosphor_logging,
+    nlohmann_json,
+    mcu_recovery_test_src,
+]
+mcu_recovery_test_inc = include_directories(
+    'mcu_fakes',
+    '../recovery_tool/mcu_recovery_tool',
+    '../recovery_tool/common',
+)
 test(
     'test_mcu_recovery',
     executable(
@@ -1140,39 +1172,26 @@ test(
         # This test covers the default USB paths, so build it without
         # USB_RECOVERY_COMPAT_NO_UDEV whatever the option says.
         cpp_args: ['-UUSB_RECOVERY_COMPAT_NO_UDEV'],
-        link_args: [
-            '-Wl,--wrap=open',
-            '-Wl,--wrap=open64',
-            '-Wl,--wrap=close',
-            '-Wl,--wrap=ioctl',
-            '-Wl,--wrap=popen',
-            '-Wl,--wrap=pclose',
-            '-Wl,--wrap=sleep',
-            '-Wl,--wrap=usleep',
-            '-Wl,--wrap=libusb_init',
-            '-Wl,--wrap=libusb_exit',
-            '-Wl,--wrap=libusb_get_port_numbers',
-            '-Wl,--wrap=libusb_get_bus_number',
-            '-Wl,--wrap=libusb_get_device_address',
-            '-Wl,--wrap=libusb_get_device_list',
-            '-Wl,--wrap=libusb_free_device_list',
-            '-Wl,--wrap=libusb_get_device_descriptor',
-            '-Wl,--wrap=libusb_get_active_config_descriptor',
-            '-Wl,--wrap=libusb_free_config_descriptor',
-            '-Wl,--wrap=libusb_error_name',
-        ],
-        dependencies: [
-            test_dep,
-            phosphor_logging,
-            nlohmann_json,
-            mcu_recovery_test_src,
-        ],
-        include_directories: include_directories(
-            'mcu_fakes',
-            '../recovery_tool/mcu_recovery_tool',
-            '../recovery_tool/common',
-        ),
+        link_args: mcu_recovery_test_link_args,
+        dependencies: mcu_recovery_test_deps,
+        include_directories: mcu_recovery_test_inc,
     ),
+    workdir: meson.current_source_dir(),
+)
+# The same tests built with USB_RECOVERY_COMPAT_NO_UDEV, running only the
+# tests for the paths the option adds.
+test(
+    'test_mcu_recovery_no_udev',
+    executable(
+        'test_mcu_recovery_no_udev',
+        'test_mcu_recovery.cpp',
+        implicit_include_directories: false,
+        cpp_args: ['-DUSB_RECOVERY_COMPAT_NO_UDEV'],
+        link_args: mcu_recovery_test_link_args,
+        dependencies: mcu_recovery_test_deps,
+        include_directories: mcu_recovery_test_inc,
+    ),
+    args: ['--gtest_filter=MCURecoveryNoUdevTest.*'],
     workdir: meson.current_source_dir(),
 )
 

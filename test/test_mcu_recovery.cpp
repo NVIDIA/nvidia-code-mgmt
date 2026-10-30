@@ -5,16 +5,20 @@
 #include <linux/i2c-dev.h>
 #include <linux/i2c.h>
 
+#include <cerrno>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -67,6 +71,8 @@ struct PopenExpectation
     std::string needle;
     std::string output;
     bool failOpen = false;
+    // Runs when the command is opened, before its output is read.
+    std::function<void()> onOpen = nullptr;
 };
 
 std::map<libusb_device*, FakeUsbDeviceInfo> fakeUsbDevices;
@@ -267,6 +273,10 @@ extern "C" FILE* __wrap_popen(const char* command, const char* mode)
     auto expected = popenExpectations.front();
     popenExpectations.pop_front();
     EXPECT_NE(popenCommands.back().find(expected.needle), std::string::npos);
+    if (expected.onOpen)
+    {
+        expected.onOpen();
+    }
     if (expected.failOpen)
     {
         return nullptr;
@@ -1812,3 +1822,459 @@ TEST_F(MCURecoveryTest, RecoveryFailureReportsDeviceRecoveryFailedAtCritical)
     EXPECT_EQ(errors[0].deviceName, "FW_IO_Board_SMA_2");
     EXPECT_EQ(errors[0].severity, Level::Critical);
 }
+
+#ifdef USB_RECOVERY_COMPAT_NO_UDEV
+// Tests for the USB_RECOVERY_COMPAT_NO_UDEV code paths. test/meson.build
+// builds this file a second time with the option defined and runs only
+// these tests there.
+namespace
+{
+
+// A fake /sys/bus/usb/devices/<port> node in a new temp directory. The
+// manager joins "/sys/bus/usb/devices" with MCUInfo::usbPort, and
+// std::filesystem::path replaces the base when the right-hand side is
+// absolute, so an absolute usbPort makes it read this directory instead.
+class FakeSysfsUsbPort
+{
+  public:
+    explicit FakeSysfsUsbPort(std::string_view name) : dir(makeDir(name))
+    {}
+
+    ~FakeSysfsUsbPort()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+
+    FakeSysfsUsbPort(const FakeSysfsUsbPort&) = delete;
+    FakeSysfsUsbPort& operator=(const FakeSysfsUsbPort&) = delete;
+
+    void write(std::string_view attr, std::string_view value) const
+    {
+        std::ofstream output(dir / std::string(attr), std::ios::trunc);
+        output << value << '\n';
+    }
+
+    void remove(std::string_view attr) const
+    {
+        std::filesystem::remove(dir / std::string(attr));
+    }
+
+    void setIdentity(std::string_view bus, std::string_view devnum,
+                     std::string_view vid, std::string_view pid) const
+    {
+        write("busnum", bus);
+        write("devnum", devnum);
+        write("idVendor", vid);
+        write("idProduct", pid);
+    }
+
+    std::string port() const
+    {
+        return dir.string();
+    }
+
+    std::filesystem::path dir;
+
+  private:
+    static std::filesystem::path makeDir(std::string_view name)
+    {
+        std::string pattern =
+            (std::filesystem::absolute(std::filesystem::temp_directory_path()) /
+             ("mcu-no-udev-" + std::string(name) + "-XXXXXX"))
+                .string();
+        if (mkdtemp(pattern.data()) == nullptr)
+        {
+            throw std::system_error(errno, std::generic_category(),
+                                    "mkdtemp " + pattern);
+        }
+        return pattern;
+    }
+};
+
+mcu_recovery_manager::MCUInfo makeNoUdevUsbInfo(const std::string& usbPort)
+{
+    mcu_recovery_manager::MCUInfo info{};
+    info.device = "usb-no-udev";
+    info.usbPort = usbPort;
+    info.resetGpioName = "RESET_NO_UDEV";
+    info.recoveryGpioName = "REC_NO_UDEV";
+    info.functionalPid = 0x7410;
+    info.interfaceType = mcu_recovery_manager::MCUInfo::InterfaceType::USB;
+    return info;
+}
+
+// updateUsbDevInfo() lists the bus up to five times. An absolute usbPort
+// never matches a libusb port path, so each listing comes back without it.
+void pushUnmatchedUsbScan()
+{
+    for (int i = 0; i < 5; ++i)
+    {
+        pushDeviceListResponse(0, {});
+    }
+}
+
+class MCURecoveryNoUdevTest : public MCURecoveryTest
+{};
+
+} // namespace
+
+TEST_F(MCURecoveryNoUdevTest, RecoveryModeComesFromSysfsIspPid)
+{
+    using mcu_recovery_manager::MCUInfo;
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    FakeSysfsUsbPort sysfs("mode");
+    MCUInfo i2cInfo{};
+    i2cInfo.device = "i2c-no-udev";
+    i2cInfo.interfaceType = MCUInfo::InterfaceType::I2C;
+
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"usb", makeNoUdevUsbInfo(sysfs.port())},
+                      {"i2c", i2cInfo}};
+    manager.mcuDevices["usb"] = {};
+    manager.mcuDevices["i2c"] = {};
+
+    // The state cached by the last rescan wins.
+    manager.mcuDevices["usb"].inRecoveryMode = true;
+    EXPECT_TRUE(manager.isInRecoveryMode("usb"));
+    manager.mcuDevices["usb"].inRecoveryMode = false;
+
+    sysfs.setIdentity("3", "7", "0955", "cf1d");
+    EXPECT_TRUE(manager.isInRecoveryMode("usb"));
+    sysfs.write("idProduct", "cf1e");
+    EXPECT_TRUE(manager.isInRecoveryMode("usb"));
+    sysfs.write("idProduct", "7410");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+
+    EXPECT_FALSE(manager.isInRecoveryMode("i2c"));
+    EXPECT_FALSE(manager.isInRecoveryMode("missing"));
+}
+
+TEST_F(MCURecoveryNoUdevTest, MalformedSysfsIdentityIsNotRecoveryMode)
+{
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    FakeSysfsUsbPort sysfs("malformed");
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"usb", makeNoUdevUsbInfo(sysfs.port())}};
+    manager.mcuDevices["usb"] = {};
+
+    // idProduct stays an ISP PID, so only the broken attribute keeps the
+    // MCU out of recovery mode.
+    sysfs.setIdentity("3", "7", "0955", "cf1d");
+    ASSERT_TRUE(manager.isInRecoveryMode("usb"));
+
+    sysfs.remove("busnum");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+    sysfs.write("busnum", "bus");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+    sysfs.write("busnum", "256");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+    sysfs.write("busnum", "3");
+
+    sysfs.remove("devnum");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+    sysfs.write("devnum", "300");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+    sysfs.write("devnum", "7");
+
+    sysfs.remove("idVendor");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+    sysfs.write("idVendor", "");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+    sysfs.write("idVendor", "0955");
+
+    sysfs.write("idProduct", "xyz");
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+    sysfs.write("idProduct", "cf1d");
+    EXPECT_TRUE(manager.isInRecoveryMode("usb"));
+
+    // The port is no longer enumerated.
+    std::filesystem::remove_all(sysfs.dir);
+    EXPECT_FALSE(manager.isInRecoveryMode("usb"));
+}
+
+TEST_F(MCURecoveryNoUdevTest, ResetUsbContextReopensLibusb)
+{
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"usb", makeNoUdevUsbInfo("1-1")}};
+    manager.mcuDevices["usb"].curUsbDevice = makeUsbDevice(1, {});
+    manager.mcuDevices["usb"].hasMctpClass = true;
+
+    // Without a context there is nothing to close.
+    ASSERT_EQ(manager.context, nullptr);
+    EXPECT_TRUE(manager.resetUsbContext());
+    EXPECT_EQ(libusbExitCalls, 0);
+    EXPECT_NE(manager.context, nullptr);
+    EXPECT_EQ(manager.mcuDevices["usb"].curUsbDevice, nullptr);
+    EXPECT_FALSE(manager.mcuDevices["usb"].hasMctpClass);
+
+    // An open context is closed first; a failed reinit reports false.
+    libusbInitResult = LIBUSB_ERROR_NO_MEM;
+    EXPECT_FALSE(manager.resetUsbContext());
+    EXPECT_EQ(libusbExitCalls, 1);
+    EXPECT_EQ(manager.context, nullptr);
+}
+
+TEST_F(MCURecoveryNoUdevTest, UsbRescanReopensLibusbBetweenRetries)
+{
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    FakeUsbDeviceInfo info;
+    info.product = 0x7410;
+    info.bus = 6;
+    info.address = 13;
+    info.ports = {2};
+    auto* device = makeUsbDevice(1, info);
+
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"usb", makeNoUdevUsbInfo("6-2")}};
+
+    // The first listing fails; the context is reopened and the second
+    // listing finds the MCU and caches its bus and address.
+    pushDeviceListResponse(LIBUSB_ERROR_IO, {});
+    pushDeviceListResponse(1, {device});
+    EXPECT_TRUE(manager.updateUsbDevInfo("usb"));
+    EXPECT_EQ(manager.getBusNumber("usb"), 6);
+    EXPECT_EQ(manager.getDeviceNumber("usb"), 13);
+    EXPECT_NE(manager.context, nullptr);
+
+    // libusb cannot be reopened: the remaining retries fail without
+    // listing the bus again.
+    sleepCalls.clear();
+    pushDeviceListResponse(LIBUSB_ERROR_IO, {});
+    libusbInitResult = LIBUSB_ERROR_OTHER;
+    EXPECT_FALSE(manager.updateUsbDevInfo("usb"));
+    EXPECT_TRUE(deviceListResponses.empty());
+    EXPECT_EQ(sleepCalls.size(), 3u);
+}
+
+TEST_F(MCURecoveryNoUdevTest, BlhostTargetComesFromSysfsAfterIspEntry)
+{
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    FakeSysfsUsbPort sysfs("blhost");
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"usb", makeNoUdevUsbInfo(sysfs.port())}};
+    manager.mcuDevices["usb"] = {};
+
+    // libusb never reopens: every attempt waits and the refresh fails.
+    libusbInitResult = LIBUSB_ERROR_OTHER;
+    EXPECT_FALSE(manager.refreshUsbForBlhost("usb"));
+    EXPECT_EQ(sleepCalls.size(), 10u);
+    libusbInitResult = LIBUSB_SUCCESS;
+
+    // The port has no sysfs node, then shows the functional PID: the MCU
+    // never reaches ISP.
+    std::filesystem::remove_all(sysfs.dir);
+    for (int i = 0; i < 10; ++i)
+    {
+        pushUnmatchedUsbScan();
+    }
+    EXPECT_FALSE(manager.refreshUsbForBlhost("usb"));
+
+    std::filesystem::create_directories(sysfs.dir);
+    sysfs.setIdentity("3", "7", "0955", "7410");
+    for (int i = 0; i < 10; ++i)
+    {
+        pushUnmatchedUsbScan();
+    }
+    EXPECT_FALSE(manager.refreshUsbForBlhost("usb"));
+    EXPECT_TRUE(deviceListResponses.empty());
+
+    // In ISP, the sysfs identity replaces the cached one, whether or not
+    // libusb had the same device number.
+    sysfs.write("idProduct", "cf1d");
+    manager.mcuDevices["usb"].curUsbDevAddr = 7;
+    pushUnmatchedUsbScan();
+    EXPECT_TRUE(manager.refreshUsbForBlhost("usb"));
+
+    manager.mcuDevices["usb"].curUsbDevAddr = 5;
+    pushUnmatchedUsbScan();
+    EXPECT_TRUE(manager.refreshUsbForBlhost("usb"));
+    EXPECT_EQ(manager.getBusNumber("usb"), 3);
+    EXPECT_EQ(manager.getDeviceNumber("usb"), 7);
+    EXPECT_EQ(manager.mcuDevices["usb"].curUsbDesc.idVendor,
+              mcu_recovery_manager::nvdaVendorId);
+    EXPECT_EQ(manager.mcuDevices["usb"].curUsbDesc.idProduct,
+              mcu_recovery_manager::mcuIspPidCf1d);
+}
+
+TEST_F(MCURecoveryNoUdevTest, RecoveryTargetsTheSysfsIspDevice)
+{
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    FakeSysfsUsbPort sysfs("recovery");
+    test::mcu_fake_gpio::lines["RESET_NO_UDEV"] = {};
+    test::mcu_fake_gpio::lines["REC_NO_UDEV"] = {};
+
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"usb", makeNoUdevUsbInfo(sysfs.port())}};
+    manager.messageRegistry = std::make_unique<MessageRegistry>();
+    manager.mcuDevices["usb"].resetPin = gpiod::find_line("RESET_NO_UDEV");
+    manager.mcuDevices["usb"].recoveryPin = gpiod::find_line("REC_NO_UDEV");
+    const auto& errors = test::mcu_fake_registry::resourceErrors;
+
+    // The ISP device cannot be resolved: blhost never runs.
+    libusbInitResult = LIBUSB_ERROR_OTHER;
+    manager.performRecovery("usb", "/tmp/no-udev.sb3");
+    EXPECT_TRUE(popenCommands.empty());
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_EQ(errors.back().errorCode, deviceRecoveryFailed);
+
+    // blhost targets the sysfs bus:devnum. libusb cannot be reopened after
+    // the image is written, so the recovery fails.
+    libusbInitResult = LIBUSB_SUCCESS;
+    sysfs.setIdentity("3", "7", "0955", "cf1d");
+    pushUnmatchedUsbScan();
+    popenExpectations.push_back({.needle = "get-property security-state",
+                                 .output = "Response status = Success\n"});
+    popenExpectations.push_back(
+        {.needle = "receive-sb-file",
+         .output = "Response status = Success\n",
+         .onOpen = [] { libusbInitResult = LIBUSB_ERROR_OTHER; }});
+    manager.performRecovery("usb", "/tmp/no-udev.sb3");
+    ASSERT_EQ(popenCommands.size(), 2u);
+    EXPECT_NE(popenCommands[0].find("--usb-bus-device 3:7 --usb-id 0955:CF1D"),
+              std::string::npos);
+    ASSERT_EQ(errors.size(), 2u);
+    EXPECT_EQ(errors.back().errorCode, deviceRecoveryFailed);
+
+    // libusb reopens after the write, then the rescan does not find the
+    // functional device.
+    libusbInitResult = LIBUSB_SUCCESS;
+    pushUnmatchedUsbScan();
+    popenExpectations.push_back({.needle = "get-property security-state",
+                                 .output = "Response status = Success\n"});
+    popenExpectations.push_back(
+        {.needle = "receive-sb-file", .output = "Response status = Success\n"});
+    pushUnmatchedUsbScan();
+    manager.performRecovery("usb", "/tmp/no-udev.sb3");
+    EXPECT_EQ(popenCommands.size(), 4u);
+    EXPECT_TRUE(deviceListResponses.empty());
+    ASSERT_EQ(errors.size(), 3u);
+    EXPECT_EQ(errors.back().errorCode, deviceRecoveryFailed);
+}
+
+TEST_F(MCURecoveryNoUdevTest, BlhostOutcomesWithTheSysfsTarget)
+{
+    using mcu_recovery_manager::MCURecoveryManager;
+
+    FakeSysfsUsbPort sysfs("outcomes");
+    sysfs.setIdentity("4", "9", "0955", "cf1e");
+    test::mcu_fake_gpio::lines["RESET_NO_UDEV"] = {};
+    test::mcu_fake_gpio::lines["REC_NO_UDEV"] = {};
+
+    // What the rescan after the write finds on the functional port 4-1.
+    FakeUsbDeviceInfo healthyInfo;
+    healthyInfo.product = 0x7410;
+    healthyInfo.bus = 4;
+    healthyInfo.address = 2;
+    healthyInfo.ports = {1};
+    auto* healthyDevice = makeUsbDevice(1, healthyInfo);
+    FakeUsbDeviceInfo unhealthyInfo = healthyInfo;
+    unhealthyInfo.product = 0x7401;
+    unhealthyInfo.interfaceClasses = {LIBUSB_CLASS_HID};
+    auto* unhealthyDevice = makeUsbDevice(2, unhealthyInfo);
+
+    MCURecoveryManager manager;
+    manager.mcuMap = {{"usb", makeNoUdevUsbInfo(sysfs.port())}};
+    manager.messageRegistry = std::make_unique<MessageRegistry>();
+    manager.mcuDevices["usb"].resetPin = gpiod::find_line("RESET_NO_UDEV");
+    manager.mcuDevices["usb"].recoveryPin = gpiod::find_line("REC_NO_UDEV");
+    const auto& errors = test::mcu_fake_registry::resourceErrors;
+    const std::string success = "Response status = Success\n";
+    const std::string unsecure = "Response status = Success\nUNSECURE\n";
+    const auto movesToFunctionalPort = [&manager]() {
+        manager.mcuMap["usb"].usbPort = "4-1";
+    };
+
+    // Each recovery starts in ISP at the sysfs port; its refresh rescan
+    // does not match the absolute port.
+    auto recover = [&](std::vector<libusb_device*> afterWrite = {}) {
+        manager.mcuMap["usb"].usbPort = sysfs.port();
+        test::mcu_fake_registry::reset();
+        pushUnmatchedUsbScan();
+        if (!afterWrite.empty())
+        {
+            pushDeviceListResponse(static_cast<ssize_t>(afterWrite.size()),
+                                   afterWrite);
+        }
+        manager.performRecovery("usb", "/tmp/no-udev.sb3");
+        EXPECT_TRUE(popenExpectations.empty());
+        EXPECT_TRUE(deviceListResponses.empty());
+    };
+    auto errorCode = [&](size_t index) {
+        return index < errors.size() ? errors[index].errorCode : ErrorCode{0};
+    };
+    const auto code = [](MCURecoveryErrorCode value) {
+        return static_cast<ErrorCode>(value);
+    };
+
+    popenExpectations.push_back(
+        {.needle = "get-property security-state", .output = "Failure\n"});
+    recover();
+    EXPECT_EQ(errorCode(0), code(MCURecoveryErrorCode::GetSecurityStateFailed));
+    EXPECT_EQ(errorCode(1), deviceRecoveryFailed);
+
+    popenExpectations.push_back(
+        {.needle = "get-property security-state", .output = unsecure});
+    popenExpectations.push_back(
+        {.needle = "read-memory 0x1004160 48", .output = "Failure\n"});
+    recover();
+    EXPECT_EQ(errorCode(0), code(MCURecoveryErrorCode::NotSecureDevice));
+    EXPECT_EQ(errorCode(1), code(MCURecoveryErrorCode::ReadMemoryFailed));
+    EXPECT_EQ(errorCode(2), deviceRecoveryFailed);
+
+    popenExpectations.push_back(
+        {.needle = "get-property security-state", .output = unsecure});
+    popenExpectations.push_back(
+        {.needle = "read-memory 0x1004160 48",
+         .output = "Response status = Success\n"
+                   "Successful response to command 'read-memory'\n"
+                   "00000000000000000000000000000000\n"
+                   "00000000000000000000000000000000\n"
+                   "00000000000000000000000000000000\n"});
+    recover();
+    EXPECT_EQ(errorCode(0), code(MCURecoveryErrorCode::NotSecureDevice));
+    EXPECT_EQ(errorCode(1), code(MCURecoveryErrorCode::EncryptKeyNotSet));
+    EXPECT_EQ(errorCode(2), deviceRecoveryFailed);
+
+    popenExpectations.push_back(
+        {.needle = "get-property security-state", .output = success});
+    popenExpectations.push_back(
+        {.needle = "receive-sb-file", .output = "Failure\n"});
+    recover();
+    EXPECT_EQ(errorCode(0), code(MCURecoveryErrorCode::CmdExecFailed));
+    EXPECT_EQ(errorCode(1), deviceRecoveryFailed);
+
+    popenExpectations.push_back({.needle = "get-property security-state",
+                                 .output = "",
+                                 .failOpen = true});
+    recover();
+    EXPECT_EQ(errorCode(0), code(MCURecoveryErrorCode::CmdExecFailed));
+
+    // After the write the MCU comes back on its functional port, healthy.
+    popenExpectations.push_back(
+        {.needle = "get-property security-state", .output = success});
+    popenExpectations.push_back({.needle = "receive-sb-file",
+                                 .output = success,
+                                 .onOpen = movesToFunctionalPort});
+    recover({healthyDevice});
+    EXPECT_TRUE(errors.empty());
+    EXPECT_TRUE(manager.isHealthy("usb"));
+
+    // ... or with an unexpected PID and no MCTP interface.
+    popenExpectations.push_back(
+        {.needle = "get-property security-state", .output = success});
+    popenExpectations.push_back({.needle = "receive-sb-file",
+                                 .output = success,
+                                 .onOpen = movesToFunctionalPort});
+    recover({unhealthyDevice});
+    EXPECT_EQ(errorCode(0), deviceRecoveryFailed);
+    EXPECT_FALSE(manager.isHealthy("usb"));
+}
+#endif // USB_RECOVERY_COMPAT_NO_UDEV
