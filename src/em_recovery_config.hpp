@@ -50,11 +50,6 @@ constexpr auto transportIface =
     "xyz.openbmc_project.Configuration.NvDevice.Transport";
 constexpr auto deviceRecoveryIface =
     "xyz.openbmc_project.Configuration.NvDevice.Recovery";
-/** entity-manager only publishes the Name, Probe and Type of the Platform
- *  record itself, so the values NCM needs (name prefix, platform flags) are
- *  carried by one GlobalRecoveryConfig record in PlatformExposes. */
-constexpr auto platformIface =
-    "xyz.openbmc_project.Configuration.GlobalRecoveryConfig";
 constexpr auto recoveryMarkerIface =
     "xyz.openbmc_project.Inventory.Item.Recovery_Config";
 constexpr auto usbDfuIface = "xyz.openbmc_project.Configuration.USBDFURecovery";
@@ -178,7 +173,7 @@ inline bool completesSpi(const InterfaceMap& ifaces)
 
 inline bool isConfigObject(const InterfaceMap& ifaces)
 {
-    if (ifaces.contains(platformIface) || ifaces.contains(usbDfuIface))
+    if (ifaces.contains(usbDfuIface))
     {
         return true;
     }
@@ -249,23 +244,7 @@ inline std::string pathSegment(std::string name)
     return name;
 }
 
-struct Platform
-{
-    std::string path;
-    std::string prefix;
-    bool ocpInfoRom = true;
-    bool ocpSmaEid = true;
-};
-
 using DeviceMap = std::map<std::string, const InterfaceMap*>;
-
-/** @brief Device name without the platform name prefix ("HGX_GPU_0" -> "GPU_0")
- */
-inline std::string baseName(const Platform& platform, const std::string& name)
-{
-    const auto& p = platform.prefix;
-    return (!p.empty() && name.starts_with(p)) ? name.substr(p.size()) : name;
-}
 
 inline void copy(PropertyMap& to, const char* toKey, const InterfaceMap& from,
                  const char* iface, const char* fromKey)
@@ -285,28 +264,31 @@ inline void copy(PropertyMap& to, const char* toKey, const InterfaceMap& from,
 inline std::optional<PropertyMap>
     makeRecord(const std::string& method, const std::string& name,
                const std::string& kind, const InterfaceMap& dev,
-               const DeviceMap& devices, const Platform& platform,
-               std::string& legacyType)
+               const DeviceMap& devices, std::string& legacyType)
 {
-    const std::string& p = platform.prefix;
-    const std::string base = baseName(platform, name);
     const auto eid = prop(dev, nvDeviceIface, "EID");
     const std::string port = str(prop(dev, transportIface, "Port"));
     const std::string hub = str(prop(dev, transportIface, "RootHubPath"));
     const std::string swName =
         str(prop(dev, deviceRecoveryIface, "SoftwareName"));
+    // A device names what it exposes in its Recovery block; without a name
+    // the object is named after the device.
+    const auto named = [&](const char* key, const std::string& dflt) {
+        const std::string v = str(prop(dev, deviceRecoveryIface, key));
+        return v.empty() ? dflt : v;
+    };
     PropertyMap r;
-    r["Name"] = swName.empty() ? p + "FW_" + base : swName;
+    r["Name"] = swName.empty() ? "FW_" + name : swName;
 
     if (method == "OCP")
     {
         legacyType = "OCPRecovery";
-        r["ChassisName"] = p + "IRoT_" + base;
+        r["ChassisName"] = named("ChassisName", "IRoT_" + name);
         r["ForceRecoveryChassisObject"] = name;
         r["hasChassisPowerSource"] = true;
-        if (platform.ocpInfoRom)
+        if (flag(prop(dev, deviceRecoveryIface, "OcpInfoRom"), true))
         {
-            r["InfoRomName"] = p + "InfoROM_" + base;
+            r["InfoRomName"] = named("InfoRomName", "InfoROM_" + name);
         }
         if (auto bp = prop(dev, transportIface, "BridgePort"))
         {
@@ -323,7 +305,7 @@ inline std::optional<PropertyMap>
         copy(r, "I2CAddress", dev, deviceRecoveryIface,
              "OcpRecoveryI2cAddress");
         copy(r, "I2CBus", dev, deviceRecoveryIface, "OcpRecoveryI2cBus");
-        if (platform.ocpSmaEid)
+        if (flag(prop(dev, deviceRecoveryIface, "OcpSmaEid"), true))
         {
             copy(r, "SMAEID", dev, transportIface, "BridgeEID");
         }
@@ -332,8 +314,8 @@ inline std::optional<PropertyMap>
     {
         const std::string inst = str(prop(dev, nvDeviceIface, "Instance"));
         legacyType = "USBRCMRecovery";
-        r["FMCComponentName"] = p + "SBIOS_FMC_" + inst;
-        r["FWSComponentName"] = p + "SBIOS_FW_" + inst;
+        r["FMCComponentName"] = named("FMCComponentName", "SBIOS_FMC_" + inst);
+        r["FWSComponentName"] = named("FWSComponentName", "SBIOS_FW_" + inst);
         r["USBPort"] = usbBusResolver(hub) + "-" + port;
         r["hasChassisPowerSource"] = true;
     }
@@ -347,8 +329,9 @@ inline std::optional<PropertyMap>
         const bool onIRoT =
             method == "ConnectX" &&
             flag(prop(dev, deviceRecoveryIface, "ForceRecoveryOnIRoT"), false);
-        r["ChassisName"] = p + "IRoT_" + base;
-        r["ForceRecoveryChassisObject"] = onIRoT ? p + "IRoT_" + base : name;
+        const std::string chassis = named("ChassisName", "IRoT_" + name);
+        r["ChassisName"] = chassis;
+        r["ForceRecoveryChassisObject"] = onIRoT ? chassis : name;
         r["hasChassisPowerSource"] = true;
         copy(r, "EID", dev, nvDeviceIface, "EID");
         copy(r, "SMAEID", dev, transportIface, "BridgeEID");
@@ -520,28 +503,18 @@ inline void deriveCpuForceRecovery(const ObjectValueTree& objects,
  * @brief Adds the records a platform topology implies to a snapshot of
  *        entity-manager's objects.
  *
- * Idempotent, and a no-op for a snapshot without a platform topology.
+ * Idempotent, and a no-op for a snapshot without a recovery device.
  */
 inline void expand(ObjectValueTree& objects)
 {
-    Platform platform;
     DeviceMap devices;
     bool haveTopology = false;
     for (const auto& [path, ifaces] : objects)
     {
-        if (ifaces.contains(platformIface))
-        {
-            platform.path = path.str.substr(0, path.str.rfind('/'));
-            platform.prefix = str(prop(ifaces, platformIface, "NamePrefix"));
-            platform.ocpInfoRom =
-                flag(prop(ifaces, platformIface, "OcpInfoRom"), true);
-            platform.ocpSmaEid =
-                flag(prop(ifaces, platformIface, "OcpSmaEid"), true);
-            haveTopology = true;
-        }
         if (ifaces.contains(nvDeviceIface))
         {
             devices[str(prop(ifaces, nvDeviceIface, "Name"))] = &ifaces;
+            haveTopology = haveTopology || ifaces.contains(deviceRecoveryIface);
         }
     }
     // SPI records name their device (Device, MuxGpio); the readers want the
@@ -621,8 +594,8 @@ inline void expand(ObjectValueTree& objects)
             continue;
         }
         std::string legacyType;
-        auto record = makeRecord(method, name, kind, ifaces, devices, platform,
-                                 legacyType);
+        auto record =
+            makeRecord(method, name, kind, ifaces, devices, legacyType);
         if (!record)
         {
             continue;

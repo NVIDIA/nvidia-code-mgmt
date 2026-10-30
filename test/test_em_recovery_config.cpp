@@ -8,8 +8,6 @@ namespace rec = nvidia::software::updater::em_recovery;
 namespace
 {
 constexpr auto plat = "/xyz/openbmc_project/inventory/system/platform/P";
-constexpr auto policy =
-    "/xyz/openbmc_project/inventory/system/platform/P/GlobalRecoveryConfig";
 const std::string nv = rec::nvDeviceIface;
 const std::string tr = rec::transportIface;
 const std::string rc = rec::deviceRecoveryIface;
@@ -20,8 +18,6 @@ class EmRecoveryConfigTest : public ::testing::Test
     void SetUp() override
     {
         rec::usbBusResolver = [](const std::string&) { return "1"; };
-        objects[policy] = {
-            {rec::platformIface, {{"NamePrefix", std::string("")}}}};
     }
 
     void device(const std::string& name, const std::string& kind, uint64_t eid,
@@ -140,21 +136,34 @@ TEST_F(EmRecoveryConfigTest, ConnectXForcesTheDeviceUnlessItNamesTheIRoT)
               "IRoT_CX_1");
 }
 
-TEST_F(EmRecoveryConfigTest, PlatformPolicyAndPrefix)
+TEST_F(EmRecoveryConfigTest, ExplicitNamesReplaceAPlatformPrefix)
 {
-    objects[policy][rec::platformIface]["NamePrefix"] = std::string("HGX_");
-    objects[policy][rec::platformIface].merge(
-        PropertyMap{{"OcpInfoRom", false}, {"OcpSmaEid", false}});
-    device(
-        "HGX_ConnectX_0", "cx9_io", 17,
-        {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(16)}},
-        {{"RecoveryType", std::string("ConnectX")}, {"I2CBus", uint64_t(110)}});
+    device("HGX_ConnectX_0", "cx9_io", 17,
+           {{"Medium", std::string("bridge")}, {"BridgeEID", uint64_t(16)}},
+           {{"RecoveryType", std::string("ConnectX")},
+            {"SoftwareName", std::string("HGX_FW_ConnectX_0")},
+            {"ChassisName", std::string("HGX_IRoT_ConnectX_0")},
+            {"I2CBus", uint64_t(110)}});
     device("HGX_GPU_0", "gpu", 49,
            {{"Medium", std::string("bridge")},
             {"Bridge", std::string("HGX_SXM_SMA_0")},
             {"BridgeEID", uint64_t(48)},
             {"BridgePort", std::string("1.2.1")}},
            {{"RecoveryType", std::string("OCP")},
+            {"SoftwareName", std::string("HGX_FW_GPU_0")},
+            {"ChassisName", std::string("HGX_IRoT_GPU_0")},
+            {"OcpInfoRom", false},
+            {"OcpSmaEid", false},
+            {"OcpRecoveryI2cAddress", uint64_t(105)}});
+    device("HGX_GPU_1", "gpu", 50,
+           {{"Medium", std::string("bridge")},
+            {"Bridge", std::string("HGX_SXM_SMA_0")},
+            {"BridgeEID", uint64_t(48)},
+            {"BridgePort", std::string("1.2.2")}},
+           {{"RecoveryType", std::string("OCP")},
+            {"SoftwareName", std::string("HGX_FW_GPU_1")},
+            {"ChassisName", std::string("HGX_IRoT_GPU_1")},
+            {"InfoRomName", std::string("HGX_InfoROM_GPU_1")},
             {"OcpRecoveryI2cAddress", uint64_t(105)}});
     auto* cx = record("ConnectXRecovery", "HGX_FW_ConnectX_0");
     ASSERT_NE(cx, nullptr);
@@ -164,9 +173,26 @@ TEST_F(EmRecoveryConfigTest, PlatformPolicyAndPrefix)
               "HGX_ConnectX_0");
     auto* gpu = record("OCPRecovery", "HGX_FW_GPU_0");
     ASSERT_NE(gpu, nullptr);
+    EXPECT_EQ(std::get<std::string>(gpu->at("ChassisName")), "HGX_IRoT_GPU_0");
     EXPECT_FALSE(gpu->contains("InfoRomName"));
     EXPECT_FALSE(gpu->contains("SMAEID"));
     EXPECT_EQ(std::get<std::string>(gpu->at("USBPort")), "1-1.2.1");
+    auto* gpu1 = record("OCPRecovery", "HGX_FW_GPU_1");
+    ASSERT_NE(gpu1, nullptr);
+    EXPECT_EQ(std::get<std::string>(gpu1->at("InfoRomName")),
+              "HGX_InfoROM_GPU_1");
+    EXPECT_EQ(std::get<uint64_t>(gpu1->at("SMAEID")), 48U);
+}
+
+TEST_F(EmRecoveryConfigTest, UsbRcmAndOcpNamesDefaultToTheDevice)
+{
+    device("CPU_0", "cpu", 14,
+           {{"Medium", std::string("usb")}, {"Port", std::string("1.1.1.2")}},
+           {{"RecoveryType", std::string("USBRCM")}}, true, 1);
+    auto* c = record("USBRCMRecovery", "FW_CPU_0");
+    ASSERT_NE(c, nullptr);
+    EXPECT_EQ(std::get<std::string>(c->at("FMCComponentName")), "SBIOS_FMC_1");
+    EXPECT_EQ(std::get<std::string>(c->at("FWSComponentName")), "SBIOS_FW_1");
 }
 
 TEST_F(EmRecoveryConfigTest, RecoveryTypeAloneMakesARecoveryDevice)
@@ -318,8 +344,8 @@ TEST(EmRecoveryConfigSignal, TriggersOnTopologyObjectsOnly)
     EXPECT_TRUE(rec::isConfigObject(withRecovery));
     InterfaceMap erotOnly{{nv, {{"Kind", std::string("erot")}}}};
     EXPECT_FALSE(rec::isConfigObject(erotOnly));
-    InterfaceMap platformObj{{rec::platformIface, {}}};
-    EXPECT_TRUE(rec::isConfigObject(platformObj));
+    InterfaceMap dfu{{rec::usbDfuIface, {}}};
+    EXPECT_TRUE(rec::isConfigObject(dfu));
 }
 
 namespace
@@ -338,9 +364,8 @@ InterfaceMap spiRecord()
 }
 } // namespace
 
-TEST_F(EmRecoveryConfigTest, SpiIsTranslatedWithoutThePolicyRecord)
+TEST_F(EmRecoveryConfigTest, SpiIsTranslatedWithoutARecoveryDevice)
 {
-    objects.erase(policy);
     device("SMA_0", "cx_sma", 60,
            {{"Medium", std::string("usb")},
             {"Port", std::string("1.1.1.1")},
