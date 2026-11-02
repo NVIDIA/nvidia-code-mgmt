@@ -29,13 +29,16 @@
 
 #include <phosphor-logging/elog.hpp>
 #include <phosphor-logging/log.hpp>
+#include <sdbusplus/bus/match.hpp>
 
 #include <algorithm>
 #include <cstring>
 #include <experimental/any>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <string>
+#include <utility>
 
 namespace nvidia
 {
@@ -381,6 +384,95 @@ TargetFilter BaseItemUpdater::applyTargetFilters(
         }
     }
     return targetFilter;
+}
+
+namespace
+{
+constexpr auto emService = "xyz.openbmc_project.EntityManager";
+constexpr auto emObjManager = "/xyz/openbmc_project/inventory";
+
+// updater name -> RecoveryPackages property, model of the package
+const std::map<std::string, std::pair<std::string, std::string>>
+    recoveryPackages{
+        {"GlacierCrisisRecovery", {"GlacierPackageUUID", "GlacierRecovery"}},
+        {"ConnectXRecovery", {"ConnectXPackageUUID", "ConnectXRecovery"}},
+        {"NVSwitchRecovery", {"NVSwitchPackageUUID", "NVSwitchRecovery"}},
+        {"NVLinkManagementNICRecovery",
+         {"NVLinkManagementNICPackageUUID", "NVLinkManagementNICRecovery"}},
+        {"USBDFURecovery", {"USBDFUPackageUUID", "USBDFURecovery"}},
+    };
+} // namespace
+
+std::string recoveryPackageModel(const std::string& updaterName,
+                                 const ObjectValueTree& objects)
+{
+    auto package = recoveryPackages.find(updaterName);
+    if (package == recoveryPackages.end())
+    {
+        return {};
+    }
+    const auto& [property, model] = package->second;
+    for (const auto& [_, interfaces] : objects)
+    {
+        auto iface = interfaces.find(
+            "xyz.openbmc_project.Configuration.RecoveryPackages");
+        if (iface == interfaces.end())
+        {
+            continue;
+        }
+        auto value = iface->second.find(property);
+        if (value == iface->second.end())
+        {
+            continue;
+        }
+        const auto* uuid = std::get_if<std::string>(&value->second);
+        if (uuid != nullptr && !uuid->empty())
+        {
+            return "Nvidia:" + model + ":" + *uuid;
+        }
+    }
+    return {};
+}
+
+void BaseItemUpdater::waitForRecoveryPackage()
+{
+    if (!deviceIds.empty() || !recoveryPackages.contains(getName()))
+    {
+        return;
+    }
+    std::string model;
+    sdbusplus::bus::match_t added(
+        bus, sdbusplus::bus::match::rules::interfacesAdded(emObjManager),
+        [this, &model](sdbusplus::message_t& msg) {
+            try
+            {
+                sdbusplus::object_path path;
+                InterfaceMap interfaces;
+                msg.read(path, interfaces);
+                if (model.empty())
+                {
+                    model =
+                        recoveryPackageModel(getName(), {{path, interfaces}});
+                }
+            }
+            catch (const std::exception&)
+            {
+                // Not a well-formed InterfacesAdded signal
+            }
+        });
+    model = recoveryPackageModel(getName(),
+                                 getManagedObjects(emService, emObjManager));
+    if (model.empty())
+    {
+        lg2::info("Waiting for the {NAME} package in Entity Manager", "NAME",
+                  getName());
+    }
+    while (model.empty())
+    {
+        bus.wait();
+        bus.process_discard();
+    }
+    addSupportedModels(model);
 }
 } // namespace updater
 } // namespace software

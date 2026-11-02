@@ -12,6 +12,7 @@
 #include <systemd/sd-bus.h>
 
 #include <any>
+#include <filesystem>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -175,9 +176,10 @@ OwnedMessage makeJobRemovedMessage(sdbusplus::bus_t& bus, const char* path,
 class RealBusUpdater : public BaseItemUpdater
 {
   public:
-    RealBusUpdater(sdbusplus::bus_t& bus) :
-        BaseItemUpdater(bus, "NVIDIA:Model-A:uuid-1", ITEM_IFACE, "Updater",
-                        "bus", "svc@.service", false, inventoryService)
+    RealBusUpdater(sdbusplus::bus_t& bus, const std::string& supportedDevices =
+                                              "NVIDIA:Model-A:uuid-1") :
+        BaseItemUpdater(bus, supportedDevices, ITEM_IFACE, "Updater", "bus",
+                        "svc@.service", false, inventoryService)
     {}
 
     using BaseItemUpdater::getDbusService;
@@ -263,6 +265,17 @@ class AssetRealBusUpdater : public RealBusUpdater
     bool inventorySupported() override
     {
         return true;
+    }
+};
+
+class GlacierRealBusUpdater : public RealBusUpdater
+{
+  public:
+    using RealBusUpdater::RealBusUpdater;
+
+    std::string getName() const override
+    {
+        return "GlacierCrisisRecovery";
     }
 };
 
@@ -505,6 +518,19 @@ TEST(DBUSUtilsRealBus,
         "uuid-1", "/tmp/image.bin", Version::Status::Ready);
 
     EXPECT_TRUE(version->isCompatible(emptyManufacturerPath));
+}
+
+TEST(DBUSUtilsRealBus, RecoveryPackageReadsThePublishedRecord)
+{
+    auto bus = sdbusplus::bus::new_default();
+    GlacierRealBusUpdater updater(bus, "");
+
+    updater.waitForRecoveryPackage();
+
+    auto paths = updater.getPathsToMonitor();
+    ASSERT_EQ(paths.size(), 1u);
+    EXPECT_EQ(paths[0], std::filesystem::path(IMG_UPLOAD_DIR_BASE) /
+                            "GlacierCrisisRecovery" / "glacier-uuid");
 }
 
 } // namespace

@@ -39,6 +39,8 @@ SYSTEMD_IFACE = "org.freedesktop.systemd1.Manager"
 SOFTWARE_PATH = "/xyz/openbmc_project/software/other/test"
 TEST_SERVICE = "xyz.openbmc_project.TestService"
 MANAGER_PATH = "/test/manager"
+ENTITY_MANAGER = "xyz.openbmc_project.EntityManager"
+EM_INVENTORY_PATH = "/xyz/openbmc_project/inventory"
 
 
 class MapperObject(dbus.service.Object):
@@ -137,18 +139,15 @@ class SystemdObject(dbus.service.Object):
 
 
 class ManagerObject(dbus.service.Object):
+    def __init__(self, bus, path, managed):
+        super().__init__(bus, path)
+        self.managed = managed
+
     @dbus.service.method(
         "org.freedesktop.DBus.ObjectManager", out_signature="a{oa{sa{sv}}}"
     )
     def GetManagedObjects(self):
-        return {
-            f"{MANAGER_PATH}/device0": {
-                "test.Interface": {
-                    "Enabled": dbus.Boolean(True),
-                    "Name": dbus.String("device0"),
-                }
-            }
-        }
+        return self.managed
 
 
 def start_bus():
@@ -182,6 +181,7 @@ def serve(address: str) -> int:
             LOGGING_SERVICE,
             SYSTEMD_SERVICE,
             TEST_SERVICE,
+            ENTITY_MANAGER,
         ]
     ]
     objects = [
@@ -193,7 +193,29 @@ def serve(address: str) -> int:
         ChassisObject(bus, CHASSIS_PATH),
         LoggingObject(bus, LOGGING_PATH),
         SystemdObject(bus, SYSTEMD_PATH),
-        ManagerObject(bus, MANAGER_PATH),
+        ManagerObject(
+            bus,
+            MANAGER_PATH,
+            {
+                f"{MANAGER_PATH}/device0": {
+                    "test.Interface": {
+                        "Enabled": dbus.Boolean(True),
+                        "Name": dbus.String("device0"),
+                    }
+                }
+            },
+        ),
+        ManagerObject(
+            bus,
+            EM_INVENTORY_PATH,
+            {
+                f"{EM_INVENTORY_PATH}/system/board/B/RecoveryPackages": {
+                    "xyz.openbmc_project.Configuration.RecoveryPackages": {
+                        "GlacierPackageUUID": dbus.String("glacier-uuid"),
+                    }
+                }
+            },
+        ),
     ]
     loop = GLib.MainLoop()
 

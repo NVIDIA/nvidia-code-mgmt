@@ -1021,3 +1021,160 @@ TEST_F(BaseUpdaterControllerTest, DebugTokenHelpersFormatEscapedArguments)
         installUpdater.getServiceArgs("", "/tmp/image.bin", "1/2", filter),
         "\\x201\\x201-2\\x20-tmp-image.bin\\x20");
 }
+
+TEST(RecoveryPackageModelTest, BuildsTheModelOfEachRecoveryUpdater)
+{
+    const std::string iface =
+        "xyz.openbmc_project.Configuration.RecoveryPackages";
+    ObjectValueTree objects{
+        {sdbusplus::object_path("/xyz/openbmc_project/inventory/system/board/"
+                                "B/Other"),
+         {{"xyz.openbmc_project.Configuration.Other",
+           {{"GlacierPackageUUID", std::string("0000")}}}}},
+        {sdbusplus::object_path("/xyz/openbmc_project/inventory/system/board/"
+                                "B/RecoveryPackages"),
+         {{iface,
+           {{"GlacierPackageUUID", std::string("G1")},
+            {"ConnectXPackageUUID", std::string("C1")},
+            {"NVSwitchPackageUUID", std::string("S1")},
+            {"NVLinkManagementNICPackageUUID", std::string("N1")},
+            {"USBDFUPackageUUID", std::string("U1")}}}}}};
+
+    EXPECT_EQ(recoveryPackageModel("GlacierCrisisRecovery", objects),
+              "Nvidia:GlacierRecovery:G1");
+    EXPECT_EQ(recoveryPackageModel("ConnectXRecovery", objects),
+              "Nvidia:ConnectXRecovery:C1");
+    EXPECT_EQ(recoveryPackageModel("NVSwitchRecovery", objects),
+              "Nvidia:NVSwitchRecovery:S1");
+    EXPECT_EQ(recoveryPackageModel("NVLinkManagementNICRecovery", objects),
+              "Nvidia:NVLinkManagementNICRecovery:N1");
+    EXPECT_EQ(recoveryPackageModel("USBDFURecovery", objects),
+              "Nvidia:USBDFURecovery:U1");
+    EXPECT_EQ(recoveryPackageModel("MCURecovery", objects), "");
+}
+
+TEST(RecoveryPackageModelTest, IsEmptyWithoutThePackageUUID)
+{
+    ObjectValueTree objects{
+        {sdbusplus::object_path("/xyz/openbmc_project/inventory/system/board/"
+                                "B/RecoveryPackages"),
+         {{"xyz.openbmc_project.Configuration.RecoveryPackages",
+           {{"GlacierPackageUUID", std::string("")},
+            {"ConnectXPackageUUID", uint64_t{1}}}}}}};
+
+    EXPECT_EQ(recoveryPackageModel("GlacierCrisisRecovery", objects), "");
+    EXPECT_EQ(recoveryPackageModel("ConnectXRecovery", objects), "");
+    EXPECT_EQ(recoveryPackageModel("USBDFURecovery", objects), "");
+    EXPECT_EQ(recoveryPackageModel("GlacierCrisisRecovery", {}), "");
+}
+
+namespace
+{
+
+class RecoveryUpdater : public ProcessCaptureUpdater
+{
+  public:
+    RecoveryUpdater(sdbusplus::bus_t& bus, const std::string& name,
+                    const std::string& supportedDevices) :
+        ProcessCaptureUpdater(bus, supportedDevices), name(name)
+    {}
+
+    std::string getName() const override
+    {
+        return name;
+    }
+
+    std::string name;
+};
+
+const std::string recoveryPackagesIface =
+    "xyz.openbmc_project.Configuration.RecoveryPackages";
+
+void sendInterfacesAdded(sd_bus_message_handler_t callback, void* userdata,
+                         const InterfaceMap& interfaces)
+{
+    auto realBus = sdbusplus::bus::new_default();
+    auto message = makeSignalMessage(
+        realBus, "/xyz/openbmc_project/inventory",
+        sdbusplus::object_path(
+            "/xyz/openbmc_project/inventory/system/board/B/RecoveryPackages"),
+        interfaces);
+    ASSERT_NE(callback, nullptr);
+    callback(message.msg.get(), userdata, nullptr);
+}
+
+} // namespace
+
+TEST_F(BaseUpdaterControllerTest, RecoveryPackageWaitSkipsBuildTimeModel)
+{
+    RecoveryUpdater updater(bus, "ConnectXRecovery",
+                            "Nvidia:ConnectXRecovery:build-uuid");
+    EXPECT_CALL(sdbusMock, sd_bus_add_match(testing::_, testing::_, testing::_,
+                                            testing::_, testing::_))
+        .Times(0);
+
+    updater.waitForRecoveryPackage();
+
+    auto paths = updater.getPathsToMonitor();
+    ASSERT_EQ(paths.size(), 1u);
+    EXPECT_EQ(paths[0].filename(), "build-uuid");
+}
+
+TEST_F(BaseUpdaterControllerTest, RecoveryPackageWaitSkipsOtherUpdaters)
+{
+    RecoveryUpdater updater(bus, "MCURecovery", "");
+    EXPECT_CALL(sdbusMock, sd_bus_add_match(testing::_, testing::_, testing::_,
+                                            testing::_, testing::_))
+        .Times(0);
+
+    updater.waitForRecoveryPackage();
+
+    EXPECT_THROW(static_cast<void>(updater.getPathsToMonitor()),
+                 std::runtime_error);
+}
+
+TEST_F(BaseUpdaterControllerTest, RecoveryPackageWaitTakesTheFirstRecord)
+{
+    RecoveryUpdater updater(bus, "ConnectXRecovery", "");
+    sd_bus_message_handler_t callback = nullptr;
+    void* userdata = nullptr;
+    EXPECT_CALL(sdbusMock, sd_bus_add_match(testing::_, testing::_, testing::_,
+                                            testing::_, testing::_))
+        .WillOnce([&](sd_bus*, sd_bus_slot** slot, const char*,
+                      sd_bus_message_handler_t cb, void* data) {
+            callback = cb;
+            userdata = data;
+            *slot = reinterpret_cast<sd_bus_slot*>(0xfeed);
+            return 0;
+        });
+    EXPECT_CALL(sdbusMock, sd_bus_wait(testing::_, testing::_))
+        .WillOnce([&](sd_bus*, uint64_t) {
+            // A malformed signal and an unrelated record leave it waiting
+            auto realBus = sdbusplus::bus::new_default();
+            auto bad = makeSignalMessage(realBus, "/", std::string("bad"));
+            callback(bad.msg.get(), userdata, nullptr);
+            sendInterfacesAdded(
+                callback, userdata,
+                {{"xyz.openbmc_project.Configuration.Other",
+                  {{"ConnectXPackageUUID", std::string("other")}}}});
+            return 0;
+        })
+        .WillOnce([&](sd_bus*, uint64_t) {
+            sendInterfacesAdded(
+                callback, userdata,
+                {{recoveryPackagesIface,
+                  {{"ConnectXPackageUUID", std::string("C1")}}}});
+            sendInterfacesAdded(
+                callback, userdata,
+                {{recoveryPackagesIface,
+                  {{"ConnectXPackageUUID", std::string("C2")}}}});
+            return 0;
+        });
+
+    updater.waitForRecoveryPackage();
+
+    auto paths = updater.getPathsToMonitor();
+    ASSERT_EQ(paths.size(), 1u);
+    EXPECT_EQ(paths[0], std::filesystem::path(IMG_UPLOAD_DIR_BASE) /
+                            "ConnectXRecovery" / "C1");
+}

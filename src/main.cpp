@@ -383,6 +383,7 @@ try
                         entry("ERROR=%s", e.what()));
         return -1;
     }
+    itemUpdater->waitForRecoveryPackage();
     abstractController = std::make_unique<BaseController>(itemUpdater);
 
     if (abstractController->processExistingImages())

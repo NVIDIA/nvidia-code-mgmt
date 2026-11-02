@@ -39,6 +39,17 @@ namespace Server = sdbusplus::xyz::openbmc_project::Software::server;
 using NSActivation = Server::Activation;
 
 /**
+ * @brief Supported model of a recovery updater from the RecoveryPackages
+ *        record in Entity Manager objects
+ *
+ * @param updaterName getName() of the updater
+ * @param objects Entity Manager objects
+ * @return Nvidia:<Model>:<UUID>, empty without the updater's package UUID
+ */
+std::string recoveryPackageModel(const std::string& updaterName,
+                                 const ObjectValueTree& objects);
+
+/**
  * This an ADT for Item Updaters
  *  1) Abstracts underlying device specific implementations
  *  2) Performs Updates
@@ -68,25 +79,37 @@ class BaseItemUpdater :
         inventoryIface(inventoryIface), updateTogether(updateTogether),
         inventoryBusName(inventoryBusName), publicKey("")
     {
-        // supportedDevices
+        addSupportedModels(supportedDevices);
+    }
+
+    /**
+     * @brief Adds the supported models
+     *
+     * @param supportedDevices <Manufacture>:<Model>:<UUID> entries split by '|'
+     */
+    void addSupportedModels(const std::string& supportedDevices)
+    {
         std::vector<std::string> supportedModels;
-        std::vector<std::filesystem::path> pathsToMonitor;
         boost::split(supportedModels, supportedDevices, boost::is_any_of("|"));
-        if (supportedModels.size())
+        for (const std::string& sm : supportedModels)
         {
-            for (const std::string& sm : supportedModels)
+            std::vector<std::string> manufactureModel;
+            boost::split(manufactureModel, sm, boost::is_any_of(":"));
+            /* expected string format <Manufacture>:<Model>:<UUID> */
+            if (manufactureModel.size() == 3)
             {
-                std::vector<std::string> manufactureModel;
-                boost::split(manufactureModel, sm, boost::is_any_of(":"));
-                /* expected string format <Manufacture>:<Model>:<UUID> */
-                if (manufactureModel.size() == 3)
-                {
-                    insertToUUIDMap(manufactureModel[2], manufactureModel[1],
-                                    manufactureModel[0]);
-                }
+                insertToUUIDMap(manufactureModel[2], manufactureModel[1],
+                                manufactureModel[0]);
             }
         }
     }
+
+    /**
+     * @brief Without a build-time model, a recovery updater takes its package
+     *        UUID from the Entity Manager RecoveryPackages record and waits
+     *        until that record is published.
+     */
+    void waitForRecoveryPackage();
     /**
      * @brief Destructor
      */
