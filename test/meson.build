@@ -801,6 +801,16 @@ test(
     workdir: meson.current_source_dir(),
 )
 test(
+    'test_usbrcm_main',
+    executable(
+        'test_usbrcm_main',
+        'test_usbrcm_main.cpp',
+        implicit_include_directories: false,
+        dependencies: [test_dep, nlohmann_json, CLI11_dep],
+    ),
+    workdir: meson.current_source_dir(),
+)
+test(
     'test_usb_device_manager',
     executable(
         'test_usb_device_manager',

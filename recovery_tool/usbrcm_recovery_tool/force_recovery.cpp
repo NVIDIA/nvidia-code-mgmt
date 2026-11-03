@@ -88,6 +88,8 @@ static void releaseReset(const RecoveryPinConfig& cfg,
 
 void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
 {
+    out = nlohmann::json::object();
+
     // Phase 1: assert all resets; hold GPIO lines open across strap writes.
     std::vector<gpiod::line> resetLines;
     try
@@ -96,7 +98,8 @@ void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
     }
     catch (const std::exception& e)
     {
-        out = {{"Status", "Failed"}, {"Error", e.what()}};
+        out["Status"] = "Failed";
+        out["Error"] = e.what();
         return;
     }
 
@@ -144,8 +147,8 @@ void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
             lg2::error("Strap failure on {PIN}; straps rolled back to defaults "
                        "and reset released",
                        "PIN", cfg.strapPins[i]);
-            out = {{"Status", "Failed"},
-                   {"Error", "Strap GPIO failed: " + cfg.strapPins[i]}};
+            out["Status"] = "Failed";
+            out["Error"] = "Strap GPIO failed: " + cfg.strapPins[i];
             return;
         }
         strapLines.push_back(std::move(*line));
@@ -158,19 +161,21 @@ void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
     }
     catch (const std::exception& e)
     {
-        out = {{"Status", "Failed"},
-               {"Error", std::string("Reset release failed: ") + e.what()}};
+        out["Status"] = "Failed";
+        out["Error"] = std::string("Reset release failed: ") + e.what();
         return;
     }
 
     // Phase 4: release strap lines — values no longer need to be stable.
     // strapLines destructor handles this automatically on return.
 
-    out = {{"Status", "Successful"}};
+    out["Status"] = "Successful";
 }
 
 void setGPIODefaultPinStates(const RecoveryPinConfig& cfg, nlohmann::json& out)
 {
+    out = nlohmann::json::object();
+
     // Attempt all restores regardless of individual failures: a single
     // missing GPIO (e.g. BRD1 not present) must not prevent the remaining
     // straps from being restored to safe defaults.
@@ -188,8 +193,9 @@ void setGPIODefaultPinStates(const RecoveryPinConfig& cfg, nlohmann::json& out)
         std::string pins;
         for (const auto& p : failures)
             pins += (pins.empty() ? "" : ", ") + p;
-        out = {{"Status", "Failed"}, {"Error", "GPIO restore failed: " + pins}};
+        out["Status"] = "Failed";
+        out["Error"] = "GPIO restore failed: " + pins;
         return;
     }
-    out = {{"Status", "Successful"}};
+    out["Status"] = "Successful";
 }
