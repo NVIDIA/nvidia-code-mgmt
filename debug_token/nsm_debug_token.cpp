@@ -114,13 +114,11 @@ void UpdateDebugToken::logAsyncError(const std::string& path,
         auto errorValue = getAsyncValue(path);
         auto& [errorCode, errorMessage] = std::get<NSMErrorTuple>(errorValue);
 
-        // NotInstalled (0x100F) is expected in some scenarios
         if (errorCode == debug_token::NotInstalled)
         {
             log<level::INFO>((path + ": " + methodName +
-                              " status: " + asyncStatus +
-                              ", error code: " + std::to_string(errorCode) +
-                              " (NotInstalled), message: " + errorMessage)
+                              " success: token not installed on device (" +
+                              std::to_string(errorCode) + ")")
                                  .c_str());
         }
         else
