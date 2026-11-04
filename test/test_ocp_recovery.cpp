@@ -223,8 +223,6 @@ TEST_F(OcpRecoveryTest, CommandsBuildExpectedI2cRequests)
     using recovery_tool::recovery_commands::RecoveryCommands;
 
     OCPRecoveryCommands commands(7, 0x50, true, false);
-    EXPECT_EQ(commands.constructI2CDevicePath(), "/dev/i2c-7");
-
     writeResults = {true, true, true};
     EXPECT_TRUE(
         commands.setRecoveryControlRegisterCommand(ImageType::CMS0, false));

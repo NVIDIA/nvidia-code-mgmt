@@ -871,6 +871,7 @@ test(
 )
 ocp_recovery_test_src = declare_dependency(
     sources: [
+        '../recovery_tool/common/i2c_adapter.cpp',
         '../recovery_tool/ocp_recovery_tool/recovery_commands.cpp',
         '../recovery_tool/ocp_recovery_tool/recoverytool_utils.cpp',
         '../recovery_tool/ocp_recovery_tool/usb_i2c_mapper.cpp',

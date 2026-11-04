@@ -15,6 +15,8 @@
  * limitations under the License.
  */
 
+#pragma once
+
 #include <fcntl.h>
 #include <linux/i2c-dev.h>
 #include <linux/i2c.h>
@@ -28,6 +30,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace recovery_tool
@@ -35,6 +38,24 @@ namespace recovery_tool
 
 namespace i2c_utils
 {
+/** Opening an adapter failed. Transaction errors do not use this type. */
+class I2cOpenError : public std::system_error
+{
+  public:
+    I2cOpenError(int error, const std::string& path) :
+        std::system_error(error, std::generic_category(),
+                          "Failed to open I2C adapter " + path)
+    {}
+
+    bool adapterUnavailable() const noexcept
+    {
+        return code().value() == ENOENT || code().value() == ENODEV;
+    }
+};
+
+/** Open an adapter; the caller owns the fd. Throws I2cOpenError. */
+int openI2cAdapter(unsigned int bus);
+
 /**
  * @brief Sends an I2C read command to the specified slave device.
  *

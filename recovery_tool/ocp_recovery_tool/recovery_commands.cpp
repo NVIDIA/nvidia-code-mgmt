@@ -29,20 +29,9 @@ namespace recovery_tool
 namespace recovery_commands
 {
 
-std::string OCPRecoveryCommands::constructI2CDevicePath()
-{
-    return "/dev/i2c-" + std::to_string(busAddress);
-}
-
 utils::CustomFD OCPRecoveryCommands::openI2CDevice()
 {
-    std::string i2cDevicePath = constructI2CDevicePath();
-    int fd = open(i2cDevicePath.c_str(), O_RDWR);
-    if (fd < 0)
-    {
-        throw std::runtime_error("Failed to open device.");
-    }
-    return utils::CustomFD(fd);
+    return utils::CustomFD(i2c_utils::openI2cAdapter(busAddress));
 }
 
 void OCPRecoveryCommands::printBuffer(bool isTx,

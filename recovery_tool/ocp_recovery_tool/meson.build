@@ -8,6 +8,7 @@ recovery_tool_source_files = [
     'recoverytool_interface.cpp',
     'recoverytool_utils.cpp',
     'usb_i2c_mapper.cpp',
+    join_paths(common_dir, 'i2c_adapter.cpp'),
     join_paths(common_dir, 'i2c_utils.cpp'),
     'recovery_commands.cpp',
 ]
@@ -26,6 +27,7 @@ commandline_source_files = [
     'recovery_commandline.cpp',
     'recoverytool_utils.cpp',
     'usb_i2c_mapper.cpp',
+    join_paths(common_dir, 'i2c_adapter.cpp'),
     join_paths(common_dir, 'i2c_utils.cpp'),
     join_paths(common_dir, 'message_registry.cpp'),
     join_paths(dbus_utils_dir, 'dbusutils.cpp'),
