@@ -49,6 +49,7 @@ enum class RecoveryReturnCode : int
  */
 enum class DeviceStatusCode : int
 {
+    Unreachable = -2, // Local: transport endpoint unavailable.
     CommandFailure = -1,
     StatusPending =
         0X0, // Device is booting or has not yet populated the reason code
@@ -71,6 +72,7 @@ enum class DeviceStatusCode : int
  */
 enum class ProtocolError : int
 {
+    Unknown = -1, // Local: no valid device response.
     NoProtocolError =
         0x0, // Device is booting or has not yet populated the reason code
     UnsupportedWriteCommand =
@@ -89,6 +91,7 @@ enum class ProtocolError : int
  */
 enum class RecoveryReasonCode : int
 {
+    Unknown = -1, // Local: no valid device response.
     BFNF = 0x0,   // No Boot Failure detected
     BFGHWE = 0x1, // Generic hardware error
     BFGSE = 0x2,  // Generic hardware soft error - soft error may be recoverable
@@ -122,6 +125,7 @@ enum class RecoveryReasonCode : int
  */
 enum class RecoveryStatus : int
 {
+    Unknown = -2, // Local: recovery status was not queried.
     CommandFailure = -1,
     NotInRecoveryMode = 0x0,
     AwaitingRecoveryImg = 0x1,

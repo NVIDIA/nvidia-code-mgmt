@@ -43,6 +43,7 @@ source_files = [
     join_paths(ocp_recovery_dir, 'recovery_commands.cpp'),
     join_paths(ocp_recovery_dir, 'usb_i2c_mapper.cpp'),
     join_paths(glacier_recovery_dir, 'glacier_recovery_commands.cpp'),
+    join_paths(recovery_common_dir, 'i2c_adapter.cpp'),
     join_paths(recovery_common_dir, 'i2c_utils.cpp'),
     join_paths(recovery_common_dir, 'message_registry.cpp'),
     join_paths(mcu_recovery_dir, 'utils.cpp'),

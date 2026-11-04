@@ -34,6 +34,18 @@ DeviceStatus OCPRecoveryCommandLine::getDeviceStatus() const noexcept
         }
         lg2::error("Error while getting Device Status: {ERROR}", "ERROR",
                    errorMsg);
+        return {DeviceStatusCode::CommandFailure, RecoveryReasonCode::Unknown,
+                ProtocolError::DeviceNotResponding};
+    }
+    catch (const recovery_tool::i2c_utils::I2cOpenError& e)
+    {
+        lg2::error("Exception while opening I2C adapter: {ERROR}", "ERROR",
+                   e.what());
+        if (e.adapterUnavailable())
+        {
+            return {DeviceStatusCode::Unreachable, RecoveryReasonCode::Unknown,
+                    ProtocolError::Unknown};
+        }
     }
     catch (const std::exception& e)
     {
@@ -41,8 +53,8 @@ DeviceStatus OCPRecoveryCommandLine::getDeviceStatus() const noexcept
                    e.what());
     }
 
-    return {DeviceStatusCode::CommandFailure, RecoveryReasonCode::BFNF,
-            ProtocolError::DeviceNotResponding};
+    return {DeviceStatusCode::CommandFailure, RecoveryReasonCode::Unknown,
+            ProtocolError::GeneralProtocolError};
 }
 
 std::pair<RecoveryStatus, uint8_t>
@@ -84,6 +96,10 @@ std::string OCPRecoveryCommandLine::deviceStatusToStr(
 {
     switch (status)
     {
+        case DeviceStatusCode::Unreachable:
+            return "Unreachable";
+        case DeviceStatusCode::CommandFailure:
+            return "Command failed";
         case DeviceStatusCode::StatusPending:
             return "Status Pending";
         case DeviceStatusCode::DeviceHealthy:
@@ -110,6 +126,8 @@ std::string OCPRecoveryCommandLine::protocolErrorToStr(
 {
     switch (error)
     {
+        case ProtocolError::Unknown:
+            return "Unknown";
         case ProtocolError::NoProtocolError:
             return "No Protocol Error";
         case ProtocolError::UnsupportedWriteCommand:
@@ -134,6 +152,8 @@ std::string OCPRecoveryCommandLine::recoveryReasonCodeToStr(
 {
     switch (code)
     {
+        case RecoveryReasonCode::Unknown:
+            return "Unknown";
         case RecoveryReasonCode::BFNF:
             return "No Boot Failure detected";
         case RecoveryReasonCode::BFGHWE:
@@ -192,19 +212,23 @@ std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError, RecoveryStatus>
     OCPRecoveryCommandLine::getOperationalStatus() const noexcept
 {
     auto deviceStatus = getDeviceStatus();
+    if (deviceStatus.statusCode == DeviceStatusCode::Unreachable)
+    {
+        return {OperationalStatus::Unreachable, DeviceStatusCode::Unreachable,
+                ProtocolError::Unknown, RecoveryStatus::Unknown};
+    }
     if (deviceStatus.statusCode == DeviceStatusCode::CommandFailure)
     {
-        return {OperationalStatus::Unreachable,
-                DeviceStatusCode::CommandFailure, deviceStatus.protocolError,
-                RecoveryStatus::NotInRecoveryMode};
+        return {OperationalStatus::IoError, DeviceStatusCode::CommandFailure,
+                deviceStatus.protocolError, RecoveryStatus::Unknown};
     }
 
     auto [recoveryStatus, recoveryImageIndex] = getRecoveryStatus();
     if (recoveryStatus == RecoveryStatus::CommandFailure)
     {
-        return {OperationalStatus::Unreachable, deviceStatus.statusCode,
-                ProtocolError::DeviceNotResponding,
-                RecoveryStatus::NotInRecoveryMode};
+        return {OperationalStatus::IoError, deviceStatus.statusCode,
+                ProtocolError::GeneralProtocolError,
+                RecoveryStatus::CommandFailure};
     }
 
     lg2::info("Recovery Status for {DEVICE}: status={STATUS}, imageIndex={IDX}",
@@ -217,16 +241,14 @@ std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError, RecoveryStatus>
           recoveryStatus == RecoveryStatus::RecoverySuccess)))
     {
         return {OperationalStatus::Operational, deviceStatus.statusCode,
-                ProtocolError::NoProtocolError,
-                RecoveryStatus::NotInRecoveryMode};
+                deviceStatus.protocolError, recoveryStatus};
     }
 
     if (deviceStatus.statusCode == DeviceStatusCode::RecoveryMode and
         recoveryStatus == RecoveryStatus::AwaitingRecoveryImg)
     {
         return {OperationalStatus::RecoveryMode, deviceStatus.statusCode,
-                ProtocolError::NoProtocolError,
-                RecoveryStatus::NotInRecoveryMode};
+                deviceStatus.protocolError, recoveryStatus};
     }
 
     lg2::info("Device Status for {DEVICE} is {STATUS}", "DEVICE", device,
@@ -234,8 +256,40 @@ std::tuple<OperationalStatus, DeviceStatusCode, ProtocolError, RecoveryStatus>
     lg2::info("Recovery reason for {DEVICE} is {STATUS}", "DEVICE", device,
               "STATUS", recoveryReasonCodeToStr(deviceStatus.recoveryReason));
     return {OperationalStatus::UnknownState, deviceStatus.statusCode,
-            ProtocolError::NoProtocolError, recoveryStatus};
+            deviceStatus.protocolError, recoveryStatus};
 }
+
+namespace
+{
+
+static std::pair<RecoveryProtocol, ErrorCode>
+    postRecoveryRegistryError(DeviceStatusCode deviceStatus,
+                              RecoveryStatus recoveryStatus) noexcept
+{
+    switch (recoveryStatus)
+    {
+        case RecoveryStatus::RecoveryFailed:
+        case RecoveryStatus::RecoveryImgAuthFailed:
+        case RecoveryStatus::ErrorEnteringRecoveryMode:
+        case RecoveryStatus::InvalidCms:
+            return {RecoveryProtocol::OCPRecoveryStatusError,
+                    static_cast<ErrorCode>(recoveryStatus)};
+        default:
+            break;
+    }
+
+    if (deviceStatus == DeviceStatusCode::DeviceError ||
+        deviceStatus == DeviceStatusCode::FatalError)
+    {
+        return {RecoveryProtocol::OCPDeviceStatusCode,
+                static_cast<ErrorCode>(deviceStatus)};
+    }
+
+    return {RecoveryProtocol::OCPRecoveryProtocolError,
+            static_cast<ErrorCode>(ProtocolError::GeneralProtocolError)};
+}
+
+} // namespace
 
 RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
     const std::vector<std::string>& imagePaths) const noexcept
@@ -245,6 +299,13 @@ RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
         const auto [operationalStatus, deviceStatus, protocolError,
                     recoveryStatus] = getOperationalStatus();
 
+        if (operationalStatus == OperationalStatus::Unreachable)
+        {
+            lg2::info("Device {DEVICE} is unreachable, skipping recovery",
+                      "DEVICE", device);
+            return RecoveryReturnCode::SKIPPED;
+        }
+
         if (operationalStatus == OperationalStatus::Operational)
         {
             lg2::info("Device {DEVICE} is operational, skipping", "DEVICE",
@@ -253,10 +314,10 @@ RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
             return RecoveryReturnCode::SKIPPED;
         }
 
-        if (operationalStatus == OperationalStatus::Unreachable)
+        if (operationalStatus == OperationalStatus::IoError)
         {
-            lg2::info("Device {DEVICE} is unreachable, skipping", "DEVICE",
-                      device);
+            lg2::error("Status query failed for {DEVICE}; recovery failed",
+                       "DEVICE", device);
             registry.createMessageRegistryResourceErrors(
                 resourceErrorsDetected,
                 RecoveryProtocol::OCPRecoveryProtocolError,
@@ -334,20 +395,10 @@ RecoveryReturnCode OCPRecoveryCommandLine::performRecovery(
         }
 
         lg2::error("Recovery of {DEVICE} is not successful", "DEVICE", device);
-        if (postRecOperationalStatus == OperationalStatus::RecoveryMode or
-            postRecDeviceStatus == DeviceStatusCode::BootFailure)
-        {
-            registry.createMessageRegistryResourceErrors(
-                resourceErrorsDetected,
-                RecoveryProtocol::OCPRecoveryProtocolError,
-                static_cast<ErrorCode>(postRecRecoveryStatus), device);
-        }
-        else
-        {
-            registry.createMessageRegistryResourceErrors(
-                resourceErrorsDetected, RecoveryProtocol::OCPDeviceStatusCode,
-                static_cast<ErrorCode>(postRecDeviceStatus), device);
-        }
+        const auto [protocol, code] = postRecoveryRegistryError(
+            postRecDeviceStatus, postRecRecoveryStatus);
+        registry.createMessageRegistryResourceErrors(resourceErrorsDetected,
+                                                     protocol, code, device);
         return RecoveryReturnCode::FAILURE;
     }
     catch (const std::exception& e)

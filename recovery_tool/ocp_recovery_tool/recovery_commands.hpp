@@ -113,7 +113,8 @@ enum class OperationalStatus : uint8_t
     Operational = 0x0,
     RecoveryMode = 0x1,
     UnknownState = 0x2,
-    Unreachable = 0x3
+    Unreachable = 0x3, // Transport endpoint unavailable.
+    IoError = 0x4      // Status query failed for another reason.
 };
 /**
  * @class OCPRecoveryCommands
@@ -138,14 +139,9 @@ class OCPRecoveryCommands
     uint8_t lastLoggedProgress{0};
 
     /**
-     * @brief Constructs the path to the I2C device.
-     * @return The device path as a string.
-     */
-    std::string constructI2CDevicePath();
-
-    /**
      * @brief Gets an I2C file descriptor for communication.
-     * @return The file descriptor, or -1 if failed.
+     * @return An owning file descriptor.
+     * @throws i2c_utils::I2cOpenError if the adapter cannot be opened.
      */
     utils::CustomFD openI2CDevice();
 
