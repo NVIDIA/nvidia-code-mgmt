@@ -5,7 +5,7 @@ mst_recovery_sources = files(
     'mst_recovery.cpp',
 )
 
-mst_recovery_inc = include_directories('.', '../common')
+mst_recovery_inc = include_directories('.', '../common', '../../src')
 
 executable(
     'mst-recovery',
@@ -14,7 +14,13 @@ executable(
         'mst_platform_factory.cpp',
     ),
     include_directories: mst_recovery_inc,
-    dependencies: [sdbusplus, libgpiocxx, phosphor_logging],
+    dependencies: [
+        sdbusplus,
+        libgpiocxx,
+        phosphor_logging,
+        phosphor_dbus_interfaces,
+        ssl,
+    ],
     install: true,
     install_dir: get_option('bindir'),
 )

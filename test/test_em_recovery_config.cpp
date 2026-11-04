@@ -136,6 +136,30 @@ TEST_F(EmRecoveryConfigTest, ConnectXForcesTheDeviceUnlessItNamesTheIRoT)
               "IRoT_CX_1");
 }
 
+TEST_F(EmRecoveryConfigTest, ConnectXNamesItsUsbSmaButNVSwitchDoesNot)
+{
+    device("SMA_0", "cx_sma", 16,
+           {{"Medium", std::string("usb")},
+            {"Port", std::string("1.1.1")},
+            {"RootHubPath", std::string("/hub")}});
+    for (const char* type : {"ConnectX", "NVSwitch"})
+    {
+        device(std::string(type) + "_0", "x", 17,
+               {{"Medium", std::string("bridge")},
+                {"Bridge", std::string("SMA_0")},
+                {"BridgeEID", uint64_t(16)}},
+               {{"RecoveryType", std::string(type)}});
+    }
+    auto* cx = record("ConnectXRecovery", "FW_ConnectX_0");
+    ASSERT_NE(cx, nullptr);
+    EXPECT_EQ(std::get<std::string>(cx->at("SMAName")), "SMA_0");
+    EXPECT_EQ(std::get<std::string>(cx->at("SMAUSBPort")), "1-1.1.1");
+    auto* sw = record("NVSwitchRecovery", "FW_NVSwitch_0");
+    ASSERT_NE(sw, nullptr);
+    EXPECT_FALSE(sw->contains("SMAName"));
+    EXPECT_FALSE(sw->contains("SMAUSBPort"));
+}
+
 TEST_F(EmRecoveryConfigTest, ExplicitNamesReplaceAPlatformPrefix)
 {
     device("HGX_ConnectX_0", "cx9_io", 17,

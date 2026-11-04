@@ -340,6 +340,19 @@ inline std::optional<PropertyMap>
         copy(r, "ResetGPIO", dev, deviceRecoveryIface, "ResetGpio");
         copy(r, "FlashNotPresentGPIO", dev, deviceRecoveryIface,
              "FlashNotPresentGpio");
+        // mst-recovery's SMA presence check; NVSwitch records never had it.
+        auto sma = devices.find(str(prop(dev, transportIface, "Bridge")));
+        if (method != "NVSwitch" && sma != devices.end())
+        {
+            const auto& t = *sma->second;
+            if (auto smaPort = prop(t, transportIface, "Port"))
+            {
+                r["SMAName"] = sma->first;
+                r["SMAUSBPort"] = usbBusResolver(str(
+                                      prop(t, transportIface, "RootHubPath"))) +
+                                  "-" + str(smaPort);
+            }
+        }
     }
     else if (method == "GlacierCrisis")
     {

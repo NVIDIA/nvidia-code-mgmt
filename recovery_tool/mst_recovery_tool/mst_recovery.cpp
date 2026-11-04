@@ -3,12 +3,15 @@
 
 #include "mst_recovery.hpp"
 
+#include "em_recovery_config.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
+#include <ranges>
 #include <regex>
 #include <thread>
 #include <utility>
@@ -18,6 +21,9 @@ namespace mst
 
 namespace
 {
+
+namespace rec = nvidia::software::updater::em_recovery;
+using EmValue = nvidia::software::updater::Value;
 
 constexpr auto levelPrefix = "xyz.openbmc_project.Logging.Entry.Level.";
 constexpr auto resolutionKey = "xyz.openbmc_project.Logging.Entry.Resolution";
@@ -220,6 +226,71 @@ std::string tailLines(const std::string& text, size_t count)
     return replaceAll(text.substr(start), '\n', ' ');
 }
 
+// A value whose type the other variant lacks is dropped.
+template <class To, class From>
+std::optional<To> convert(const From& from)
+{
+    return std::visit(
+        [](const auto& x) -> std::optional<To> {
+            using T = std::decay_t<decltype(x)>;
+            if constexpr (std::is_constructible_v<To, std::in_place_type_t<T>,
+                                                  const T&>)
+            {
+                return To(std::in_place_type<T>, x);
+            }
+            else
+            {
+                return std::nullopt;
+            }
+        },
+        from);
+}
+
+// The DeviceType's records em_recovery derives from the NvDevice entries.
+std::map<std::string, PropertyMap> nvDevices(Platform& platform,
+                                             const std::string& deviceType)
+{
+    nvidia::software::updater::ObjectValueTree objects;
+    auto paths =
+        platform.getSubTreePaths(inventoryRoot, 0, {rec::nvDeviceIface});
+    for (const auto& path : paths.value_or(std::vector<std::string>{}))
+    {
+        for (const char* iface : {rec::nvDeviceIface, rec::transportIface,
+                                  rec::deviceRecoveryIface})
+        {
+            auto props = platform.getAll(emService, path, iface);
+            for (const auto& [key, value] : props.value_or(PropertyMap{}))
+            {
+                if (auto v = convert<EmValue>(value))
+                {
+                    objects[sdbusplus::object_path(path)][iface][key] = *v;
+                }
+            }
+        }
+    }
+    rec::expand(objects);
+    const auto iface = std::string(rec::cfgPrefix) + deviceType + "Recovery";
+    std::map<std::string, PropertyMap> devices;
+    for (const auto& ifaces : objects | std::views::values)
+    {
+        auto it = ifaces.find(iface);
+        if (it == ifaces.end())
+        {
+            continue;
+        }
+        PropertyMap props;
+        for (const auto& [key, value] : it->second)
+        {
+            if (auto v = convert<Value>(value))
+            {
+                props[key] = *v;
+            }
+        }
+        devices[toText(props["Name"])] = std::move(props);
+    }
+    return devices;
+}
+
 } // namespace
 
 std::expected<Policy, std::string> findPolicy(Platform& platform,
@@ -264,6 +335,7 @@ std::expected<Policy, std::string> findPolicy(Platform& platform,
         return std::unexpected("invalid MSTRecoveryPolicy for " + deviceType +
                                ": " + policy.error());
     }
+    policy->devices = nvDevices(platform, deviceType);
     return policy;
 }
 
@@ -439,14 +511,30 @@ std::optional<Recovery::Device> Recovery::readDevice(const std::string& relPath)
     Device dev;
     dev.path = policy.board + "/" + relPath;
     dev.name = basename(relPath);
+    auto get =
+        [&](const std::string& prop) -> std::expected<Value, std::string> {
+        if (policy.devices.empty())
+        {
+            return platform.getProperty(emService, dev.path,
+                                        policy.deviceInterface, prop);
+        }
+        auto d = policy.devices.find(dev.name);
+        if (d != policy.devices.end())
+        {
+            if (auto p = d->second.find(prop); p != d->second.end())
+            {
+                return p->second;
+            }
+        }
+        return std::unexpected("not in the NvDevice record of " + dev.name);
+    };
     for (uint64_t attempt = 1; attempt <= attempts(); ++attempt)
     {
         dev.props.clear();
         bool complete = true;
         for (const auto& prop : deviceProperties())
         {
-            auto value = platform.getProperty(emService, dev.path,
-                                              policy.deviceInterface, prop);
+            auto value = get(prop);
             if (!value)
             {
                 platform.writeErr(
@@ -462,10 +550,8 @@ std::optional<Recovery::Device> Recovery::readDevice(const std::string& relPath)
         {
             if (policy.smaPresenceCheck)
             {
-                auto name = platform.getProperty(
-                    emService, dev.path, policy.deviceInterface, "SMAName");
-                auto port = platform.getProperty(
-                    emService, dev.path, policy.deviceInterface, "SMAUSBPort");
+                auto name = get("SMAName");
+                auto port = get("SMAUSBPort");
                 if (name && port)
                 {
                     dev.smaName = toText(*name);

@@ -1254,9 +1254,16 @@ test(
         '../recovery_tool/mst_recovery_tool/mst_policy.cpp',
         '../recovery_tool/mst_recovery_tool/mst_recovery.cpp',
         implicit_include_directories: false,
-        dependencies: [test_dep],
+        dependencies: [
+            test_dep,
+            sdbusplus,
+            phosphor_dbus_interfaces,
+            phosphor_logging,
+            ssl,
+        ],
         include_directories: include_directories(
             '../recovery_tool/mst_recovery_tool',
+            '../src',
         ),
     ),
     workdir: meson.current_source_dir(),

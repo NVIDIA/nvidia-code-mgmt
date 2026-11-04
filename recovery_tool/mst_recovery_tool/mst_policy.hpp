@@ -48,6 +48,9 @@ struct Policy
     std::vector<uint8_t> gisRegister;
     uint32_t gisHealthyValue = 0;
     std::string gisLabel;
+    // Device records derived from NvDevice entries, by Name; empty when the
+    // platform publishes the per-type records itself
+    std::map<std::string, PropertyMap> devices;
 };
 
 // Text the way busctl get-property prints a value after the type prefix

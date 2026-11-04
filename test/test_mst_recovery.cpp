@@ -907,6 +907,112 @@ TEST_F(MstGoldenTest, Hgxb300ConnectX)
                 Contains("IRoT_HGX_FW_ConnectX_0: Recovered successfully."));
 }
 
+// The platform topology publishes NvDevice entries instead of the records
+class MstNvDeviceTest : public MstGoldenTest
+{
+  protected:
+    static constexpr auto topology =
+        "/xyz/openbmc_project/inventory/system/board/Topology/";
+
+    void addNvDevice(const std::string& name, uint64_t eid,
+                     PropertyMap transport, PropertyMap recovery = {})
+    {
+        auto& o = p.objects[topology + name];
+        o["xyz.openbmc_project.Configuration.NvDevice"] = {
+            {"Name", name}, {"Type", S("NvDevice")}, {"EID", eid}};
+        o["xyz.openbmc_project.Configuration.NvDevice.Transport"] =
+            std::move(transport);
+        if (!recovery.empty())
+        {
+            o["xyz.openbmc_project.Configuration.NvDevice.Recovery"] =
+                std::move(recovery);
+        }
+    }
+
+    // <prefix>0..n-1 on buses 70+i behind SMA_0; only the first one needs
+    // recovery. GPIOs are named after the record the way addCx does.
+    void addNvDevices(const std::string& prefix, int n, const S& type,
+                      const S& swPrefix = {})
+    {
+        addNvDevice("SMA_0", 60,
+                    {{"Medium", S("usb")},
+                     {"Port", S("1.1.1")},
+                     {"RootHubPath", S("/nonexistent")}});
+        for (int i = 0; i < n; ++i)
+        {
+            const auto name = prefix + std::to_string(i);
+            const auto record = (swPrefix.empty() ? "FW_" + prefix : swPrefix) +
+                                std::to_string(i);
+            PropertyMap recovery{{"RecoveryType", type},
+                                 {"I2CAddress", uint64_t{72}},
+                                 {"I2CBus", uint64_t(70 + i)},
+                                 {"ResetGpio", record + "_RST"},
+                                 {"FlashNotPresentGpio", record + "_FNP"}};
+            if (!swPrefix.empty())
+            {
+                recovery["SoftwareName"] = record;
+            }
+            addNvDevice(name, uint64_t(61 + i),
+                        {{"Medium", S("bridge")},
+                         {"Bridge", S("SMA_0")},
+                         {"BridgeEID", uint64_t{60}}},
+                        std::move(recovery));
+            p.devices.insert(std::format("/dev/i2c-{}", 70 + i));
+            p.i2c[std::format("{}-72", 70 + i)] = {
+                i == 0 ? brokenBytes : healthyBytes, healthyBytes};
+        }
+    }
+};
+
+TEST_F(MstNvDeviceTest, VrConnectX)
+{
+    addNvDevices("CX_", 8, "ConnectX");
+    EXPECT_EQ(run({"/tmp/img"}, vrRecord({"FW_CX_0 FW_CX_2 FW_CX_4 FW_CX_6",
+                                          "FW_CX_1 FW_CX_3 FW_CX_5 FW_CX_7"})),
+              0);
+    expectMstSequence("FW_CX_0", true);
+    EXPECT_THAT(messages(), ElementsAre("NvidiaUpdate.1.0.RecoveryStarted",
+                                        "NvidiaUpdate.1.0.RecoverySuccessful"));
+    EXPECT_TRUE(p.err.empty());
+}
+
+TEST_F(MstNvDeviceTest, HgxrConnectXUsesSoftwareNameAndSmaPort)
+{
+    addNvDevices("HGX_ConnectX_", 2, "ConnectX", "HGX_FW_ConnectX_");
+    p.devices.erase("/dev/i2c-70");
+    p.usb["1-1.1.1/idVendor"] = "0955";
+    p.usb["1-1.1.1/idProduct"] = "cf1d";
+    EXPECT_EQ(run({"/tmp/img"},
+                  hgxrCxRecord({"HGX_FW_ConnectX_0 HGX_FW_ConnectX_1"})),
+              0);
+    EXPECT_THAT(p.out, Contains("HGX_FW_ConnectX_0: SMA SMA_0 at USB port "
+                                "1-1.1.1 is 0955:cf1d"));
+    EXPECT_THAT(p.out, Contains("HGX_FW_ConnectX_0: SMA SMA_0 is in ISP mode, "
+                                "skipping"));
+}
+
+TEST_F(MstNvDeviceTest, HgxrNVSwitchKeepsTheEidCheck)
+{
+    addNvDevices("HGX_NVSwitch_", 1, "NVSwitch", "HGX_FW_NVSwitch_");
+    addNvDevices("HGX_ConnectX_", 1, "ConnectX", "HGX_FW_ConnectX_");
+    p.i2c["70-72"] = {brokenBytes, std::array<uint8_t, 4>{0, 0, 0, 0x5e}};
+    EXPECT_EQ(run({"/tmp/img"}, hgxrRecord("NVSwitch", {"HGX_FW_NVSwitch_0"})),
+              0);
+    EXPECT_THAT(p.out,
+                Contains("HGX_FW_NVSwitch_0: SMA EID 60 is not present"));
+    EXPECT_THAT(p.out, Not(Contains(HasSubstr("HGX_FW_ConnectX_0"))));
+}
+
+TEST_F(MstNvDeviceTest, MissingDeviceFailsOnlyThatDevice)
+{
+    addNvDevices("CX_", 1, "ConnectX");
+    EXPECT_EQ(run({"/tmp/img"}, vrRecord({"FW_CX_0 FW_CX_9"})), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("not in the NvDevice record of "
+                                          "FW_CX_9")));
+    EXPECT_THAT(p.err, Contains("<3>FW_CX_9: recovery failed: failed to read "
+                                "D-Bus properties"));
+}
+
 // The BF4 record: MstHoldTest.SuccessHoldsFnpAndPostsCompleted
 
 // --- policy -----------------------------------------------------------------
