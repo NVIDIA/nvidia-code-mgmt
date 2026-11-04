@@ -26,6 +26,7 @@ using PropertyMap = std::map<Property, Value>;
 using InterfaceMap = std::map<Interface, PropertyMap>;
 using MapperServiceMap = std::vector<std::pair<std::string, Interfaces>>;
 using GetSubTreeResponse = std::vector<std::pair<ObjectPath, MapperServiceMap>>;
+using ObjectValueTree = std::map<sdbusplus::message::object_path, InterfaceMap>;
 
 } // namespace nvidia::software::updater
 
@@ -128,6 +129,30 @@ class DBUSUtils
         }
 
         return std::get<T>(propIt->second);
+    }
+
+    // Built from the fake subtree: every listed interface, no properties.
+    // Like the real call, a failure gives an empty result.
+    ObjectValueTree getManagedObjects(const char*, const char*) const noexcept
+    {
+        ObjectValueTree objects;
+        if (!test::mcu_fake_bus::errorMessage.empty())
+        {
+            return objects;
+        }
+        const auto& tree =
+            test::mcu_fake_bus::ReplySlot<GetSubTreeResponse>::value;
+        for (const auto& [path, services] : tree.value_or(GetSubTreeResponse{}))
+        {
+            for (const auto& [service, interfaces] : services)
+            {
+                for (const auto& interface : interfaces)
+                {
+                    objects[{path}][interface];
+                }
+            }
+        }
+        return objects;
     }
 };
 

@@ -331,7 +331,7 @@ TEST_F(EmRecoveryConfigTest, CpuWithoutActionChassisHasNoForceRecovery)
 TEST_F(EmRecoveryConfigTest,
        SnapshotWithoutTopologyIsUntouchedAndExpandIsIdempotent)
 {
-    ObjectValueTree legacy{{"/a/b",
+    ObjectValueTree legacy{{sdbusplus::object_path("/a/b"),
                             {{"xyz.openbmc_project.Configuration.MCURecovery",
                               {{"Name", std::string("FW_X")}}}}}};
     auto copy = legacy;
@@ -374,8 +374,8 @@ TEST(EmRecoveryConfigSignal, TriggersOnTopologyObjectsOnly)
 
 namespace
 {
-constexpr auto spiPath =
-    "/xyz/openbmc_project/inventory/system/module/BootFlash_0/BootSPI_0";
+const sdbusplus::object_path spiPath{
+    "/xyz/openbmc_project/inventory/system/module/BootFlash_0/BootSPI_0"};
 
 InterfaceMap spiRecord()
 {

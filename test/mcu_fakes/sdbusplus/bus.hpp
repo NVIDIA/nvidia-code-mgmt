@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -51,6 +52,17 @@ class SdBusError : public std::runtime_error
 };
 
 } // namespace sdbusplus::exception
+
+namespace sdbusplus::message
+{
+
+struct object_path
+{
+    std::string str;
+    auto operator<=>(const object_path&) const = default;
+};
+
+} // namespace sdbusplus::message
 
 namespace sdbusplus::bus
 {
