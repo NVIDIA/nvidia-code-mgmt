@@ -2599,6 +2599,43 @@ TEST_F(FWStatusMainTest, CheckEntityManagerAvailabilityPublishesOnProbeSignal)
     EXPECT_EQ(resources.size(), 1u);
 }
 
+TEST_F(FWStatusMainTest,
+       CheckEntityManagerAvailabilityPublishesOnRecoveryInterfaceAlone)
+{
+    using test::fw_status_fake_dbus::setProperty;
+
+    // entity-manager sends the NvDevice interface and the nested Recovery
+    // interface in separate signals; the Recovery one alone must publish.
+    checkEntityManagerAvailability();
+    ASSERT_NE(entityManagerServiceMatch, nullptr);
+    ASSERT_TRUE(resources.empty());
+
+    setProperty("/xyz/openbmc_project/inventory/cpld-probe",
+                cpldMonitorObjInterface, "SMAEID", static_cast<uint64_t>(45));
+    setProperty("/xyz/openbmc_project/inventory/cpld-probe",
+                cpldMonitorObjInterface, "DeviceId", std::string("CPLD_PROBE"));
+    test::fw_status_fake_dbus::setProperty(
+        "/au/com/codeconstruct/mctp1/networks/1/endpoints/45",
+        mctpEndpointIntfName, "EID", static_cast<uint8_t>(45));
+
+    auto signalBus = sdbusplus::bus::new_default();
+    InterfaceMap nvDeviceOnly{
+        {"xyz.openbmc_project.Configuration.NvDevice", {}}};
+    auto nvSignal = makeObjectManagerSignal(
+        signalBus, entityManagerObjManager, "InterfacesAdded",
+        "/xyz/openbmc_project/inventory/system/board/Dev", nvDeviceOnly);
+    EXPECT_GT(dispatchMatchCallback(entityManagerServiceMatch, nvSignal), 0);
+    EXPECT_TRUE(resources.empty());
+
+    InterfaceMap recoveryOnly{
+        {"xyz.openbmc_project.Configuration.NvDevice.Recovery", {}}};
+    auto signal = makeObjectManagerSignal(
+        signalBus, entityManagerObjManager, "InterfacesAdded",
+        "/xyz/openbmc_project/inventory/system/board/Dev", recoveryOnly);
+    EXPECT_GT(dispatchMatchCallback(entityManagerServiceMatch, signal), 0);
+    EXPECT_EQ(resources.size(), 1u);
+}
+
 TEST_F(FWStatusMainTest, CheckEntityManagerAvailabilityRegistersWatcher)
 {
     checkEntityManagerAvailability();

@@ -17,4 +17,13 @@ inline bool isConfigObject(const InterfaceMap& ifaces)
                "xyz.openbmc_project.Configuration.NvDevice.Recovery");
 }
 
+inline bool touchesConfig(const InterfaceMap& ifaces)
+{
+    return isConfigObject(ifaces) ||
+           ifaces.contains(
+               "xyz.openbmc_project.Configuration.NvDevice.Recovery") ||
+           ifaces.contains(
+               "xyz.openbmc_project.Configuration.NvDevice.Transport");
+}
+
 } // namespace nvidia::software::updater::em_recovery

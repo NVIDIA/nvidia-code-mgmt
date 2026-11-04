@@ -181,6 +181,22 @@ inline bool isConfigObject(const InterfaceMap& ifaces)
            ifaces.contains(deviceRecoveryIface);
 }
 
+/**
+ * @brief Whether one InterfacesAdded signal may have completed a platform
+ *        topology config, as opposed to a full object map (isConfigObject).
+ *
+ * entity-manager sends the NvDevice interface of a device and its nested
+ * Recovery and Transport interfaces in separate signals, so no single signal
+ * carries both and isConfigObject() never matches one. The NvDevice interface
+ * always comes first, so the Recovery interface (or the Transport one, for the
+ * SPI records that expand() withholds) is the signal that completes a device.
+ */
+inline bool touchesConfig(const InterfaceMap& ifaces)
+{
+    return isConfigObject(ifaces) || ifaces.contains(deviceRecoveryIface) ||
+           completesSpi(ifaces);
+}
+
 inline std::optional<Value> prop(const InterfaceMap& ifaces,
                                  const std::string& iface,
                                  const std::string& key)

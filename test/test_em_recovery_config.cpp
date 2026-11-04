@@ -359,6 +359,22 @@ TEST_F(EmRecoveryConfigTest, WaitsForTheTransportInterface)
     EXPECT_NE(record("MCURecovery", "FW_IO_Board_SMA_0"), nullptr);
 }
 
+TEST(EmRecoveryConfigSignal, SingleSignalsThatCompleteADevice)
+{
+    // entity-manager sends NvDevice, Recovery and Transport in separate signals.
+    InterfaceMap nvOnly{{nv, {{"Kind", std::string("cx_sma")}}}};
+    EXPECT_FALSE(rec::touchesConfig(nvOnly));
+    InterfaceMap recoveryOnly{{rc, {}}};
+    EXPECT_FALSE(rec::isConfigObject(recoveryOnly));
+    EXPECT_TRUE(rec::touchesConfig(recoveryOnly));
+    InterfaceMap transportOnly{{rec::transportIface, {}}};
+    EXPECT_TRUE(rec::touchesConfig(transportOnly));
+    InterfaceMap dfu{{rec::usbDfuIface, {}}};
+    EXPECT_TRUE(rec::touchesConfig(dfu));
+    InterfaceMap unrelated{{"xyz.openbmc_project.Unrelated", {}}};
+    EXPECT_FALSE(rec::touchesConfig(unrelated));
+}
+
 TEST(EmRecoveryConfigSignal, TriggersOnTopologyObjectsOnly)
 {
     InterfaceMap nvOnly{{nv, {{"Kind", std::string("cx_sma")}}}};

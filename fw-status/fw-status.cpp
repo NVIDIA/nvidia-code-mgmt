@@ -2053,7 +2053,13 @@ void checkEntityManagerAvailability()
                 InterfaceMap interfaces;
                 msg.read(objPath, interfaces);
 
-                if (isRecoveryConfigObject(interfaces))
+                // entity-manager sends the NvDevice interface and its nested
+                // Recovery/Transport interfaces in separate signals, so the
+                // signal is judged on its own interfaces (touchesConfig), not
+                // as a full object (isRecoveryConfigObject).
+                if (isRecoveryConfigObject(interfaces) ||
+                    nvidia::software::updater::em_recovery::touchesConfig(
+                        interfaces))
                 {
                     // Idempotent: only newly-published configs are acted on.
                     publishDBusRecoveryObject();
