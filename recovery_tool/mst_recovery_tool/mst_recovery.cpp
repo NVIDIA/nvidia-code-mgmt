@@ -336,6 +336,16 @@ std::expected<Policy, std::string> findPolicy(Platform& platform,
                                ": " + policy.error());
     }
     policy->devices = nvDevices(platform, deviceType);
+    if (policy->flow != Flow::Hold && policy->groups.empty())
+    {
+        policy->groups = busGroups(policy->devices);
+    }
+    if (policy->flow != Flow::Hold && policy->groups.empty())
+    {
+        return std::unexpected("invalid MSTRecoveryPolicy for " + deviceType +
+                               ": RecoveryGroups is missing and there are no "
+                               "devices to derive it from");
+    }
     return policy;
 }
 
@@ -572,6 +582,11 @@ std::optional<Recovery::Device> Recovery::readDevice(const std::string& relPath)
     return std::nullopt;
 }
 
+bool Recovery::i2cForce(const std::string& bus, uint16_t addr)
+{
+    return policy.i2cForce.value_or(platform.i2cAddressClaimed(bus, addr));
+}
+
 std::optional<uint32_t> Recovery::readGis(const std::string& bus,
                                           const std::string& addr)
 {
@@ -581,7 +596,7 @@ std::optional<uint32_t> Recovery::readGis(const std::string& bus,
         if (parsed)
         {
             auto data = platform.i2cWriteRead(bus, *parsed, policy.gisRegister,
-                                              policy.i2cForce);
+                                              i2cForce(bus, *parsed));
             if (data)
             {
                 return static_cast<uint32_t>((*data)[0]) << 24 |
@@ -1352,7 +1367,7 @@ int Recovery::runHold(std::vector<std::string> args)
             return std::nullopt;
         }
         auto d = platform.i2cWriteRead(bus, *parsedAddr, policy.gisRegister,
-                                       policy.i2cForce);
+                                       i2cForce(bus, *parsedAddr));
         if (!d)
         {
             return std::nullopt;

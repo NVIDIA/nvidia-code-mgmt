@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <format>
 #include <fstream>
 #include <sstream>
 
@@ -199,6 +200,14 @@ std::optional<std::array<uint8_t, 4>>
         return std::nullopt;
     }
     return std::array<uint8_t, 4>{r[0], r[1], r[2], r[3]};
+}
+
+bool RealPlatform::i2cAddressClaimed(const std::string& bus, uint16_t addr)
+{
+    struct stat st{};
+    return stat(std::format("/sys/bus/i2c/devices/{}-{:04x}/driver", bus, addr)
+                    .c_str(),
+                &st) == 0;
 }
 
 bool RealPlatform::gpioFind(const std::string& name)

@@ -33,7 +33,7 @@ constexpr std::array<TypeSettings, 3> typeSettings{{
      {0x00, 0x05, 0x50, 0x84},
      0x20000019,
      "irisc.global_image_status",
-     false},
+     true},
     {"NVLinkManagementNIC",
      {0x00, 0x05, 0x50, 0x84},
      0x20000019,
@@ -91,6 +91,24 @@ std::string toText(const Value& value)
             }
         },
         value);
+}
+
+std::vector<std::vector<std::string>>
+    busGroups(const std::map<std::string, PropertyMap>& devices)
+{
+    std::vector<std::vector<std::string>> groups;
+    std::map<std::string, size_t> perBus;
+    for (const auto& [name, props] : devices)
+    {
+        auto bus = props.find("I2CBus");
+        size_t wave = bus == props.end() ? 0 : perBus[toText(bus->second)]++;
+        if (wave >= groups.size())
+        {
+            groups.resize(wave + 1);
+        }
+        groups[wave].push_back(name);
+    }
+    return groups;
 }
 
 std::expected<Policy, std::string> parsePolicy(const std::string& path,
@@ -162,15 +180,19 @@ std::expected<Policy, std::string> parsePolicy(const std::string& path,
             }
         }
     }
-    if (p.flow != Flow::Hold && p.groups.empty())
-    {
-        return std::unexpected("RecoveryGroups is missing or empty");
-    }
     if (p.flow == Flow::Mst)
     {
+        if (props.contains("I2CForce"))
+        {
+            const auto* v = get<bool>(props, "I2CForce");
+            if (v == nullptr)
+            {
+                return std::unexpected("I2CForce is not a boolean");
+            }
+            p.i2cForce = *v;
+        }
         for (auto [key, field, fallback] :
-             {std::tuple{"I2CForce", &p.i2cForce, false},
-              std::tuple{"SMAPresenceCheck", &p.smaPresenceCheck, true},
+             {std::tuple{"SMAPresenceCheck", &p.smaPresenceCheck, true},
               std::tuple{"HealthyEvent", &p.healthyEvent, true}})
         {
             const auto* v = get<bool>(props, key);

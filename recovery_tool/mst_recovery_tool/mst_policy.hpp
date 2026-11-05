@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <map>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -42,7 +43,8 @@ struct Policy
     std::string board;
     std::string deviceInterface;
     std::vector<std::vector<std::string>> groups;
-    bool i2cForce = false;
+    // Unset: force only where a kernel driver owns the address
+    std::optional<bool> i2cForce;
     bool smaPresenceCheck = false;
     bool healthyEvent = false;
     std::vector<uint8_t> gisRegister;
@@ -56,6 +58,12 @@ struct Policy
 // Text the way busctl get-property prints a value after the type prefix
 // and quotes are stripped by the scripts.
 std::string toText(const Value& value);
+
+// Recovery waves of `devices`, in name order: a device goes into the wave
+// after the last one holding a device on its I2C bus, since devices sharing
+// a bus cannot be recovered at the same time.
+std::vector<std::vector<std::string>>
+    busGroups(const std::map<std::string, PropertyMap>& devices);
 
 // Policy from the record at `path`; rejects keys its flow does not use.
 std::expected<Policy, std::string> parsePolicy(const std::string& path,

@@ -61,6 +61,8 @@ class Platform
     virtual std::optional<std::array<uint8_t, 4>>
         i2cWriteRead(const std::string& bus, uint16_t addr,
                      const std::vector<uint8_t>& write, bool force) = 0;
+    // A kernel driver owns bus/addr, so a read has to force the address.
+    virtual bool i2cAddressClaimed(const std::string& bus, uint16_t addr) = 0;
 
     virtual bool gpioFind(const std::string& name) = 0;
     virtual bool gpioSet(const std::string& name, int value) = 0;

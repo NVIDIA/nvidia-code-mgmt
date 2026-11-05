@@ -60,6 +60,7 @@ class Recovery
                        bool force);
 
     std::optional<Device> readDevice(const std::string& relPath);
+    bool i2cForce(const std::string& bus, uint16_t addr);
     std::optional<uint32_t> readGis(const std::string& bus,
                                     const std::string& addr);
     bool reset(const Device& dev, int fnpValue);

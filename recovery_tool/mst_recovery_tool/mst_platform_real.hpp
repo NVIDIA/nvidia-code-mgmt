@@ -38,6 +38,7 @@ class RealPlatform : public Platform
     std::optional<std::array<uint8_t, 4>>
         i2cWriteRead(const std::string& bus, uint16_t addr,
                      const std::vector<uint8_t>& write, bool force) override;
+    bool i2cAddressClaimed(const std::string& bus, uint16_t addr) override;
 
     bool gpioFind(const std::string& name) override;
     bool gpioSet(const std::string& name, int value) override;

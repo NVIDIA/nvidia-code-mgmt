@@ -46,6 +46,8 @@ class FakePlatform : public Platform
     std::function<void()> onSleep;
     bool echoOps = false;
     std::set<std::string> devices;
+    // "<bus>-<addr>" a kernel driver owns
+    std::set<std::string> claimed;
     std::map<std::string, std::string> usb;
     std::deque<std::pair<int, std::string>> mstflint;
     std::deque<Value> bootDone;
@@ -154,6 +156,11 @@ class FakePlatform : public Platform
     std::optional<uint64_t> fileSize(const std::string&) override
     {
         return 4096;
+    }
+
+    bool i2cAddressClaimed(const std::string& bus, uint16_t addr) override
+    {
+        return claimed.contains(std::format("{}-{}", bus, addr));
     }
 
     std::optional<std::array<uint8_t, 4>>
@@ -976,6 +983,20 @@ TEST_F(MstNvDeviceTest, VrConnectX)
     EXPECT_TRUE(p.err.empty());
 }
 
+TEST_F(MstNvDeviceTest, DerivedGroupsAndForceOnlyWhereClaimed)
+{
+    addNvDevices("CX_", 2, "ConnectX");
+    p.claimed.insert("70-72");
+    auto record = vrRecord({});
+    record.erase("RecoveryGroups");
+    record.erase("I2CForce");
+    EXPECT_EQ(run({"/tmp/img"}, record), 0);
+    // Different buses (70, 71): one wave; the claimed address is forced.
+    EXPECT_THAT(p.out, Not(Contains(HasSubstr("starting group"))));
+    EXPECT_THAT(p.ops, Contains("i2c 70 72 force=1"));
+    EXPECT_THAT(p.ops, Contains("i2c 71 72 force=0"));
+}
+
 TEST_F(MstNvDeviceTest, HgxrConnectXUsesSoftwareNameAndSmaPort)
 {
     addNvDevices("HGX_ConnectX_", 2, "ConnectX", "HGX_FW_ConnectX_");
@@ -1031,7 +1052,7 @@ TEST(MstPolicyTest, TypeDefaultsAndFlows)
     EXPECT_THAT(nvs->groups, ElementsAre(ElementsAre("A", "B"), L{"C"}));
     EXPECT_TRUE(nvs->smaPresenceCheck);
     EXPECT_TRUE(nvs->healthyEvent);
-    EXPECT_FALSE(nvs->i2cForce);
+    EXPECT_FALSE(nvs->i2cForce.has_value());
     EXPECT_THAT(nvs->gisRegister, ElementsAre(0x00, 0x15, 0x20, 0x80));
     EXPECT_EQ(nvs->gisHealthyValue, 0x5eU);
 
@@ -1051,11 +1072,8 @@ TEST(MstPolicyTest, RejectsIncompleteRecordsAndForeignKeys)
         return p ? std::string() : p.error();
     };
     auto r = vrRecord();
-    r.erase("RecoveryFlow");
-    EXPECT_EQ(error(r), "RecoveryFlow is missing");
-    r = vrRecord();
-    r.erase("I2CForce");
-    EXPECT_EQ(error(r), "I2CForce is missing or not a boolean");
+    r["I2CForce"] = S("yes");
+    EXPECT_EQ(error(r), "I2CForce is not a boolean");
     r = hgxrRecord("NVSwitch", {"A"});
     r["HealthyEvent"] = S("yes");
     EXPECT_EQ(error(r), "HealthyEvent is missing or not a boolean");
@@ -1065,12 +1083,69 @@ TEST(MstPolicyTest, RejectsIncompleteRecordsAndForeignKeys)
     r = bf4Record();
     r["RecoveryGroups"] = L{"A"};
     EXPECT_EQ(error(r), "RecoveryGroups does not apply to this flow");
-    EXPECT_EQ(error(vrRecord({" "})), "RecoveryGroups is missing or empty");
     r = vrRecord();
     r["RecoveryFlow"] = S("Fast");
     EXPECT_EQ(error(r), "unsupported RecoveryFlow Fast");
     r["DeviceType"] = S("GPU");
     EXPECT_EQ(error(r), "unsupported DeviceType");
+}
+
+TEST(MstPolicyTest, ConnectXDefaultsLikeTheOtherTypes)
+{
+    // Only DeviceType: Mst flow, SMA check and healthy event on, I2C force
+    // decided per address.
+    auto cx = parsePolicy("/b/Policy", {{"Name", S("P")},
+                                        {"Type", S("MSTRecoveryPolicy")},
+                                        {"DeviceType", S("ConnectX")}});
+    ASSERT_TRUE(cx.has_value()) << cx.error();
+    EXPECT_EQ(cx->flow, Flow::Mst);
+    EXPECT_TRUE(cx->smaPresenceCheck);
+    EXPECT_TRUE(cx->healthyEvent);
+    EXPECT_FALSE(cx->i2cForce.has_value());
+    EXPECT_TRUE(cx->groups.empty());
+}
+
+TEST(MstPolicyTest, BusGroupsSplitDevicesSharingABus)
+{
+    auto dev = [](uint64_t bus) { return PropertyMap{{"I2CBus", bus}}; };
+    // VR NVL: two ConnectX per CP2112 bus 78..81
+    std::map<std::string, PropertyMap> vr;
+    for (int i = 0; i < 8; ++i)
+    {
+        vr["FW_CX_" + std::to_string(i)] = dev(uint64_t(78 + i / 2));
+    }
+    EXPECT_THAT(busGroups(vr),
+                ElementsAre(L{"FW_CX_0", "FW_CX_2", "FW_CX_4", "FW_CX_6"},
+                            L{"FW_CX_1", "FW_CX_3", "FW_CX_5", "FW_CX_7"}));
+    // HGX-R: one bus per ConnectX (110..117), NVSwitch on 3, 7, 8, 10
+    std::map<std::string, PropertyMap> hgxr;
+    for (int i = 0; i < 8; ++i)
+    {
+        hgxr["HGX_FW_ConnectX_" + std::to_string(i)] = dev(uint64_t(110 + i));
+    }
+    EXPECT_EQ(busGroups(hgxr).size(), 1U);
+    EXPECT_EQ(busGroups(hgxr)[0].size(), 8U);
+    std::map<std::string, PropertyMap> nvs{{"HGX_FW_NVSwitch_0", dev(3)},
+                                           {"HGX_FW_NVSwitch_1", dev(7)},
+                                           {"HGX_FW_NVSwitch_2", dev(8)},
+                                           {"HGX_FW_NVSwitch_3", dev(10)}};
+    EXPECT_THAT(busGroups(nvs),
+                ElementsAre(L{"HGX_FW_NVSwitch_0", "HGX_FW_NVSwitch_1",
+                              "HGX_FW_NVSwitch_2", "HGX_FW_NVSwitch_3"}));
+    EXPECT_TRUE(busGroups({}).empty());
+}
+
+TEST(MstPolicyTest, FindPolicyNeedsGroupsOrDevices)
+{
+    FakePlatform p;
+    PropertyMap r{{"Name", S("P")},
+                  {"Type", S("MSTRecoveryPolicy")},
+                  {"DeviceType", S("ConnectX")}};
+    p.objects["/xyz/openbmc_project/inventory/system/a/Policy"]
+             [policyInterface] = r;
+    EXPECT_EQ(findPolicy(p, "ConnectX", 1, 0).error(),
+              "invalid MSTRecoveryPolicy for ConnectX: RecoveryGroups is "
+              "missing and there are no devices to derive it from");
 }
 
 TEST(MstPolicyTest, FindPolicyMatchesDeviceType)
