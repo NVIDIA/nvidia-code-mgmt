@@ -264,5 +264,91 @@ TEST(McuStarter, Errors)
     EXPECT_TRUE(started.empty());
 }
 
+// Entity Manager publishes the CX9 package at once and BF4 on the third look,
+// as a FRU-probed record would.
+ModelSource lateBf4(int& looks)
+{
+    return [&looks]() {
+        Models m{{"CX9", modelOf("CX9", "8F6B")}};
+        if (++looks >= 3)
+        {
+            m.emplace("BF4", modelOf("BF4", "C8E5"));
+        }
+        return m;
+    };
+}
+
+TEST(McuEm, ModelOf)
+{
+    EXPECT_EQ(modelOf("BF4", "C8E5F4F05A2E4C6B91512E4D7C3CE4C6"),
+              "Nvidia:BF4:C8E5F4F05A2E4C6B91512E4D7C3CE4C6");
+}
+
+TEST(McuEm, WaitModelWaitsForLateRecord)
+{
+    int looks = 0;
+    int sleeps = 0;
+    std::ostringstream err;
+    auto model = waitModel(
+        lateBf4(looks), "BF4", [&](std::chrono::seconds) { ++sleeps; }, err);
+    EXPECT_EQ(model, "Nvidia:BF4:C8E5");
+    EXPECT_EQ(sleeps, 2);
+    EXPECT_TRUE(err.str().empty());
+}
+
+TEST(McuEm, WaitModelGivesUp)
+{
+    int sleeps = 0;
+    std::ostringstream err;
+    auto model = waitModel([] { return Models{}; }, "GPU",
+                           [&](std::chrono::seconds) { ++sleeps; }, err);
+    EXPECT_FALSE(model);
+    EXPECT_EQ(sleeps, fruMaxRetries);
+    EXPECT_NE(err.str().find("no GPU recovery package"), std::string::npos);
+    EXPECT_FALSE(waitModel([] { return Models{}; }, "",
+                           [](std::chrono::seconds) {}, err));
+}
+
+TEST(McuEm, StarterStartsEachInstanceOnceAsItAppears)
+{
+    int looks = 0;
+    std::vector<std::string> started;
+    std::ostringstream out;
+    EXPECT_EQ(startEmUpdaters(
+                  lateBf4(looks),
+                  [&](const std::string& unit) { started.push_back(unit); },
+                  [](std::chrono::seconds) {}, out),
+              0);
+    EXPECT_EQ(started, (std::vector<std::string>{
+                           "com.Nvidia.MCURecovery.Updater@CX9.service",
+                           "com.Nvidia.MCURecovery.Updater@BF4.service"}));
+}
+
+TEST(McuEm, StarterErrors)
+{
+    std::ostringstream out;
+    EXPECT_EQ(startEmUpdaters([] { return Models{}; },
+                              [](const std::string&) {},
+                              [](std::chrono::seconds) {}, out),
+              1);
+    EXPECT_NE(out.str().find("no MCU recovery package"), std::string::npos);
+    std::vector<std::string> started;
+    EXPECT_EQ(startEmUpdaters(
+                  [] { return Models{{"BF4", "m"}, {"CX9", "m"}, {"", "m"}}; },
+                  [&](const std::string& unit) {
+                      started.push_back(unit);
+                      if (unit.find("BF4") != std::string::npos)
+                      {
+                          throw std::runtime_error("busy");
+                      }
+                  },
+                  [](std::chrono::seconds) {}, out),
+              1);
+    // CX9 still starts after BF4 failed; an empty Target is skipped.
+    EXPECT_EQ(started, (std::vector<std::string>{
+                           "com.Nvidia.MCURecovery.Updater@BF4.service",
+                           "com.Nvidia.MCURecovery.Updater@CX9.service"}));
+}
+
 } // namespace
 } // namespace nvidia::software::updater::mcu

@@ -167,26 +167,41 @@ try
         mcu::JournalBuf outBuf(false);
         std::ostream err(&errBuf);
         std::ostream out(&outBuf);
+        auto sleep = [](std::chrono::seconds s) {
+            std::this_thread::sleep_for(s);
+        };
         std::ifstream envStream(mcu::envFile);
         if (!envStream)
         {
-            err << "Error: cannot read " << mcu::envFile << "\n";
-            return 1;
+            // The board publishes its recovery packages in Entity Manager.
+            auto models = mcu::dbusEmModels(bus);
+            if (updater == "MCURecoveryStarter")
+            {
+                return mcu::startEmUpdaters(models, mcu::dbusStartUnit(bus),
+                                            sleep, out);
+            }
+            auto model = mcu::waitModel(models, targetName, sleep, err);
+            if (!model)
+            {
+                return 1;
+            }
+            modelName = *model;
         }
-        auto env = mcu::parseEnv(envStream);
-        if (updater == "MCURecoveryStarter")
+        else
         {
-            return mcu::startUpdaters(env, mcu::dbusStartUnit(bus), out);
+            auto env = mcu::parseEnv(envStream);
+            if (updater == "MCURecoveryStarter")
+            {
+                return mcu::startUpdaters(env, mcu::dbusStartUnit(bus), out);
+            }
+            auto model = mcu::resolveModel(env, targetName,
+                                           mcu::dbusFruLookup(bus), sleep, err);
+            if (!model)
+            {
+                return 1;
+            }
+            modelName = *model;
         }
-        auto model = mcu::resolveModel(
-            env, targetName, mcu::dbusFruLookup(bus),
-            [](std::chrono::seconds s) { std::this_thread::sleep_for(s); },
-            err);
-        if (!model)
-        {
-            return 1;
-        }
-        modelName = *model;
     }
 #endif
 

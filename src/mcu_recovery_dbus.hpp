@@ -32,6 +32,9 @@ FruLookup dbusFruLookup(sdbusplus::bus_t& bus);
 // systemd StartUnit in "replace" mode (systemctl --no-block start).
 StartUnit dbusStartUnit(sdbusplus::bus_t& bus);
 
+// The MCURecoveryPackage records Entity Manager publishes.
+ModelSource dbusEmModels(sdbusplus::bus_t& bus);
+
 // Stream buffer sending each line to the journal through lg2.
 class JournalBuf : public std::streambuf
 {

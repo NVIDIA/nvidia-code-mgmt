@@ -18,6 +18,7 @@
 
 #include <charconv>
 #include <exception>
+#include <set>
 #include <string_view>
 
 namespace nvidia::software::updater::mcu
@@ -171,6 +172,82 @@ std::optional<std::string> resolveModel(const Env& env,
     return std::nullopt;
 }
 
+namespace
+{
+
+bool startUnit(const StartUnit& start, const std::string& target,
+               std::ostream& out)
+{
+    auto unit = "com.Nvidia.MCURecovery.Updater@" + target + ".service";
+    out << "Starting " << unit << "\n";
+    try
+    {
+        start(unit);
+    }
+    catch (const std::exception& e)
+    {
+        out << "Error: starting " << unit << ": " << e.what() << "\n";
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
+std::string modelOf(const std::string& target, const std::string& uuid)
+{
+    return "Nvidia:" + target + ":" + uuid;
+}
+
+std::optional<std::string> waitModel(const ModelSource& models,
+                                     const std::string& instance,
+                                     const Sleep& sleep, std::ostream& err)
+{
+    if (instance.empty())
+    {
+        err << "Error: instance name required\n";
+        return std::nullopt;
+    }
+    for (int retry = 0; retry < fruMaxRetries; ++retry)
+    {
+        auto all = models();
+        if (auto it = all.find(instance); it != all.end())
+        {
+            return it->second;
+        }
+        sleep(fruRetryInterval);
+    }
+    err << "Error: no " << instance << " recovery package in Entity Manager"
+        << " after " << fruMaxRetries * fruRetryInterval.count() << "s\n";
+    return std::nullopt;
+}
+
+int startEmUpdaters(const ModelSource& models, const StartUnit& start,
+                    const Sleep& sleep, std::ostream& out)
+{
+    std::set<std::string> seen;
+    bool failed = false;
+    for (int retry = 0; retry < fruMaxRetries; ++retry)
+    {
+        for (const auto& [target, _] : models())
+        {
+            // A failed start does not keep later instances from starting.
+            if (!target.empty() && seen.insert(target).second &&
+                !startUnit(start, target, out))
+            {
+                failed = true;
+            }
+        }
+        sleep(fruRetryInterval);
+    }
+    if (seen.empty())
+    {
+        out << "Error: no MCU recovery package in Entity Manager\n";
+        return 1;
+    }
+    return failed ? 1 : 0;
+}
+
 int startUpdaters(const Env& env, const StartUnit& start, std::ostream& out)
 {
     auto countStr = get(env, "INSTANCE_COUNT");
@@ -198,15 +275,8 @@ int startUpdaters(const Env& env, const StartUnit& start, std::ostream& out)
             out << "Error: TARGET_NAME_" << i << " not set\n";
             return 1;
         }
-        auto unit = "com.Nvidia.MCURecovery.Updater@" + target + ".service";
-        out << "Starting " << unit << "\n";
-        try
+        if (!startUnit(start, target, out))
         {
-            start(unit);
-        }
-        catch (const std::exception& e)
-        {
-            out << "Error: starting " << unit << ": " << e.what() << "\n";
             return 1;
         }
     }

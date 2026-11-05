@@ -16,10 +16,11 @@
  */
 #include "mcu_recovery_dbus.hpp"
 
+#include "dbusutils.hpp"
+
 #include <phosphor-logging/lg2.hpp>
 
 #include <cstdint>
-#include <map>
 #include <variant>
 #include <vector>
 
@@ -128,6 +129,38 @@ FruLookup dbusFruLookup(sdbusplus::bus_t& bus)
             logError(fruRoot, e);
         }
         return std::nullopt;
+    };
+}
+
+ModelSource dbusEmModels(sdbusplus::bus_t& bus)
+{
+    return [&bus]() {
+        Models models;
+        // Empty until Entity Manager is up; the caller retries.
+        auto objects = DBUSUtils(bus).getManagedObjects(
+            "xyz.openbmc_project.EntityManager",
+            "/xyz/openbmc_project/inventory");
+        for (const auto& [_, ifaces] : objects)
+        {
+            auto it = ifaces.find(emPackageIface);
+            if (it == ifaces.end())
+            {
+                continue;
+            }
+            auto target = it->second.find("Target");
+            auto uuid = it->second.find("PackageUUID");
+            if (target == it->second.end() || uuid == it->second.end())
+            {
+                continue;
+            }
+            const auto* t = std::get_if<std::string>(&target->second);
+            const auto* u = std::get_if<std::string>(&uuid->second);
+            if (t != nullptr && u != nullptr && !u->empty())
+            {
+                models.try_emplace(*t, modelOf(*t, *u));
+            }
+        }
+        return models;
     };
 }
 

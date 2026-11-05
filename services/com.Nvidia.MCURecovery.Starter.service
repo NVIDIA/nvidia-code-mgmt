@@ -4,8 +4,9 @@ Wants=pldmd.service
 After=pldmd.service
 
 [Service]
-Type=oneshot
-EnvironmentFile=/etc/mcurecovery/mcurecovery.env
+# Keeps starting updaters as Entity Manager publishes their packages for up
+# to 300 s; exec so that window never holds up multi-user.target.
+Type=exec
 ExecStart=/usr/bin/code-manager -u MCURecoveryStarter
 
 [Install]

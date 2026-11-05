@@ -8,10 +8,10 @@ Wants=xyz.openbmc_project.FruDevice.service
 After=xyz.openbmc_project.FruDevice.service
 
 [Service]
-EnvironmentFile=/etc/mcurecovery/mcurecovery.env
 ExecStart=/usr/bin/code-manager -u MCURecovery -i %i
 Restart=always
 Type=dbus
-# FRU variant detection waits up to 300 s before the bus name is claimed
+# The model wait (Entity Manager record or FRU variant) takes up to 300 s
+# before the bus name is claimed
 TimeoutStartSec=330
 BusName=com.Nvidia.Software.MCURecovery.Updater.%i

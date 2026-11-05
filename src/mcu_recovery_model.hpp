@@ -62,4 +62,27 @@ std::optional<std::string> resolveModel(const Env& env,
 using StartUnit = std::function<void(const std::string& unit)>;
 int startUpdaters(const Env& env, const StartUnit& start, std::ostream& out);
 
+// Entity Manager publishes one Configuration.MCURecoveryPackage per instance
+// (Target, PackageUUID). A board that still ships envFile reads that instead.
+inline constexpr auto emPackageIface =
+    "xyz.openbmc_project.Configuration.MCURecoveryPackage";
+
+// Model of each instance Entity Manager publishes, by instance name.
+using Models = std::map<std::string, std::string>;
+using ModelSource = std::function<Models()>;
+
+// "Nvidia:<target>:<uuid>", the model string code-manager runs with.
+std::string modelOf(const std::string& target, const std::string& uuid);
+
+// The model of instance, waiting up to fruMaxRetries * fruRetryInterval for
+// its record, as the FRU variant detection waited; nullopt after reporting.
+std::optional<std::string> waitModel(const ModelSource& models,
+                                     const std::string& instance,
+                                     const Sleep& sleep, std::ostream& err);
+
+// Starts the updater of every instance Entity Manager publishes within the
+// same window, each once. Returns the process exit code.
+int startEmUpdaters(const ModelSource& models, const StartUnit& start,
+                    const Sleep& sleep, std::ostream& out);
+
 } // namespace nvidia::software::updater::mcu
