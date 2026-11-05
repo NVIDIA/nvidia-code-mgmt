@@ -426,6 +426,7 @@ inline std::optional<PropertyMap>
         copy(r, "Polarity", dev, deviceRecoveryIface, "FatalErrorPolarity");
         copy(r, "APName", dev, deviceRecoveryIface, "ApName");
         copy(r, "Target", dev, deviceRecoveryIface, "Target");
+        copy(r, "MctpInterface", dev, deviceRecoveryIface, "MctpInterface");
         copy(r, "I2CAddress", dev, deviceRecoveryIface, "I2CAddress");
         copy(r, "I2CBus", dev, deviceRecoveryIface, "I2CBus");
     }

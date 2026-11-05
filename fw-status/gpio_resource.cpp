@@ -225,10 +225,11 @@ GPIOResource::GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
                            std::optional<uint64_t> apBootStatusMaxRetries,
                            std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
                            bool hideWhenHealthy,
-                           const std::string& recoveryExitCheckConfig) :
+                           const std::string& recoveryExitCheckConfig,
+                           const std::string& mctpInterface) :
     BaseResource(bus, objPath), sdEvent(event), eid(eid), gpioLineName(gpio),
-    systemTarget(target), hideWhenHealthy(hideWhenHealthy),
-    polarity(parseGPIOPolarity(gpioPolarity)),
+    systemTarget(target), mctpInterface(mctpInterface),
+    hideWhenHealthy(hideWhenHealthy), polarity(parseGPIOPolarity(gpioPolarity)),
     monitorMode(parseMonitorMode(monitorModeConfig)),
     recoveryExitCheck(parseRecoveryExitCheck(recoveryExitCheckConfig)),
     pollingInterval(getPollingInterval(pollingIntervalMs)),
@@ -718,24 +719,17 @@ void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
     {
         stopERoTRecoveryMonitor();
         lg2::info("{OBJ} exits the recovery mode", "OBJ", path);
-        if (systemTarget.empty())
+        /*
+         *  Some ERoTs on the same bus which share the same target
+         *  Restart the target to ensure the later one can trigger
+         *  the MCTP re-discovery
+         */
+        systemTargetRestarted = initEndpoint();
+        if (!systemTargetRestarted)
         {
             lg2::warning(
                 "No MCTP init target configured for recovered ERoT {OBJ}",
                 "OBJ", path);
-        }
-        else
-        {
-            auto newBus = sdbusplus::bus::new_default();
-            auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
-            lg2::info("Restarting {TARGET}...", "TARGET", systemTarget);
-            /*
-             *  Some ERoTs on the same bus which share the same target
-             *  Restart the target to ensure the later one can trigger
-             *  the MCTP re-discovery
-             */
-            dbusUtil.restartSystemUnit(systemTarget);
-            systemTargetRestarted = true;
         }
         isFirmwareInRecovery = false;
     }
@@ -743,7 +737,7 @@ void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
 
     if (reason == HealthUpdateReason::FatalErrorAssert && hasAP())
     {
-        if (systemTarget.empty())
+        if (systemTarget.empty() && mctpInterface.empty())
         {
             lg2::warning(
                 "No MCTP init target configured for AP of {OBJ}; HMC ERoT endpoint may be missing before AP boot-status query",
@@ -751,12 +745,10 @@ void GPIOResource::updateERoTHealth(GPIOResource::HealthUpdateReason reason)
         }
         else if (!systemTargetRestarted)
         {
-            auto newBus = sdbusplus::bus::new_default();
-            auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
             lg2::info(
-                "Restarting {TARGET} to initialize HMC ERoT endpoint before AP boot-status query",
-                "TARGET", systemTarget);
-            dbusUtil.restartSystemUnit(systemTarget);
+                "Initializing HMC ERoT endpoint of {OBJ} before AP boot-status query",
+                "OBJ", path);
+            initEndpoint();
         }
         else
         {
@@ -1113,32 +1105,51 @@ void GPIOResource::startERoTRecoveryMonitor()
     triggerMctpDiscovery();
 }
 
-void GPIOResource::triggerMctpDiscovery()
+bool GPIOResource::initEndpoint()
 {
-    // A directly-attached ERoT needs a target restart to (re)trigger MCTP
-    // discovery. An ERoT behind an MCTP bridge has no target configured and its
-    // endpoint appears on its own. Restarting the target does not disturb the
-    // separate glacier recovery I2C.
-    if (systemTarget.empty())
+    if (mctpInterface.empty() && systemTarget.empty())
     {
-        return;
+        return false;
     }
-
     try
     {
         auto newBus = sdbusplus::bus::new_default();
-        auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
-        lg2::info(
-            "Restarting {TARGET} to trigger MCTP discovery for recovering ERoT {OBJ}",
-            "TARGET", systemTarget, "OBJ", path);
-        dbusUtil.restartSystemUnit(systemTarget);
+        if (mctpInterface.empty())
+        {
+            auto dbusUtil = nvidia::software::updater::DBUSUtils(newBus);
+            lg2::info("Restarting {TARGET} for ERoT {OBJ}", "TARGET",
+                      systemTarget, "OBJ", path);
+            dbusUtil.restartSystemUnit(systemTarget);
+            return true;
+        }
+        lg2::info("Assigning EID {EID} on {IF} for ERoT {OBJ}", "EID", eid,
+                  "IF", mctpInterface, "OBJ", path);
+        auto call = newBus.new_method_call(
+            "au.com.codeconstruct.MCTP1",
+            ("/au/com/codeconstruct/mctp1/interfaces/" + mctpInterface).c_str(),
+            "au.com.codeconstruct.MCTP.BusOwner1", "AssignEndpointStatic");
+        call.append(std::vector<uint8_t>{}, eid, uint8_t{0},
+                    std::vector<uint8_t>{}, std::vector<uint8_t>{});
+        // Queued, not waited for, like the unit restart it replaces: mctpd
+        // may take long to reach an ERoT that is still recovering. The event
+        // loop of this default bus sends it.
+        auto slot = call.call_async([](sdbusplus::message_t) {});
     }
     catch (const std::exception& e)
     {
-        lg2::error(
-            "Failed to restart {TARGET} for recovering ERoT {OBJ}: {ERR}",
-            "TARGET", systemTarget, "OBJ", path, "ERR", e.what());
+        lg2::error("Failed to set up the MCTP endpoint of ERoT {OBJ}: {ERR}",
+                   "OBJ", path, "ERR", e.what());
     }
+    return true;
+}
+
+void GPIOResource::triggerMctpDiscovery()
+{
+    // A directly-attached ERoT needs its endpoint set up again to (re)trigger
+    // MCTP discovery. An ERoT behind an MCTP bridge has nothing configured and
+    // its endpoint appears on its own. This does not disturb the separate
+    // glacier recovery I2C.
+    initEndpoint();
 }
 
 void GPIOResource::onERoTEndpointAdded(sdbusplus::message::message& msg)

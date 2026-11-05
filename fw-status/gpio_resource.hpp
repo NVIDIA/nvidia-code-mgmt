@@ -90,6 +90,8 @@ class GPIOResource : public BaseResource
      * @param apBootStatusMaxRetries - Optional AP boot-status query retry count
      * @param mctpVdmHelper - MCTP VDM helper object
      * @param hideWhenHealthy - Whether to hide the D-Bus object when healthy
+     * @param mctpInterface - mctpd interface on which to assign the ERoT its
+     * static EID, instead of restarting target
      *
      */
     GPIOResource(sdbusplus::bus_t& bus, const std::string& objPath,
@@ -103,7 +105,8 @@ class GPIOResource : public BaseResource
                  std::optional<uint64_t> apBootStatusMaxRetries,
                  std::shared_ptr<MCTPVdmHelper> mctpVdmHelper,
                  bool hideWhenHealthy = false,
-                 const std::string& recoveryExitCheck = "");
+                 const std::string& recoveryExitCheck = "",
+                 const std::string& mctpInterface = "");
 
     ~GPIOResource() override;
 
@@ -112,6 +115,7 @@ class GPIOResource : public BaseResource
     uint8_t eid;
     std::string gpioLineName;
     std::string systemTarget;
+    std::string mctpInterface;
     bool isFirmwareInRecovery = false;
     bool hideWhenHealthy = false;
     int polarity;
@@ -295,6 +299,11 @@ class GPIOResource : public BaseResource
     /** @brief Restart the MCTP init target to (re)trigger discovery of a
      * directly-attached ERoT. No-op when no target is configured.
      */
+    /** @brief Sets up the ERoT's MCTP endpoint: assigns its static EID on
+     *         mctpInterface, or restarts systemTarget. False when neither
+     *         is configured. */
+    bool initEndpoint();
+
     void triggerMctpDiscovery();
 
     /** @brief Re-evaluate health after the ERoT MCTP endpoint reappears, using

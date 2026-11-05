@@ -1343,11 +1343,19 @@ void publishDBusRecoveryObject()
                                               "RecoveryExitCheck");
             }
 
+            std::string mctpInterface;
+            if (hasProperty(interfaces, gpioErotObjInterface, "MctpInterface"))
+            {
+                mctpInterface = getString(interfaces, gpioErotObjInterface,
+                                          "MctpInterface");
+            }
+
             resources.push_back(std::make_unique<GPIOResource>(
                 getBus(), objPath, event, i2cBus, i2cAddress, eid, gpio, target,
                 monitorMode, pollingIntervalMs, polarity, apName,
                 apBootStatusRetryIntervalMs, apBootStatusMaxRetries,
-                mctpVdmHelper, hideWhenHealthy, recoveryExitCheck));
+                mctpVdmHelper, hideWhenHealthy, recoveryExitCheck,
+                mctpInterface));
 
             applyChassisConnectionAndRefresh(interfaces, gpioErotObjInterface,
                                              *resources.back(),
