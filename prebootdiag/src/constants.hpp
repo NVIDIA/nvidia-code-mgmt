@@ -87,8 +87,12 @@ enum class DiagStatus : uint8_t
     TestRunning = 0x5,
 };
 
-// CPU boot-chain selection GPIO. Driven high in initGpioSequence() to
-// signal CPUs to enter preboot-diag boot; cleared at session end.
+// Per-board strap held high during the session so the CPU boots into
+// preboot diag (Vera GP160 PREBOOT_DIAG).
+inline constexpr std::format_string<int> cpuPrebootDiagGpioFormat =
+    "BRD{}_CPU_PREBOOT_DIAG-O";
+
+// Legacy line name for the same strap, still used by VR-NVL device trees.
 inline constexpr std::format_string<int> cpuBootChain0GpioFormat =
     "BRD{}_CPU_BOOT_CHAIN0-O";
 

@@ -24,10 +24,8 @@
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/exception.hpp>
 
-#include <array>
 #include <format>
 #include <stdexcept>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -39,31 +37,54 @@ using namespace constants;
 namespace
 {
 
-std::tuple<std::string, std::string> makeBoardGpioNames(int board)
+struct BoardGpios
 {
-    return {std::format(istSysRstGpioFormat, static_cast<int>(board)),
-            std::format(cpuBootChain0GpioFormat, static_cast<int>(board))};
-}
-
-std::vector<std::string> findMissingGpios(GpioHandlerInterface& gpio,
-                                          const std::string& resetGpio,
-                                          const std::string& bootChainGpio)
-{
+    std::string reset;
+    std::string strap;
     std::vector<std::string> missing;
-    const std::array<const std::string*, 2> required{
-        &resetGpio,
-        &bootChainGpio,
-    };
 
-    for (const auto* name : required)
+    // Exactly one of the board's two lines is missing.
+    bool partial() const
     {
-        if (!gpio.isPinAvailable(*name))
-        {
-            missing.push_back(*name);
-        }
+        return missing.size() == 1;
     }
 
-    return missing;
+    // Neither line exists, so the board is not populated.
+    bool absent() const
+    {
+        return missing.size() == 2;
+    }
+};
+
+BoardGpios findBoardGpios(GpioHandlerInterface& gpio, int board)
+{
+    BoardGpios gpios{
+        .reset = std::format(istSysRstGpioFormat, static_cast<int>(board)),
+        .strap = std::format(cpuPrebootDiagGpioFormat, static_cast<int>(board)),
+        .missing = {},
+    };
+
+    if (!gpio.isPinAvailable(gpios.reset))
+    {
+        gpios.missing.push_back(gpios.reset);
+    }
+
+    if (gpio.isPinAvailable(gpios.strap))
+    {
+        return gpios;
+    }
+
+    // Fall back to the legacy strap name when the board's DT predates it.
+    std::string legacy =
+        std::format(cpuBootChain0GpioFormat, static_cast<int>(board));
+    if (!gpio.isPinAvailable(legacy))
+    {
+        gpios.missing.push_back(std::format("{} or {}", gpios.strap, legacy));
+        return gpios;
+    }
+
+    gpios.strap = std::move(legacy);
+    return gpios;
 }
 
 std::string joinGpios(const std::vector<std::string>& names)
@@ -420,44 +441,40 @@ void PreBootDiag::checkGpios()
     activeResetGpios.clear();
     activeBootChainGpios.clear();
 
-    auto [board0ResetGpio, board0BootChainGpio] = makeBoardGpioNames(0);
-    if (auto missing =
-            findMissingGpios(*gpio, board0ResetGpio, board0BootChainGpio);
-        !missing.empty())
+    BoardGpios board0 = findBoardGpios(*gpio, 0);
+    if (!board0.missing.empty())
     {
-        auto missingNames = joinGpios(missing);
+        const std::string missingNames = joinGpios(board0.missing);
         lg2::error("PreBootDiag: Required BRD0 GPIOs missing: {PINS}", "PINS",
                    missingNames);
         throw std::runtime_error("Required BRD0 GPIOs missing: " +
                                  missingNames);
     }
 
-    auto [board1ResetGpio, board1BootChainGpio] = makeBoardGpioNames(1);
-    auto missing =
-        findMissingGpios(*gpio, board1ResetGpio, board1BootChainGpio);
-    if (missing.size() == 1)
+    BoardGpios board1 = findBoardGpios(*gpio, 1);
+    if (board1.partial())
     {
-        auto missingNames = joinGpios(missing);
+        const std::string missingNames = joinGpios(board1.missing);
         lg2::error("PreBootDiag: Partial BRD1 GPIO availability: {PINS}",
                    "PINS", missingNames);
         throw std::runtime_error("Partial BRD1 GPIO availability: " +
                                  missingNames);
     }
 
-    activeResetGpios.push_back(std::move(board0ResetGpio));
-    activeBootChainGpios.push_back(std::move(board0BootChainGpio));
+    activeResetGpios.push_back(std::move(board0.reset));
+    activeBootChainGpios.push_back(std::move(board0.strap));
 
-    if (missing.size() == 2)
+    if (board1.absent())
     {
         lg2::error(
             "PreBootDiag: Optional BRD1 GPIOs missing, continuing with BRD0 "
             "only: {PINS}",
-            "PINS", joinGpios(missing));
+            "PINS", joinGpios(board1.missing));
         return;
     }
 
-    activeResetGpios.push_back(std::move(board1ResetGpio));
-    activeBootChainGpios.push_back(std::move(board1BootChainGpio));
+    activeResetGpios.push_back(std::move(board1.reset));
+    activeBootChainGpios.push_back(std::move(board1.strap));
 }
 
 void PreBootDiag::initGpioSequence()
