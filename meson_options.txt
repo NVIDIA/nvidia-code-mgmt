@@ -104,6 +104,16 @@ option('VHMC_FIRMWARE_INVENTORY_ID',
        value: 'HGX_FW_BMC_0',
        description: 'Firmware inventory Id that identifies vHMC in UpdatePolicy Targets')
 
+option('VHMC_FIRMWARE_MANUFACTURER',
+       type: 'string',
+       value: 'NVIDIA',
+       description: 'Manufacturer reported for the vHMC firmware inventory')
+
+option('VHMC_FIRMWARE_DESCRIPTION',
+       type: 'string',
+       value: 'vHMC image',
+       description: 'Description reported for the vHMC firmware inventory')
+
 option('SPI_WRITE_PROTECT_APP_SUPPORT',
        type: 'feature',
        value: 'disabled',

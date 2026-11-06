@@ -12,12 +12,13 @@
 
 #include <sdbusplus/server/manager.hpp>
 #include <xyz/openbmc_project/Association/Definitions/server.hpp>
+#include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
+#include <xyz/openbmc_project/Inventory/Item/server.hpp>
 #include <xyz/openbmc_project/Software/BuildType/server.hpp>
 #include <xyz/openbmc_project/Software/ExtendedVersion/server.hpp>
 #include <xyz/openbmc_project/Software/Slot/server.hpp>
 #include <xyz/openbmc_project/Software/State/server.hpp>
 #include <xyz/openbmc_project/Software/Version/server.hpp>
-#include <xyz/openbmc_project/Software/VersionComparison/server.hpp>
 
 #include <memory>
 #include <optional>
@@ -35,7 +36,6 @@ using softwareSlotInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Software::server::ExtendedVersion,
     sdbusplus::xyz::openbmc_project::Software::server::BuildType,
     sdbusplus::xyz::openbmc_project::Software::server::State,
-    sdbusplus::xyz::openbmc_project::Software::server::VersionComparison,
     sdbusplus::xyz::openbmc_project::Association::server::Definitions>;
 
 /**
@@ -56,6 +56,8 @@ class VHMCFirmwareSlot : public softwareSlotInherit
 
 using firmwareInventoryInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::Software::server::Version,
+    sdbusplus::xyz::openbmc_project::Inventory::Decorator::server::Asset,
+    sdbusplus::xyz::openbmc_project::Inventory::server::Item,
     sdbusplus::xyz::openbmc_project::Association::server::Definitions>;
 
 /**
@@ -79,6 +81,9 @@ class VHMCFirmwareInventory : public firmwareInventoryInherit
     {
         purpose(sdbusplus::xyz::openbmc_project::Software::server::Version::
                     VersionPurpose::Other);
+        manufacturer(VHMC_FIRMWARE_MANUFACTURER);
+        description(VHMC_FIRMWARE_DESCRIPTION);
+        present(true);
     }
 };
 
@@ -164,8 +169,6 @@ class VHMCItemUpdater : public BaseItemUpdater
     {
         std::string version;
         std::string buildType;
-        uint32_t comparisonNumber = 0;
-        bool hasComparisonNumber = false;
     };
 
     /** @brief Publish the firmware inventory object for the vHMC. */
