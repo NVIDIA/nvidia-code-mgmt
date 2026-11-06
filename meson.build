@@ -142,6 +142,14 @@ if get_option('VHMC_FLASH_SUPPORT').enabled()
         get_option('VHMC_FIRMWARE_INVENTORY_ID'),
     )
     cdata.set_quoted(
+        'VHMC_FIRMWARE_MANUFACTURER',
+        get_option('VHMC_FIRMWARE_MANUFACTURER'),
+    )
+    cdata.set_quoted(
+        'VHMC_FIRMWARE_DESCRIPTION',
+        get_option('VHMC_FIRMWARE_DESCRIPTION'),
+    )
+    cdata.set_quoted(
         'VHMC_FIRMWARE_INVENTORY_OBJPATH',
         '/xyz/openbmc_project/software',
     )

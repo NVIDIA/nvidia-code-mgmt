@@ -173,19 +173,6 @@ std::optional<VHMCItemUpdater::SlotMetadata>
         auto data = nlohmann::json::parse(file);
         metadata.version = data.value("version", "");
         metadata.buildType = data.value("BuildType", "");
-
-        auto stamp = data.find("ComponentComparisonStamp");
-        if (stamp != data.end() && stamp->is_number_unsigned())
-        {
-            metadata.comparisonNumber = stamp->get<uint32_t>();
-            metadata.hasComparisonNumber = true;
-        }
-        else if (stamp != data.end() && stamp->is_string())
-        {
-            metadata.comparisonNumber = static_cast<uint32_t>(
-                std::stoul(stamp->get<std::string>(), nullptr, 0));
-            metadata.hasComparisonNumber = true;
-        }
     }
     catch (const std::exception& e)
     {
@@ -249,10 +236,6 @@ std::string
         // No vHMC image carries BuildType in its metadata yet, and every
         // image built so far is a development one.
         slot->buildType(VHMCFirmwareSlot::FirmwareBuildType::Development);
-    }
-    if (metadata->hasComparisonNumber)
-    {
-        slot->firmwareComparisonNumber(metadata->comparisonNumber);
     }
     return metadata->version;
 }
