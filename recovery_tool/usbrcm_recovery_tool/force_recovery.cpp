@@ -57,11 +57,18 @@ static std::vector<gpiod::line> assertReset(const RecoveryPinConfig& cfg)
         {
             auto line = gpiod::find_line(name);
             if (!line)
-                throw std::runtime_error("Reset GPIO not found: " + name);
+            {
+                // Board not populated (e.g. BRD1 on a single-CPU C1G2 tray).
+                lg2::warning("Reset GPIO not present, skipping: {NAME}", "NAME",
+                             name);
+                continue;
+            }
             line.request({"usbrcm", gpiod::line_request::DIRECTION_OUTPUT, 0},
                          0); // active-low: 0 = reset asserted
             lines.push_back(std::move(line));
         }
+        if (lines.empty())
+            throw std::runtime_error("No reset GPIO found");
         return lines;
     }
     dbusReset(true, cfg);
@@ -107,6 +114,12 @@ void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
     std::vector<gpiod::line> strapLines;
     for (size_t i = 0; i < cfg.strapPins.size(); ++i)
     {
+        if (!gpiod::find_line(cfg.strapPins[i]))
+        {
+            lg2::warning("Strap GPIO not present, skipping: {PIN}", "PIN",
+                         cfg.strapPins[i]);
+            continue;
+        }
         auto line = claimGpio(cfg.strapPins[i], cfg.strapActiveValues[i]);
         if (!line)
         {
@@ -145,6 +158,8 @@ void setGPIODefaultPinStates(const RecoveryPinConfig& cfg, nlohmann::json& out)
     std::vector<std::string> failures;
     for (size_t i = 0; i < cfg.strapPins.size(); ++i)
     {
+        if (!gpiod::find_line(cfg.strapPins[i]))
+            continue; // not populated; already warned during force recovery
         auto line = claimGpio(cfg.strapPins[i], cfg.strapDefaultValues[i]);
         if (!line)
             failures.push_back(cfg.strapPins[i]);
