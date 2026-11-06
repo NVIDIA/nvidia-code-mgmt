@@ -57,11 +57,17 @@ static std::vector<gpiod::line> assertReset(const RecoveryPinConfig& cfg)
         {
             auto line = gpiod::find_line(name);
             if (!line)
-                throw std::runtime_error("Reset GPIO not found: " + name);
+            {
+                lg2::warning("Reset GPIO not present, skipping: {NAME}", "NAME",
+                             name);
+                continue;
+            }
             line.request({"usbrcm", gpiod::line_request::DIRECTION_OUTPUT, 0},
                          0); // active-low: 0 = reset asserted
             lines.push_back(std::move(line));
         }
+        if (lines.empty())
+            throw std::runtime_error("No reset GPIO found");
         return lines;
     }
     dbusReset(true, cfg);
@@ -108,25 +114,33 @@ void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
     // are stable until reset is released in Phase 3, regardless of whether
     // the underlying GPIO driver or expander retains output state on release.
     std::vector<gpiod::line> strapLines;
+    std::vector<size_t> strapIdx; // cfg index of strapLines[j] (pins skipped)
     for (size_t i = 0; i < cfg.strapPins.size(); ++i)
     {
+        if (!gpiod::find_line(cfg.strapPins[i]))
+        {
+            lg2::warning("Strap GPIO not present, skipping: {PIN}", "PIN",
+                         cfg.strapPins[i]);
+            continue;
+        }
         auto line = claimGpio(cfg.strapPins[i], cfg.strapActiveValues[i]);
         if (!line)
         {
-            // Straps 0..i-1 are already driven to their recovery values.
+            // The claimed straps are already driven to their recovery values.
             // Releasing the line handles does not undo that, so roll them
             // back to defaults here — while reset is still asserted — rather
             // than leaving a half-strapped board for the next boot attempt.
             for (size_t j = 0; j < strapLines.size(); ++j)
             {
+                const size_t k = strapIdx[j];
                 try
                 {
-                    strapLines[j].set_value(cfg.strapDefaultValues[j]);
+                    strapLines[j].set_value(cfg.strapDefaultValues[k]);
                 }
                 catch (const std::exception& e)
                 {
                     lg2::error("Failed to roll back strap {PIN}: {ERR}", "PIN",
-                               cfg.strapPins[j], "ERR", e.what());
+                               cfg.strapPins[k], "ERR", e.what());
                 }
             }
 
@@ -152,6 +166,7 @@ void forceRecoveryMode(const RecoveryPinConfig& cfg, nlohmann::json& out)
             return;
         }
         strapLines.push_back(std::move(*line));
+        strapIdx.push_back(i);
     }
 
     // Phase 3: release all resets; CPUs now sample the held strap values.
@@ -182,6 +197,8 @@ void setGPIODefaultPinStates(const RecoveryPinConfig& cfg, nlohmann::json& out)
     std::vector<std::string> failures;
     for (size_t i = 0; i < cfg.strapPins.size(); ++i)
     {
+        if (!gpiod::find_line(cfg.strapPins[i]))
+            continue; // not populated; already warned during force recovery
         auto line = claimGpio(cfg.strapPins[i], cfg.strapDefaultValues[i]);
         if (!line)
             failures.push_back(cfg.strapPins[i]);
