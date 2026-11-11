@@ -12,14 +12,17 @@
 
 #include <endian.h>
 #include <sys/socket.h>
+#include <systemd/sd-bus.h>
 
-#include <com/nvidia/BIOS/ClearNVRAM/server.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/message.hpp>
 #include <sdbusplus/server.hpp>
+#include <sdbusplus/server/interface.hpp>
 #include <sdbusplus/server/manager.hpp>
 #include <sdbusplus/timer.hpp>
+#include <sdbusplus/vtable.hpp>
 #include <sdeventplus/event.hpp>
 #include <xyz/openbmc_project/Common/Progress/server.hpp>
 #include <xyz/openbmc_project/Common/error.hpp>
@@ -33,6 +36,7 @@
 #include <cstdlib>
 #include <deque>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -45,14 +49,13 @@
 namespace
 {
 
-using ClearNVRAMInterface = sdbusplus::server::object_t<
-    sdbusplus::com::nvidia::BIOS::server::ClearNVRAM>;
 using ProgressInterface = sdbusplus::server::object_t<
     sdbusplus::server::xyz::openbmc_project::common::Progress>;
 
 constexpr auto serviceName = "com.Nvidia.BiosEroTSpi";
 constexpr auto objectManagerPath = "/xyz/openbmc_project/bios";
 constexpr auto clearNVRAMPath = "/xyz/openbmc_project/bios/clear_nvram";
+constexpr auto clearNVRAMInterface = "com.nvidia.BIOS.ClearNVRAM";
 constexpr auto clearProgressPath =
     "/xyz/openbmc_project/status/BIOS_ClearNVRAM";
 constexpr auto inventoryRootPath = "/xyz/openbmc_project/inventory";
@@ -96,7 +99,7 @@ struct OperationConfig
     uint8_t inProgressStatus;
 };
 
-class BiosEroTSpi : public ClearNVRAMInterface
+class BiosEroTSpi
 {
   public:
     /**
@@ -113,28 +116,31 @@ class BiosEroTSpi : public ClearNVRAMInterface
                 mctp_vdm::requester::Handler& requestHandler,
                 mctp_socket::Handler& socketHandler,
                 mctp_vdm::InstanceIdMgr& instanceIdManager, uint8_t eid) :
-        ClearNVRAMInterface(bus, clearNVRAMPath,
-                            ClearNVRAMInterface::action::emit_interface_added),
-        bus(bus), requestHandler(requestHandler), socketHandler(socketHandler),
+        bus(bus), clearInterface(bus, clearNVRAMPath, clearNVRAMInterface,
+                                 clearNVRAMVtable, this),
+        requestHandler(requestHandler), socketHandler(socketHandler),
         instanceIdManager(instanceIdManager), eid(eid),
         operationTimer(event.get())
     {
         socketHandler.registerMctpEndpoint(eid, SOCK_DGRAM, 0, {});
+        clearInterface.emit_added();
         lg2::info("Created BIOS ClearNVRAM provider for EID={EID}", "EID", eid);
     }
 
+    BiosEroTSpi(const BiosEroTSpi&) = delete;
+    BiosEroTSpi& operator=(const BiosEroTSpi&) = delete;
+
     /**
-     * @brief Start an asynchronous clear of the active BIOS NVRAM.
-     *
-     * @return Object path implementing Common.Progress for the operation.
-     * @throws Common.Error.Unavailable if another clear is already running.
+     * @brief Start a clear and defer the D-Bus reply until it completes.
      */
-    sdbusplus::message::object_path clear() override
-    {
-        return startOperation(Operation::clear);
-    }
+    static int dispatchClear(sd_bus_message* message, void* userdata,
+                             sd_bus_error* error);
 
   private:
+    using OperationCompletion = std::function<void(bool)>;
+
+    static const sdbusplus::vtable_t clearNVRAMVtable[];
+
     enum class Operation
     {
         clear
@@ -180,9 +186,9 @@ class BiosEroTSpi : public ClearNVRAMInterface
      * @brief Start an asynchronous SBIOS ERoT operation.
      *
      * @param operation Operation to start.
-     * @return Object path implementing Common.Progress for the operation.
+     * @param completion Callback invoked with the final result.
      */
-    sdbusplus::message::object_path startOperation(Operation operation)
+    void startOperation(Operation operation, OperationCompletion completion)
     {
         if (operationActive)
         {
@@ -206,6 +212,7 @@ class BiosEroTSpi : public ClearNVRAMInterface
         progressHistory.push_back(std::move(progress));
 
         currentProgress = 0;
+        operationCompletion = std::move(completion);
         operationActive = true;
         try
         {
@@ -223,7 +230,6 @@ class BiosEroTSpi : public ClearNVRAMInterface
                 "Failed to start SBIOS ERoT operation: unknown exception");
             finishOperation(false);
         }
-        return sdbusplus::message::object_path(path);
     }
 
     /**
@@ -605,6 +611,7 @@ class BiosEroTSpi : public ClearNVRAMInterface
         auto* progress = currentProgressObject();
         if (progress == nullptr)
         {
+            completeOperation(false);
             return;
         }
 
@@ -653,9 +660,36 @@ class BiosEroTSpi : public ClearNVRAMInterface
         {
             lg2::error("Failed to set SBIOS ERoT status: unknown exception");
         }
+
+        completeOperation(success);
+    }
+
+    void completeOperation(bool success) noexcept
+    {
+        auto completion = std::exchange(operationCompletion, {});
+        if (!completion)
+        {
+            return;
+        }
+
+        try
+        {
+            completion(success);
+        }
+        catch (const std::exception& e)
+        {
+            lg2::error("Failed to complete SBIOS ERoT operation: {ERROR}",
+                       "ERROR", e.what());
+        }
+        catch (...)
+        {
+            lg2::error(
+                "Failed to complete SBIOS ERoT operation: unknown exception");
+        }
     }
 
     sdbusplus::bus::bus& bus;
+    sdbusplus::server::interface_t clearInterface;
     mctp_vdm::requester::Handler& requestHandler;
     mctp_socket::Handler& socketHandler;
     mctp_vdm::InstanceIdMgr& instanceIdManager;
@@ -665,7 +699,59 @@ class BiosEroTSpi : public ClearNVRAMInterface
     bool operationActive = false;
     CoroutineTimer operationTimer;
     std::deque<std::unique_ptr<ProgressInterface>> progressHistory;
+    OperationCompletion operationCompletion;
 };
+
+const sdbusplus::vtable_t BiosEroTSpi::clearNVRAMVtable[] = {
+    sdbusplus::vtable::start(),
+    sdbusplus::vtable::method("Clear", "", "", &BiosEroTSpi::dispatchClear),
+    sdbusplus::vtable::end(),
+};
+
+int BiosEroTSpi::dispatchClear(sd_bus_message* message, void* userdata,
+                               sd_bus_error* error)
+{
+    auto* self = static_cast<BiosEroTSpi*>(userdata);
+    sdbusplus::message_t request(message);
+    try
+    {
+        self->startOperation(Operation::clear, [request = std::move(request)](
+                                                   bool success) mutable {
+            try
+            {
+                auto reply = success
+                                 ? request.new_method_return()
+                                 : request.new_method_error(
+                                       sdbusplus::xyz::openbmc_project::Common::
+                                           Error::InternalFailure());
+                reply.method_return();
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error("Failed to reply to BIOS ClearNVRAM: {ERROR}",
+                           "ERROR", e.what());
+            }
+            catch (...)
+            {
+                lg2::error(
+                    "Failed to reply to BIOS ClearNVRAM: unknown exception");
+            }
+        });
+    }
+    catch (const sdbusplus::xyz::openbmc_project::Common::Error::Unavailable& e)
+    {
+        return e.set_error(error);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to start BIOS NVRAM clear: {ERROR}", "ERROR",
+                   e.what());
+        const sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure
+            internalFailure;
+        return internalFailure.set_error(error);
+    }
+    return 1;
+}
 
 /**
  * @brief Read an unsigned byte property from Entity Manager configuration.
