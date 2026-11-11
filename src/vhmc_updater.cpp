@@ -11,15 +11,18 @@
 
 #include <nlohmann/json.hpp>
 #include <phosphor-logging/lg2.hpp>
+#include <xyz/openbmc_project/Common/error.hpp>
 
 #include <array>
 #include <cerrno>
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <memory>
 #include <string_view>
+#include <utility>
 
 namespace nvidia
 {
@@ -122,23 +125,9 @@ void VHMCItemUpdater::publishFirmwareInventory(sdbusplus::bus_t& bus)
     }
 }
 
-/** @brief Name of the metadata sidecar written alongside a slot image. */
-static std::string metadataSidecarName(const std::filesystem::path& image)
-{
-    std::string name = image.filename().string();
-    for (std::string_view suffix : {".squashfs-xz", ".squashfs"})
-    {
-        if (name.size() > suffix.size() && name.ends_with(suffix))
-        {
-            name.resize(name.size() - suffix.size());
-            break;
-        }
-    }
-    return name + ".json";
-}
-
-std::optional<VHMCItemUpdater::SlotMetadata>
-    VHMCItemUpdater::readSlotMetadata(const std::string& imageLink) const
+/** @brief Resolve a slot image link to the file it points at. */
+static std::optional<std::filesystem::path>
+    resolveSlotImageLink(const std::string& imageLink)
 {
     std::error_code ec;
     std::filesystem::path image = imageLink;
@@ -157,6 +146,33 @@ std::optional<VHMCItemUpdater::SlotMetadata>
     {
         return std::nullopt;
     }
+    return image;
+}
+
+/** @brief Name of the metadata sidecar written alongside a slot image. */
+static std::string metadataSidecarName(const std::filesystem::path& image)
+{
+    std::string name = image.filename().string();
+    for (std::string_view suffix : {".squashfs-xz", ".squashfs"})
+    {
+        if (name.size() > suffix.size() && name.ends_with(suffix))
+        {
+            name.resize(name.size() - suffix.size());
+            break;
+        }
+    }
+    return name + ".json";
+}
+
+std::optional<VHMCItemUpdater::SlotMetadata>
+    VHMCItemUpdater::readSlotMetadata(const std::string& imageLink) const
+{
+    auto resolved = resolveSlotImageLink(imageLink);
+    if (!resolved)
+    {
+        return std::nullopt;
+    }
+    const auto& image = *resolved;
 
     SlotMetadata metadata{};
     auto sidecar = image.parent_path() / metadataSidecarName(image);
@@ -276,6 +292,56 @@ void VHMCItemUpdater::publishFirmwareSlots()
     startSlotWatch();
 }
 
+void VHMCItemUpdater::publishHashCompute(sdbusplus::bus::bus& bus)
+{
+    const std::string inventoryId = VHMC_FIRMWARE_INVENTORY_ID;
+    if (inventoryId.empty())
+    {
+        return;
+    }
+
+    // Redfish derives the object name from the firmware inventory, so the
+    // two have to agree.
+    std::string objPath =
+        std::string(VHMC_HASH_COMPUTE_OBJPATH) + "/" + inventoryId;
+    try
+    {
+        hashCompute = std::make_unique<VHMCHashCompute>(
+            bus, objPath,
+            [this](uint16_t slotId) { return slotImagePath(slotId); });
+    }
+    catch (const sdbusplus::exception::SdBusError& e)
+    {
+        lg2::error("Failed to publish vHMC digest provider {PATH}: {ERROR}",
+                   "PATH", objPath, "ERROR", std::string(e.what()));
+    }
+}
+
+std::string VHMCItemUpdater::slotImagePath(uint16_t slotId) const
+{
+    if (slotWorkDir.empty())
+    {
+        return "";
+    }
+
+    std::string imageLink;
+    if (slotId == activeSlotId)
+    {
+        imageLink = slotWorkDir + activeImageLink;
+    }
+    else if (slotId == inactiveSlotId)
+    {
+        imageLink = slotWorkDir + inactiveImageLink;
+    }
+    else
+    {
+        return "";
+    }
+
+    auto image = resolveSlotImageLink(imageLink);
+    return image ? image->string() : "";
+}
+
 void VHMCItemUpdater::startSlotWatch()
 {
     slotWatchFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
@@ -340,6 +406,181 @@ int VHMCItemUpdater::slotWatchCallback([[maybe_unused]] sd_event_source* source,
         updater->refreshFirmwareSlots();
     }
     return 0;
+}
+
+// Hashing runs on the event loop the daemon serves D-Bus from, so it is
+// chunked to keep the daemon responsive.
+constexpr size_t hashChunkSize = 256 * 1024;
+
+constexpr auto hashAlgorithm = "SHA384";
+
+VHMCHashCompute::VHMCHashCompute(sdbusplus::bus::bus& bus,
+                                 const std::string& objPath,
+                                 SlotImageResolver resolver) :
+    hashComputeInherit(bus, objPath.c_str(), action::emit_interface_added),
+    resolveSlotImage(std::move(resolver))
+{
+    algorithm(hashAlgorithm);
+}
+
+VHMCHashCompute::~VHMCHashCompute()
+{
+    releaseHash();
+}
+
+void VHMCHashCompute::getHash(uint16_t deviceId)
+{
+    using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
+    using sdbusplus::xyz::openbmc_project::Common::Error::InvalidArgument;
+    using sdbusplus::xyz::openbmc_project::Common::Error::Unavailable;
+
+    if (digestCtx != nullptr)
+    {
+        lg2::error("A vHMC digest is already being computed");
+        throw Unavailable();
+    }
+
+    std::string imagePath;
+    if (resolveSlotImage)
+    {
+        imagePath = resolveSlotImage(deviceId);
+    }
+    if (imagePath.empty())
+    {
+        lg2::error("No vHMC image to hash for slot {ID}", "ID", deviceId);
+        throw InvalidArgument();
+    }
+
+    image.open(imagePath, std::ios::binary);
+    if (!image.is_open())
+    {
+        lg2::error("Failed to open vHMC image {PATH} for hashing", "PATH",
+                   imagePath);
+        releaseHash();
+        throw InternalFailure();
+    }
+
+    digestCtx = EVP_MD_CTX_new();
+    if (digestCtx == nullptr ||
+        EVP_DigestInit_ex(digestCtx, EVP_sha384(), nullptr) != 1)
+    {
+        lg2::error("Failed to start the digest of vHMC image {PATH}", "PATH",
+                   imagePath);
+        releaseHash();
+        throw InternalFailure();
+    }
+    chunk.resize(hashChunkSize);
+
+    // Reset without emitting: an empty value on the bus reads as a failure.
+    digest("", true);
+
+    // A defer source left enabled runs once per loop iteration, so the bus
+    // is served between chunks.
+    sd_event* loop = nullptr;
+    auto rc = sd_event_default(&loop);
+    if (rc >= 0)
+    {
+        rc = sd_event_add_defer(loop, &hashSource, hashStepCallback, this);
+        if (rc >= 0)
+        {
+            rc = sd_event_source_set_enabled(hashSource, SD_EVENT_ON);
+        }
+        sd_event_unref(loop);
+    }
+    if (rc < 0)
+    {
+        lg2::error("Failed to schedule the digest of vHMC image {PATH}: {RC}",
+                   "PATH", imagePath, "RC", rc);
+        failHash();
+        throw InternalFailure();
+    }
+
+    lg2::info("Computing the {ALGORITHM} digest of vHMC image {PATH}",
+              "ALGORITHM", std::string(hashAlgorithm), "PATH", imagePath);
+}
+
+int VHMCHashCompute::hashStepCallback([[maybe_unused]] sd_event_source* source,
+                                      void* userdata)
+{
+    auto* self = static_cast<VHMCHashCompute*>(userdata);
+    if (self == nullptr || self->digestCtx == nullptr)
+    {
+        return 0;
+    }
+
+    self->image.read(self->chunk.data(),
+                     static_cast<std::streamsize>(self->chunk.size()));
+    auto read = self->image.gcount();
+    if (read > 0 && EVP_DigestUpdate(self->digestCtx, self->chunk.data(),
+                                     static_cast<size_t>(read)) != 1)
+    {
+        lg2::error("Failed to hash a chunk of the vHMC image");
+        self->failHash();
+        return 0;
+    }
+
+    if (self->image.eof())
+    {
+        self->completeHash();
+    }
+    else if (!self->image.good())
+    {
+        lg2::error("Failed to read the vHMC image while hashing it");
+        self->failHash();
+    }
+    return 0;
+}
+
+void VHMCHashCompute::completeHash()
+{
+    std::array<unsigned char, EVP_MAX_MD_SIZE> value{};
+    unsigned int length = 0;
+    if (EVP_DigestFinal_ex(digestCtx, value.data(), &length) != 1)
+    {
+        lg2::error("Failed to finish the digest of the vHMC image");
+        failHash();
+        return;
+    }
+
+    std::string hex;
+    hex.reserve(static_cast<size_t>(length) * 2);
+    for (unsigned int i = 0; i < length; ++i)
+    {
+        hex += std::format("{:02x}", value[i]);
+    }
+
+    releaseHash();
+    digest(hex);
+    lg2::info("Computed the vHMC image digest {DIGEST}", "DIGEST", hex);
+}
+
+void VHMCHashCompute::failHash()
+{
+    releaseHash();
+
+    // Digest is already empty, and the generated setter only signals a
+    // change, so the empty value has to be staged against a non-empty one.
+    digest("failed", true);
+    digest("");
+}
+
+void VHMCHashCompute::releaseHash()
+{
+    if (hashSource != nullptr)
+    {
+        sd_event_source_set_enabled(hashSource, SD_EVENT_OFF);
+        sd_event_source_unref(hashSource);
+        hashSource = nullptr;
+    }
+    if (digestCtx != nullptr)
+    {
+        EVP_MD_CTX_free(digestCtx);
+        digestCtx = nullptr;
+    }
+    image.close();
+    image.clear();
+    chunk.clear();
+    chunk.shrink_to_fit();
 }
 
 VHMCItemUpdater::~VHMCItemUpdater()

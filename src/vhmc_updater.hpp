@@ -8,8 +8,10 @@
 
 #include "base_item_updater.hpp"
 
+#include <openssl/evp.h>
 #include <systemd/sd-event.h>
 
+#include <com/nvidia/ComputeHash/server.hpp>
 #include <sdbusplus/server/manager.hpp>
 #include <xyz/openbmc_project/Association/Definitions/server.hpp>
 #include <xyz/openbmc_project/Inventory/Decorator/Asset/server.hpp>
@@ -20,9 +22,13 @@
 #include <xyz/openbmc_project/Software/State/server.hpp>
 #include <xyz/openbmc_project/Software/Version/server.hpp>
 
+#include <cstdint>
+#include <fstream>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace nvidia
 {
@@ -86,6 +92,82 @@ class VHMCFirmwareInventory : public firmwareInventoryInherit
     }
 };
 
+using hashComputeInherit = sdbusplus::server::object::object<
+    sdbusplus::com::nvidia::server::ComputeHash>;
+
+/**
+ * @brief SHA384 digests of the vHMC images on D-Bus.
+ */
+class VHMCHashCompute : public hashComputeInherit
+{
+  public:
+    /**
+     * @brief Resolve a slot to the image file holding it.
+     *
+     * Returns an empty string when the slot is unknown or unpopulated.
+     */
+    using SlotImageResolver = std::function<std::string(uint16_t)>;
+
+    /** @brief Constructor
+     *
+     *  @param[in] bus - Bus to attach to
+     *  @param[in] objPath - D-Bus object path
+     *  @param[in] resolver - Maps the requested slot to its image file
+     */
+    VHMCHashCompute(sdbusplus::bus::bus& bus, const std::string& objPath,
+                    SlotImageResolver resolver);
+
+    /**
+     * @brief Destructor
+     */
+    ~VHMCHashCompute() override;
+
+    /**
+     * @brief Start hashing the image held by a slot.
+     *
+     * The digest is computed in the background and published on the Digest
+     * property, which is cleared first so that re-hashing an unchanged image
+     * still produces a change for callers watching the property.
+     *
+     * @param[in] deviceId - Slot the digest is wanted for
+     */
+    void getHash(uint16_t deviceId) override;
+
+  private:
+    /**
+     * @brief sd-event callback folding one chunk into the running digest.
+     *
+     * @param source Event source, unused
+     * @param userdata Pointer to the VHMCHashCompute
+     * @return 0, failures end the computation rather than the event loop
+     */
+    static int hashStepCallback(sd_event_source* source, void* userdata);
+
+    /** @brief Publish the finished digest and release the computation. */
+    void completeHash();
+
+    /** @brief Publish an empty digest for a failure and release it. */
+    void failHash();
+
+    /** @brief Release the image, digest context and event source. */
+    void releaseHash();
+
+    /** @brief Maps the requested slot to the image file to hash. */
+    SlotImageResolver resolveSlotImage;
+
+    /** @brief Image being hashed. */
+    std::ifstream image{};
+
+    /** @brief Buffer holding the chunk being folded in. */
+    std::vector<char> chunk{};
+
+    /** @brief Running digest, also marks a computation as in progress. */
+    EVP_MD_CTX* digestCtx = nullptr;
+
+    /** @brief Event source driving the computation off the method call. */
+    sd_event_source* hashSource = nullptr;
+};
+
 class VHMCItemUpdater : public BaseItemUpdater
 {
   public:
@@ -93,10 +175,12 @@ class VHMCItemUpdater : public BaseItemUpdater
         BaseItemUpdater(bus, VHMC_SUPPORTED_MODEL, VHMC_INVENTORY_IFACE, "VHMC",
                         VHMC_BUSNAME_UPDATER, VHMC_UPDATE_SERVICE, false,
                         VHMC_BUSNAME_INVENTORY),
-        invObjManager(bus, VHMC_FIRMWARE_INVENTORY_OBJPATH), slotBus(bus)
+        invObjManager(bus, VHMC_FIRMWARE_INVENTORY_OBJPATH),
+        hashObjManager(bus, VHMC_HASH_COMPUTE_OBJPATH), slotBus(bus)
     {
         publishFirmwareInventory(bus);
         publishFirmwareSlots();
+        publishHashCompute(bus);
     }
 
     /**
@@ -175,6 +259,17 @@ class VHMCItemUpdater : public BaseItemUpdater
     /** @brief Publish the vHMC image slots and watch them for changes. */
     void publishFirmwareSlots();
 
+    /** @brief Publish the digest provider for the vHMC images. */
+    void publishHashCompute(sdbusplus::bus::bus& bus);
+
+    /**
+     * @brief Resolve a slot id to the image file the slot holds.
+     *
+     * @param slotId Slot identifier, as reported on the slot objects
+     * @return Path of the image, empty when the slot is not populated
+     */
+    std::string slotImagePath(uint16_t slotId) const;
+
     /** @brief Refresh both slot objects from the on-disk image metadata. */
     void refreshFirmwareSlots();
 
@@ -225,6 +320,13 @@ class VHMCItemUpdater : public BaseItemUpdater
      */
     sdbusplus::server::manager_t invObjManager;
 
+    /** @brief Object manager covering the digest provider.
+     *
+     * The digest objects sit outside both of the other managed paths, so
+     * they need a manager of their own for the same reason.
+     */
+    sdbusplus::server::manager_t hashObjManager;
+
     /** @brief Bus the firmware inventory and slot objects live on. */
     sdbusplus::bus_t& slotBus;
 
@@ -239,6 +341,9 @@ class VHMCItemUpdater : public BaseItemUpdater
 
     /** @brief Slot holding the image staged for the next activation. */
     std::unique_ptr<VHMCFirmwareSlot> inactiveSlot;
+
+    /** @brief Digest provider for the vHMC images. */
+    std::unique_ptr<VHMCHashCompute> hashCompute;
 
     /** @brief inotify descriptor watching the vHMC work directory. */
     int slotWatchFd = -1;

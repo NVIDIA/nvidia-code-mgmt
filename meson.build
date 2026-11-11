@@ -153,6 +153,7 @@ if get_option('VHMC_FLASH_SUPPORT').enabled()
         'VHMC_FIRMWARE_INVENTORY_OBJPATH',
         '/xyz/openbmc_project/software',
     )
+    cdata.set_quoted('VHMC_HASH_COMPUTE_OBJPATH', '/com/Nvidia/ComputeHash')
 endif
 
 if get_option('SMCU_FLASH_SUPPORT').enabled()
