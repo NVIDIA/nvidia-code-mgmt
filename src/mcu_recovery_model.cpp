@@ -199,6 +199,39 @@ std::string modelOf(const std::string& target, const std::string& uuid)
     return "Nvidia:" + target + ":" + uuid;
 }
 
+Models emModels(const EmObjects& objects)
+{
+    std::set<std::string> targets;
+    std::map<std::string, std::string> packages;
+    for (const auto& ifaces : objects)
+    {
+        if (auto it = ifaces.find(emRecoveryIface); it != ifaces.end())
+        {
+            auto type = it->second.find("RecoveryType");
+            auto target = it->second.find("Target");
+            if (type != it->second.end() && type->second == "MCU" &&
+                target != it->second.end() && !target->second.empty())
+            {
+                targets.insert(target->second);
+            }
+        }
+        if (auto it = ifaces.find(emPackagesIface); it != ifaces.end())
+        {
+            packages.insert(it->second.begin(), it->second.end());
+        }
+    }
+    Models models;
+    for (const auto& target : targets)
+    {
+        auto uuid = packages.find("MCU" + target + "PackageUUID");
+        if (uuid != packages.end() && !uuid->second.empty())
+        {
+            models.emplace(target, modelOf(target, uuid->second));
+        }
+    }
+    return models;
+}
+
 std::optional<std::string> waitModel(const ModelSource& models,
                                      const std::string& instance,
                                      const Sleep& sleep, std::ostream& err)

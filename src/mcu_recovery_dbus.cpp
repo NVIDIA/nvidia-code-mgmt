@@ -135,32 +135,31 @@ FruLookup dbusFruLookup(sdbusplus::bus_t& bus)
 ModelSource dbusEmModels(sdbusplus::bus_t& bus)
 {
     return [&bus]() {
-        Models models;
         // Empty until Entity Manager is up; the caller retries.
         auto objects = DBUSUtils(bus).getManagedObjects(
             "xyz.openbmc_project.EntityManager",
             "/xyz/openbmc_project/inventory");
+        EmObjects strings;
         for (const auto& [_, ifaces] : objects)
         {
-            auto it = ifaces.find(emPackageIface);
-            if (it == ifaces.end())
+            auto& out = strings.emplace_back();
+            for (const auto* name : {emRecoveryIface, emPackagesIface})
             {
-                continue;
-            }
-            auto target = it->second.find("Target");
-            auto uuid = it->second.find("PackageUUID");
-            if (target == it->second.end() || uuid == it->second.end())
-            {
-                continue;
-            }
-            const auto* t = std::get_if<std::string>(&target->second);
-            const auto* u = std::get_if<std::string>(&uuid->second);
-            if (t != nullptr && u != nullptr && !u->empty())
-            {
-                models.try_emplace(*t, modelOf(*t, *u));
+                auto it = ifaces.find(name);
+                if (it == ifaces.end())
+                {
+                    continue;
+                }
+                for (const auto& [prop, value] : it->second)
+                {
+                    if (const auto* s = std::get_if<std::string>(&value))
+                    {
+                        out[name][prop] = *s;
+                    }
+                }
             }
         }
-        return models;
+        return emModels(strings);
     };
 }
 

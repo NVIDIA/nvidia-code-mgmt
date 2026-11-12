@@ -23,6 +23,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <vector>
 
 namespace nvidia::software::updater::mcu
 {
@@ -62,10 +63,14 @@ std::optional<std::string> resolveModel(const Env& env,
 using StartUnit = std::function<void(const std::string& unit)>;
 int startUpdaters(const Env& env, const StartUnit& start, std::ostream& out);
 
-// Entity Manager publishes one Configuration.MCURecoveryPackage per instance
-// (Target, PackageUUID). A board that still ships envFile reads that instead.
-inline constexpr auto emPackageIface =
-    "xyz.openbmc_project.Configuration.MCURecoveryPackage";
+// An instance is the Target of an MCU Recovery block on an Entity Manager
+// device record; its package is MCU<Target>PackageUUID in a platform policy
+// RecoveryPackages record. A board that still ships envFile reads that
+// instead.
+inline constexpr auto emRecoveryIface =
+    "xyz.openbmc_project.Configuration.NvDevice.Recovery";
+inline constexpr auto emPackagesIface =
+    "xyz.openbmc_project.Configuration.RecoveryPackages";
 
 // Model of each instance Entity Manager publishes, by instance name.
 using Models = std::map<std::string, std::string>;
@@ -73,6 +78,14 @@ using ModelSource = std::function<Models()>;
 
 // "Nvidia:<target>:<uuid>", the model string code-manager runs with.
 std::string modelOf(const std::string& target, const std::string& uuid);
+
+// String properties of Entity Manager objects: interface -> property ->
+// value, one map per object.
+using EmObjects =
+    std::vector<std::map<std::string, std::map<std::string, std::string>>>;
+
+// The model of every MCU target that has both a Recovery block and a package.
+Models emModels(const EmObjects& objects);
 
 // The model of instance, waiting up to fruMaxRetries * fruRetryInterval for
 // its record, as the FRU variant detection waited; nullopt after reporting.

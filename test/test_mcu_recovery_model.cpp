@@ -309,6 +309,26 @@ TEST(McuEm, WaitModelGivesUp)
                            [](std::chrono::seconds) {}, err));
 }
 
+TEST(McuEm, ModelsFromRecoveryBlocksAndPolicy)
+{
+    const std::string rec = emRecoveryIface;
+    const std::string pkg = emPackagesIface;
+    EmObjects objects{
+        {{rec, {{"RecoveryType", "MCU"}, {"Target", "CX9"}}}},
+        {{rec, {{"RecoveryType", "MCU"}, {"Target", "CX9"}}}},
+        {{rec, {{"RecoveryType", "MCU"}, {"Target", "BF4"}}}},
+        {{rec, {{"RecoveryType", "MCU"}, {"Target", "HPM"}}}},
+        {{rec, {{"RecoveryType", "ConnectX"}, {"Target", "GPU"}}}},
+        {{pkg,
+          {{"MCUCX9PackageUUID", "AA"},
+           {"ConnectXPackageUUID", "CC"},
+           {"MCUGPUPackageUUID", "GG"}}}},
+        {{pkg, {{"MCUBF4PackageUUID", "BB"}, {"MCUHPMPackageUUID", ""}}}},
+    };
+    EXPECT_EQ(emModels(objects),
+              (Models{{"BF4", "Nvidia:BF4:BB"}, {"CX9", "Nvidia:CX9:AA"}}));
+}
+
 TEST(McuEm, StarterStartsEachInstanceOnceAsItAppears)
 {
     int looks = 0;
