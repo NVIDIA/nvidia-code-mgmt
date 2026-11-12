@@ -38,6 +38,7 @@
 
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
+#include <sdbusplus/exception.hpp>
 #include <sdbusplus/server.hpp>
 #include <sdbusplus/server/manager.hpp>
 #include <sdbusplus/timer.hpp>
@@ -49,6 +50,7 @@
 #include <exception>
 #include <filesystem>
 #include <optional>
+#include <stdexcept>
 #include <variant>
 
 constexpr auto entityManagerService = "xyz.openbmc_project.EntityManager";
@@ -103,6 +105,10 @@ std::unique_ptr<sdbusplus::bus::match_t> chassisDiscoveryRetryMatch;
 // state change. Restarted on every power transition so a burst of changes
 // collapses into a single refresh once the chassis has settled.
 std::unique_ptr<sdbusplus::Timer> powerStateRefreshTimer;
+std::unique_ptr<sdbusplus::Timer> recoveryDiscoveryRetryTimer;
+constexpr size_t recoveryDiscoveryMaxRetries = 5;
+constexpr auto recoveryDiscoveryRetryInterval = std::chrono::seconds(10);
+size_t recoveryDiscoveryRetryCount = 0;
 
 std::vector<std::unique_ptr<nvidia::recovery::RecoveryModeManagerBase>>
     recoveryModeManagers;
@@ -112,6 +118,7 @@ std::shared_ptr<mcu_recovery_manager::MCURecoveryManager> mcuRecoveryManager;
 std::shared_ptr<UdevMonitor> udevMonitor;
 
 void checkEntityManagerAvailability();
+void publishDBusRecoveryObject();
 bool startCentralizedPowerStateWatcher();
 void armCentralizedPowerStateWatcherRetry();
 void schedulePowerStateHealthRefresh();
@@ -345,6 +352,77 @@ void applyChassisConnectionAndRefresh(const InterfaceMap& interfaces,
 }
 
 /**
+ * @brief Read recovery inventory and retry discovery if the D-Bus call fails.
+ */
+static ObjectValueTree getRecoveryManagedObjects()
+{
+    try
+    {
+        auto method = getBus().new_method_call(
+            entityManagerService, entityManagerObjManager,
+            "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
+        auto reply = getBus().call(method);
+        ObjectValueTree managedObjects;
+        reply.read(managedObjects);
+        recoveryDiscoveryRetryCount = 0;
+        return managedObjects;
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        lg2::error("GetManagedObjects call failed for {PATH}: {ERROR}", "PATH",
+                   entityManagerObjManager, "ERROR", e.what());
+    }
+
+    if (recoveryDiscoveryRetryCount >= recoveryDiscoveryMaxRetries)
+    {
+        lg2::error(
+            "Recovery inventory discovery retries exhausted after {COUNT} retries",
+            "COUNT", recoveryDiscoveryRetryCount);
+        return {};
+    }
+
+    if (!recoveryDiscoveryRetryTimer)
+    {
+        recoveryDiscoveryRetryTimer =
+            std::make_unique<sdbusplus::Timer>(getEvent().get(), []() {
+                ++recoveryDiscoveryRetryCount;
+                lg2::info(
+                    "Retrying recovery inventory discovery ({COUNT}/{MAX})",
+                    "COUNT", recoveryDiscoveryRetryCount, "MAX",
+                    recoveryDiscoveryMaxRetries);
+                publishDBusRecoveryObject();
+            });
+    }
+    if (!recoveryDiscoveryRetryTimer->isRunning())
+    {
+        try
+        {
+            // Publication stops this timer. Periodic mode allows a failed
+            // read to rearm it from inside the timer callback.
+            const auto rc = recoveryDiscoveryRetryTimer->start(
+                recoveryDiscoveryRetryInterval, true);
+            if (rc < 0)
+            {
+                recoveryDiscoveryRetryTimer->stop();
+                lg2::error("Failed to schedule recovery inventory retry: {RC}",
+                           "RC", rc);
+                return {};
+            }
+            lg2::warning(
+                "Retrying recovery inventory discovery in {SECONDS} seconds",
+                "SECONDS", recoveryDiscoveryRetryInterval.count());
+        }
+        catch (const std::runtime_error& e)
+        {
+            recoveryDiscoveryRetryTimer->stop();
+            lg2::error("Failed to schedule recovery inventory retry: {ERROR}",
+                       "ERROR", e.what());
+        }
+    }
+    return {};
+}
+
+/**
  * @brief Retrieves MCU configuration information from Entity Manager D-Bus
  * interface
  *
@@ -362,19 +440,16 @@ void applyChassisConnectionAndRefresh(const InterfaceMap& interfaces,
  * is skipped and processing continues with the next one. This allows partial
  * configuration to be loaded even if some MCUs have incomplete configuration.
  *
+ * @param[in] managedObjects - EntityManager inventory snapshot to parse
+ *
  * @return std::map<std::string, mcu_recovery_manager::MCUInfo> A map where:
  *         - Key: USB port identifier
  *         - Value: MCUInfo structure containing device configuration
- *         Returns an empty map if:
- *         - No MCU configurations are found
- *         - D-Bus query fails
+ *         Returns an empty map if no MCU configurations are found.
  */
-std::map<std::string, mcu_recovery_manager::MCUInfo> getMCUConfig()
+static std::map<std::string, mcu_recovery_manager::MCUInfo>
+    getMCUConfig(const ObjectValueTree& managedObjects)
 {
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    const auto managedObjects = dbusUtil.getManagedObjects(
-        entityManagerService, entityManagerObjManager);
-
     std::map<std::string, mcu_recovery_manager::MCUInfo> mcuMap;
 
     for (const auto& [emObjectPath, interfaces] : managedObjects)
@@ -597,13 +672,17 @@ void reconcileChassisPowerState(const std::string& powerState)
  */
 void publishDBusRecoveryObject()
 {
+    if (recoveryDiscoveryRetryTimer)
+    {
+        recoveryDiscoveryRetryTimer->stop();
+    }
+
     auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    const auto managedObjects = dbusUtil.getManagedObjects(
-        entityManagerService, entityManagerObjManager);
+    const auto managedObjects = getRecoveryManagedObjects();
     const auto initialChassisPowerState = dbusUtil.getHostPwrStatus();
     auto& event = getEvent();
 
-    auto mcuMap = getMCUConfig();
+    auto mcuMap = getMCUConfig(managedObjects);
 
     // EntityManager publishes recovery configs incrementally, so this function
     // may run more than once (see checkEntityManagerAvailability). Guard the
@@ -1847,9 +1926,7 @@ void armCentralizedPowerStateWatcherRetry()
  */
 bool checkForRecoveryConfigEMObjects()
 {
-    auto dbusUtil = nvidia::software::updater::DBUSUtils(getBus());
-    const auto managedObjects = dbusUtil.getManagedObjects(
-        entityManagerService, entityManagerObjManager);
+    const auto managedObjects = getRecoveryManagedObjects();
 
     for (const auto& [emObjectPath, interfaces] : managedObjects)
     {
@@ -1898,6 +1975,7 @@ void checkEntityManagerAvailability()
                     {
                         // Idempotent: only newly-published configs are acted
                         // on.
+                        recoveryDiscoveryRetryCount = 0;
                         publishDBusRecoveryObject();
                         break;
                     }
