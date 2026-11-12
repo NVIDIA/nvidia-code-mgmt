@@ -361,7 +361,8 @@ TEST_F(EmRecoveryConfigTest, WaitsForTheTransportInterface)
 
 TEST(EmRecoveryConfigSignal, SingleSignalsThatCompleteADevice)
 {
-    // entity-manager sends NvDevice, Recovery and Transport in separate signals.
+    // entity-manager sends NvDevice, Recovery and Transport in separate
+    // signals.
     InterfaceMap nvOnly{{nv, {{"Kind", std::string("cx_sma")}}}};
     EXPECT_FALSE(rec::touchesConfig(nvOnly));
     InterfaceMap recoveryOnly{{rc, {}}};
