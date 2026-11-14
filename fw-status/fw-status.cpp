@@ -1408,6 +1408,14 @@ void publishDBusRecoveryObject()
 
             const auto eid = eidOpt.value();
 
+            if (!mcuRecoveryManager)
+            {
+                lg2::error(
+                    "Skipping MCU resource {PATH}: recovery manager unavailable",
+                    "PATH", emObjectPath);
+                continue;
+            }
+
             resources.push_back(std::make_unique<MCUResource>(
                 getBus(), objPath, eid, deviceName, mcuRecoveryManager));
 
