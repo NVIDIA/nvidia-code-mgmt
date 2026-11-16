@@ -69,9 +69,8 @@ inline const std::map<std::string, std::string, std::less<>> kindMcuTarget = {
     {"bmc_hpm_sma", "HPM"}, {"nvswitch_sma", "NVSSMA"},
 };
 
-inline std::optional<Value> prop(const InterfaceMap& ifaces,
-                                 const std::string& iface,
-                                 const std::string& key);
+inline const Value* prop(const InterfaceMap& ifaces, const std::string& iface,
+                         const std::string& key);
 
 /**
  * @brief The records expand() derived in this process, by object path.
@@ -95,7 +94,12 @@ inline std::optional<Value> derivedProperty(const std::string& path,
     {
         return std::nullopt;
     }
-    return prop(obj->second, iface, key);
+    const auto* value = prop(obj->second, iface, key);
+    if (value == nullptr)
+    {
+        return std::nullopt;
+    }
+    return *value;
 }
 
 /** @brief "key=value;..." of a record's properties, for the derivation log. */
@@ -195,49 +199,48 @@ inline bool touchesConfig(const InterfaceMap& ifaces)
            completesSpi(ifaces);
 }
 
-inline std::optional<Value> prop(const InterfaceMap& ifaces,
-                                 const std::string& iface,
-                                 const std::string& key)
+inline const Value* prop(const InterfaceMap& ifaces, const std::string& iface,
+                         const std::string& key)
 {
     auto it = ifaces.find(iface);
     if (it == ifaces.end())
     {
-        return std::nullopt;
+        return nullptr;
     }
     auto p = it->second.find(key);
     if (p == it->second.end())
     {
-        return std::nullopt;
+        return nullptr;
     }
-    return p->second;
+    return &p->second;
 }
 
-inline std::string str(const std::optional<Value>& v)
+inline std::string str(const Value* v)
 {
-    if (!v)
+    if (v == nullptr)
     {
         return {};
     }
-    if (const auto* s = std::get_if<std::string>(&*v))
+    if (const auto* s = std::get_if<std::string>(v))
     {
         return *s;
     }
-    if (const auto* n = std::get_if<uint64_t>(&*v))
+    if (const auto* n = std::get_if<uint64_t>(v))
     {
         return std::to_string(*n);
     }
-    if (const auto* n = std::get_if<int64_t>(&*v))
+    if (const auto* n = std::get_if<int64_t>(v))
     {
         return std::to_string(*n);
     }
     return {};
 }
 
-inline bool flag(const std::optional<Value>& v, bool dflt)
+inline bool flag(const Value* v, bool dflt)
 {
-    if (v)
+    if (v != nullptr)
     {
-        if (const auto* b = std::get_if<bool>(&*v))
+        if (const auto* b = std::get_if<bool>(v))
         {
             return *b;
         }
@@ -263,7 +266,7 @@ using DeviceMap = std::map<std::string, const InterfaceMap*>;
 inline void copy(PropertyMap& to, const char* toKey, const InterfaceMap& from,
                  const char* iface, const char* fromKey)
 {
-    if (auto v = prop(from, iface, fromKey))
+    if (const auto* v = prop(from, iface, fromKey))
     {
         to[toKey] = *v;
     }

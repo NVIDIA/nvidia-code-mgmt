@@ -375,11 +375,15 @@ TEST_F(EmRecoveryConfigTest, DescribeNamesEveryValueType)
 
 TEST_F(EmRecoveryConfigTest, StrReadsStringsAndIntegersOnly)
 {
-    EXPECT_EQ(rec::str(Value(std::string("x"))), "x");
-    EXPECT_EQ(rec::str(Value(uint64_t(5))), "5");
-    EXPECT_EQ(rec::str(Value(int64_t(-5))), "-5");
-    EXPECT_EQ(rec::str(Value(1.5)), "");
-    EXPECT_EQ(rec::str(std::nullopt), "");
+    const Value xs = std::string("x");
+    const Value u5 = uint64_t(5);
+    const Value i5 = int64_t(-5);
+    const Value d15 = 1.5;
+    EXPECT_EQ(rec::str(&xs), "x");
+    EXPECT_EQ(rec::str(&u5), "5");
+    EXPECT_EQ(rec::str(&i5), "-5");
+    EXPECT_EQ(rec::str(&d15), "");
+    EXPECT_EQ(rec::str(nullptr), "");
 }
 
 TEST_F(EmRecoveryConfigTest, UsbBusComesFromTheRootHubOrDefaults)
@@ -606,12 +610,16 @@ TEST(EmRecoveryConfigSignal, EveryInterfaceCombinationOfASignal)
 
 TEST(EmRecoveryConfigValue, FlagReadsOnlyBooleans)
 {
-    EXPECT_TRUE(rec::flag(std::nullopt, true));
-    EXPECT_FALSE(rec::flag(std::nullopt, false));
-    EXPECT_TRUE(rec::flag(Value(std::string("no")), true));
-    EXPECT_FALSE(rec::flag(Value(std::string("yes")), false));
-    EXPECT_FALSE(rec::flag(Value(false), true));
-    EXPECT_TRUE(rec::flag(Value(true), false));
+    const Value no = std::string("no");
+    const Value yes = std::string("yes");
+    const Value off = false;
+    const Value on = true;
+    EXPECT_TRUE(rec::flag(nullptr, true));
+    EXPECT_FALSE(rec::flag(nullptr, false));
+    EXPECT_TRUE(rec::flag(&no, true));
+    EXPECT_FALSE(rec::flag(&yes, false));
+    EXPECT_FALSE(rec::flag(&off, true));
+    EXPECT_TRUE(rec::flag(&on, false));
 }
 
 TEST_F(EmRecoveryConfigTest, OcpOptionalPartsFollowTheRecoveryFlags)
