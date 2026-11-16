@@ -352,9 +352,9 @@ TEST_F(DBUSUtilsMockBusTest, DerivedRecordsAnswerEntityManagerPropertyReads)
     derived["/derived/path"]["derived.Interface"]["Prop"] = std::string("v");
 
     // A record the topology derived is answered without asking D-Bus.
-    EXPECT_EQ(any_cast<std::string>(dbusUtils.getPropertyImpl(
-                  emService, "/derived/path", "derived.Interface", "Prop")),
-              "v");
+    const auto answer = any_cast<Value>(dbusUtils.getPropertyImpl(
+        emService, "/derived/path", "derived.Interface", "Prop"));
+    EXPECT_EQ(std::get<std::string>(answer), "v");
 
     // Other services, and records or properties that were not derived, still
     // go to the bus.
