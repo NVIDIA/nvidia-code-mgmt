@@ -368,8 +368,9 @@ TEST_F(EmRecoveryConfigTest, DescribeNamesEveryValueType)
     EXPECT_NE(text.find("b=true;"), std::string::npos);
     EXPECT_NE(text.find("c=7;"), std::string::npos);
     EXPECT_NE(text.find("d=-3;"), std::string::npos);
-    EXPECT_NE(text.find("f=<bytes>;"), std::string::npos);
-    EXPECT_NE(text.find("g=<bytes>;"), std::string::npos);
+    EXPECT_NE(text.find("e=<other>;"), std::string::npos);
+    EXPECT_NE(text.find("f=<other>;"), std::string::npos);
+    EXPECT_NE(text.find("g=<other>;"), std::string::npos);
 }
 
 TEST_F(EmRecoveryConfigTest, StrReadsStringsAndIntegersOnly)

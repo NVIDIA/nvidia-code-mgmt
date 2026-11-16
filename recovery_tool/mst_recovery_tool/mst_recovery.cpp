@@ -226,24 +226,27 @@ std::string tailLines(const std::string& text, size_t count)
     return replaceAll(text.substr(start), '\n', ' ');
 }
 
-// A value whose type the other variant lacks is dropped.
+// A value whose type is not one EM publishes for these records is dropped.
 template <class To, class From>
 std::optional<To> convert(const From& from)
 {
-    return std::visit(
-        [](const auto& x) -> std::optional<To> {
-            using T = std::decay_t<decltype(x)>;
-            if constexpr (std::is_constructible_v<To, std::in_place_type_t<T>,
-                                                  const T&>)
-            {
-                return To(std::in_place_type<T>, x);
-            }
-            else
-            {
-                return std::nullopt;
-            }
-        },
-        from);
+    if (const auto* s = std::get_if<std::string>(&from))
+    {
+        return To(*s);
+    }
+    if (const auto* b = std::get_if<bool>(&from))
+    {
+        return To(*b);
+    }
+    if (const auto* u = std::get_if<uint64_t>(&from))
+    {
+        return To(*u);
+    }
+    if (const auto* i = std::get_if<int64_t>(&from))
+    {
+        return To(*i);
+    }
+    return std::nullopt;
 }
 
 // The DeviceType's records em_recovery derives from the NvDevice entries.

@@ -983,6 +983,19 @@ TEST_F(MstNvDeviceTest, VrConnectX)
     EXPECT_TRUE(p.err.empty());
 }
 
+TEST_F(MstNvDeviceTest, OnlyValueTypesEmPublishesAreConverted)
+{
+    addNvDevices("CX_", 1, "ConnectX");
+    auto& transport = p.objects[topology + std::string("SMA_0")]
+                               ["xyz.openbmc_project.Configuration.NvDevice."
+                                "Transport"];
+    transport["Flag"] = true;
+    transport["Offset"] = int64_t{-1};
+    transport["Ratio"] = 1.5;
+    EXPECT_EQ(run({"/tmp/img"}, vrRecord({"FW_CX_0"})), 0);
+    EXPECT_TRUE(p.err.empty());
+}
+
 TEST_F(MstNvDeviceTest, DerivedGroupsAndForceOnlyWhereClaimed)
 {
     addNvDevices("CX_", 2, "ConnectX");

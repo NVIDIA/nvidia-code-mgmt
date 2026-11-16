@@ -16,7 +16,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -106,27 +105,26 @@ inline std::string describe(const PropertyMap& props)
     for (const auto& [key, value] : props)
     {
         out += key + "=";
-        std::visit(
-            [&out](const auto& v) {
-                using T = std::decay_t<decltype(v)>;
-                if constexpr (std::is_same_v<T, std::string>)
-                {
-                    out += "\"" + v + "\"";
-                }
-                else if constexpr (std::is_same_v<T, bool>)
-                {
-                    out += v ? "true" : "false";
-                }
-                else if constexpr (std::is_arithmetic_v<T>)
-                {
-                    out += std::to_string(v);
-                }
-                else
-                {
-                    out += "<bytes>";
-                }
-            },
-            value);
+        if (const auto* s = std::get_if<std::string>(&value))
+        {
+            out += "\"" + *s + "\"";
+        }
+        else if (const auto* b = std::get_if<bool>(&value))
+        {
+            out += *b ? "true" : "false";
+        }
+        else if (const auto* u = std::get_if<uint64_t>(&value))
+        {
+            out += std::to_string(*u);
+        }
+        else if (const auto* i = std::get_if<int64_t>(&value))
+        {
+            out += std::to_string(*i);
+        }
+        else
+        {
+            out += "<other>";
+        }
         out += ";";
     }
     return out;
