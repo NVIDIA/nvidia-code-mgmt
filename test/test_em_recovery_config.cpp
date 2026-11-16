@@ -1,5 +1,9 @@
 #include "em_recovery_config.hpp"
 
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+
 #include <gtest/gtest.h>
 
 using namespace nvidia::software::updater;
@@ -11,6 +15,8 @@ constexpr auto plat = "/xyz/openbmc_project/inventory/system/platform/P";
 const std::string nv = rec::nvDeviceIface;
 const std::string tr = rec::transportIface;
 const std::string rc = rec::deviceRecoveryIface;
+
+const auto realUsbBusResolver = rec::usbBusResolver;
 
 class EmRecoveryConfigTest : public ::testing::Test
 {
@@ -346,6 +352,87 @@ TEST_F(EmRecoveryConfigTest, RecordPublishedByEntityManagerIsNotCached)
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("Origin")), "entity-manager");
     EXPECT_FALSE(rec::derivedRecords().contains(path));
+}
+
+TEST_F(EmRecoveryConfigTest, DescribeNamesEveryValueType)
+{
+    const PropertyMap props{{"a", std::string("s")},
+                            {"b", true},
+                            {"c", uint64_t(7)},
+                            {"d", int64_t(-3)},
+                            {"e", 1.5},
+                            {"f", std::vector<uint8_t>{1}},
+                            {"g", std::vector<std::string>{"x"}}};
+    const auto text = rec::describe(props);
+    EXPECT_NE(text.find("a=\"s\";"), std::string::npos);
+    EXPECT_NE(text.find("b=true;"), std::string::npos);
+    EXPECT_NE(text.find("c=7;"), std::string::npos);
+    EXPECT_NE(text.find("d=-3;"), std::string::npos);
+    EXPECT_NE(text.find("f=<bytes>;"), std::string::npos);
+    EXPECT_NE(text.find("g=<bytes>;"), std::string::npos);
+}
+
+TEST_F(EmRecoveryConfigTest, StrReadsStringsAndIntegersOnly)
+{
+    EXPECT_EQ(rec::str(Value(std::string("x"))), "x");
+    EXPECT_EQ(rec::str(Value(uint64_t(5))), "5");
+    EXPECT_EQ(rec::str(Value(int64_t(-5))), "-5");
+    EXPECT_EQ(rec::str(Value(1.5)), "");
+    EXPECT_EQ(rec::str(std::nullopt), "");
+}
+
+TEST_F(EmRecoveryConfigTest, UsbBusComesFromTheRootHubOrDefaults)
+{
+    char dirTemplate[] = "/tmp/emrecXXXXXX";
+    const std::string dir = mkdtemp(dirTemplate);
+    EXPECT_EQ(realUsbBusResolver(dir + "/missing"), rec::defaultUsbBus);
+    EXPECT_EQ(realUsbBusResolver(dir), rec::defaultUsbBus);
+    std::filesystem::create_directory(dir + "/other");
+    std::filesystem::create_directory(dir + "/usb3");
+    EXPECT_EQ(realUsbBusResolver(dir), rec::defaultUsbBus);
+    std::ofstream(dir + "/usb3/busnum") << "3\n";
+    EXPECT_EQ(realUsbBusResolver(dir), "3");
+    std::filesystem::remove_all(dir);
+}
+
+TEST_F(EmRecoveryConfigTest, UnknownRecoveryTypeDerivesNothing)
+{
+    device("Odd_0", "x", 17, {}, {{"RecoveryType", std::string("Bogus")}});
+    rec::expand(objects);
+    EXPECT_EQ(objects.find(std::string(plat) + "/FW_Odd_0"), objects.end());
+}
+
+TEST_F(EmRecoveryConfigTest, UsbDfuRecordsGetDefaultPolarities)
+{
+    device("Any_0", "erot", 50);
+    const std::string path = std::string(plat) + "/Dfu_0";
+    objects[path] = {{rec::usbDfuIface,
+                      {{"Name", std::string("Dfu_0")},
+                       {"ResetGpioPolarity", std::string("ActiveHigh")}}}};
+    rec::expand(objects);
+    const auto& props = objects.at(path).at(rec::usbDfuIface);
+    EXPECT_EQ(std::get<std::string>(props.at("RecoveryGpioPolarity")),
+              "ActiveHigh");
+    EXPECT_EQ(std::get<std::string>(props.at("ResetGpioPolarity")),
+              "ActiveHigh");
+    EXPECT_TRUE(objects.at(path).contains(rec::recoveryMarkerIface));
+}
+
+TEST_F(EmRecoveryConfigTest, OcpPortBehindABridgeUsesTheBridgeRootHub)
+{
+    device("HGX_SXM_SMA_0", "cx_sma", 16,
+           {{"Medium", std::string("usb")},
+            {"Port", std::string("1.1.1")},
+            {"RootHubPath", std::string("/hub")}});
+    device("HGX_GPU_1", "gpu", 49,
+           {{"Medium", std::string("bridge")},
+            {"Bridge", std::string("HGX_SXM_SMA_0")},
+            {"BridgeEID", uint64_t(48)},
+            {"BridgePort", std::string("1.2.1")}},
+           {{"RecoveryType", std::string("OCP")}});
+    auto* r = record("OCPRecovery", "FW_HGX_GPU_1");
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(std::get<std::string>(r->at("USBPort")), "1-1.2.1");
 }
 
 TEST_F(EmRecoveryConfigTest,
