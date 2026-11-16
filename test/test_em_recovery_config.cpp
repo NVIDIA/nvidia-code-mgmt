@@ -328,6 +328,26 @@ TEST_F(EmRecoveryConfigTest, CpuWithoutActionChassisHasNoForceRecovery)
               nullptr);
 }
 
+TEST_F(EmRecoveryConfigTest, RecordPublishedByEntityManagerIsNotCached)
+{
+    const std::string path = std::string(plat) + "/FW_Published_SMA_0";
+    const std::string iface = std::string(rec::cfgPrefix) + "MCURecovery";
+    objects[path] = {{iface,
+                      {{"Name", std::string("FW_Published_SMA_0")},
+                       {"Origin", std::string("entity-manager")}}}};
+    device("Published_SMA_0", "hmc_hpm_sma", 80,
+           {{"Medium", std::string("i2c")},
+            {"Bus", uint64_t(3)},
+            {"Address", uint64_t(82)}},
+           {{"RecoveryType", std::string("MCU")},
+            {"RecoveryGpio", std::string("R")},
+            {"ResetGpio", std::string("S")}});
+    auto* r = record("MCURecovery", "FW_Published_SMA_0");
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(std::get<std::string>(r->at("Origin")), "entity-manager");
+    EXPECT_FALSE(rec::derivedRecords().contains(path));
+}
+
 TEST_F(EmRecoveryConfigTest,
        SnapshotWithoutTopologyIsUntouchedAndExpandIsIdempotent)
 {

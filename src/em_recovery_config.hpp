@@ -642,6 +642,14 @@ inline void expand(ObjectValueTree& objects)
 
     for (const auto& [path, ifaces] : added)
     {
+        // A record that entity-manager publishes itself wins over the derived
+        // one; its properties must not be served from the derived cache.
+        if (auto existing = objects.find(path);
+            existing != objects.end() && existing->second != ifaces)
+        {
+            derivedRecords().erase(path.str);
+            continue;
+        }
         // Once per record: what was derived, to compare with a develop image.
         if (!derivedRecords().contains(path.str))
         {
