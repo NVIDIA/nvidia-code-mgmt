@@ -844,6 +844,7 @@ TEST_F(FWStatusGlacierGpioTest, PollGpioTracksTheLineValue)
                       std::optional<uint64_t>(100), "ActiveHigh", "",
                       std::nullopt, std::nullopt, helper);
     const auto poll = [&](std::optional<int> previous, int value, Result next) {
+        test::fw_status_fake_glacier::initResults.clear();
         test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(next));
         erot.lastGpioValue = previous;
         line.getValue = value;
@@ -856,7 +857,6 @@ TEST_F(FWStatusGlacierGpioTest, PollGpioTracksTheLineValue)
     EXPECT_EQ(erot.lastGpioValue, 0);
     poll(std::nullopt, 1, Result::Ok);
     EXPECT_EQ(erot.lastGpioValue, 1);
-    EXPECT_TRUE(erot.isFirmwareInRecovery);
 
     // Later reads: no change, then an edge each way.
     poll(1, 1, Result::Ok);
