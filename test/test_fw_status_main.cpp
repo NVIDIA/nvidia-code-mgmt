@@ -2544,6 +2544,36 @@ TEST_F(FWStatusMainTest, PublishRecoveryObjectCoversGetOptionalUint64Branches)
     EXPECT_GE(resources.size(), 1u);
 }
 
+TEST_F(FWStatusMainTest, PublishRecoveryObjectReadsTheMctpInterface)
+{
+    using test::fw_status_fake_dbus::setProperty;
+
+    test::fw_status_fake_dbus::reset();
+    resources.clear();
+    recoveryModeManagers.clear();
+
+    const std::string path = "/xyz/openbmc_project/inventory/gpio_erot_mctp";
+    setProperty(path, gpioErotObjInterface, "MctpEID",
+                static_cast<uint64_t>(33));
+    setProperty(path, gpioErotObjInterface, "GPIO",
+                std::string("GPIO_EROT_MCTP"));
+    setProperty(path, gpioErotObjInterface, "I2CBus", static_cast<uint64_t>(9));
+    setProperty(path, gpioErotObjInterface, "I2CAddress",
+                static_cast<uint64_t>(0x65));
+    setProperty(path, gpioErotObjInterface, "MctpInterface",
+                std::string("mctp-i2c9"));
+    test::fw_status_fake_gpio::lines["GPIO_EROT_MCTP"] = {};
+    test::fw_status_fake_gpio::lines["GPIO_EROT_MCTP"].eventFd = makeEventFd();
+    test::fw_status_fake_glacier::pushResult(
+        static_cast<uint8_t>(glacier_recovery_tool::glacier_recovery_commands::
+                                 RecoveryResult::FirmwareNotInRecovery));
+    EXPECT_NO_THROW(publishDBusRecoveryObject());
+    ASSERT_GE(resources.size(), 1u);
+    const auto* erot = dynamic_cast<GPIOResource*>(resources.back().get());
+    ASSERT_NE(erot, nullptr);
+    EXPECT_EQ(erot->mctpInterface, "mctp-i2c9");
+}
+
 TEST_F(FWStatusMainTest, CheckEntityManagerAvailabilityIgnoresUnrelatedSignal)
 {
     checkEntityManagerAvailability();

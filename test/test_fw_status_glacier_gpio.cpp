@@ -883,6 +883,18 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversGuardAndDiscoveryBranches)
     erotIntr.triggerMctpDiscovery();
     EXPECT_TRUE(test::fw_status_fake_dbus::restartedUnits.empty());
 
+    // initEndpoint: with an MCTP interface the EID is assigned through mctpd
+    // and the target is left alone, whatever the outcome of the bus call.
+    erotIntr.mctpInterface = "mctp-i2c4";
+    erotIntr.systemTarget = "erot-intr.target";
+    EXPECT_TRUE(erotIntr.initEndpoint());
+    EXPECT_TRUE(test::fw_status_fake_dbus::restartedUnits.empty());
+    erotIntr.systemTarget.clear();
+    EXPECT_TRUE(erotIntr.initEndpoint());
+    // Neither an interface nor a target: nothing to set up.
+    erotIntr.mctpInterface.clear();
+    EXPECT_FALSE(erotIntr.initEndpoint());
+
     // ── AP helpers with no AP configured: all guard branches ─────────────
     EXPECT_FALSE(erotIntr.hasAP());
     erotIntr.startAPBootStatusCheck(); // !hasAP()
