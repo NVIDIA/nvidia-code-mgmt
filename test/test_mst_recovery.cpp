@@ -848,8 +848,7 @@ TEST_F(MstBranchTest, LegacyFlowNeedsItsDeviceProperties)
 TEST_F(MstBranchTest, FindPolicySkipsRecordsOfOtherDevices)
 {
     const std::string board(root);
-    p.objects[board + "/Other"][policyInterface] = {
-        {"DeviceType", S("Other")}};
+    p.objects[board + "/Other"][policyInterface] = {{"DeviceType", S("Other")}};
     p.objects[board + "/NoType"][policyInterface] = {{"Flow", S("Mst")}};
     p.objects[board + "/Other2"][policyInterface] = {
         {"DeviceType", uint64_t{7}}};
