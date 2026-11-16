@@ -10,6 +10,7 @@
 #undef FAIL
 
 #include "../src/dbusutils.hpp"
+#include "../src/em_recovery_config.hpp"
 
 #include <unistd.h>
 
@@ -342,6 +343,34 @@ TEST_F(DBUSUtilsMockBusTest, GetPropertyImplCallFails)
     EXPECT_THROW(dbusUtils.getPropertyImpl("test.service", "/test/path",
                                            "test.Interface", "TestProperty"),
                  std::runtime_error);
+}
+
+TEST_F(DBUSUtilsMockBusTest, DerivedRecordsAnswerEntityManagerPropertyReads)
+{
+    constexpr auto emService = "xyz.openbmc_project.EntityManager";
+    auto& derived = em_recovery::derivedRecords();
+    derived["/derived/path"]["derived.Interface"]["Prop"] = std::string("v");
+
+    // A record the topology derived is answered without asking D-Bus.
+    EXPECT_EQ(any_cast<std::string>(dbusUtils.getPropertyImpl(
+                  emService, "/derived/path", "derived.Interface", "Prop")),
+              "v");
+
+    // Other services, and records or properties that were not derived, still
+    // go to the bus.
+    EXPECT_CALL(sdbusMock, sd_bus_call(nullptr, nullptr, testing::_, testing::_,
+                                       testing::_))
+        .WillRepeatedly(testing::Return(-ENOENT));
+    EXPECT_THROW(dbusUtils.getPropertyImpl("test.service", "/derived/path",
+                                           "derived.Interface", "Prop"),
+                 std::runtime_error);
+    EXPECT_THROW(dbusUtils.getPropertyImpl(emService, "/other/path",
+                                           "derived.Interface", "Prop"),
+                 std::runtime_error);
+    EXPECT_THROW(dbusUtils.getPropertyImpl(emService, "/derived/path",
+                                           "derived.Interface", "Missing"),
+                 std::runtime_error);
+    derived.clear();
 }
 
 // ========================== getSoftwareObjects ==========================

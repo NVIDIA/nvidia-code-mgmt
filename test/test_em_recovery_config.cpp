@@ -652,6 +652,55 @@ TEST_F(EmRecoveryConfigTest, OcpOptionalPartsFollowTheRecoveryFlags)
     EXPECT_FALSE(plain->contains("SMAEID"));
 }
 
+TEST_F(EmRecoveryConfigTest, FlagsAreHonouredOnlyWhenTheyAreBooleans)
+{
+    const PropertyMap bridge{{"Medium", std::string("bridge")},
+                             {"Bridge", std::string("Missing_SMA")},
+                             {"BridgeEID", uint64_t(39)}};
+    unsigned eid = 70;
+    for (const Value& flagValue :
+         {Value(true), Value(false), Value(std::string("no"))})
+    {
+        const std::string suffix = std::to_string(eid);
+        device("GPU_" + suffix, "gpu", eid++, bridge,
+               {{"RecoveryType", std::string("OCP")},
+                {"OcpInfoRom", flagValue},
+                {"OcpSmaEid", flagValue}});
+        device("CX_" + suffix, "cx", eid++, bridge,
+               {{"RecoveryType", std::string("ConnectX")},
+                {"I2CBus", uint64_t(78)},
+                {"I2CAddress", uint64_t(72)},
+                {"ForceRecoveryOnIRoT", flagValue}});
+    }
+    rec::expand(objects);
+    const auto isTrue = [](const Value& v) {
+        const auto* b = std::get_if<bool>(&v);
+        return b == nullptr || *b;
+    };
+    unsigned index = 70;
+    for (const Value& flagValue :
+         {Value(true), Value(false), Value(std::string("no"))})
+    {
+        const std::string ocp = "FW_GPU_" + std::to_string(index);
+        const std::string cx = "FW_CX_" + std::to_string(index);
+        index += 2;
+        auto* o = record("OCPRecovery", ocp);
+        ASSERT_NE(o, nullptr);
+        // A flag that is not a boolean keeps the default, which is on.
+        const bool on =
+            std::get_if<bool>(&flagValue) ? isTrue(flagValue) : true;
+        EXPECT_EQ(o->contains("InfoRomName"), on);
+        EXPECT_EQ(o->contains("SMAEID"), on);
+        auto* c = record("ConnectXRecovery", cx);
+        ASSERT_NE(c, nullptr);
+        // ForceRecoveryOnIRoT defaults to off.
+        const bool onIRoT = std::get_if<bool>(&flagValue) && isTrue(flagValue);
+        EXPECT_EQ(std::get<std::string>(c->at("ForceRecoveryChassisObject")) ==
+                      std::get<std::string>(c->at("ChassisName")),
+                  onIRoT);
+    }
+}
+
 TEST_F(EmRecoveryConfigTest, NicRecordsDependOnTheirBridgeAndMethod)
 {
     device("SMA_NoPort", "cx_sma", 60, {{"Medium", std::string("usb")}}, {},
