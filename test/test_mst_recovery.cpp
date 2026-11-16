@@ -845,6 +845,37 @@ TEST_F(MstBranchTest, LegacyFlowNeedsItsDeviceProperties)
                                           "`CX_0`.")));
 }
 
+TEST_F(MstBranchTest, FindPolicySkipsRecordsOfOtherDevices)
+{
+    const std::string board(root);
+    p.objects[board + "/Other"][policyInterface] = {
+        {"DeviceType", S("Other")}};
+    p.objects[board + "/NoType"][policyInterface] = {{"Flow", S("Mst")}};
+    p.objects[board + "/Other2"][policyInterface] = {
+        {"DeviceType", uint64_t{7}}};
+    auto policy = findPolicy(p, "ConnectX", 1, 0);
+    ASSERT_FALSE(policy.has_value());
+    p.objects[board + "/Policy"][policyInterface] = vrRecord();
+    EXPECT_TRUE(findPolicy(p, "ConnectX", 1, 0).has_value());
+}
+
+TEST_F(MstBranchTest, UsbPortWithoutAnyAttributeIsNotPresent)
+{
+    setSma("1-1.1");
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains(HasSubstr("SMA SMA_0 is not present at USB")));
+}
+
+TEST_F(MstBranchTest, LegacyEmptyPropertyIsQuotedForTheShell)
+{
+    addCx(p, "CX_0", 78, 72, true, cx8Iface);
+    p.objects[std::string(root) + "/CX_0"].erase(cxIface);
+    p.objects[std::string(root) + "/CX_0"][cx8Iface]["ChassisName"] =
+        std::string();
+    p.i2c["78-72"] = {healthyBytes};
+    EXPECT_EQ(run({"/tmp/img"}, hgxb300Record({"CX_0"})), 0);
+}
+
 // --- FNPMode HoldDeasserted -------------------------------------------------
 
 constexpr auto bfPath = "/xyz/openbmc_project/inventory/system/recovery_config/"
