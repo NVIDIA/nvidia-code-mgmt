@@ -830,6 +830,33 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversRemainingBranchPaths)
     EXPECT_TRUE(erotPoll.erotRecoveryMonitorActive);
 }
 
+TEST_F(FWStatusGlacierGpioTest, PollGpioTracksTheLineValue)
+{
+    auto event = sdeventplus::Event::get_default();
+    auto helper = std::make_shared<MCTPVdmHelper>();
+    test::fw_status_fake_gpio::lines["POLL_VAL_GPIO"] = {};
+    GPIOResource erot(bus, "/xyz/openbmc_project/software/erot-poll-val", event,
+                      12, 0x5B, 42, "POLL_VAL_GPIO", "", "Polling",
+                      std::optional<uint64_t>(100), "ActiveHigh", "",
+                      std::nullopt, std::nullopt, helper);
+    const auto poll = [&](std::optional<int> previous, int value) {
+        test::fw_status_fake_glacier::initResults.clear();
+        test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(
+            glacier_recovery_tool::glacier_recovery_commands::RecoveryResult::
+                FirmwareNotInRecovery));
+        erot.lastGpioValue = previous;
+        test::fw_status_fake_gpio::lines["POLL_VAL_GPIO"].getValue = value;
+        erot.pollGpio();
+        return erot.lastGpioValue;
+    };
+
+    EXPECT_EQ(poll(std::nullopt, 0), 0);
+    EXPECT_EQ(poll(std::nullopt, 1), 1);
+    EXPECT_EQ(poll(1, 1), 1);
+    EXPECT_EQ(poll(1, 0), 0);
+    EXPECT_EQ(poll(0, 1), 1);
+}
+
 TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversGuardAndDiscoveryBranches)
 {
     auto event = sdeventplus::Event::get_default();
