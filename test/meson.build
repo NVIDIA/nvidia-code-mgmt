@@ -1254,6 +1254,9 @@ test(
         '../recovery_tool/mst_recovery_tool/mst_policy.cpp',
         '../recovery_tool/mst_recovery_tool/mst_recovery.cpp',
         implicit_include_directories: false,
+        # The recovery workers run on threads; plain gcov counters race and
+        # give gcovr negative branch counts.
+        cpp_args: ['-fprofile-update=atomic'],
         dependencies: [
             test_dep,
             sdbusplus,

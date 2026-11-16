@@ -1574,6 +1574,19 @@ TEST(MstPolicyTest, BusGroupsSplitDevicesSharingABus)
     EXPECT_TRUE(busGroups({}).empty());
 }
 
+TEST(MstPolicyTest, DevicesWithoutABusJoinTheFirstWave)
+{
+    std::map<std::string, PropertyMap> devices{
+        {"A", {{"I2CBus", uint64_t{1}}}},
+        {"B", {}},
+        {"C", {{"I2CBus", uint64_t{1}}}}};
+    EXPECT_THAT(busGroups(devices), ElementsAre(L{"A", "B"}, L{"C"}));
+    auto r = vrRecord();
+    r["SMAPresenceCheck"] = S("yes");
+    EXPECT_EQ(parsePolicy("/b/Policy", r).error(),
+              "SMAPresenceCheck is missing or not a boolean");
+}
+
 TEST(MstPolicyTest, FindPolicyNeedsGroupsOrDevices)
 {
     FakePlatform p;
