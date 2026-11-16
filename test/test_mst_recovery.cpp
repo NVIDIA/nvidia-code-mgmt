@@ -54,6 +54,8 @@ class FakePlatform : public Platform
     bool haveMstflint = true;
     bool imageReadable = true;
     std::string throwOnStat;
+    std::set<std::string> unreadable;
+    bool noFileSize = false;
     bool throwOnRun = false;
 
     std::vector<std::string> ops;
@@ -147,7 +149,8 @@ class FakePlatform : public Platform
             throw std::runtime_error("boom");
         }
         bool present = devices.contains(path);
-        return {present, present, present, present};
+        const bool ok = present && !unreadable.contains(path);
+        return {present, present, ok, ok};
     }
     bool isReadableFile(const std::string&, bool) override
     {
@@ -155,6 +158,10 @@ class FakePlatform : public Platform
     }
     std::optional<uint64_t> fileSize(const std::string&) override
     {
+        if (noFileSize)
+        {
+            return std::nullopt;
+        }
         return 4096;
     }
 
@@ -584,6 +591,260 @@ TEST_F(MstVrTest, LegacyStyleIgnoresGpioErrorsAndPostsNoEvents)
                             "set CX_0_RST=1"));
 }
 
+// --- Error paths of the Mst and Legacy flows ---------------------------------
+
+class MstBranchTest : public MstVrTest
+{
+  protected:
+    void SetUp() override
+    {
+        addCx(p, "CX_0", 78, 72);
+        p.devices.erase("/dev/i2c-78");
+    }
+
+    void setSma(const std::string& port)
+    {
+        auto& cx0 = p.objects[std::string(root) + "/CX_0"][cxIface];
+        cx0["SMAName"] = std::string("SMA_0");
+        if (!port.empty())
+        {
+            cx0["SMAUSBPort"] = port;
+        }
+    }
+
+    void setUsb(const std::string& vid, const std::string& pid)
+    {
+        p.usb["1-1.1/idVendor"] = vid;
+        p.usb["1-1.1/idProduct"] = pid;
+    }
+
+    int runSma()
+    {
+        return run({"/tmp/img"}, hgxrCxRecord({"CX_0"}));
+    }
+};
+
+TEST_F(MstBranchTest, MissingBusWithoutAnSmaPortIsNotAccessible)
+{
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains("CX_0: SMA EID 60 is not present"));
+    EXPECT_THAT(p.err, Contains(HasSubstr("not present and no SMA USB port")));
+    ASSERT_EQ(p.events.size(), 1U);
+    EXPECT_EQ(p.events[0].message, "ResourceEvent.1.0.ResourceErrorsDetected");
+}
+
+TEST_F(MstBranchTest, SmaConnectivityIsReadFromMctp)
+{
+    const std::string ep = "/au/com/codeconstruct/mctp1/networks/1/endpoints/";
+    const std::string iface = "au.com.codeconstruct.MCTP.Endpoint1";
+    p.objects[ep + "60"][iface]["Connectivity"] = std::string("Available\"x");
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains("CX_0: SMA EID 60 connectivity is Available"));
+    p.out.clear();
+    p.objects[ep + "60"][iface]["Connectivity"] = std::string("Degraded");
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains("CX_0: SMA EID 60 connectivity is Degraded"));
+    p.out.clear();
+    p.objects[ep + "60"][iface]["Connectivity"] = uint64_t{1};
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains("CX_0: SMA EID 60 is not present"));
+    p.out.clear();
+    p.objects[std::string(root) + "/CX_0"][cxIface]["SMAEID"] =
+        std::string("x");
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains("CX_0: SMA EID x is not present"));
+}
+
+TEST_F(MstBranchTest, MissingBusReportsTheSmaState)
+{
+    setSma("1-1.1");
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("SMA SMA_0 is not present at USB")));
+    EXPECT_THAT(p.out, Contains(HasSubstr("SMA SMA_0 is not present at USB")));
+
+    p.err.clear();
+    setUsb("0955", "cf11");
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("is in normal mode")));
+
+    p.err.clear();
+    setUsb("1234", "5678");
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("reports unexpected 1234:5678")));
+    EXPECT_EQ(p.events.size(), 3U);
+}
+
+TEST_F(MstBranchTest, UnreadableDeviceAndBusWithoutSmaCheck)
+{
+    p.devices.insert("/dev/i2c-78");
+    p.unreadable.insert("/dev/i2c-78");
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("lacks read/write permissions")));
+    p.err.clear();
+    p.devices.erase("/dev/i2c-78");
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("I2C bus /dev/i2c-78 not present")));
+}
+
+TEST_F(MstBranchTest, ResetAndBurnFailuresAreReported)
+{
+    p.devices.insert("/dev/i2c-78");
+    p.i2c["78-72"] = {brokenBytes};
+    p.failingGpio.insert("CX_0_FNP");
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("could not assert FNP and reset")));
+
+    p.err.clear();
+    p.failingGpio.clear();
+    p.failingHigh.insert("CX_0_FNP");
+    p.mstflint = {{1, "failed\n"}};
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err,
+                Contains(HasSubstr("could not deassert FNP and reset after "
+                                   "burn failure")));
+
+    p.err.clear();
+    p.mstflint = {{0, "ok\n"}};
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("could not deassert FNP and reset "
+                                          "after burn")));
+}
+
+TEST_F(MstBranchTest, BootStatusLostAfterTheBurn)
+{
+    p.devices.insert("/dev/i2c-78");
+    p.i2c["78-72"] = {brokenBytes, std::nullopt};
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("could not retrieve boot status "
+                                          "after burn")));
+}
+
+TEST_F(MstBranchTest, LegacyFlowErrorPaths)
+{
+    addCx(p, "CX_0", 78, 72, true, cx8Iface);
+    p.objects[std::string(root) + "/CX_0"].erase(cxIface);
+    const auto legacy = [&] {
+        return run({"/tmp/img"}, hgxb300Record({"CX_0"}));
+    };
+    p.devices.erase("/dev/i2c-78");
+    EXPECT_EQ(legacy(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("I2C bus /dev/i2c-78 not present.")));
+
+    p.devices.insert("/dev/i2c-78");
+    p.err.clear();
+    EXPECT_EQ(legacy(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Could not retrieve boot status.")));
+
+    p.err.clear();
+    p.i2c["78-72"] = {brokenBytes, std::nullopt};
+    p.mstflint = {{0, ""}};
+    EXPECT_EQ(legacy(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Could not retrieve boot status.")));
+
+    p.err.clear();
+    p.i2c["78-72"] = {brokenBytes};
+    EXPECT_EQ(legacy(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Boot failure (GIS=0x00000001).")));
+
+    p.err.clear();
+    p.mstflint = {{1, "bad\n"}};
+    EXPECT_EQ(legacy(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Burn failed. Deasserting FNP.")));
+
+    p.out.clear();
+    p.i2c["78-72"] = {healthyBytes};
+    p.mstflint = {{0, ""}};
+    EXPECT_EQ(run({"-f", "/tmp/img"}, hgxb300Record({"CX_0"})), 0);
+    EXPECT_THAT(p.out, Contains(HasSubstr("Forcing recovery.")));
+}
+
+TEST_F(MstBranchTest, SmaNameWithoutAPortFallsBackToTheEid)
+{
+    setSma("");
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains("CX_0: SMA EID 60 is not present"));
+}
+
+TEST_F(MstBranchTest, UsbPresenceNeedsBothVendorAndProduct)
+{
+    setSma("1-1.1");
+    p.usb["1-1.1/idVendor"] = "0955";
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains(HasSubstr("SMA SMA_0 is not present at USB")));
+    p.out.clear();
+    p.usb["1-1.1/idVendor"] = "";
+    p.usb["1-1.1/idProduct"] = "cf11";
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains(HasSubstr("SMA SMA_0 is not present at USB")));
+    p.out.clear();
+    p.usb["1-1.1/idVendor"] = "0955";
+    p.usb["1-1.1/idProduct"] = "";
+    EXPECT_EQ(runSma(), 1);
+    EXPECT_THAT(p.out, Contains(HasSubstr("SMA SMA_0 is not present at USB")));
+}
+
+TEST_F(MstBranchTest, ResetGivesUpWhenAGpioLineKeepsFailing)
+{
+    p.devices.insert("/dev/i2c-78");
+    p.i2c["78-72"] = {brokenBytes};
+    const auto expectAssertFails = [&](const char* why) {
+        p.err.clear();
+        EXPECT_EQ(run(), 1) << why;
+        EXPECT_THAT(p.err, Contains(HasSubstr("could not assert FNP and "
+                                              "reset")))
+            << why;
+    };
+    p.missingGpio = {"CX_0_RST"};
+    expectAssertFails("reset line missing");
+    p.missingGpio.clear();
+    p.failingGpio = {"CX_0_RST"};
+    expectAssertFails("reset line cannot be driven low");
+    p.failingGpio.clear();
+    p.failingHigh = {"CX_0_RST"};
+    expectAssertFails("reset line cannot be released");
+}
+
+TEST_F(MstBranchTest, LegacyResetSkipsLinesItCannotFind)
+{
+    addCx(p, "CX_0", 78, 72, true, cx8Iface);
+    p.objects[std::string(root) + "/CX_0"].erase(cxIface);
+    p.i2c["78-72"] = {brokenBytes, healthyBytes};
+    p.missingGpio = {"CX_0_RST"};
+    EXPECT_EQ(run({"/tmp/img"}, hgxb300Record({"CX_0"})), 0);
+    EXPECT_THAT(p.ops, Not(Contains("set CX_0_RST=0")));
+    EXPECT_THAT(p.ops, Contains("set CX_0_FNP=0"));
+}
+
+TEST_F(MstBranchTest, LegacyFlowDoesNotNeedMstflintToStart)
+{
+    addCx(p, "CX_0", 78, 72, true, cx8Iface);
+    p.objects[std::string(root) + "/CX_0"].erase(cxIface);
+    p.haveMstflint = false;
+    p.i2c["78-72"] = {healthyBytes};
+    EXPECT_EQ(run({"/tmp/img"}, hgxb300Record({"CX_0"})), 0);
+    EXPECT_THAT(p.err, Not(Contains("<3>mstflint binary not found.")));
+}
+
+TEST_F(MstBranchTest, FindPolicyReportsAnInvalidRecord)
+{
+    auto record = vrRecord();
+    record["RecoveryFlow"] = S("Bogus");
+    p.objects[std::string(root) + "/Policy"][policyInterface] = record;
+    auto policy = findPolicy(p, "ConnectX", 1, 0);
+    ASSERT_FALSE(policy.has_value());
+    EXPECT_THAT(policy.error(),
+                HasSubstr("invalid MSTRecoveryPolicy for ConnectX"));
+}
+
+TEST_F(MstBranchTest, LegacyFlowNeedsItsDeviceProperties)
+{
+    p.objects[std::string(root) + "/CX_0"][cx8Iface] = {
+        {"I2CBus", uint64_t{1}}};
+    EXPECT_EQ(run({"/tmp/img"}, hgxb300Record({"CX_0"})), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Failed to read D-Bus properties of "
+                                          "`CX_0`.")));
+}
+
 // --- FNPMode HoldDeasserted -------------------------------------------------
 
 constexpr auto bfPath = "/xyz/openbmc_project/inventory/system/recovery_config/"
@@ -755,6 +1016,171 @@ TEST_F(MstHoldTest, CancelDuringResetPulseDeassertsReset)
         testing::KilledBySignal(SIGTERM),
         "op set rst=0\nop set rst=1\nop release fnp\nop find fnp\n"
         "op set fnp=1\n");
+}
+
+TEST_F(MstHoldTest, ImageAndBoardLookupErrors)
+{
+    p.imageReadable = false;
+    EXPECT_EQ(run(), 2);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Image not found or unreadable")));
+    p.imageReadable = true;
+    p.err.clear();
+    p.objects.clear();
+    p.objects["/xyz/openbmc_project/inventory/system/recovery_config/Other/"
+              "BlueField_FW_NIC_9"][cxIface] = {};
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("No xyz.openbmc_project."
+                                          "Configuration.ConnectXRecovery "
+                                          "object under board")));
+}
+
+TEST_F(MstHoldTest, SecondDeviceOnTheBoardIsIgnoredWithAWarning)
+{
+    p.objects[std::string(bfBoard) + "/BlueField_FW_NIC_1"][cxIface] =
+        p.objects.at(bfPath).at(cxIface);
+    p.i2c["14-72"] = {healthyBytes};
+    EXPECT_EQ(run(), 0);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Found 2 ConnectXRecovery objects")));
+}
+
+TEST_F(MstHoldTest, ImageVersionComesFromTheUpdaterWhenItIsAString)
+{
+    const std::string path = "/xyz/openbmc_project/software/other/"
+                             "ConnectXRecovery";
+    const std::string iface = "xyz.openbmc_project.Software.ExtendedVersion";
+    p.objects[path][iface]["ExtendedVersion"] = std::string("1.2.3");
+    p.i2c["14-72"] = {healthyBytes};
+    EXPECT_EQ(run(), 0);
+    EXPECT_THAT(p.err, Contains(HasSubstr("version=1.2.3")));
+    p.err.clear();
+    p.objects[path][iface]["ExtendedVersion"] = uint64_t{7};
+    EXPECT_EQ(run(), 0);
+    EXPECT_THAT(p.err, Contains(HasSubstr("version=unknown")));
+}
+
+TEST_F(MstHoldTest, InvalidEmPropertiesAreConfigErrors)
+{
+    auto& props = p.objects[bfPath][cxIface];
+    props["I2CBus"] = std::string("abc");
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Invalid I2CBus 'abc'")));
+    props["I2CBus"] = uint64_t{14};
+    props["I2CAddress"] = std::string("0x48");
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Invalid I2CAddress '0x48'")));
+    props["I2CAddress"] = uint64_t{72};
+    props["ResetGPIO"] = std::string();
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("EM property ResetGPIO is empty")));
+    props["ResetGPIO"] = std::string("rst");
+    props.erase("BootDoneGPIO");
+    p.sleptMs = 0;
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Failed to read I2CBus")));
+    EXPECT_GE(p.sleptMs, 9000U);
+}
+
+TEST_F(MstHoldTest, ActiveLowFnpAndUnknownImageSize)
+{
+    p.objects[bfPath][cxIface]["FlashNotPresentPolarity"] = uint64_t{0};
+    p.noFileSize = true;
+    p.i2c["14-72"] = {brokenBytes, healthyBytes};
+    EXPECT_EQ(run(), 0);
+    EXPECT_THAT(p.err, Contains(HasSubstr("(? bytes)")));
+    EXPECT_THAT(p.ops, Contains("hold fnp=1"));
+}
+
+TEST_F(MstHoldTest, GpioFailuresBeforeAndAfterTheBurn)
+{
+    p.i2c["14-72"] = {brokenBytes};
+    p.missingGpio.insert("fnp");
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("GPIO 'fnp' not found")));
+    p.missingGpio.clear();
+    p.failingGpio.insert("fnp");
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Failed to hold GPIO 'fnp'")));
+    p.failingGpio.clear();
+    p.missingGpio.insert("rst");
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Reset GPIO rst not found")));
+    p.missingGpio.clear();
+    p.failingGpio.insert("rst");
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Failed to assert rst low")));
+}
+
+TEST_F(MstHoldTest, BurnRetriesWhileTheDeviceIsNotReady)
+{
+    p.i2c["14-72"] = {brokenBytes, healthyBytes};
+    p.mstflint = {{1, "-E- Can't find device id\n"}, {0, "done\n"}};
+    EXPECT_EQ(run(), 0);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Device not ready, retrying")));
+    EXPECT_THAT(p.err, Contains(HasSubstr("Burn succeeded")));
+}
+
+TEST_F(MstHoldTest, BootDoneAndPostBurnVerificationFailures)
+{
+    p.i2c["14-72"] = {brokenBytes};
+    p.bootDone.clear();
+    EXPECT_EQ(run(), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Failed to read nic_boot_done")));
+    p.bootDone = {Value{true}, Value{false}};
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("NIC did not boot healthy")));
+    p.bootDone = {Value{true}, Value{false}};
+    p.i2c["14-72"] = {brokenBytes, std::nullopt};
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Post-burn GIS read failed")));
+}
+
+TEST_F(MstVrTest, ForceFlagAndMissingImageArgument)
+{
+    p.i2c["78-72"] = {healthyBytes};
+    p.i2c["78-74"] = {healthyBytes};
+    p.i2c["79-72"] = {healthyBytes};
+    EXPECT_EQ(run({"--force", "/tmp/img"}), 0);
+    EXPECT_EQ(run({"-f"}), 1);
+    EXPECT_EQ(run({"/tmp/img", "extra"}), 1);
+}
+
+TEST_F(MstHoldTest, UnusableI2cAddressSkipsTheGisReads)
+{
+    for (uint64_t addr : {uint64_t{4}, uint64_t{200}})
+    {
+        p.objects[bfPath][cxIface]["I2CAddress"] = addr;
+        p.err.clear();
+        p.bootDone = {Value{true}, Value{false}};
+        EXPECT_EQ(run(), 1) << addr;
+        EXPECT_THAT(p.err, Contains(HasSubstr("Pre-burn GIS read failed")));
+        EXPECT_THAT(p.err, Contains(HasSubstr("Post-burn GIS read failed")));
+    }
+}
+
+TEST_F(MstHoldTest, FailedBurnReportsTheTailOfItsOutput)
+{
+    p.i2c["14-72"] = {brokenBytes};
+    std::string lines;
+    for (int i = 0; i < 14; ++i)
+    {
+        lines += std::format("\x1b[31mline {}\x1b[0m\r\n", i);
+    }
+    p.mstflint = {{1, lines + "last line without newline"}};
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("last line without newline")));
+    EXPECT_THAT(p.err, Not(Contains(HasSubstr("line 0"))));
+    p.err.clear();
+    p.mstflint = {{1, ""}};
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Burn failed after 1 attempt(s)")));
+}
+
+TEST_F(MstHoldTest, BurnRetriesAreBounded)
+{
+    p.i2c["14-72"] = {brokenBytes};
+    p.mstflint = {{1, "Can't find device id\n"}};
+    EXPECT_EQ(run(), 1);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Burn failed after 3 attempt(s)")));
 }
 
 TEST_F(MstVrTest, WorkerExceptionFailsOnlyThatDevice)
