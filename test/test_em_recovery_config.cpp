@@ -567,3 +567,219 @@ TEST_F(EmRecoveryConfigTest, McuRecordCarriesChassisName)
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(std::get<std::string>(r->at("ChassisName")), "IO_Board_SMA_0");
 }
+
+TEST(EmRecoveryConfigSignal, EveryInterfaceCombinationOfASignal)
+{
+    const auto make = [](bool nvIface, bool recovery, bool transport,
+                         bool dfu) {
+        InterfaceMap m;
+        if (nvIface)
+        {
+            m[nv] = {};
+        }
+        if (recovery)
+        {
+            m[rc] = {};
+        }
+        if (transport)
+        {
+            m[tr] = {};
+        }
+        if (dfu)
+        {
+            m[rec::usbDfuIface] = {};
+        }
+        return m;
+    };
+    for (int bits = 0; bits < 16; ++bits)
+    {
+        const bool n = bits & 1;
+        const bool r = bits & 2;
+        const bool t = bits & 4;
+        const bool d = bits & 8;
+        const auto m = make(n, r, t, d);
+        EXPECT_EQ(rec::isConfigObject(m), d || (n && r)) << bits;
+        EXPECT_EQ(rec::completesSpi(m), t) << bits;
+        EXPECT_EQ(rec::touchesConfig(m), d || r || t) << bits;
+    }
+}
+
+TEST(EmRecoveryConfigValue, FlagReadsOnlyBooleans)
+{
+    EXPECT_TRUE(rec::flag(std::nullopt, true));
+    EXPECT_FALSE(rec::flag(std::nullopt, false));
+    EXPECT_TRUE(rec::flag(Value(std::string("no")), true));
+    EXPECT_FALSE(rec::flag(Value(std::string("yes")), false));
+    EXPECT_FALSE(rec::flag(Value(false), true));
+    EXPECT_TRUE(rec::flag(Value(true), false));
+}
+
+TEST_F(EmRecoveryConfigTest, OcpOptionalPartsFollowTheRecoveryFlags)
+{
+    device("GPU_0", "gpu", 40,
+           {{"Medium", std::string("bridge")},
+            {"Bridge", std::string("Missing_SMA")},
+            {"BridgeEID", uint64_t(39)},
+            {"BridgePort", std::string("1.3")}},
+           {{"RecoveryType", std::string("OCP")},
+            {"OcpInfoRom", false},
+            {"OcpSmaEid", false},
+            {"OcpRecoveryI2cAddress", uint64_t(5)},
+            {"OcpRecoveryI2cBus", uint64_t(6)}});
+    device("GPU_1", "gpu", 41, {{"Medium", std::string("usb")}},
+           {{"RecoveryType", std::string("OCP")},
+            {"InfoRomName", std::string("Rom_1")}});
+    auto* r = record("OCPRecovery", "FW_GPU_0");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FALSE(r->contains("InfoRomName"));
+    EXPECT_FALSE(r->contains("SMAEID"));
+    EXPECT_EQ(std::get<std::string>(r->at("USBPort")),
+              std::string(rec::defaultUsbBus) + "-1.3");
+    EXPECT_EQ(std::get<uint64_t>(r->at("I2CAddress")), 5U);
+    EXPECT_EQ(std::get<uint64_t>(r->at("I2CBus")), 6U);
+    auto* plain = record("OCPRecovery", "FW_GPU_1");
+    ASSERT_NE(plain, nullptr);
+    EXPECT_EQ(std::get<std::string>(plain->at("InfoRomName")), "Rom_1");
+    EXPECT_FALSE(plain->contains("USBPort"));
+    EXPECT_FALSE(plain->contains("SMAEID"));
+}
+
+TEST_F(EmRecoveryConfigTest, NicRecordsDependOnTheirBridgeAndMethod)
+{
+    device("SMA_NoPort", "cx_sma", 60, {{"Medium", std::string("usb")}}, {},
+           false);
+    device("SMA_0", "cx_sma", 62,
+           {{"Medium", std::string("usb")},
+            {"Port", std::string("1.1")},
+            {"RootHubPath", std::string("/hub")}},
+           {}, false);
+    const auto nic = [&](const char* name, const char* type, const char* bridge,
+                         uint64_t eid) {
+        device(name, "nic", eid,
+               {{"Medium", std::string("bridge")},
+                {"Bridge", std::string(bridge)}},
+               {{"RecoveryType", std::string(type)}});
+    };
+    nic("CX_NoPort", "ConnectX", "SMA_NoPort", 70);
+    nic("CX_NoBridge", "ConnectX", "Nothing", 71);
+    nic("NVS_0", "NVSwitch", "SMA_0", 72);
+    nic("NIC_0", "NVLinkManagementNIC", "SMA_0", 73);
+    nic("CX_1", "ConnectX", "SMA_0", 74);
+
+    auto* noPort = record("ConnectXRecovery", "FW_CX_NoPort");
+    ASSERT_NE(noPort, nullptr);
+    EXPECT_FALSE(noPort->contains("SMAName"));
+    auto* noBridge = record("ConnectXRecovery", "FW_CX_NoBridge");
+    ASSERT_NE(noBridge, nullptr);
+    EXPECT_FALSE(noBridge->contains("SMAName"));
+    auto* nvs = record("NVSwitchRecovery", "FW_NVS_0");
+    ASSERT_NE(nvs, nullptr);
+    EXPECT_FALSE(nvs->contains("SMAName"));
+    EXPECT_FALSE(nvs->contains("MctpEID"));
+    auto* mgmt = record("NVLinkManagementNICRecovery", "FW_NIC_0");
+    ASSERT_NE(mgmt, nullptr);
+    EXPECT_EQ(std::get<std::string>(mgmt->at("SMAName")), "SMA_0");
+    EXPECT_FALSE(mgmt->contains("MctpEID"));
+    auto* cx = record("ConnectXRecovery", "FW_CX_1");
+    ASSERT_NE(cx, nullptr);
+    EXPECT_EQ(std::get<std::string>(cx->at("SMAUSBPort")), "1-1.1");
+    EXPECT_EQ(std::get<std::string>(cx->at("SMAName")), "SMA_0");
+}
+
+TEST_F(EmRecoveryConfigTest, McuWithAnUnknownKindHasNoTarget)
+{
+    device("Odd_SMA_0", "unknown_kind", 90, {{"Medium", std::string("usb")}},
+           {{"RecoveryType", std::string("MCU")}});
+    auto* r = record("MCURecovery", "FW_Odd_SMA_0");
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(std::get<std::string>(r->at("Target")), "");
+    EXPECT_EQ(std::get<std::string>(r->at("RecoveryGpioName")), "");
+}
+
+TEST_F(EmRecoveryConfigTest, DeviceWithoutAnEidHasNoMctpEid)
+{
+    objects[std::string(plat) + "/ERoT_0"] = {
+        {nv, {{"Name", std::string("ERoT_0")}, {"Kind", std::string("erot")}}},
+        {rc, {{"RecoveryType", std::string("GlacierCrisis")}}}};
+    auto* r = record("GlacierCrisisRecovery", "FW_ERoT_0");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FALSE(r->contains("MctpEID"));
+}
+
+TEST_F(EmRecoveryConfigTest, TransportMethodsAreWithheldWithoutATransport)
+{
+    for (const char* method : {"MCU", "OCP", "USBRCM", "ConnectX", "NVSwitch",
+                               "NVLinkManagementNIC"})
+    {
+        objects.clear();
+        device("NoTransport_0", "nic", 50, {},
+               {{"RecoveryType", std::string(method)}});
+        rec::expand(objects);
+        EXPECT_EQ(objects.size(), 1U) << method;
+    }
+    objects.clear();
+    device("NoTransport_1", "gpu", 51, {},
+           {{"RecoveryType", std::string("GPIOERoT")}});
+    rec::expand(objects);
+    EXPECT_EQ(objects.size(), 2U);
+}
+
+TEST_F(EmRecoveryConfigTest, TopologyMayStartWithADeviceWithoutRecovery)
+{
+    device("A_Plain", "nic", 1, {}, {}, false);
+    device("B_Recovery", "erot", 2, {},
+           {{"RecoveryType", std::string("GlacierCrisis")}});
+    EXPECT_NE(record("GlacierCrisisRecovery", "FW_B_Recovery"), nullptr);
+}
+
+TEST_F(EmRecoveryConfigTest, CpuForceRecoveryNeedsEveryInput)
+{
+    const auto without = [](const std::string& key) {
+        auto p = cpuStraps("B", "Chassis_0");
+        p.erase(key);
+        return p;
+    };
+    device("CPU_NoReset", "cpu", 1, {}, without("SystemResetGpio"));
+    device("CPU_NoChassis", "cpu", 2, {}, without("ActionRedfishChassis"));
+    for (const char* key : rec::cpuStrapKeys)
+    {
+        device(std::string("CPU_No") + key, "cpu", 3, {}, without(key));
+    }
+    device("NotCpu", "nic", 4, {}, cpuStraps("B", "Chassis_0"));
+    rec::expand(objects);
+    EXPECT_EQ(objects.find(std::string(plat) + "/Chassis_0_CPU_Recovery"),
+              objects.end());
+    device("CPU_Ok", "cpu", 5, {}, cpuStraps("B", "Chassis_0"));
+    EXPECT_NE(record("USBRCMForceRecovery", "Chassis_0_CPU_Recovery"), nullptr);
+}
+
+TEST_F(EmRecoveryConfigTest, SpiRecordsAreOnlyTranslatedOnce)
+{
+    device("SMA_0", "cx_sma", 60,
+           {{"Medium", std::string("usb")},
+            {"Port", std::string("1.1")},
+            {"RootHubPath", std::string("/hub")}},
+           {}, false);
+    auto translated = spiRecord();
+    translated[rec::spiIface]["USBPort"] = std::string("9-9");
+    objects[spiPath] = translated;
+    auto noDevice = spiRecord();
+    noDevice[rec::spiIface].erase("Device");
+    const sdbusplus::object_path other{"/xyz/other/spi"};
+    objects[other] = noDevice;
+    rec::expand(objects);
+    EXPECT_EQ(objects.at(spiPath), translated);
+    EXPECT_EQ(objects.at(other), noDevice);
+
+    auto noMux = spiRecord();
+    noMux[rec::spiIface].erase("MuxGpio");
+    noMux[rec::spiIface]["Programmer"] = std::string("custom");
+    const sdbusplus::object_path third{"/xyz/third/spi"};
+    objects[third] = noMux;
+    rec::expand(objects);
+    const auto& props = objects.at(third).at(rec::spiIface);
+    EXPECT_EQ(std::get<std::string>(props.at("Programmer")), "custom");
+    EXPECT_EQ(std::get<std::string>(props.at("USBPort")), "1-1.1");
+    EXPECT_FALSE(
+        objects.at(third).contains(std::string(rec::spiIface) + ".Gpio0"));
+}
