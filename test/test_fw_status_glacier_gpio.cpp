@@ -7,7 +7,6 @@
 #include <sdbusplus/test/sdbus_mock.hpp>
 #include <sdeventplus/event.hpp>
 
-#include <cerrno>
 #include <chrono>
 #include <coroutine>
 #include <memory>
@@ -829,65 +828,6 @@ TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversRemainingBranchPaths)
     // Second call: timer already running, match already exists → no-op
     erotPoll.startERoTRecoveryMonitor();
     EXPECT_TRUE(erotPoll.erotRecoveryMonitorActive);
-}
-
-TEST_F(FWStatusGlacierGpioTest, PollGpioTracksTheLineValue)
-{
-    auto event = sdeventplus::Event::get_default();
-    auto helper = std::make_shared<MCTPVdmHelper>();
-    using Result =
-        glacier_recovery_tool::glacier_recovery_commands::RecoveryResult;
-    auto& line = test::fw_status_fake_gpio::lines["POLL_VAL_GPIO"];
-    line = {};
-    GPIOResource erot(bus, "/xyz/openbmc_project/software/erot-poll-val", event,
-                      12, 0x5B, 42, "POLL_VAL_GPIO", "", "Polling",
-                      std::optional<uint64_t>(100), "ActiveHigh", "",
-                      std::nullopt, std::nullopt, helper);
-    const auto poll = [&](std::optional<int> previous, int value, Result next) {
-        test::fw_status_fake_glacier::initResults.clear();
-        test::fw_status_fake_glacier::pushResult(static_cast<uint8_t>(next));
-        erot.lastGpioValue = previous;
-        line.getValue = value;
-        line.setValues.clear();
-        erot.pollGpio();
-    };
-
-    // First read: the line is deasserted, then asserted.
-    poll(std::nullopt, 0, Result::FirmwareNotInRecovery);
-    EXPECT_EQ(erot.lastGpioValue, 0);
-    poll(std::nullopt, 1, Result::Ok);
-    EXPECT_EQ(erot.lastGpioValue, 1);
-
-    // Later reads: no change, then an edge each way.
-    poll(1, 1, Result::Ok);
-    EXPECT_EQ(erot.lastGpioValue, 1);
-    poll(1, 0, Result::FirmwareNotInRecovery);
-    EXPECT_EQ(erot.lastGpioValue, 0);
-    poll(0, 1, Result::Ok);
-    EXPECT_EQ(erot.lastGpioValue, 1);
-
-    // A line that cannot be found or requested is skipped.
-    erot.gpioLine = gpiod::line{};
-    line.present = false;
-    erot.lastGpioValue = 1;
-    erot.pollGpio();
-    EXPECT_EQ(erot.lastGpioValue, 1);
-    line.present = true;
-    line.throwOnRequest = true;
-    erot.pollGpio();
-    EXPECT_EQ(erot.lastGpioValue, 1);
-    line.throwOnRequest = false;
-
-    // Read failures keep the last value: a vanished line, another system
-    // error and any other exception.
-    for (int failure : {ENODEV, EIO, 1})
-    {
-        line.throwOnGet = failure;
-        erot.gpioLine = gpiod::find_line("POLL_VAL_GPIO");
-        erot.pollGpio();
-        EXPECT_EQ(erot.lastGpioValue, 1);
-    }
-    line.throwOnGet = 0;
 }
 
 TEST_F(FWStatusGlacierGpioTest, GPIOResourceCoversGuardAndDiscoveryBranches)

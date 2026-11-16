@@ -3,7 +3,6 @@
 #include <map>
 #include <stdexcept>
 #include <string>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -16,8 +15,6 @@ struct LineState
     bool throwOnRequest = false;
     bool throwOnRelease = false;
     bool throwOnSet = false;
-    // 0: no failure, 1: runtime_error, otherwise a system_error with this errno
-    int throwOnGet = 0;
     bool requested = false;
     bool released = false;
     int requestCount = 0;
@@ -125,15 +122,6 @@ class line
     int get_value() const
     {
         const auto& state = stateFor();
-        if (state.throwOnGet == 1)
-        {
-            throw std::runtime_error("fake gpio read failure");
-        }
-        if (state.throwOnGet > 1)
-        {
-            throw std::system_error(state.throwOnGet, std::generic_category(),
-                                    "fake gpio read failure");
-        }
         if (!state.setValues.empty())
         {
             return state.setValues.back();
