@@ -196,6 +196,51 @@ TEST(McuModel, FruMissingBusOrCount)
     EXPECT_EQ(err3.str(), "Error: X_VARIANT_COUNT is not a number\n");
 }
 
+TEST(McuModel, FruCountMustBeACompleteNonNegativeNumber)
+{
+    Fru fru;
+    Clock clock;
+    for (const char* count : {"-1", "2x", ""})
+    {
+        std::ostringstream err;
+        EXPECT_FALSE(resolveModel(
+            env(std::string("X_VARIANT_DETECT=FRU\nX_FRU_BUS=1\nX_FRU_ADDR=2\n"
+                            "X_VARIANT_COUNT=") +
+                count + "\n"),
+            "X", fru.fn(), clock.fn(), err));
+        EXPECT_FALSE(err.str().empty());
+    }
+    std::ostringstream err;
+    EXPECT_FALSE(resolveModel(env("X_VARIANT_DETECT=FRU\nX_FRU_BUS=\n"
+                                  "X_FRU_ADDR=2\n"),
+                              "X", fru.fn(), clock.fn(), err));
+    EXPECT_EQ(err.str(), "Error: X_FRU_BUS or X_FRU_ADDR not set\n");
+}
+
+TEST(McuEnv, QuotesMustMatchToBeStripped)
+{
+    auto e = env("A=\"x'\nB='y'\nC=\"z\"\nD=\"\n");
+    EXPECT_EQ(e.at("A"), "\"x'");
+    EXPECT_EQ(e.at("B"), "y");
+    EXPECT_EQ(e.at("C"), "z");
+    EXPECT_EQ(e.at("D"), "\"");
+}
+
+TEST(McuEm, ModelsNeedAnMcuTargetAndANonEmptyPackage)
+{
+    const std::string rec = emRecoveryIface;
+    const std::string pkg = emPackagesIface;
+    EmObjects objects{
+        {{rec, {{"Target", "NOTYPE"}}}},
+        {{rec, {{"RecoveryType", "MCU"}}}},
+        {{rec, {{"RecoveryType", "MCU"}, {"Target", ""}}}},
+        {{rec, {{"RecoveryType", "MCU"}, {"Target", "EMPTYPKG"}}}},
+        {{pkg,
+          {{"MCUEMPTYPKGPackageUUID", ""}, {"MCUNOTYPEPackageUUID", "N"}}}},
+    };
+    EXPECT_TRUE(emModels(objects).empty());
+}
+
 TEST(McuModel, FruVariantRejectsEmptyKeyOrModel)
 {
     Fru fru;
