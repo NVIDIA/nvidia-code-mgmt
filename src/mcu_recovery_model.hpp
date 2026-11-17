@@ -69,6 +69,8 @@ int startUpdaters(const Env& env, const StartUnit& start, std::ostream& out);
 // instead.
 inline constexpr auto emRecoveryIface =
     "xyz.openbmc_project.Configuration.NvDevice.Recovery";
+inline constexpr auto emMcuRecordIface =
+    "xyz.openbmc_project.Configuration.MCURecovery";
 inline constexpr auto emPackagesIface =
     "xyz.openbmc_project.Configuration.RecoveryPackages";
 

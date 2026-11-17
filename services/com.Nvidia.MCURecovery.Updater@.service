@@ -4,6 +4,8 @@ Wants=xyz.openbmc_project.ObjectMapper.service
 After=xyz.openbmc_project.ObjectMapper.service
 Wants=pldmd.service
 After=pldmd.service
+Wants=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
 Wants=xyz.openbmc_project.FruDevice.service
 After=xyz.openbmc_project.FruDevice.service
 

@@ -158,6 +158,19 @@ ModelSource dbusEmModels(sdbusplus::bus_t& bus)
                     }
                 }
             }
+            // The derived record of a device whose MCU target is the Kind
+            // default carries no Target on NvDevice.Recovery.
+            if (auto it = ifaces.find(emMcuRecordIface); it != ifaces.end())
+            {
+                if (auto t = it->second.find("Target");
+                    t != it->second.end() &&
+                    std::holds_alternative<std::string>(t->second))
+                {
+                    auto& rec = out[emRecoveryIface];
+                    rec["RecoveryType"] = "MCU";
+                    rec["Target"] = std::get<std::string>(t->second);
+                }
+            }
         }
         return emModels(strings);
     };
