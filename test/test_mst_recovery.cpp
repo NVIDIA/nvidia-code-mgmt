@@ -1484,9 +1484,8 @@ TEST_F(MstNvDeviceTest, HoldFlowUsesTheDerivedDevice)
     auto policy = findPolicy(p, "ConnectX", 1, 0);
     ASSERT_TRUE(policy.has_value());
     Recovery r(p, *policy, "connectx-recovery.sh");
-    r.run({"/tmp/img"});
-    EXPECT_THAT(p.err, Not(Contains(HasSubstr("object found"))));
-    EXPECT_THAT(p.err, Not(Contains(HasSubstr("object under board"))));
+    EXPECT_EQ(r.run({"/tmp/img"}), 6);
+    EXPECT_THAT(p.err, Contains(HasSubstr("Failed to read")));
 }
 
 TEST_F(MstNvDeviceTest, HgxrConnectXUsesSoftwareNameAndSmaPort)

@@ -374,6 +374,19 @@ TEST(McuEm, ModelsFromRecoveryBlocksAndPolicy)
               (Models{{"BF4", "Nvidia:BF4:BB"}, {"CX9", "Nvidia:CX9:AA"}}));
 }
 
+TEST(McuEm, ModelsFromTheDerivedMcuRecord)
+{
+    const std::string mcu = emMcuRecordIface;
+    const std::string pkg = emPackagesIface;
+    EmObjects objects{
+        {{mcu, {{"Target", "CX9"}}}},
+        {{mcu, {{"Target", ""}}}},
+        {{mcu, {{"Name", "NoTarget"}}}},
+        {{pkg, {{"MCUCX9PackageUUID", "AA"}}}},
+    };
+    EXPECT_EQ(emModels(objects), (Models{{"CX9", "Nvidia:CX9:AA"}}));
+}
+
 TEST(McuEm, StarterStartsEachInstanceOnceAsItAppears)
 {
     int looks = 0;

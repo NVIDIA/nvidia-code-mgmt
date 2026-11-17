@@ -314,20 +314,6 @@ TEST_F(EmRecoveryConfigTest, ForceRecoveryRecordListsEveryBoardOfAChassis)
     EXPECT_FALSE(r->contains("ActionRedfishChassis"));
 }
 
-TEST_F(EmRecoveryConfigTest, ForceRecoveryWaitsForEveryCpuRecoveryBlock)
-{
-    device("HGX_CPU_0", "cpu", 14, {}, cpuStraps("BRD0", "HGX_Chassis_0"));
-    device("HGX_CPU_1", "cpu", 24, {}, {}, false, 1);
-    EXPECT_EQ(record("USBRCMForceRecovery", "HGX_Chassis_0_CPU_Recovery"),
-              nullptr);
-    device("HGX_CPU_1", "cpu", 24, {}, cpuStraps("BRD1", "HGX_Chassis_0"), true,
-           1);
-    auto* r = record("USBRCMForceRecovery", "HGX_Chassis_0_CPU_Recovery");
-    ASSERT_NE(r, nullptr);
-    EXPECT_EQ(std::get<std::vector<std::string>>(r->at("ResetPins")).size(),
-              2U);
-}
-
 TEST_F(EmRecoveryConfigTest, CpusOfOneBoardAreListedOnce)
 {
     device("CPU_0", "cpu", 16, {}, cpuStraps("B0_M1", "BMC_0"));

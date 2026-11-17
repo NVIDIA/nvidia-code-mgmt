@@ -556,7 +556,7 @@ std::optional<Recovery::Device> Recovery::readDevice(const std::string& relPath)
     };
     for (uint64_t attempt = 1; attempt <= attempts(); ++attempt)
     {
-        if (attempt > 1 && !policy.devices.empty())
+        if (attempt > 1)
         {
             policy.devices = nvDevices(platform, policy.deviceType);
         }
@@ -1231,6 +1231,7 @@ int Recovery::runHold(std::vector<std::string> args)
             paths = std::move(*found);
             break;
         }
+        policy.devices = nvDevices(platform, policy.deviceType);
         if (attempt < readAttempts)
         {
             platform.sleepMs(retryDelayMs);
@@ -1294,6 +1295,10 @@ int Recovery::runHold(std::vector<std::string> args)
     {
         boundary();
         values.clear();
+        if (derived && attempt > 1)
+        {
+            policy.devices = nvDevices(platform, policy.deviceType);
+        }
         for (const auto* prop : holdProperties)
         {
             auto v = derived

@@ -215,6 +215,14 @@ Models emModels(const EmObjects& objects)
                 targets.insert(target->second);
             }
         }
+        if (auto it = ifaces.find(emMcuRecordIface); it != ifaces.end())
+        {
+            auto target = it->second.find("Target");
+            if (target != it->second.end() && !target->second.empty())
+            {
+                targets.insert(target->second);
+            }
+        }
         if (auto it = ifaces.find(emPackagesIface); it != ifaces.end())
         {
             packages.insert(it->second.begin(), it->second.end());
