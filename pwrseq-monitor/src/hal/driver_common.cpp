@@ -92,7 +92,7 @@ std::string findChipForLine(const std::string& lineName)
 // ── OutputLine ────────────────────────────────────────────────────────────
 
 OutputLine::OutputLine(const std::string& chip_path, const GpioLine& gl,
-                       const std::string& consumer) :
+                       const std::string& consumer, bool asserted) :
     chip_(chip_path), name_(gl.name), active_low_(gl.activeLow)
 {
     line_ = chip_.find_line(gl.name);
@@ -102,36 +102,21 @@ OutputLine::OutputLine(const std::string& chip_path, const GpioLine& gl,
                                  "' not found on " + chip_path);
     }
 
-    // libgpiodcxx 1.x: request_output() takes consumer name + initial value.
-    // We pass the RELEASED electrical value so the daemon coming up does
-    // not stall the device. EBUSY here means another process (or another
-    // driver in this process) has already requested the line -- that's a
-    // configuration error worth surfacing as InitFailed in the caller.
+    // libgpiodcxx 1.x: line::request() drives the given value as soon as the
+    // line becomes an output, so pass the requested level here rather than
+    // an idle level followed by a second write. EBUSY here means another
+    // process (or another driver in this process) has already requested the
+    // line -- that's a configuration error worth surfacing as InitFailed in
+    // the caller.
     ::gpiod::line_request req;
     req.consumer = consumer;
     req.request_type = ::gpiod::line_request::DIRECTION_OUTPUT;
     // Intentionally do NOT set FLAG_ACTIVE_LOW. We track polarity in this
     // class so reads/writes via gpioget(1) from outside (debug) match what
     // the daemon is doing on the wire.
-    line_.request(req, electricalValueForRelease_());
-    asserted_ = false; // matches the initial drive value above
-}
-
-void OutputLine::assert_()
-{
-    line_.set_value(electricalValueForAssert_());
-    asserted_ = true;
-}
-
-void OutputLine::release()
-{
-    line_.set_value(electricalValueForRelease_());
-    asserted_ = false;
-}
-
-void OutputLine::trigger()
-{
-    assert_();
+    line_.request(req, asserted ? electricalValueForAssert_()
+                                : electricalValueForRelease_());
+    asserted_ = asserted;
 }
 
 std::string probeChipForLine(const std::string& lineName)
@@ -198,27 +183,13 @@ void ResetChipRegistry::invalidateChip(const std::string& chipPath)
 namespace
 {
 
-void driveResetLine(OutputLine& line, ResetLineOp op)
-{
-    switch (op)
-    {
-        case ResetLineOp::Trigger:
-            line.trigger();
-            break;
-        case ResetLineOp::AssertOnly:
-            line.assert_();
-            break;
-        case ResetLineOp::ReleaseElectrical:
-            line.release();
-            break;
-    }
-}
-
 hal::Result actuateOnChip(const std::string& chip, const GpioLine& gl,
                           const std::string& consumer, ResetLineOp op)
 {
-    OutputLine line(chip, gl, consumer);
-    driveResetLine(line, op);
+    // Trigger / AssertOnly open the line already asserted; the request is
+    // the single write. ReleaseElectrical opens it released.
+    const bool asserted = (op != ResetLineOp::ReleaseElectrical);
+    OutputLine line(chip, gl, consumer, asserted);
     return hal::Result::Ok;
 }
 

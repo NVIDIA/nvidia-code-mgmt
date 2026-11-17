@@ -100,12 +100,13 @@ class DbusLineSource
 class OutputLine
 {
   public:
+    /**
+     * Request the line as an output, driven to the asserted level
+     * (`asserted` = true) or the released level (false). The request is the
+     * only write; no value is set afterwards.
+     */
     OutputLine(const std::string& chip_path, const GpioLine& line,
-               const std::string& consumer);
-
-    void assert_();
-    void release();
-    void trigger();
+               const std::string& consumer, bool asserted);
 
     bool isAsserted() const noexcept
     {
