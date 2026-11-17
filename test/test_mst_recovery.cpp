@@ -1466,6 +1466,29 @@ TEST_F(MstNvDeviceTest, DerivedGroupsAndForceOnlyWhereClaimed)
     EXPECT_THAT(p.ops, Contains("i2c 71 72 force=0"));
 }
 
+TEST_F(MstNvDeviceTest, LegacyFlowRecoversOneDeviceAtATime)
+{
+    addNvDevices("CX_", 2, "ConnectX");
+    auto record = hgxb300Record({});
+    record.erase("RecoveryGroups");
+    p.objects[std::string(root) + "/Policy"][policyInterface] = record;
+    auto policy = findPolicy(p, "ConnectX", 1, 0);
+    ASSERT_TRUE(policy.has_value());
+    EXPECT_THAT(policy->groups, ElementsAre(L{"FW_CX_0"}, L{"FW_CX_1"}));
+}
+
+TEST_F(MstNvDeviceTest, HoldFlowUsesTheDerivedDevice)
+{
+    addNvDevices("CX_", 1, "ConnectX");
+    p.objects[std::string(bfBoard) + "/Policy"][policyInterface] = bf4Record();
+    auto policy = findPolicy(p, "ConnectX", 1, 0);
+    ASSERT_TRUE(policy.has_value());
+    Recovery r(p, *policy, "connectx-recovery.sh");
+    r.run({"/tmp/img"});
+    EXPECT_THAT(p.err, Not(Contains(HasSubstr("object found"))));
+    EXPECT_THAT(p.err, Not(Contains(HasSubstr("object under board"))));
+}
+
 TEST_F(MstNvDeviceTest, HgxrConnectXUsesSoftwareNameAndSmaPort)
 {
     addNvDevices("HGX_ConnectX_", 2, "ConnectX", "HGX_FW_ConnectX_");

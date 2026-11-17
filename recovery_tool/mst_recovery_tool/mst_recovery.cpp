@@ -294,6 +294,20 @@ std::map<std::string, PropertyMap> nvDevices(Platform& platform,
     return devices;
 }
 
+std::expected<Value, std::string>
+    derivedProperty(const std::map<std::string, PropertyMap>& devices,
+                    const std::string& name, const std::string& prop)
+{
+    if (auto d = devices.find(name); d != devices.end())
+    {
+        if (auto p = d->second.find(prop); p != d->second.end())
+        {
+            return p->second;
+        }
+    }
+    return std::unexpected("not in the NvDevice record of " + name);
+}
+
 } // namespace
 
 std::expected<Policy, std::string> findPolicy(Platform& platform,
@@ -339,7 +353,14 @@ std::expected<Policy, std::string> findPolicy(Platform& platform,
                                ": " + policy.error());
     }
     policy->devices = nvDevices(platform, deviceType);
-    if (policy->flow != Flow::Hold && policy->groups.empty())
+    if (policy->flow == Flow::Legacy && policy->groups.empty())
+    {
+        for (const auto& name : policy->devices | std::views::keys)
+        {
+            policy->groups.push_back({name});
+        }
+    }
+    else if (policy->flow != Flow::Hold && policy->groups.empty())
     {
         policy->groups = busGroups(policy->devices);
     }
@@ -531,18 +552,14 @@ std::optional<Recovery::Device> Recovery::readDevice(const std::string& relPath)
             return platform.getProperty(emService, dev.path,
                                         policy.deviceInterface, prop);
         }
-        auto d = policy.devices.find(dev.name);
-        if (d != policy.devices.end())
-        {
-            if (auto p = d->second.find(prop); p != d->second.end())
-            {
-                return p->second;
-            }
-        }
-        return std::unexpected("not in the NvDevice record of " + dev.name);
+        return derivedProperty(policy.devices, dev.name, prop);
     };
     for (uint64_t attempt = 1; attempt <= attempts(); ++attempt)
     {
+        if (attempt > 1 && !policy.devices.empty())
+        {
+            policy.devices = nvDevices(platform, policy.deviceType);
+        }
         dev.props.clear();
         bool complete = true;
         for (const auto& prop : deviceProperties())
@@ -1219,11 +1236,6 @@ int Recovery::runHold(std::vector<std::string> args)
             platform.sleepMs(retryDelayMs);
         }
     }
-    if (paths.empty())
-    {
-        die(notConfigured,
-            std::format("No {} object found under {}", iface, inventoryRoot));
-    }
     const auto board = basename(policy.board);
     const auto filter = "/" + board + "/";
     std::vector<std::string> matched;
@@ -1236,11 +1248,19 @@ int Recovery::runHold(std::vector<std::string> args)
             matched.push_back(p);
         }
     }
+    const bool derived = matched.empty() && !policy.devices.empty();
+    if (derived)
+    {
+        matched.push_back(policy.board + "/" + policy.devices.begin()->first);
+    }
     if (matched.empty())
     {
         die(notConfigured,
-            std::format("No {} object under board {} (paths: {})", iface, board,
-                        all));
+            paths.empty()
+                ? std::format("No {} object found under {}", iface,
+                              inventoryRoot)
+                : std::format("No {} object under board {} (paths: {})", iface,
+                              board, all));
     }
     if (matched.size() > 1)
     {
@@ -1276,7 +1296,9 @@ int Recovery::runHold(std::vector<std::string> args)
         values.clear();
         for (const auto* prop : holdProperties)
         {
-            auto v = platform.getProperty(emService, emPath, iface, prop);
+            auto v = derived
+                         ? derivedProperty(policy.devices, deviceName, prop)
+                         : platform.getProperty(emService, emPath, iface, prop);
             if (!v)
             {
                 values.clear();
