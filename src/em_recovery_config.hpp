@@ -13,6 +13,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -474,6 +475,17 @@ inline void deriveCpuForceRecovery(const ObjectValueTree& objects,
 {
     std::map<std::string, CpuBoards> chassisBoards;
     std::map<std::string, std::string> chassisDir;
+    for (const auto& ifaces : objects | std::views::values)
+    {
+        // The chassis record is built once, so wait until every CPU device
+        // has published its Recovery block.
+        if (ifaces.contains(nvDeviceIface) &&
+            !ifaces.contains(deviceRecoveryIface) &&
+            str(prop(ifaces, nvDeviceIface, "Kind")) == "cpu")
+        {
+            return;
+        }
+    }
     for (const auto& [path, ifaces] : objects)
     {
         const std::string chassis =
