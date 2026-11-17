@@ -1486,7 +1486,7 @@ TEST_F(MstNvDeviceTest, HoldFlowUsesTheDerivedDevice)
     Recovery r(p, *policy, "connectx-recovery.sh");
     EXPECT_EQ(r.run({"/tmp/img"}), 6);
     EXPECT_THAT(p.err, Contains(HasSubstr("Failed to read")));
-    EXPECT_EQ(p.sleptMs, 0U);
+    EXPECT_EQ(p.sleptMs, 9000U);
 }
 
 TEST_F(MstNvDeviceTest, HgxrConnectXUsesSoftwareNameAndSmaPort)
