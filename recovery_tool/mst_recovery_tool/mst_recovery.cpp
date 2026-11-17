@@ -1232,6 +1232,10 @@ int Recovery::runHold(std::vector<std::string> args)
             break;
         }
         policy.devices = nvDevices(platform, policy.deviceType);
+        if (!policy.devices.empty())
+        {
+            break;
+        }
         if (attempt < readAttempts)
         {
             platform.sleepMs(retryDelayMs);
