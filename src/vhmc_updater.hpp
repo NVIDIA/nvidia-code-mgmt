@@ -114,7 +114,7 @@ class VHMCHashCompute : public hashComputeInherit
      *  @param[in] objPath - D-Bus object path
      *  @param[in] resolver - Maps the requested slot to its image file
      */
-    VHMCHashCompute(sdbusplus::bus::bus& bus, const std::string& objPath,
+    VHMCHashCompute(sdbusplus::bus_t& bus, const std::string& objPath,
                     SlotImageResolver resolver);
 
     /**
@@ -260,7 +260,7 @@ class VHMCItemUpdater : public BaseItemUpdater
     void publishFirmwareSlots();
 
     /** @brief Publish the digest provider for the vHMC images. */
-    void publishHashCompute(sdbusplus::bus::bus& bus);
+    void publishHashCompute(sdbusplus::bus_t& bus);
 
     /**
      * @brief Resolve a slot id to the image file the slot holds.

@@ -292,7 +292,7 @@ void VHMCItemUpdater::publishFirmwareSlots()
     startSlotWatch();
 }
 
-void VHMCItemUpdater::publishHashCompute(sdbusplus::bus::bus& bus)
+void VHMCItemUpdater::publishHashCompute(sdbusplus::bus_t& bus)
 {
     const std::string inventoryId = VHMC_FIRMWARE_INVENTORY_ID;
     if (inventoryId.empty())
@@ -414,7 +414,7 @@ constexpr size_t hashChunkSize = 256 * 1024;
 
 constexpr auto hashAlgorithm = "SHA384";
 
-VHMCHashCompute::VHMCHashCompute(sdbusplus::bus::bus& bus,
+VHMCHashCompute::VHMCHashCompute(sdbusplus::bus_t& bus,
                                  const std::string& objPath,
                                  SlotImageResolver resolver) :
     hashComputeInherit(bus, objPath.c_str(), action::emit_interface_added),
